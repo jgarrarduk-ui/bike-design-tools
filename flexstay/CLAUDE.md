@@ -193,18 +193,33 @@ frozen snapshot of it. Confirmed the meeting point stays on the actual head-tube
 segment (`distFromBot+distFromTop == C.htl`) through the realistic range, and that
 a locked standoff reads exactly its set value at every clearance tested.
 
-This is where `frame-designer.html` diverges from what makes sense for this tool,
-which is worth knowing before reaching for it as a reference again: it also slides
-along the head tube axis, but then clips the result against the head tube's
-cylindrical surface — a full mitre join — and keeps its own down-tube axis fixed
-throughout, because *its* tube is drawn as a true-width polygon where a fixed axis
-with a small mitre clip at the tip is barely visible at any distance. This tool's
-`tubes()` draws simplified round-capped centreline-and-width lines instead, where
-the same fixed-axis choice produces an obviously visible kink rather than an
-invisible one. Same input parameter, same source tool to borrow the idea from, but
-a different consequence given how each tool actually draws a tube — the fix that
-is right here (a live, shared axis) would be unnecessary complexity there, and the
-fixed axis that is right there would be visibly wrong here.
+This is where the first attempt at borrowing `frame-designer.html`'s approach was
+half right, not entirely wrong: it does slide along the head tube axis, which was
+worth keeping, but it *also* clips the result against the head tube's cylindrical
+surface — a full mitre join, `frame-designer.html`:2262-2268 — which was dropped
+too early. The `dt_ax` (its down-tube axis) is kept fixed throughout, which works
+for *its* tube because a true-width polygon with a small mitre clip at the tip is
+barely visible at any distance. It only became clear this tool couldn't get away
+with the same fixed axis once the meeting point actually moved as clearance
+changed — a fixed axis and a moving meeting point disagree by construction,
+whatever the reason the point moves. Deriving `dtU` live, from `frontTriangle()`,
+is what makes the two agree in this tool's simpler round-capped rendering instead.
+
+**Measured from the head tube's outer surface, not its centreline.** The other
+half of `Q_dt` that was missing at first: `frame-designer.html` pushes the
+meeting point out from the head tube's centreline by `ht_od/2`, on whichever side
+faces BB, *before* the along-axis slide is applied — `dtWeld`/`ttWeld` are meant
+to be clearance from the wall the tube actually welds to, not from a line running
+down the middle of the head tube. Without that push, the shipped default
+(`dtWeld=12` against a 46.5mm `htOD`, so a 23.25mm radius) put the meeting point
+nowhere near the tube's real edge — barely a third of the way out from the
+centreline. Added the same push here: `side` is computed once (whichever
+perpendicular to the head tube's axis points toward BB) and reused for both
+tubes, matching `ht_tt_side = ht_dt_side` — a down tube and top tube meet the
+head tube on the same face. The one piece of `Q_dt` genuinely not needed here is
+its second offset, by the down tube's own half-width, to find a polygon corner —
+irrelevant to a centreline-and-stroke-width line, where the stroke width already
+draws the right thickness once the centreline itself ends in the right place.
 
 ### Standoffs, and why only two pivots get one
 

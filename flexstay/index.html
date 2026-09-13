@@ -842,15 +842,23 @@ function frontTriangle(){
   const F=frame(0), BB={x:0,y:0}, seatTop=F.ST;
   const stU=unit(sub(seatTop,BB));
   const ttJoin=sub(seatTop, mul(stU, Math.min(C.ttDrop, dist(BB,seatTop)-120)));
-  /* The down/top tube meet the head tube at a point slid along the HEAD TUBE's
-     own axis by the weld clearance — a bigger tube's mitre reaches further along
-     the head tube, it doesn't open a gap. dtU is therefore derived from wherever
-     the down tube is actually, currently drawn to, not a fixed BB-to-htBot line:
+  /* The down/top tube meet the head tube on its OUTER SURFACE, not its
+     centreline — matching frame-designer's Q_dt (ht_b - fa_x*dt_clr +
+     side*ht_od/2). Slide along the head tube's own axis by the weld clearance —
+     a bigger tube's mitre reaches further along the head tube, it doesn't open a
+     gap — then push out by the head tube's own radius on whichever side faces
+     BB, so the clearance is measured from the wall the tube actually welds to,
+     not from a line running down the middle of the head tube. Both tubes push
+     out on the same side, matching frame-designer's ht_tt_side = ht_dt_side — a
+     down tube and top tube meet the head tube on the same (rearward) face.
+     dtU is derived from wherever the down tube is actually, currently drawn to:
      every consumer (the drawing, the mount lock in recompute(), the clearance
      readout) reads this same live value, so a locked mount's standoff can never
      disagree with the tube actually on screen, whatever dtWeld is set to. */
-  const dtMeet=sub(F.htBot, mul(F.axis,C.dtWeld));
-  const ttMeet=add(F.htTop, mul(F.axis,C.ttWeld));
+  const toBB=sub(BB,F.htBot), htPerp={x:-F.axis.y, y:F.axis.x};
+  const side = (toBB.x*htPerp.x+toBB.y*htPerp.y) > 0 ? htPerp : mul(htPerp,-1);
+  const dtMeet=add(sub(F.htBot, mul(F.axis,C.dtWeld)), mul(side,C.htOD/2));
+  const ttMeet=add(add(F.htTop, mul(F.axis,C.ttWeld)), mul(side,C.htOD/2));
   const dtU=unit(sub(dtMeet,BB));
   const dt=['down tube', BB, dtMeet, C.dtOD];
   const tt=['top tube',  ttJoin, ttMeet, C.ttOD];
