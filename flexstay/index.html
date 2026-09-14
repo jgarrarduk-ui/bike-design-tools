@@ -850,21 +850,62 @@ function frontTriangle(){
      BB, so the clearance is measured from the wall the tube actually welds to,
      not from a line running down the middle of the head tube. Both tubes push
      out on the same side, matching frame-designer's ht_tt_side = ht_dt_side — a
-     down tube and top tube meet the head tube on the same (rearward) face.
-     dtU is derived from wherever the down tube is actually, currently drawn to:
+     down tube and top tube meet the head tube on the same (rearward) face. */
+  const toBB=sub(BB,F.htBot), htPerp={x:-F.axis.y, y:F.axis.x};
+  const side = (toBB.x*htPerp.x+toBB.y*htPerp.y) > 0 ? htPerp : mul(htPerp,-1);
+  /* The head tube is cut square, so its rear face has two real corners. The
+     bottom one — outer face crossed with the bottom end cut — is the datum the
+     down tube's weld clearance is measured from, and the top one is the top
+     tube's. dtMeet/ttMeet are those datums slid along the face by the clearance:
+     the WELD ROOT, where the tube's outer edge lands on the head tube. */
+  const dtMeet=sub(add(F.htBot, mul(side,C.htOD/2)), mul(F.axis,C.dtWeld));
+  const ttMeet=add(add(F.htTop, mul(side,C.htOD/2)), mul(F.axis,C.ttWeld));
+  /* dtMeet/ttMeet are on the tube's OUTER EDGE, not its centreline — the whole
+     point of the corner-to-corner definition, and what was missing before: the
+     centreline was being sent to the weld root, which put the real edge a full
+     half-diameter (19mm on a 38.1 down tube) past it and ate the clearance.
+     frame-designer does the same step, dt_ht = Q_dt - dt_bot_perp*dt_OD/2, with
+     dt_bot_perp the perpendicular pointing down the head tube (fa_x) and
+     tt_top_perp the one pointing up it. Here the tube's own axis depends on the
+     centreline endpoint we are solving for, so settle it by iteration — the
+     correction is a fixed half-diameter and only its direction moves, so it is
+     inside a micron in three passes. */
+  const pinEdge=(meet, from, od, outward)=>{
+    let cl=meet;
+    for(let i=0;i<4;i++){
+      const u=unit(sub(cl,from)), pp={x:-u.y, y:u.x};
+      const out=(pp.x*outward.x+pp.y*outward.y)>0 ? pp : mul(pp,-1);
+      cl=sub(meet, mul(out, od/2));
+    }
+    return cl;
+  };
+  const dtEnd=pinEdge(dtMeet, BB,     C.dtOD, F.axis);            // pinned on its lower edge
+  const ttEnd=pinEdge(ttMeet, ttJoin, C.ttOD, mul(F.axis,-1));    // pinned on its upper edge
+  /* dtU is derived from wherever the down tube is actually, currently drawn to:
      every consumer (the drawing, the mount lock in recompute(), the clearance
      readout) reads this same live value, so a locked mount's standoff can never
      disagree with the tube actually on screen, whatever dtWeld is set to. */
-  const toBB=sub(BB,F.htBot), htPerp={x:-F.axis.y, y:F.axis.x};
-  const side = (toBB.x*htPerp.x+toBB.y*htPerp.y) > 0 ? htPerp : mul(htPerp,-1);
-  const dtMeet=add(sub(F.htBot, mul(F.axis,C.dtWeld)), mul(side,C.htOD/2));
-  const ttMeet=add(add(F.htTop, mul(F.axis,C.ttWeld)), mul(side,C.htOD/2));
-  const dtU=unit(sub(dtMeet,BB));
-  const dt=['down tube', BB, dtMeet, C.dtOD];
-  const tt=['top tube',  ttJoin, ttMeet, C.ttOD];
+  const dtU=unit(sub(dtEnd,BB));
+  /* Where to draw the square-cut end to. A butt cap is a flat cut square to the
+     tube's own axis, which is not the mitre the head tube wants, so run the tube
+     on until its end cut is buried under the head tube — drawn last, on top, the
+     head tube's own outer face is what you see the tube stop against, which IS
+     the mitre. Stopping on the head tube's centreline keeps the buried cut well
+     inside the head tube at any sane angle without poking out the far side. */
+  const bury=(cl,from)=>{
+    const u=unit(sub(cl,from)), den=u.x*side.x+u.y*side.y;
+    if(Math.abs(den)<1e-6) return cl;
+    return add(cl, mul(u, -((cl.x-F.htBot.x)*side.x+(cl.y-F.htBot.y)*side.y)/den));
+  };
+  const dtTip=bury(dtEnd,BB), ttTip=bury(ttEnd,ttJoin);
+  /* The reported tube is the real one, BB to the head tube wall — the buried
+     overrun is a drawing detail and has no business in a clearance readout. */
+  const dt=['down tube', BB, dtEnd, C.dtOD];
+  const tt=['top tube',  ttJoin, ttEnd, C.ttOD];
   const st=['seat tube', BB, seatTop, C.stOD];
   const ht=['head tube', F.htBot, F.htTop, C.htOD];
-  return {BB, F, seatTop, ttJoin, dtU, stU, dt, tt, st, ht, all:[dt,tt,st,ht]};
+  return {BB, F, seatTop, ttJoin, dtU, stU, side, dtMeet, ttMeet, dtTip, ttTip,
+          dt, tt, st, ht, all:[dt,tt,st,ht]};
 }
 
 // Arc length of the drawn seat stay, dropout to shock eye.
@@ -1121,24 +1162,40 @@ function draw(){
   for(let y=gy0;y<=gy1;y+=100)
     el('line',{x1:gx0,y1:y,x2:gx1,y2:y,stroke:'var(--grid)','stroke-width':mmPerPx},grid);
 
-  // Round, not square: a round cap extends a full radius in every direction,
-  // so it blends two tubes into one silhouette whatever angle they meet at.
-  // Tried square (frame-designer's flat-cut look) and it held up at the simple
-  // two-tube joints, but a square cap only extends along the tube's own axis —
-  // no sideways forgiveness — so it left visible seams at the bottom bracket,
-  // where three tubes converge, and along the multi-segment rear stay.
-  const line=(a,b,col,w,dash)=>el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:col,
-      'stroke-width':w,'stroke-linecap':'round',fill:'none',
+  // Round by default: a round cap extends a full radius in every direction, so
+  // it blends two tubes into one silhouette whatever angle they meet at, which
+  // is what the rear stay and the shock link want — they are multi-segment runs
+  // and knuckles, and a square cap only extends along the tube's own axis, so
+  // it left visible seams there. The front triangle asks for 'butt' instead:
+  // a head tube or seat tube has to show its cut end, and a round cap the size
+  // of a 46.5mm head tube's radius swallowed the weld clearance whole. What
+  // used to break at the bottom bracket now gets the BB shell drawn over it.
+  const line=(a,b,col,w,dash,cap)=>el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:col,
+      'stroke-width':w,'stroke-linecap':cap||'round',fill:'none',
       ...(dash?{'stroke-dasharray':dash}:{})},g);
   const ring=(c,r,col,w)=>el('circle',{cx:c.x,cy:c.y,r:r,fill:'none',stroke:col,
       'stroke-width':w},g);
   const bez=(q,col,w)=>el('path',{d:`M${q[0].x} ${q[0].y} C${q[1].x} ${q[1].y} `+
       `${q[2].x} ${q[2].y} ${q[3].x} ${q[3].y}`,
       fill:'none',stroke:col,'stroke-width':w,'stroke-linecap':'round'},g);
-  // a tube is an outline stroke with a lighter fill stroke laid over it
+  /* a tube is an outline stroke with a lighter fill stroke laid over it.
+     Every outline goes down before any fill, so where two tubes overlap the
+     seam between them disappears; the fills then paint in segment order, which
+     is what puts the head tube on top of the down and top tubes.
+     Optional 4th element of a segment is its line cap, default round.
+
+     The OUTLINE carries the width it is given and the fill sits 7mm inside it,
+     which is the convention the rear assembly has always drawn to (40/33 for
+     the chainstay, 30/23 for the stay and link). This used to be the other way
+     about here — outline w+7 over a fill of w — so every segment tubes() drew
+     had a silhouette 7mm fatter than the diameter it was handed. That is 3.5mm
+     of head tube and 3.5mm of down tube eating into the same joint, and it is
+     what made a correctly placed 12mm weld clearance measure about 8.6mm on
+     screen. Diameters here are real stock, so the drawn edge has to be the
+     real wall. */
   const tubes=(segs,fill,edge)=>{
-    segs.forEach(([a,b,w])=>line(a,b,edge,w+7));
-    segs.forEach(([a,b,w])=>line(a,b,fill,w));
+    segs.forEach(([a,b,w,cap])=>line(a,b,edge,w,       null,cap));
+    segs.forEach(([a,b,w,cap])=>line(a,b,fill,Math.max(1,w-7),null,cap));
   };
 
   /* ---- ground ---- (level, in root: the bike is what pitches, not the ground) */
@@ -1225,17 +1282,42 @@ function draw(){
 
   /* ---- front triangle ----
      Tube segments come from frontTriangle() so the drawing and the clearance
-     readout cannot disagree about where a tube is. Head tube drawn first
-     (underneath): its own round cap has a bigger radius than a typical weld
-     clearance, so drawn last it used to bury the down/top tube's clearance-
-     adjusted endpoint regardless of the actual dtWeld/ttWeld value. Drawn first,
-     the down and top tubes render on top and genuinely show the gap. */
+     readout cannot disagree about where a tube is.
+
+     All four front-triangle tubes are cut SQUARE ('butt'): a head tube and a
+     seat tube have to show their end faces, and a round cap on the head tube
+     reached a full 23mm past its own end — twice the shipped weld clearance —
+     which is what made dtWeld look broken however it was measured from.
+
+     Head tube drawn LAST now, and that is the whole trick. Square-cut, it no
+     longer overhangs its own ends, so putting it on top cannot swallow the
+     clearance the way its round cap did; and the down and top tubes run on past
+     the head tube wall (dtTip/ttTip) so their own square cuts are buried under
+     it. What you see them stop against is the head tube's outer face — a clean
+     mitre, for free, with no clipping. The gap between the bottom of the head
+     tube and where the down tube's lower edge lands on that face is dtWeld,
+     measured corner to corner exactly as specified.
+
+     The mount brace and the pivot boss keep round caps: they die into the down
+     tube at a shallow angle and want the sideways forgiveness. They come after
+     the head tube so their outlines still land in the same outline pass and
+     leave no seam across the tube they sit on. */
   const FT=frontTriangle(), dtU=FT.dtU;
-  const seg=t=>[t[1],t[2],t[3]];
   const foot=mul(dtU, Math.max(60,alongOf(dtU,G.SG)));   // shock mount brace
   const boss=mul(dtU, Math.max(50,alongOf(dtU,G.SP)));   // second pivot boss
-  tubes([seg(FT.ht),seg(FT.dt),seg(FT.tt),seg(FT.st),
+  tubes([[FT.dt[1],FT.dtTip,FT.dt[3],'butt'],
+         [FT.tt[1],FT.ttTip,FT.tt[3],'butt'],
+         [FT.st[1],FT.st[2],  FT.st[3],'butt'],
+         [FT.ht[1],FT.ht[2],  FT.ht[3],'butt'],
          [foot,G.SG,26],[boss,G.SP,30]],'#ded4bd','#8a8069');
+  /* The bottom bracket shell caps the square-cut ends of the down and seat
+     tubes, which otherwise leave a notch between them where a round cap used to
+     cover. 38.1mm is the shell, and the same diameter as the down tube, so it
+     lands flush on the down tube's sides and its edge reads as the shell face
+     across the seat tube. Above the tubes, in the tube colours. */
+  const BB_SHELL=38.1;
+  el('circle',{cx:0,cy:0,r:BB_SHELL/2,    fill:'#8a8069'},g);
+  el('circle',{cx:0,cy:0,r:BB_SHELL/2-3.5,fill:'#ded4bd'},g);
   el('circle',{cx:G.SP.x,cy:G.SP.y,r:34,fill:'#ded4bd',stroke:'#8a8069',
     'stroke-width':7},g);
   tubes([[seatTop,post,26]],'#b9c0c6','#7b848c');
