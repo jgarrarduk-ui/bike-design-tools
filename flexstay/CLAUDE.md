@@ -145,18 +145,52 @@ the down tube move whenever head tube length changed. They are measured along th
 head tube axis and are **cosmetic only** — they move where a tube is drawn *to*,
 never its direction, so they cannot disturb the kinematics.
 
-**The head tube has to be drawn first (underneath), or the weld clearance is
-invisible.** `tubes()` gives every segment a full-radius round cap at each
-endpoint, and the head tube's own cap (≈23mm at the shipped 46.5mm OD) is bigger
-than the shipped clearance values — drawn last, as it originally was, it buried
-the down/top tube's clearance-adjusted endpoint regardless of what `dtWeld`/
-`ttWeld` were actually set to, so editing the box appeared to do nothing even
-though `frontTriangle()` was moving the endpoint correctly the whole time. The
-`tubes([...])` call in `draw()` draws `seg(FT.ht)` first and everything else in
-its original relative order, so the down and top tubes render on top and the gap
-is genuinely visible. This is a paint-order fix only — cap shape is untouched, so
-it cannot reopen the multi-tube joint problems the square-cap experiment caused
-(see below); it only changes which tube is on top where two overlap.
+**The front triangle is cut square, and the head tube is drawn last.** These two
+go together and neither works alone.
+
+A head tube and a seat tube have to show their end faces — a real tube is sawn
+off, and the cut is a feature you design to. A round cap reaches a full radius
+past the endpoint in every direction, which on the 46.5mm head tube is 23.25mm,
+nearly twice the shipped `dtWeld`. So all four front-triangle tubes pass
+`'butt'` as the optional 4th element of their `tubes()` segment. Round stays the
+default and the rear assembly, the shock link, the seatpost and the fork
+stanchion keep it: those are multi-segment runs and knuckles, where a cap that
+only extends along the tube's own axis leaves seams. That was the finding of the
+earlier all-square experiment, recorded in the comment on `line()` in `draw()`,
+and it still stands for the parts it was about — what it could not solve, and
+what killed it, was the bottom bracket, which now has a shell drawn over it.
+
+Once the head tube is square it no longer overhangs its own ends, and drawing it
+LAST is what makes the joint right. The down and top tubes run on past the head
+tube wall to `dtTip`/`ttTip` so their own square cuts are buried under it; what
+you see them stop against is the head tube's outer face, which IS the mitre.
+Full mitre join, no clipping, no polygon work — `frame-designer.html` gets the
+same result with `clipHalfPlane` against `ht_face_pt` because it draws real
+polygons and cannot lean on paint order.
+
+The previous arrangement was the exact opposite — head tube first, underneath,
+round caps — and it was the best that could be done while the caps were round:
+drawn last, the head tube's own cap buried the down tube's endpoint and editing
+`dtWeld` appeared to do nothing. Drawn first it at least showed a gap, but the
+down tube's own round cap then bulged out over the head tube and past its bottom
+end, so the joint was still not the flat-cut junction a frame has. Square caps
+fix the cause rather than the symptom, so the paint order flips back.
+
+`dtTip`/`ttTip` stop on the head tube's CENTRELINE. Far enough that the buried
+cut is never exposed, near enough that it cannot poke out the far side at any
+head angle, tube diameter or clearance — checked from `ha` 60 to 75, `htl` 90 to
+200, `dtOD` 25 to 50, `htOD` 34 to 60 and `dtWeld` 0 to 60, and the tip lands
+between 29mm and 91mm along a 130mm head tube throughout. The reported segment
+in `FT.dt`/`FT.tt` is still the real tube, BB to the wall: the buried overrun is
+a drawing detail and has no business in a clearance readout.
+
+The one thing square caps did break is the bottom bracket, where the down tube
+and seat tube both stop dead on the BB centre and leave a notch between them.
+That is what the **BB shell** is for: a 38.1mm circle on the BB, drawn above the
+tubes in the same outline-and-fill colours. 38.1 is the shell, and also exactly
+the down tube's diameter, so the circle is tangent to the down tube's sides and
+flush with them, stands 1.6mm proud of the narrower seat tube, and covers every
+part of the notch, since the notch is inside a 19.05mm radius by construction.
 
 **Weld clearance slides the meeting point along the head tube; it never opens a
 gap.** This took two attempts to get right, and the reasoning from both attempts
@@ -203,7 +237,9 @@ barely visible at any distance. It only became clear this tool couldn't get away
 with the same fixed axis once the meeting point actually moved as clearance
 changed — a fixed axis and a moving meeting point disagree by construction,
 whatever the reason the point moves. Deriving `dtU` live, from `frontTriangle()`,
-is what makes the two agree in this tool's simpler round-capped rendering instead.
+is what makes the two agree in this tool's line-and-stroke-width rendering
+instead. That clipping is no longer missing, incidentally — drawing the head tube
+last over buried tube ends is the same mitre by another route.
 
 **Measured from the head tube's outer surface, not its centreline.** The other
 half of `Q_dt` that was missing at first: `frame-designer.html` pushes the
@@ -216,10 +252,47 @@ nowhere near the tube's real edge — barely a third of the way out from the
 centreline. Added the same push here: `side` is computed once (whichever
 perpendicular to the head tube's axis points toward BB) and reused for both
 tubes, matching `ht_tt_side = ht_dt_side` — a down tube and top tube meet the
-head tube on the same face. The one piece of `Q_dt` genuinely not needed here is
-its second offset, by the down tube's own half-width, to find a polygon corner —
-irrelevant to a centreline-and-stroke-width line, where the stroke width already
-draws the right thickness once the centreline itself ends in the right place.
+head tube on the same face.
+
+**And the second offset, by the tube's own half-width, is needed here after
+all.** That was written off as a polygon-only detail — "the stroke width already
+draws the right thickness once the centreline itself ends in the right place" —
+and it is wrong. It is the difference between the CENTRELINE ending at the weld
+point and the tube's EDGE ending there, which on a 38.1mm down tube is 19.05mm:
+more than the clearance being measured. Sending the centreline to the weld point
+put the real lower edge a full half-diameter further down the head tube, so the
+gap you saw was nothing like the number in the box.
+
+So the reference point is a corner, and it is defined as a corner, exactly as
+`frame-designer.html` defines it: the intersection of the head tube's outer face
+with the down tube's outer LOWER edge (`dt_ht = Q_dt - dt_bot_perp*dt_OD/2`, with
+`dt_bot_perp` the down tube perpendicular pointing down the head tube), and for
+the top tube its outer UPPER edge (`tt_top_perp`, the one pointing up). `dtWeld`
+is then measured along the head tube's outer face from its own bottom corner —
+the corner the square end cut creates — to that weld root. `dtMeet`/`ttMeet` hold
+the weld root; `pinEdge()` converts it to the centreline endpoint the drawing
+needs.
+
+`pinEdge()` iterates, because the offset is perpendicular to the tube's own axis
+and that axis depends on the endpoint being solved for. Four passes; the
+correction is a fixed half-diameter and only its direction moves, so it settles
+immediately. `dtU` is then taken from the settled endpoint, keeping the invariant
+above intact — one live axis, shared by the drawing, the mount lock and the
+readout. Verified across the same parameter sweep as `dtTip`: the weld root sits
+on the head tube's face to 1e-14, on the down tube's lower edge exactly, and
+`dtWeld` from the bottom corner to 1e-3.
+
+**The outline stroke carries the diameter; the fill sits 7mm inside it.** This
+was the other half of the 12mm reading short. `tubes()` used to draw the outline
+at `w+7` over a fill of `w`, so every segment it drew had a silhouette 7mm fatter
+than the diameter it was handed — 3.5mm of head tube and 3.5mm of down tube both
+eating into the same joint, which is why a correctly placed 12mm clearance still
+measured about 8.6mm on screen. It now draws the outline at `w` and the fill at
+`w-7`, which is the convention the rear assembly has always drawn to by hand
+(40/33 for the chainstay, 30/23 for the stay and the link) and makes the drawn
+edge the real wall. Every `tubes()` segment is 7mm narrower than it used to be;
+that is the correction, not a loss. Diameters here are real stock and a design
+tool has no business overstating them.
 
 ### Standoffs, and why only two pivots get one
 
