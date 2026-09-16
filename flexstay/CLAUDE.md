@@ -48,19 +48,32 @@ anti-rise axis.
 
 **One chart, `axlepath`, plots two paths instead of one value against travel.**
 `chart()` dispatches any view carrying `type:'xy'` to `chartAxlePath` instead of
-the normal travel-vs-value renderer. It draws the rear axle's actual swept path
-(`f.AX` per frame, exactly what the `axpath` overlay draws on the bike) against
-the front axle's — which, since the fork has no rear-linkage kinematics of its
-own, is built by sweeping fork travel over the same fraction of stroke as each
+the normal travel-vs-value renderer. It draws the rear axle's swept path (`f.AX`
+per frame, the same points the `axpath` overlay draws on the bike) against the
+front axle's — which, since the fork has no rear-linkage kinematics of its own,
+is built by sweeping fork travel over the same fraction of stroke as each
 rear-sweep frame, `frame(C.forkTravel*i/(n-1)).FA` — the same 1:1 coupling
 `draw()` already uses to pose the fork on screen when not holding sag, just run
 across the whole sweep instead of one frame. `var(--rear)` against a new
 `var(--front)` purple, with a text legend since a chart, unlike the overlay, has
-no bike around it to place a colour by proximity to. Both axes share one mm
-scale (picked from whichever of x or y is tighter for the combined bounding box,
-via the same `niceAxis` step so the grid reads as one ladder, not two) — unlike
-every other chart here, x and y are the same kind of quantity, and stretching
-them differently would bend a path that is, physically, a specific shape.
+no bike around it to place a colour by proximity to.
+
+**Magnified, not absolute — each path is plotted relative to its own top-out
+point, not the frame's real coordinates.** On the real frame the two starting
+points are a wheelbase apart, which is a fact about the bike and has nothing to
+do with the shape either curve traces — the only thing worth comparing here —
+so `rear[0]`/`front[0]` are subtracted off before anything else touches the
+data, landing both curves on a shared origin (drawn as a small grey dot) exactly
+the way the reference "magnified axle path" chart this was modelled on does it.
+That also changes what there is to autoscale to: fitting the box to two small
+relative curves instead of a wheelbase-plus-two-specks is what makes the paths
+fill the window instead of sitting lost in a mostly empty plot. Sag markers are
+translated by the same per-series offset so they still land on their own curve.
+Both axes still share one mm scale (picked from whichever of x or y is tighter
+for the combined bounding box, via the same `niceAxis` step so the grid reads
+as one ladder, not two) — unlike every other chart here, x and y are the same
+kind of quantity, and stretching them differently would bend a path that is,
+physically, a specific shape.
 
 **The canvas has to stay landscape.** `fitView` crops the width to fill the box,
 which is harmless on a wide canvas and takes the wheels clean off a square one.

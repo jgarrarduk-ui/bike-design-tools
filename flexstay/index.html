@@ -1761,7 +1761,7 @@ const CHART_VIEWS=[
   {key:'as',   title:'Anti-squat, %',         dec:0},
   {key:'ar',   title:'Anti-rise, %',          dec:0},
   {key:'kick', title:'Pedal kickback, deg', dec:1},
-  {key:'axlepath', title:'Axle paths, mm', dec:0, type:'xy'}
+  {key:'axlepath', title:'Axle paths from top-out, mm', dec:0, type:'xy'}
 ];
 let chartPage=0;
 
@@ -1848,11 +1848,23 @@ function chartAxlePath(id){
   if(n<2) return;
   const rear=result.frames.map(f=>f.AX);
   const front=result.frames.map((f,i)=>frame(C.forkTravel*i/(n-1)).FA);
+  /* Magnified axle path: each series plotted relative to ITS OWN top-out
+     position, not the frame's real coordinates. On the real frame the two
+     start points are a wheelbase apart, which is a fact about the bike, not
+     about the shape of either curve — the only thing worth comparing here —
+     so both origins are moved to (0,0) and the two curves land on top of one
+     another the way the reference chart does it. That also means the data
+     to scale to is now just these two small curves rather than a wheelbase,
+     so the same fit-to-box logic below fills the window with them instead of
+     leaving them as two specks either side of a mostly empty plot. */
+  const rear0=rear[0], front0=front[0];
+  const rel=(pts,o)=>pts.map(p=>({x:p.x-o.x,y:p.y-o.y}));
+  const rearR=rel(rear,rear0), frontR=rel(front,front0);
   const L=50,B=30,T=24,Rp=16;
-  const pts=[...rear,...front];
+  const pts=[...rearR,...frontR];
   const xr0=Math.min(...pts.map(p=>p.x)), xr1=Math.max(...pts.map(p=>p.x));
   const yr0=Math.min(...pts.map(p=>p.y)), yr1=Math.max(...pts.map(p=>p.y));
-  const pad=Math.max(xr1-xr0,yr1-yr0,1e-6)*0.1;
+  const pad=Math.max(xr1-xr0,yr1-yr0,1e-6)*0.08;
   const x0=xr0-pad, x1=xr1+pad, y0=yr0-pad, y1=yr1+pad;
   const availW=W-L-Rp, availH=H-B-T;
   const scale=Math.min(availW/(x1-x0), availH/(y1-y0));
@@ -1874,15 +1886,17 @@ function chartAxlePath(id){
       fill:'var(--ink-soft)'},gg).textContent=v.toFixed(0);
   }
   const path=arr=>arr.map(p=>`${X(p.x)},${Y(p.y)}`).join(' ');
-  el('polyline',{points:path(rear),fill:'none',stroke:'var(--rear)','stroke-width':2.4,
+  el('polyline',{points:path(rearR),fill:'none',stroke:'var(--rear)','stroke-width':2.4,
     'stroke-linejoin':'round'},gg);
-  el('polyline',{points:path(front),fill:'none',stroke:'var(--front)','stroke-width':2.4,
+  el('polyline',{points:path(frontR),fill:'none',stroke:'var(--front)','stroke-width':2.4,
     'stroke-linejoin':'round'},gg);
+  // the shared top-out origin both curves now start from
+  el('circle',{cx:X(0),cy:Y(0),r:3,fill:'var(--ink-soft)'},gg);
   // sag markers, the same accent every other chart uses for the current sag point
   const sAX=at(result.frames,C.sag/100).AX;
-  el('circle',{cx:X(sAX.x),cy:Y(sAX.y),r:4.5,fill:'var(--flex)'},gg);
+  el('circle',{cx:X(sAX.x-rear0.x),cy:Y(sAX.y-rear0.y),r:4.5,fill:'var(--flex)'},gg);
   const sFA=frame(C.forkTravel*C.fsag/100).FA;
-  el('circle',{cx:X(sFA.x),cy:Y(sFA.y),r:4.5,fill:'var(--flex)'},gg);
+  el('circle',{cx:X(sFA.x-front0.x),cy:Y(sFA.y-front0.y),r:4.5,fill:'var(--flex)'},gg);
   // legend
   const ly=T+4;
   el('line',{x1:L+2,y1:ly,x2:L+16,y2:ly,stroke:'var(--rear)','stroke-width':2.4},gg);
