@@ -322,6 +322,16 @@ included angle.
 `a2cAuto`, because here the lock turns a derived readout into an input. Easy to
 wire backwards; both the value and the `.disabled` flag live in `refreshDerived`.
 
+**SP's mount matches SG's.** `frontTriangle()`'s draw call used to follow the
+tube-coloured brace tube at `[boss,G.SP,30]` with an extra `r:34` disc, plain
+tan-and-brown like the tubes but large enough, and different enough from the
+brace tube next to it, to read as its own thing rather than as a boss on the
+down tube — a beige-warm colour under any colour-shifted display reads close
+enough to gold to be mistaken for one of the actual gold pivot rings (`SE`/`SG`,
+`var(--shock)`), so "the yellow circle on the linkage pivot" was a fair
+description even though nothing in this file is literally yellow. Removed; SP
+now renders exactly like SG, a brace tube and nothing else.
+
 **Both locks default on, at 55mm.** `DEF.geom.SG`/`DEF.geom.SP` are left at their
 old shipped coordinates — the lock glue in `recompute()` re-derives both from
 their current along-tube distance every time it runs, including the very first
@@ -341,9 +351,23 @@ the idler when frame-mounted. The readout runs before the no-solution bail-out i
 `readouts()`, because it is pure frame geometry and is most wanted precisely when
 the linkage will not solve.
 
-**Known, and real: at the shipped defaults the main pivot boss overlaps the seat
-tube by about 15mm.** The tool flags it rather than hiding it. Either the pivot
-moves or the housing has to interrupt the tube.
+**A negative number here is known, and real, not a bug to chase.** The tool
+flags an overlap rather than hiding it — either the pivot moves or the housing
+has to interrupt the tube. It reads about -1mm off the seat tube at the current
+shipped defaults, close enough to flush that it is more a reminder to check
+than a finding; it read -15mm against the geometry shipped before that (a much
+lower main pivot), so the number moves with whatever design DEF holds and is
+worth a fresh look after any change there.
+
+**`DEF` is a real, saved design, not a made-up placeholder.** It has been swapped
+wholesale more than once for a design worth shipping as the thing people see on
+first open — most recently for "lowpivot mx", `rw`/`fw` a genuine 584/622 mullet,
+idler off by default, every pivot a solved coordinate rather than something
+round-tripped through 1dp. `resetGeom`, `resetPoints` and the whole-tool reset
+all read straight from it, so swapping it is enough — no coordinate elsewhere
+needs hand-updating, and `test/flexstay-tests.mjs` re-extracts `DEF` from the
+source at test time rather than pinning old numbers, so the shipped-defaults
+checks (below) track it automatically.
 
 ## Save / load
 
@@ -505,6 +529,16 @@ because the group they sit in is y-flipped.
 stay and over the spokes, so as a thin `#134463` line it was invisible against a
 30mm-wide stay of exactly that colour. It is a pale halo under a contrasting dash.
 
+**The front axle gets a path too, in its own colour.** The fork carries no
+rear-linkage kinematics of its own — there is nothing in `sweep()` for a front
+axle position to come from — so its path is built at draw time by sweeping fork
+travel over the same fraction of stroke as each rear-sweep frame, `frame(C.
+forkTravel*i/(n-1)).FA`. That is exactly the 1:1 coupling `draw()` already uses
+to pose the fork for the frame on screen when not holding sag; the path is the
+same rule run across the whole sweep instead of one frame. Same white-halo-under-
+dash treatment as the rear path, `var(--front)` instead of `#c026a3`, both on the
+one `axpath` toggle — they are the same overlay, not two.
+
 ## Parts toggles
 
 Six buttons — wheels, drivetrain, cockpit, saddle, shock, fork — hide one piece
@@ -584,6 +618,11 @@ The run that is *not* the force line is constant through the travel either way, 
 `kick` needs no special case — measuring the force run is enough. Two exact-zero
 results pin this down and are worth keeping as tests: an idler concentric with the
 main pivot gives **exactly** zero chain growth, on either mount.
+
+(The engine's own name for this, `kick`, is unchanged — only the UI label moved,
+from "Chain shortening" to "Pedal kickback": what the number measures is chain
+growth turning into a rotation forced onto the pedals through a fixed-length
+chain, and that is the name riders actually know it by.)
 
 **Tangent selection is the whole difficulty.** `chainRun` picks between its two
 candidates by "whichever normal has the greater y", which is fine for a roughly

@@ -7,7 +7,7 @@
 :root{
   --paper:#eef1f3; --grid:#dbe2e7; --grid2:#cbd6dd;
   --ink:#16202a; --ink-soft:#5c6b78;
-  --rear:#1f5f8b; --link:#0f766e; --flex:#b32c1e; --shock:#8a5a00;
+  --rear:#1f5f8b; --link:#0f766e; --flex:#b32c1e; --shock:#8a5a00; --front:#7a4fb5;
   --ok:#2f7d32; --rule:#c3ccd3; --panel:#f7f9fa;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -731,15 +731,15 @@ function stayLoads(deg, path, od, wall, axial, bendA, dropZ, yokeZ, leanEnd, lea
 
 /* ---------- state ---------- */
 const DEF={
-  geom:{ MP:{x:-2.5,y:66.4}, SP:{x:66.7,y:140.5}, FP:{x:-452.5,y:29.4},
-         LP:{x:6.9,y:271.8}, SE:{x:1.6,y:293.9}, SG:{x:229.8,y:322.1},
-         AX:{x:-452.5,y:29.4}, ID:{x:0,y:125} },
-  cfg:{ eye:230, stroke:65, zone:531, bendR:115, bendA:42, bendStart:50, leanEnd:55, leanA:8, dropW:148, shockW:33, peakG:3, od:16, wall:0.9, ring:32, cog:21,
-        mass:85, bias:58, cogh:1057, sag:30, fsag:20, fax:844.4,
-        rw:622, fw:622, tyreR:60.96, tyreF:60.96, reach:485, stack:654.5, ha:63.3, htl:130,
-        sa:76, st:430, ttDrop:90, bbh:334, drop:38, rc:450, csl:451.6,
+  geom:{ MP:{x:12.4,y:63.3}, SP:{x:74.0189028068233,y:162.73336512900167}, FP:{x:-450,y:18.95999999999998},
+         LP:{x:6.9,y:271.8}, SE:{x:7.4,y:294.8}, SG:{x:233.5689296680683,y:337.611219361806},
+         AX:{x:-450,y:18.95999999999998}, ID:{x:0,y:125} },
+  cfg:{ eye:230, stroke:65, zone:551, bendR:115, bendA:42, bendStart:50, leanEnd:55, leanA:8, dropW:148, shockW:33, peakG:3, od:16, wall:0.9, ring:32, cog:21,
+        mass:85, bias:58, cogh:1057, sag:30, fsag:20, fax:844.3592543050977,
+        rw:584, fw:622, tyreR:60.96, tyreF:60.96, reach:485, stack:654.5403733659439, ha:63.3, htl:130,
+        sa:76, st:430, ttDrop:90, bbh:334, drop:18.95999999999998, rc:450, csl:450.39924689102224,
         a2c:571, a2cAuto:1, hsLower:13, offset:44, forkTravel:160,
-        stemL:10, stemH:70, links:124, cage:62,
+        stemL:10, stemH:65, links:122, cage:62,
         dtOD:38.1, stOD:34.95, ttOD:32, htOD:46.5, dtWeld:12, ttWeld:14, pivotOD:22,
         sgStand:55, sgLock:1, spStand:55, spLock:1,
         chainAuto:1,
@@ -1318,8 +1318,6 @@ function draw(){
   const BB_SHELL=38.1;
   el('circle',{cx:0,cy:0,r:BB_SHELL/2,    fill:'#8a8069'},g);
   el('circle',{cx:0,cy:0,r:BB_SHELL/2-3.5,fill:'#ded4bd'},g);
-  el('circle',{cx:G.SP.x,cy:G.SP.y,r:34,fill:'#ded4bd',stroke:'#8a8069',
-    'stroke-width':7},g);
   tubes([[seatTop,post,26]],'#b9c0c6','#7b848c');
 
   /* Stem artwork drawn after the front triangle so it sits on top of the
@@ -1391,15 +1389,31 @@ function draw(){
   }
 
   /* ---- axle path ----
-     It runs up out of the flex pivot, right along the seat stay and over the
-     spokes, so on its own it was a thin dark line lost against a fat one of the
-     same colour. A pale casing under a contrasting dash keeps it readable
-     whatever it crosses. */
+     Rear: it runs up out of the flex pivot, right along the seat stay and over
+     the spokes, so on its own it was a thin dark line lost against a fat one of
+     the same colour. A pale casing under a contrasting dash keeps it readable
+     whatever it crosses.
+
+     Front: the fork carries no rear-linkage kinematics of its own, so its path
+     is swept the same way draw() already poses it when not holding sag — the
+     same fraction of fork travel as the rear axle is through its stroke, frame
+     by frame across the whole sweep. Same casing treatment, different dash
+     colour, so the two are never confused even where they cross. */
   if(showPath && result.frames.length>1){
-    const pts=result.frames.map(k=>`${k.AX.x.toFixed(1)},${k.AX.y.toFixed(1)}`).join(' ');
-    el('polyline',{points:pts,fill:'none',stroke:'#fff','stroke-width':9,
+    const n=result.frames.length;
+    const rearPts=result.frames.map(k=>`${k.AX.x.toFixed(1)},${k.AX.y.toFixed(1)}`).join(' ');
+    el('polyline',{points:rearPts,fill:'none',stroke:'#fff','stroke-width':9,
       'stroke-linecap':'round',opacity:.85,'pointer-events':'none'},g);
-    el('polyline',{points:pts,fill:'none',stroke:'#c026a3','stroke-width':4,
+    el('polyline',{points:rearPts,fill:'none',stroke:'#c026a3','stroke-width':4,
+      'stroke-dasharray':'9 7','stroke-linecap':'round','pointer-events':'none'},g);
+
+    const frontPts=result.frames.map((k,i)=>{
+      const FAi=frame(C.forkTravel*i/(n-1)).FA;
+      return `${FAi.x.toFixed(1)},${FAi.y.toFixed(1)}`;
+    }).join(' ');
+    el('polyline',{points:frontPts,fill:'none',stroke:'#fff','stroke-width':9,
+      'stroke-linecap':'round',opacity:.85,'pointer-events':'none'},g);
+    el('polyline',{points:frontPts,fill:'none',stroke:'var(--front)','stroke-width':4,
       'stroke-dasharray':'9 7','stroke-linecap':'round','pointer-events':'none'},g);
   }
 
@@ -1725,7 +1739,7 @@ function readouts(){
     row('Anti-rise at sag', pick(f,'ar').toFixed(0)+' %')+
     row('Rearward at full travel', (first.AX.x-last.AX.x).toFixed(1)+' mm')+
     row('Peak rearward', (first.AX.x-Math.min(...xs)).toFixed(1)+' mm')+
-    row('Chain shortening', (last.kick??0).toFixed(1)+'°')+
+    row('Pedal kickback', (last.kick??0).toFixed(1)+'°')+
     row('Mech cage swing', (first.cageDeg-last.cageDeg).toFixed(1)+'°',
         f.some(k=>k.cageClamp)?'warn':'');
 
@@ -1760,7 +1774,7 @@ const CHART_VIEWS=[
   {key:'lr',   title:'Leverage ratio',        dec:2},
   {key:'as',   title:'Anti-squat, %',         dec:0},
   {key:'ar',   title:'Anti-rise, %',          dec:0},
-  {key:'kick', title:'Chain shortening, deg', dec:1}
+  {key:'kick', title:'Pedal kickback, deg', dec:1}
 ];
 let chartPage=0;
 
