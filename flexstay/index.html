@@ -287,7 +287,7 @@ svg text{font-family:var(--mono)}
     <button class="pager" id="cprev" aria-label="Previous chart">&lsaquo;</button>
     <figure class="chart"><figcaption id="cap-a"></figcaption><svg id="c-a"></svg></figure>
     <button class="pager" id="cnext" aria-label="Next chart">&rsaquo;</button>
-    <div id="cdots"><i></i><i></i><i></i><i></i></div>
+    <div id="cdots"><i></i><i></i><i></i><i></i><i></i></div>
   </div>
 </div>
 
@@ -1389,31 +1389,17 @@ function draw(){
   }
 
   /* ---- axle path ----
-     Rear: it runs up out of the flex pivot, right along the seat stay and over
-     the spokes, so on its own it was a thin dark line lost against a fat one of
-     the same colour. A pale casing under a contrasting dash keeps it readable
-     whatever it crosses.
-
-     Front: the fork carries no rear-linkage kinematics of its own, so its path
-     is swept the same way draw() already poses it when not holding sag — the
-     same fraction of fork travel as the rear axle is through its stroke, frame
-     by frame across the whole sweep. Same casing treatment, different dash
-     colour, so the two are never confused even where they cross. */
+     It runs up out of the flex pivot, right along the seat stay and over the
+     spokes, so on its own it was a thin dark line lost against a fat one of the
+     same colour. A pale casing under a contrasting dash keeps it readable
+     whatever it crosses. The front axle gets the same idea, but on its own
+     chart in the strip carousel (see chartAxlePath) rather than here — this
+     overlay stays rear-only, on the geometry actually being edited. */
   if(showPath && result.frames.length>1){
-    const n=result.frames.length;
-    const rearPts=result.frames.map(k=>`${k.AX.x.toFixed(1)},${k.AX.y.toFixed(1)}`).join(' ');
-    el('polyline',{points:rearPts,fill:'none',stroke:'#fff','stroke-width':9,
+    const pts=result.frames.map(k=>`${k.AX.x.toFixed(1)},${k.AX.y.toFixed(1)}`).join(' ');
+    el('polyline',{points:pts,fill:'none',stroke:'#fff','stroke-width':9,
       'stroke-linecap':'round',opacity:.85,'pointer-events':'none'},g);
-    el('polyline',{points:rearPts,fill:'none',stroke:'#c026a3','stroke-width':4,
-      'stroke-dasharray':'9 7','stroke-linecap':'round','pointer-events':'none'},g);
-
-    const frontPts=result.frames.map((k,i)=>{
-      const FAi=frame(C.forkTravel*i/(n-1)).FA;
-      return `${FAi.x.toFixed(1)},${FAi.y.toFixed(1)}`;
-    }).join(' ');
-    el('polyline',{points:frontPts,fill:'none',stroke:'#fff','stroke-width':9,
-      'stroke-linecap':'round',opacity:.85,'pointer-events':'none'},g);
-    el('polyline',{points:frontPts,fill:'none',stroke:'var(--front)','stroke-width':4,
+    el('polyline',{points:pts,fill:'none',stroke:'#c026a3','stroke-width':4,
       'stroke-dasharray':'9 7','stroke-linecap':'round','pointer-events':'none'},g);
   }
 
@@ -1774,7 +1760,8 @@ const CHART_VIEWS=[
   {key:'lr',   title:'Leverage ratio',        dec:2},
   {key:'as',   title:'Anti-squat, %',         dec:0},
   {key:'ar',   title:'Anti-rise, %',          dec:0},
-  {key:'kick', title:'Pedal kickback, deg', dec:1}
+  {key:'kick', title:'Pedal kickback, deg', dec:1},
+  {key:'axlepath', title:'Axle paths, mm', dec:0, type:'xy'}
 ];
 let chartPage=0;
 
@@ -1790,6 +1777,7 @@ function niceAxis(lo,hi,want){
 }
 
 function chart(id,spec){
+  if(spec.type==='xy'){ chartAxlePath(id); return; }
   const svg=document.getElementById(id);
   svg.innerHTML='';
   const r=svg.getBoundingClientRect();
@@ -1834,6 +1822,73 @@ function chart(id,spec){
   if(cur&&cur[key]!==null&&cur[key]!==undefined)
     el('line',{x1:X(cur.rise),y1:T-8,x2:X(cur.rise),y2:H-B,stroke:'var(--ink-soft)',
       'stroke-width':1.2,'stroke-dasharray':'3 3'},gg);
+}
+
+/* Rear and front axle paths, side by side on one plot instead of the overlay
+   on the main drawing (which stays rear-only, on the geometry actually being
+   edited). The fork has no rear-linkage kinematics of its own, so its path is
+   built the same way the main drawing already poses the fork on screen when
+   not holding sag — the same fraction of fork travel as each rear-sweep frame
+   is through its own stroke — just run across the whole sweep instead of one
+   frame.
+
+   Unlike every other strip chart, both axes here are the same quantity (mm of
+   axle position), so they share one scale: stretching x against y would bend
+   a path that is, physically, a specific shape. mm-per-px is picked once, from
+   whichever axis is tighter for the combined bounding box of both paths, and
+   the plot is centred in the space that leaves. */
+function chartAxlePath(id){
+  const svg=document.getElementById(id);
+  svg.innerHTML='';
+  const r=svg.getBoundingClientRect();
+  const W=Math.max(180,Math.round(r.width)), H=Math.max(120,Math.round(r.height));
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  if(!result||!result.frames.length) return;
+  const n=result.frames.length;
+  if(n<2) return;
+  const rear=result.frames.map(f=>f.AX);
+  const front=result.frames.map((f,i)=>frame(C.forkTravel*i/(n-1)).FA);
+  const L=50,B=30,T=24,Rp=16;
+  const pts=[...rear,...front];
+  const xr0=Math.min(...pts.map(p=>p.x)), xr1=Math.max(...pts.map(p=>p.x));
+  const yr0=Math.min(...pts.map(p=>p.y)), yr1=Math.max(...pts.map(p=>p.y));
+  const pad=Math.max(xr1-xr0,yr1-yr0,1e-6)*0.1;
+  const x0=xr0-pad, x1=xr1+pad, y0=yr0-pad, y1=yr1+pad;
+  const availW=W-L-Rp, availH=H-B-T;
+  const scale=Math.min(availW/(x1-x0), availH/(y1-y0));
+  const cx=(x0+x1)/2, cy=(y0+y1)/2, midX=L+availW/2, midY=T+availH/2;
+  const X=v=>midX+(v-cx)*scale;
+  const Y=v=>midY-(v-cy)*scale;                    // y-up data, y-down screen
+  const gg=el('g',{},svg);
+  // One shared step for both axes, so the grid reads as a single mm scale
+  // rather than two independent ones that happen to share a plot.
+  const ax=niceAxis(Math.min(x0,y0),Math.max(x1,y1),H>240?5:4);
+  for(let v=Math.ceil(x0/ax.step)*ax.step; v<=x1; v+=ax.step){
+    el('line',{x1:X(v),y1:T,x2:X(v),y2:T+availH,stroke:'var(--grid2)','stroke-width':.8},gg);
+    el('text',{x:X(v),y:T+availH+16,'text-anchor':'middle','font-size':11,
+      fill:'var(--ink-soft)'},gg).textContent=v.toFixed(0);
+  }
+  for(let v=Math.ceil(y0/ax.step)*ax.step; v<=y1; v+=ax.step){
+    el('line',{x1:L,y1:Y(v),x2:L+availW,y2:Y(v),stroke:'var(--grid2)','stroke-width':.8},gg);
+    el('text',{x:L-6,y:Y(v)+4,'text-anchor':'end','font-size':11,
+      fill:'var(--ink-soft)'},gg).textContent=v.toFixed(0);
+  }
+  const path=arr=>arr.map(p=>`${X(p.x)},${Y(p.y)}`).join(' ');
+  el('polyline',{points:path(rear),fill:'none',stroke:'var(--rear)','stroke-width':2.4,
+    'stroke-linejoin':'round'},gg);
+  el('polyline',{points:path(front),fill:'none',stroke:'var(--front)','stroke-width':2.4,
+    'stroke-linejoin':'round'},gg);
+  // sag markers, the same accent every other chart uses for the current sag point
+  const sAX=at(result.frames,C.sag/100).AX;
+  el('circle',{cx:X(sAX.x),cy:Y(sAX.y),r:4.5,fill:'var(--flex)'},gg);
+  const sFA=frame(C.forkTravel*C.fsag/100).FA;
+  el('circle',{cx:X(sFA.x),cy:Y(sFA.y),r:4.5,fill:'var(--flex)'},gg);
+  // legend
+  const ly=T+4;
+  el('line',{x1:L+2,y1:ly,x2:L+16,y2:ly,stroke:'var(--rear)','stroke-width':2.4},gg);
+  el('text',{x:L+20,y:ly+4,'font-size':11,fill:'var(--ink-soft)'},gg).textContent='rear';
+  el('line',{x1:L+54,y1:ly,x2:L+68,y2:ly,stroke:'var(--front)','stroke-width':2.4},gg);
+  el('text',{x:L+72,y:ly+4,'font-size':11,fill:'var(--ink-soft)'},gg).textContent='front';
 }
 function charts(){
   const v=CHART_VIEWS[chartPage];

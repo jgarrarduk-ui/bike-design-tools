@@ -38,10 +38,29 @@ the twelve intermediate workings behind a second fold inside the stress panel.
 Collapsed, both rails fit a 950px viewport without scrolling; before this they
 scrolled 2191px and 1441px. Mobile went from 4237px of document to 1900px.
 
-One chart at a time, full strip width, paged by the arrows and the four dots.
-Axis ticks are rounded to 1, 2 or 5 times a power of ten (`niceAxis`) and the
-decimals come from the step, not from the quantity — a 0.5 step under a
-whole-number format printed 109, 110, 110, 111 on the anti-rise axis.
+One chart at a time, full strip width, paged by the arrows and the dots —
+`#cdots` is hand-written in the HTML with one `<i>` per `CHART_VIEWS` entry, so
+adding a chart means adding a dot alongside it or paging silently runs one page
+further than the dots show. Axis ticks are rounded to 1, 2 or 5 times a power
+of ten (`niceAxis`) and the decimals come from the step, not from the quantity
+— a 0.5 step under a whole-number format printed 109, 110, 110, 111 on the
+anti-rise axis.
+
+**One chart, `axlepath`, plots two paths instead of one value against travel.**
+`chart()` dispatches any view carrying `type:'xy'` to `chartAxlePath` instead of
+the normal travel-vs-value renderer. It draws the rear axle's actual swept path
+(`f.AX` per frame, exactly what the `axpath` overlay draws on the bike) against
+the front axle's — which, since the fork has no rear-linkage kinematics of its
+own, is built by sweeping fork travel over the same fraction of stroke as each
+rear-sweep frame, `frame(C.forkTravel*i/(n-1)).FA` — the same 1:1 coupling
+`draw()` already uses to pose the fork on screen when not holding sag, just run
+across the whole sweep instead of one frame. `var(--rear)` against a new
+`var(--front)` purple, with a text legend since a chart, unlike the overlay, has
+no bike around it to place a colour by proximity to. Both axes share one mm
+scale (picked from whichever of x or y is tighter for the combined bounding box,
+via the same `niceAxis` step so the grid reads as one ladder, not two) — unlike
+every other chart here, x and y are the same kind of quantity, and stretching
+them differently would bend a path that is, physically, a specific shape.
 
 **The canvas has to stay landscape.** `fitView` crops the width to fill the box,
 which is harmless on a wide canvas and takes the wheels clean off a square one.
@@ -529,15 +548,14 @@ because the group they sit in is y-flipped.
 stay and over the spokes, so as a thin `#134463` line it was invisible against a
 30mm-wide stay of exactly that colour. It is a pale halo under a contrasting dash.
 
-**The front axle gets a path too, in its own colour.** The fork carries no
-rear-linkage kinematics of its own — there is nothing in `sweep()` for a front
-axle position to come from — so its path is built at draw time by sweeping fork
-travel over the same fraction of stroke as each rear-sweep frame, `frame(C.
-forkTravel*i/(n-1)).FA`. That is exactly the 1:1 coupling `draw()` already uses
-to pose the fork for the frame on screen when not holding sag; the path is the
-same rule run across the whole sweep instead of one frame. Same white-halo-under-
-dash treatment as the rear path, `var(--front)` instead of `#c026a3`, both on the
-one `axpath` toggle — they are the same overlay, not two.
+**The front axle's path lives in the chart strip, not this overlay.** First
+tried adding it here too, on the same `axpath` toggle — worked, but the request
+was actually for a side-by-side comparison chart, which this overlay is the
+wrong shape for: it is drawn over the bike at whatever geometry is currently
+being edited, sharing the drawing's own scale and origin, and a straight
+~140mm fork line next to a tight rear arc reads very differently stretched
+across that than it does on its own axes. `chartAxlePath` (in the charts
+section below) is the dedicated version instead.
 
 ## Parts toggles
 
