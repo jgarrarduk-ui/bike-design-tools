@@ -95,6 +95,36 @@ bend geometry: a straight run out of the dropout, a fixed radius bend, then a
 straight run to the yoke, with the launch angle solved so both ends stay on
 their pivots.
 
+**`f.LP` is a solved four-bar point, not a point on the drawn stay curve, so it
+gets its own short mount brace rather than being folded into the stay's own
+line.** `stayPath(f.FP,f.SE)` runs the whole way to the shock eye already, so
+the drawn stay and the solved geometry can only ever disagree about where LP
+sits relative to that curve — and on this linkage they do, since LP is body
+B's own rigid point, not something `stayPath` places for you. The old drawing
+papered over that gap with two extra lines, `SE→LP` and `LP→(86% up the
+stay)`, at the stay's own full width — which is a straight line standing in
+for "near enough", and at the stay's own 30/23 it read as one oversized,
+ambiguously-shaped tube rather than a stay with a small part bolted to it.
+`closestOnPath`, next to the general-purpose `segDist` in the engine block,
+finds where LP actually sits closest to the curve that is actually on screen,
+and a
+single short `tubes()` brace — the same idea as the shock mount brace on the
+down tube, `frontTriangle`'s `foot` — runs from there to `f.LP`. Perpendicular
+falls out of "closest point on a straight segment" for free: it's exactly the
+foot of the perpendicular from `f.LP` to whichever segment it lands nearest,
+so there was no separate angle to solve. About 20mm at the shipped default;
+scales with whatever the real geometry does since it is read fresh off
+`path.pts` every frame, not fitted once and left to drift.
+
+**The flex-zone red overlay is gone, along with `polyHead`.** `recompute()`
+sets `C.zone` to the seat stay's own full length on every call — "bending
+always spans the whole seat stay" is already the comment on that line — so the
+overlay was always drawing the entire visible stay in red, doubled up on top
+of the tube already there. `C.zone` itself is untouched (still computed, still
+part of the saved/exported shape), since the stress panel's own workings read
+`stayGeo.total`, not this field; only the now-pointless highlight and the
+polyline-head helper that built it are gone.
+
 Coordinates are millimetres, origin at the bottom bracket, x forward, y up. The
 drawing group applies `scale(1,-1)` so the SVG is y-down inside a y-up model.
 

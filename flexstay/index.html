@@ -501,6 +501,18 @@ function segDist(p,a,b){
   const t=L2>1e-9 ? Math.max(0,Math.min(1,((p.x-a.x)*ab.x+(p.y-a.y)*ab.y)/L2)) : 0;
   return dist(p, add(a,mul(ab,t)));
 }
+// the actual closest point on a multi-segment polyline, for a short mount brace
+// drawn perpendicular to whichever segment a pivot actually sits nearest
+function closestOnPath(pts,p){
+  let best=null, bestD=Infinity;
+  for(let i=1;i<pts.length;i++){
+    const a=pts[i-1], b=pts[i], ab=sub(b,a), L2=ab.x*ab.x+ab.y*ab.y;
+    const t=L2>1e-9 ? Math.max(0,Math.min(1,((p.x-a.x)*ab.x+(p.y-a.y)*ab.y)/L2)) : 0;
+    const q=add(a,mul(ab,t)), d=dist(p,q);
+    if(d<bestD){bestD=d; best=q;}
+  }
+  return best;
+}
 
 /* Rear mech geometry, fixed relative to the dropout so it swings with the chainstay. */
 const GDX=-4, GDY=-74, RJ=22;          // guide pulley offset from the axle, jockey radius
@@ -1043,19 +1055,6 @@ function stayPath(a,b){
   return {pts, total, l1:v.l1, l2:v.l2, chord:dist(a,b), emax,
           leanEnd:C.leanEnd};
 }
-// the first `want` millimetres of a polyline, for the flex zone marker
-function polyHead(pts, want){
-  const out=[pts[0]]; let acc=0;
-  for(let i=1;i<pts.length;i++){
-    const d=dist(pts[i],pts[i-1]);
-    if(acc+d>=want){
-      out.push(add(pts[i-1], mul(sub(pts[i],pts[i-1]), (want-acc)/d)));
-      return out;
-    }
-    acc+=d; out.push(pts[i]);
-  }
-  return out;
-}
 function el(tag,attrs,parent){
   const n=document.createElementNS(SVG,tag);
   for(const k in attrs) n.setAttribute(k,attrs[k]);
@@ -1342,18 +1341,24 @@ function draw(){
       points:pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
       fill:'none',stroke:col,'stroke-width':w,'stroke-linecap':'round',
       'stroke-linejoin':'round'},g);
-  const yokeBack=path.pts[Math.round((path.pts.length-1)*0.86)];
   // outline pass
   line(G.MP,f.AX,'#134463',40);
   poly(path.pts,'#134463',30);
-  line(f.SE,f.LP,'#134463',30); line(f.LP,yokeBack,'#134463',30);
   // fill pass
   line(G.MP,f.AX,'#8fb6cf',33);
   poly(path.pts,'#8fb6cf',23);
-  line(f.SE,f.LP,'#8fb6cf',23); line(f.LP,yokeBack,'#8fb6cf',23);
 
-  // flex zone, measured along the stay from the dropout
-  poly(polyHead(path.pts, Math.min(C.zone, path.total)),'var(--flex)',9);
+  /* Link pivot mount: a short brace perpendicular to the stay, the same idea as
+     the shock mount brace on the down tube (frontTriangle's `foot`), rather
+     than the old pair of full-width lines from SE through LP down to a point
+     partway along the stay — those ran the stay's own 30/23 alongside itself
+     for that whole stretch and tapered into it, which read as one oversized,
+     ambiguously-shaped tube instead of a stay with a small boss on it. LP is a
+     solved four-bar point, not a point on this drawn curve, so its foot is
+     the closest point on the path actually on screen — tracks the bend
+     correctly at any geometry instead of assuming LP sits near the SE end. */
+  const lpFoot=closestOnPath(path.pts,f.LP);
+  tubes([[lpFoot,f.LP,22]],'#8fb6cf','#134463');
 
   /* ---- shock link and shock ---- */
   tubes([[G.SP,f.LP,22]],'#4bb3a6','#0b5a53');
