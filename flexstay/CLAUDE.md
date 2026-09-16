@@ -404,6 +404,70 @@ to change by hand. This does move the shock mount from where it originally sat
 on "Shock eye to eye, drawn" on a fresh load. That is the honest consequence of
 locking the mount to 55mm rather than a bug; nothing was tuned to hide it.
 
+**"Reset points & mounts" resets the standoff config, not just the coordinate,
+because the two can genuinely disagree.** `DEF.geom.SG`'s own raw coordinate is
+67.1mm off the down tube, not 55 — it only ever reads as 55 on a fresh load
+because `sgLock` defaults on and `recompute()`'s glue forces it there, per the
+paragraph above. So `resetPoints` copying `G.SG=DEF.geom.SG` and stopping there
+used to leave the *displayed* standoff wherever it happened to be before the
+click: locked, the glue would immediately re-derive `G.SG` from the just-reset
+point's own along-tube coordinate but the OLD (unreset) `C.sgStand`, silently
+re-imposing whatever standoff the mount had before, not 55; unlocked, nothing
+touched `C.sgStand`/`C.spStand` or the boxes at all — `resetPoints` never called
+`fillCfg()`, only `fillPoints()`. Fixed by resetting `C.sgStand`/`spStand` and
+`sgLock`/`spLock` to `DEF.cfg` first — matching how `resetGeom` already resets
+`a2cAuto` alongside `a2c` — then placing `G.SG`/`G.SP` with the same `onTube`
+call the lock glue itself uses, at the default standoff. That makes the result
+correct and idempotent whichever way the lock ends up: locked, `recompute()`
+re-derives the identical point (a no-op); unlocked, its readout branch reads
+the standoff back off a point already sitting at exactly 55mm, instead of
+`DEF.geom.SG`'s own real 67.1mm.
+
+**The eye-to-eye length lock (`lockLen`) and the down-tube standoff lock
+(`sgLock`) both claim `G.SG`, and used to fight over it mid-drag.** Dragging
+`SE` or `SG` with `lockLen` on (the default) repositions the *other* one to
+hold `C.eye` — correct in isolation, verified by hand: fresh `unit()` vector
+every event, no stale caching, exact eye-to-eye immediately after it runs. But
+with `sgLock` also on (also the default), `recompute()` runs a frame later on
+the very same drag event and unconditionally snaps `G.SG` back onto the down
+tube at the fixed `C.sgStand`, discarding whatever the length-lock block just
+set — the mount-lock always wins because it runs last, and neither mechanism
+knows the other exists. Dragging `SE` therefore moved `SG` to a length-correct
+position that recompute() immediately un-did; dragging `SG` had the mirror
+problem, anchoring `SE` on the raw pre-recompute position rather than where
+`SG` was actually about to end up. Either way "Shock eye to eye, drawn" came
+out wrong, generically longer, while the *other* point had visibly moved —
+exactly the reported symptom.
+
+Fixed by solving the two constraints together instead of independently, inside
+the same `lockLen` block, whenever `sgLock` is also on:
+- **Dragging `SG`** only ever slides it along the tube anyway (that's the lock
+  working as designed), so the fix snaps `G.SG` there itself —
+  `onTube(dtU, alongOf(dtU,G.SG), C.sgStand)` — before repositioning `SE`, so
+  the eye length is held against where `SG` will actually end up, not a
+  position `recompute()` is about to throw away.
+- **Dragging `SE`** leaves `SG` with exactly one degree of freedom (where along
+  the tube), so the fix intersects the tube's offset line with the circle of
+  radius `C.eye` around the new `SE` — a small quadratic in the along-tube
+  parameter `t`, using the identity `onTube(u,t,off) = onTube(u,0,off) + t·u`
+  (affine in `t` for fixed `off`) and `dtU·dtU=1`. Two roots, one, or none
+  depending on whether the eye can reach the tube from there at all; the root
+  nearer the current `G.SG` is kept, so the mount doesn't flip to the far side
+  mid-drag. No solution (the eye genuinely can't reach) leaves `SG` where it
+  was rather than guess — `recompute()` still holds it on the tube, just not
+  yet at the requested length until the drag comes back in range.
+
+Either branch lands `G.SG` exactly on the offset line at exactly the along-tube
+coordinate it already has, which is precisely what `recompute()`'s own glue
+would compute from it — `alongOf(u, onTube(u,t,off)) === t` for unit `u`,
+regardless of `off` — so the glue's later pass becomes a no-op confirmation
+instead of a clobber. Nothing in `recompute()` itself changed; the drag handler
+just stopped handing it a position it was always going to override. Verified
+with `sgLock` on dragging both `SE` and `SG`: eye-to-eye holds to within
+rounding and the mount stays exactly on the tube in both cases. The unlocked
+path (`sgLock` off) is untouched — there was nothing for it to fight, and it
+already worked.
+
 ### Clearance
 
 A pivot is a boss, not a point: `pivotOD` (22mm) gives it a body, and clearance to a

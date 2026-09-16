@@ -1587,13 +1587,53 @@ function initDrag(){
     if(C.idlerOn&&C.idlerLock&&(dragKey==='MP'||dragKey==='ID')){
       G.MP={...G[dragKey]}; G.ID={...G[dragKey]};
     }
-    // with the lock on, the far eye follows so the shock keeps its eye to eye
+    // with the lock on, the far eye follows so the shock keeps its eye to eye.
+    // When the mount is ALSO locked to the down tube (sgLock), doing that
+    // independently is wrong: recompute()'s mount-lock glue runs moments later
+    // on the same frame and unconditionally snaps G.SG back onto the tube at
+    // the fixed standoff, discarding whatever this block just computed -- the
+    // eye-to-eye length that comes out the other side is whatever falls out
+    // of that snap, not C.eye. Solve the two constraints jointly instead, so
+    // that later snap becomes a no-op confirmation rather than a clobber.
     if(lockLen && (dragKey==='SE'||dragKey==='SG')){
-      const far = dragKey==='SE' ? 'SG' : 'SE';
-      const d=sub(G[far],G[dragKey]);
-      if(len(d)>1e-6){
-        const q=add(G[dragKey], mul(unit(d), C.eye));
-        G[far]={x:Math.round(q.x*10)/10, y:Math.round(q.y*10)/10};
+      if(C.sgLock){
+        const dtU=frontTriangle().dtU;
+        if(dragKey==='SG'){
+          // dragging the mount can only ever slide it along the tube -- match
+          // what recompute() is about to do to it, then hold the eye length
+          // off THAT, not off the raw off-tube drop point.
+          G.SG=onTube(dtU, alongOf(dtU,G.SG), C.sgStand);
+          const d=sub(G.SE,G.SG);
+          if(len(d)>1e-6){
+            const q=add(G.SG, mul(unit(d), C.eye));
+            G.SE={x:Math.round(q.x*10)/10, y:Math.round(q.y*10)/10};
+          }
+        } else {
+          // dragging the eye: SG has exactly one degree of freedom left --
+          // where along the tube -- so intersect the tube's offset line with
+          // the circle of radius C.eye around the new SE, instead of moving
+          // SG somewhere recompute() will not honour.
+          const base=onTube(dtU,0,C.sgStand), w=sub(base,G.SE);
+          const b=2*alongOf(dtU,w), c=alongOf(w,w)-C.eye*C.eye, disc=b*b-4*c;
+          if(disc>=0){
+            const s=Math.sqrt(disc), t1=(-b+s)/2, t2=(-b-s)/2;
+            const p1=onTube(dtU,t1,C.sgStand), p2=onTube(dtU,t2,C.sgStand);
+            const p=dist(p1,G.SG)<=dist(p2,G.SG) ? p1 : p2;  // nearer root: no side-flip mid-drag
+            G.SG={x:Math.round(p.x*10)/10, y:Math.round(p.y*10)/10};
+          }
+          // else: the eye can't reach the tube from here -- leave SG put
+          // rather than guess; recompute() still holds it on the tube, just
+          // not yet at the requested length, until the drag comes back in range.
+        }
+      } else {
+        // unchanged: SG isn't tube-locked, so there's nothing for this to
+        // fight, and the original reposition-along-current-direction is correct.
+        const far = dragKey==='SE' ? 'SG' : 'SE';
+        const d=sub(G[far],G[dragKey]);
+        if(len(d)>1e-6){
+          const q=add(G[dragKey], mul(unit(d), C.eye));
+          G[far]={x:Math.round(q.x*10)/10, y:Math.round(q.y*10)/10};
+        }
       }
     }
     // The rear axle is derived from rear centre and bottom bracket height, so a
@@ -2088,7 +2128,23 @@ const POINT_KEYS=['MP','SP','LP','SE','SG','ID'];
 document.getElementById('resetPoints').onclick=()=>{
   POINT_KEYS.forEach(k=>G[k]=structuredClone(DEF.geom[k]));
   G.FP={...G.AX};
-  syncGeom(); fillPoints(); recompute(false);
+  // recompute()'s mount-lock glue re-derives SG/SP from a FIXED standoff every
+  // call, so restoring the raw default coordinate alone isn't enough -- the
+  // shipped SG coordinate genuinely isn't 55mm off the down tube (it's 67.1mm;
+  // see "Both locks default on, at 55mm"), and only ever reads as 55 because
+  // the lock forces it there. Reset the standoff config and the lock flags too
+  // -- matching how resetGeom resets a2cAuto alongside a2c -- then re-place
+  // SG/SP at exactly the default standoff so the result is correct whichever
+  // way the lock ends up: locked, recompute() re-derives the identical point
+  // (a no-op); unlocked, its readout branch reads the standoff back off a
+  // point already sitting at exactly that distance.
+  C.sgLock=DEF.cfg.sgLock;   C.spLock=DEF.cfg.spLock;
+  C.sgStand=DEF.cfg.sgStand; C.spStand=DEF.cfg.spStand;
+  syncGeom();
+  const dtU=frontTriangle().dtU;
+  for(const [k,off] of [['SG','sgStand'],['SP','spStand']])
+    G[k]=onTube(dtU, alongOf(dtU,G[k]), C[off]);
+  fillPoints(); fillCfg(); recompute(false);
 };
 
 /* ---------- design name / export / import ----------
