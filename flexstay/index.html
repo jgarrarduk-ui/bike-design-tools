@@ -281,6 +281,7 @@ svg text{font-family:var(--mono)}
       <button class="partbtn" id="tglSaddle"    aria-pressed="true">saddle</button>
       <button class="partbtn" id="tglShock"     aria-pressed="true">shock</button>
       <button class="partbtn" id="tglFork"      aria-pressed="true">fork</button>
+      <button class="partbtn" id="tglCranks"    aria-pressed="true">cranks</button>
     </span>
   </div>
   <div id="charts">
@@ -335,6 +336,7 @@ svg text{font-family:var(--mono)}
 <script>
 // ==ENGINE-START==  no DOM below this line until ENGINE-END
 const P = 12.7; // chain pitch, mm
+const CRANK_LEN = 170; // crank arm length, mm -- no config field for this yet
 
 const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y});
 const add=(a,b)=>({x:a.x+b.x,y:a.y+b.y});
@@ -1072,7 +1074,7 @@ const showLines=()=>showAS||showAR;          // the shared construction lines
 // hides one piece of artwork so a design in progress isn't obscured by parts
 // that aren't the point right now. The frame itself is never one of these.
 let showWheels=true, showDrivetrain=true, showCockpit=true,
-    showSaddle=true, showShock=true, showFork=true;
+    showSaddle=true, showShock=true, showFork=true, showCranks=true;
 const MAXCROP=0.18;                          // never lose more than this fraction of the width
 function fitView(svg,box){
   const r=svg.getBoundingClientRect();
@@ -1133,6 +1135,11 @@ function draw(){
   const F=frame(C.forkTravel*Math.max(0,Math.min(1,tFront)));
   const ground=-C.bbh;                           // the datum: both wheels sit on it
   const BB={x:0,y:0};
+  // Pedal-end point for a crank arm resting at angle 0 (pointing +x, "right")
+  // before kickback rotates it about the bottom bracket. sign=-1 gives the
+  // other arm, 180 degrees opposite, on the same rigid spindle -- both arms
+  // read the one f.kick, since they can only ever turn together.
+  const crankPedal=sign=>rot({x:sign*CRANK_LEN,y:0}, BB, (f.kick||0)*Math.PI/180);
   const seatTop=F.ST, post=add(seatTop,mul(unit(sub(seatTop,BB)),150));
   /* The framing is fixed. It comes from the static geometry — fork extended,
      suspension at top out — so cycling the suspension, holding at sag or turning
@@ -1212,6 +1219,17 @@ function draw(){
     el('image',{href:WHEELART.src,x:0,y:0,width:WHEELART.w,height:WHEELART.h},wg);
   };
   if(showWheels){ wheelArt(f.AX,F.Rr); wheelArt(F.FA,F.Rf); }
+
+  /* ---- hidden (far-side) crank arm ----
+     Drawn before the chainring and the frame tubes so both paint over it, the
+     same way a real photo's far-side arm is occluded by them -- the chainring
+     first, then the frame tubes and BB shell further down. 180 degrees from
+     the visible arm near the end of this function, same spindle, same kick. */
+  if(showCranks){
+    const pedal=crankPedal(-1);
+    line(BB, pedal, '#5c6b78', 14);
+    el('circle',{cx:pedal.x,cy:pedal.y,r:10,fill:'#5c6b78'},g);
+  }
 
   /* ---- drivetrain ----
      guide/tension are computed regardless of the toggle: the rear derailleur
@@ -1421,6 +1439,15 @@ function draw(){
     const sdm=[sds,0,0,-sds, post.x-sds*SD.mount[0]+sdNudge, post.y+sds*SD.mount[1]];
     const sdg=el('g',{transform:`matrix(${sdm.map(v=>v.toFixed(6)).join(' ')})`},g);
     el('image',{href:SD.src,x:0,y:0,width:SD.w,height:SD.h},sdg);
+  }
+
+  /* ---- visible (drive-side) crank arm ----
+     Drawn last, after the saddle, so it sits on top of everything -- same
+     precedent the saddle itself is drawn on. */
+  if(showCranks){
+    const pedal=crankPedal(1);
+    line(BB, pedal, '#5c6b78', 14);
+    el('circle',{cx:pedal.x,cy:pedal.y,r:10,fill:'#5c6b78'},g);
   }
 
   /* ---- anti-squat and anti-rise construction ----
@@ -2220,7 +2247,8 @@ document.getElementById('cnext').onclick=()=>pageCharts(1);
  ['tglCockpit',()=>showCockpit=!showCockpit,     ()=>showCockpit],
  ['tglSaddle', ()=>showSaddle=!showSaddle,       ()=>showSaddle],
  ['tglShock',  ()=>showShock=!showShock,         ()=>showShock],
- ['tglFork',   ()=>showFork=!showFork,           ()=>showFork]].forEach(([id,flip,read])=>{
+ ['tglFork',   ()=>showFork=!showFork,           ()=>showFork],
+ ['tglCranks', ()=>showCranks=!showCranks,       ()=>showCranks]].forEach(([id,flip,read])=>{
   const b=document.getElementById(id);
   b.onclick=()=>{ flip(); b.setAttribute('aria-pressed',read()); draw(); };
 });

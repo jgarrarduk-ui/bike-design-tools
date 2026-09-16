@@ -666,15 +666,24 @@ section below) is the dedicated version instead.
 
 ## Parts toggles
 
-Six buttons — wheels, drivetrain, cockpit, saddle, shock, fork — hide one piece
-of artwork each, all on by default (`showWheels` etc.). They share the bar's one
-toggle cluster with the overlays (axle path, anti-squat, anti-rise, forces)
-rather than getting a second divider: `.partbtn` gives them `--link` teal against
-the overlays' `--rear` blue, so the two kinds of pressed button read apart by
-colour instead of by a text label or a second border. The frame itself (front
-triangle, rear stay, shock link) is never one of them; only bolt-on product
-artwork is. This is where a future crank image replaces the chainring/cog rings
-under the drivetrain flag, without touching anything else.
+Seven buttons — wheels, drivetrain, cockpit, saddle, shock, fork, cranks — hide
+one piece of artwork each, all on by default (`showWheels` etc.). They share
+the bar's one toggle cluster with the overlays (axle path, anti-squat,
+anti-rise, forces) rather than getting a second divider: `.partbtn` gives them
+`--link` teal against the overlays' `--rear` blue, so the two kinds of pressed
+button read apart by colour instead of by a text label or a second border. The
+frame itself (front triangle, rear stay, shock link) is never one of them; only
+bolt-on product artwork is.
+
+**Cranks got their own toggle rather than folding into `drivetrain`** — the
+opposite of what an earlier note here predicted ("a future crank image
+replaces the chainring/cog rings under the drivetrain flag"). Turned out wrong
+once there was an actual reason to draw one: a crank isn't just more drivetrain
+artwork, it's the one piece of artwork on the whole bike that has to visibly
+animate as the suspension cycles (see "Cranks" below), which is a different
+enough concern from "hide the chain/rings" to earn its own flag rather than be
+silently swept into an unrelated one — turning off the chainring shouldn't also
+kill the one thing demonstrating pedal kickback, and vice versa.
 
 The position readout shows current alongside total for both numbers — wheel
 travel and shock stroke — so the slider reads as a fraction of travel, not a
@@ -700,6 +709,63 @@ derailleur draw call, further down in `draw()`, needs them whether or not the
 toggle is on. `cockpit` covers both the stem art and the headset/steerer stack
 tube, drawn in two separate places. The exposed seatpost and the shock link
 (the actual rocker, teal) are frame, not toggled by anything.
+
+## Cranks
+
+Two arms, one toggle (`showCranks`), one shared rotation — a crank is one rigid
+part, not two independent props that happen to look alike, so both arms read
+the identical `f.kick` every frame and can only ever move together. No artwork
+asset: `CRANK_LEN` (170mm, a plain constant next to `P`/`GDX` — there's no
+config field for it, nothing asked for tuning it) plus a `line()` rod and a
+small filled circle for the pedal body, in the same flat `#5c6b78` already used
+for the chainring/cog/BB dot, reads as drivetrain metal without inventing a new
+material.
+
+**`crankPedal(sign)`**, defined once right after `const BB={x:0,y:0}` near the
+top of `draw()` (so both draw sites below can share it), is the whole feature:
+```js
+const crankPedal=sign=>rot({x:sign*CRANK_LEN,y:0}, BB, (f.kick||0)*Math.PI/180);
+```
+`sign=1` is the arm resting at 0° (pointing +x, "the front of the bike," i.e.
+"right"); `sign=-1` is the same arm 180° round, "left." `rot()` (already used
+for the swingarm idler) does the actual rotating — this needed no new geometry,
+just handing it the one number (`f.kick`) that was already being computed and
+already meant "how far the pedal has been forced round from top-out."
+
+**Painted in two places, not layered with `z-index` or anything clever,**
+because paint order already does the job:
+- The **far-side (hidden) arm** is drawn *first* in this whole region of
+  `draw()` — before even the chainring — so the chainring ring, the frame
+  tubes and the BB shell, all painted afterward, correctly occlude it exactly
+  where they cross it, the same way a real photo's far-side arm disappears
+  behind the chainring and the down tube but is still visible in the gaps.
+  It is not invisible outright — nothing asked for that, and a real one isn't
+  either — only *behind* everything real bike parts would actually be behind.
+- The **near-side (visible) arm** is drawn *last*, right after the saddle,
+  on the same "drawn last so it sits on top of everything" precedent the
+  saddle itself already uses.
+
+Both draw calls are otherwise identical (`line(BB,pedal,'#5c6b78',14)` plus a
+`r:10` pedal-body circle) — only which `crankPedal` sign, and where in the
+function the two calls sit, differ.
+
+**Sign convention, checked, not just derived.** `kick` is positive when the
+top-run chain path *grows* on compression (`sweep()`), which is what forces the
+pedals backward against normal pedaling — that's the whole phenomenon. In this
+tool's x-forward/y-up frame, rolling forward is clockwise (a wheel or crank
+spinning clockwise is what makes the bike move in +x), so forward pedaling is a
+negative angle in `rot()`'s CCW-positive convention, and kickback — backward
+against that — is positive. `crankPedal` uses `+kick` with no negation, which
+falls out of that reasoning, but this is exactly the kind of thing worth
+actually looking at rather than trusting the algebra: rendered at top-out
+(0°, dead horizontal) against full travel (~17° at the shipped default), and
+confirmed the pedal end visibly swings up and back — counter-clockwise, away
+from the forward-pedaling direction — as the suspension compresses, not
+forward with it.
+
+`(f.kick||0)` is the same "never blank the canvas" guard as everywhere else in
+`draw()` — `topFrame()`'s `kick:null` (no valid sweep) rests the crank
+horizontal instead of throwing.
 
 ## Lock shock
 
