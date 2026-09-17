@@ -20,7 +20,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
 .rail.left{border-right:1px solid var(--rule)}
 .rail.right{border-left:1px solid var(--rule)}
 #stage{display:flex;flex-direction:column;min-width:0}
-#canvas{flex:1;min-height:260px;position:relative;min-width:0}
+#canvas{flex:1;min-height:230px;max-height:56vh;position:relative;min-width:0}
 /* absolute so the SVG's own aspect ratio cannot drive the canvas height */
 #draw{position:absolute;inset:0;width:100%;height:100%;display:block;
   background:var(--paper);touch-action:none;user-select:none}
@@ -59,7 +59,7 @@ input[type=number],input[type=text],select{width:64px;font:12px var(--mono);padd
 input[type=text]{width:140px;font-family:var(--sans)}
 input[type=number]:focus,input[type=text]:focus,select:focus{outline:2px solid var(--rear);outline-offset:-1px}
 select{width:auto}
-.pt{display:grid;grid-template-columns:1fr 72px 72px;gap:5px;align-items:center;margin:4px 0}
+.pt{display:grid;grid-template-columns:1fr 72px 72px 24px;gap:5px;align-items:center;margin:4px 0}
 .pt[hidden]{display:none}          /* display:grid would otherwise beat the hidden attribute */
 .pt span{font-size:12px}
 .pt input{width:100%}
@@ -78,7 +78,7 @@ select{width:auto}
    once fitBar() (below) has confirmed everything actually fits on one line;
    otherwise the bar falls back to plain left-aligned wrapping. */
 #bar{display:flex;align-items:center;justify-content:flex-start;gap:8px;
-  padding:7px 14px;border-top:1px solid var(--rule);
+  padding:7px 14px;border-bottom:1px solid var(--rule);
   background:var(--panel);flex-wrap:wrap}
 #bar.spread{justify-content:space-between}
 #bar label{margin:0;gap:6px}
@@ -97,6 +97,11 @@ button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:
 /* Parts toggles get their own colour — teal against the overlays' blue — so the
    two kinds of pressed button read apart at a glance without a divider. */
 .partbtn[aria-pressed=true]{background:var(--link);border-color:var(--link);color:#fff}
+/* Small glyph-only lock/unlock buttons -- the points-panel row lock, the
+   down-tube standoff locks, and the shock length lock all share this one
+   size/shape and inherit the base button's colour rules above (including
+   the pressed-state recolour) rather than getting their own. */
+.iconbtn{width:22px;height:22px;padding:0;font-size:12px;line-height:1;flex:none}
 input[type=range]{width:220px;accent-color:var(--rear)}
 /* One chart at a time, full width, so it is as large as the stage allows; the
    arrows page through all four. */
@@ -128,7 +133,7 @@ svg text{font-family:var(--mono)}
   #charts{grid-template-columns:24px 1fr 24px;height:250px}
   input[type=range]{width:auto;flex:1 1 90px;min-width:90px}
   #bar{gap:8px 10px}
-  .pt{grid-template-columns:1fr 72px 72px}
+  .pt{grid-template-columns:1fr 72px 72px 24px}
 }
 </style>
 </head>
@@ -145,10 +150,10 @@ svg text{font-family:var(--mono)}
   <div class="btnrow"><button id="resetPoints">Reset points &amp; mounts</button></div>
   <div id="points"></div>
   <h3>Down tube mounts</h3>
-  <label><span>Lock shock mount standoff</span><input type="checkbox" id="sgLock"></label>
-  <label><span>Shock mount off down tube</span><input type="number" id="sgStand" step="1"></label>
-  <label><span>Lock link pivot standoff</span><input type="checkbox" id="spLock"></label>
-  <label><span>Link pivot off down tube</span><input type="number" id="spStand" step="1"></label>
+  <label><span>Shock mount off down tube</span><input type="number" id="sgStand" step="1">
+    <button class="iconbtn" id="sgLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock shock mount standoff">🔒</button></label>
+  <label><span>Link pivot off down tube</span><input type="number" id="spStand" step="1">
+    <button class="iconbtn" id="spLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock link pivot standoff">🔒</button></label>
 
   <p class="note">Drag points on the drawing or type coordinates. Datum:
     <select id="datum">
@@ -159,7 +164,8 @@ svg text{font-family:var(--mono)}
   </p>
 
   <h2>Shock</h2>
-  <label><span>Eye to eye</span><input type="number" id="eye" step="1"></label>
+  <label><span>Eye to eye</span><input type="number" id="eye" step="1">
+    <button class="iconbtn" id="locklen" aria-pressed="true" title="Keep the shock eye to eye fixed while dragging its mounts" aria-label="Lock shock eye to eye">🔒</button></label>
   <label><span>Stroke</span><input type="number" id="stroke" step="0.5"></label>
   <label><span>Rear sag, % of travel</span><input type="number" id="sag" step="1"></label>
 
@@ -255,21 +261,11 @@ svg text{font-family:var(--mono)}
 </div>
 
 <div id="stage">
-  <div id="canvas">
-    <svg id="draw" preserveAspectRatio="xMidYMid meet"></svg>
-    <div id="zoomctl">
-      <button id="zin"  title="Zoom in"       aria-label="Zoom in">+</button>
-      <button id="zout" title="Zoom out"      aria-label="Zoom out">&minus;</button>
-      <button id="zfit" title="Fit to window" aria-label="Fit to window">&#9974;</button>
-    </div>
-  </div>
-  <div id="msg"></div>
   <div id="bar">
     <button id="play">Cycle</button>
     <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
     <span id="poslabel"></span>
     <button id="showsag" aria-pressed="false">Sag</button>
-    <button id="locklen" aria-pressed="true" title="Keep the shock eye to eye fixed while dragging its mounts">Lock shock</button>
     <span class="bargroup" role="group" aria-label="Overlays and parts drawn">
       <button id="axpath" aria-pressed="true">axle path</button>
       <button id="asline" aria-pressed="false">anti-squat</button>
@@ -284,6 +280,15 @@ svg text{font-family:var(--mono)}
       <button class="partbtn" id="tglCranks"    aria-pressed="true">cranks</button>
     </span>
   </div>
+  <div id="canvas">
+    <svg id="draw" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="zoomctl">
+      <button id="zin"  title="Zoom in"       aria-label="Zoom in">+</button>
+      <button id="zout" title="Zoom out"      aria-label="Zoom out">&minus;</button>
+      <button id="zfit" title="Fit to window" aria-label="Fit to window">&#9974;</button>
+    </div>
+  </div>
+  <div id="msg"></div>
   <div id="charts">
     <button class="pager" id="cprev" aria-label="Previous chart">&lsaquo;</button>
     <figure class="chart"><figcaption id="cap-a"></figcaption><svg id="c-a"></svg></figure>
@@ -336,7 +341,7 @@ svg text{font-family:var(--mono)}
 <script>
 // ==ENGINE-START==  no DOM below this line until ENGINE-END
 const P = 12.7; // chain pitch, mm
-const CRANK_LEN = 170; // crank arm length, mm -- no config field for this yet
+const CRANK_LEN = 165; // crank arm length, mm -- no config field for this yet
 
 const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y});
 const add=(a,b)=>({x:a.x+b.x,y:a.y+b.y});
@@ -1075,6 +1080,11 @@ const showLines=()=>showAS||showAR;          // the shared construction lines
 // that aren't the point right now. The frame itself is never one of these.
 let showWheels=true, showDrivetrain=true, showCockpit=true,
     showSaddle=true, showShock=true, showFork=true, showCranks=true;
+// Per-point drag/type lock, keyed by PTS key. Unset/falsy = unlocked (the
+// default for every point) -- pure UI convenience, not part of C/G, so it
+// isn't exported/imported or touched by any reset button, same as showWheels
+// etc. above.
+let ptLocked={};
 const MAXCROP=0.18;                          // never lose more than this fraction of the width
 function fitView(svg,box){
   const r=svg.getBoundingClientRect();
@@ -1086,7 +1096,7 @@ function fitView(svg,box){
   // one cannot: there the same fraction takes the wheels off, so taper it away.
   const crop=Math.max(0,Math.min(MAXCROP,(aspect-1.1)*0.36));
   const hCap  =box.w*(1-crop)/aspect;                  // never crop most of the width
-  const h=Math.max(hCover,hCap)*1.07/zoomK;            // margin so the ground line clears the edge
+  const h=Math.max(hCover,hCap)*1.03/zoomK;            // margin so the ground line clears the edge
   const w=h*aspect;
   mmPerPx=r.width>4 ? w/r.width : 1;
   return {x0:box.cx+panX-w/2, y0:box.cy+panY-h/2, w, h};
@@ -1147,7 +1157,7 @@ function draw(){
      inputs, the canvas size and the zoom control move it. */
   const F0=frame(0), ax0=n?result.frames[0].AX:G.AX;
   const xs=[ax0.x-F0.Rr, ax0.x+F0.Rr, F0.FA.x-F0.Rf, F0.FA.x+F0.Rf];
-  const ys=[ground, F0.steerTop.y+70, post.y+90];
+  const ys=[ground, F0.steerTop.y+62, post.y+80];
   const bx0=Math.min(...xs), bx1=Math.max(...xs);
   const by0=Math.min(...ys), by1=Math.max(...ys);
   lastBox={cx:(bx0+bx1)/2, cy:(by0+by1)/2, w:bx1-bx0, h:by1-by0};
@@ -1227,8 +1237,8 @@ function draw(){
      the visible arm near the end of this function, same spindle, same kick. */
   if(showCranks){
     const pedal=crankPedal(-1);
-    line(BB, pedal, '#5c6b78', 14);
-    el('circle',{cx:pedal.x,cy:pedal.y,r:10,fill:'#5c6b78'},g);
+    line(BB, pedal, '#5c6b78', 42);
+    el('circle',{cx:pedal.x,cy:pedal.y,r:30,fill:'#5c6b78'},g);
   }
 
   /* ---- drivetrain ----
@@ -1290,7 +1300,7 @@ function draw(){
   const topW=add(add(F.FA, mul(fp, ks*mir*(K.top[0]-K.axle[0]))),
                           mul(fu, ks*(K.top[1]-K.axle[1])));
   if(showFork){
-    tubes([[F.crown,add(topW,mul(fu,26)),27]],'#cfd5da','#7b848c');   // exposed stanchion
+    tubes([[F.crown,add(topW,mul(fu,26)),36]],'#cfd5da','#7b848c');   // exposed stanchion
     const fg=el('g',{transform:`matrix(${fm.map(v=>v.toFixed(6)).join(' ')})`},g);
     el('image',{href:K.src,x:0,y:0,width:K.w,height:K.h},fg);
   }
@@ -1335,7 +1345,15 @@ function draw(){
   const BB_SHELL=38.1;
   el('circle',{cx:0,cy:0,r:BB_SHELL/2,    fill:'#8a8069'},g);
   el('circle',{cx:0,cy:0,r:BB_SHELL/2-3.5,fill:'#ded4bd'},g);
-  tubes([[seatTop,post,26]],'#b9c0c6','#7b848c');
+  /* Square where it meets the frame -- a real post is a cut cylinder plunging
+     into the seat tube, not a rounded pin -- and round again at the top: 'butt'
+     squares BOTH ends of one line (stroke-linecap is one value per element), so
+     the exposed-top roundness is put back with the same two-circle cap the BB
+     shell above uses for the same problem (outline colour, then fill colour,
+     radii matching this tube's own outline/fill widths). */
+  tubes([[seatTop,post,26,'butt']],'#b9c0c6','#7b848c');
+  el('circle',{cx:post.x,cy:post.y,r:13,  fill:'#7b848c'},g);
+  el('circle',{cx:post.x,cy:post.y,r:9.5, fill:'#b9c0c6'},g);
 
   /* Stem artwork drawn after the front triangle so it sits on top of the
      frame tubes rather than being painted over by them. Source art is a
@@ -1446,8 +1464,8 @@ function draw(){
      precedent the saddle itself is drawn on. */
   if(showCranks){
     const pedal=crankPedal(1);
-    line(BB, pedal, '#5c6b78', 14);
-    el('circle',{cx:pedal.x,cy:pedal.y,r:10,fill:'#5c6b78'},g);
+    line(BB, pedal, '#5c6b78', 42);
+    el('circle',{cx:pedal.x,cy:pedal.y,r:30,fill:'#5c6b78'},g);
   }
 
   /* ---- anti-squat and anti-rise construction ----
@@ -1592,6 +1610,7 @@ function initDrag(){
     // closest() so the hit target still works if a decoration ends up on top
     const hit=e.target.closest&&e.target.closest('.drag');
     const k=hit&&hit.dataset.key;
+    if(k && ptLocked[k]) return;             // locked: not pannable either, just inert
     if(!k){                                  // empty canvas: drag to pan
       panFrom=toMM(e,svg); svg.setPointerCapture(e.pointerId);
       svg.classList.add('panning'); e.preventDefault(); return;
@@ -2009,7 +2028,8 @@ function fillPoints(){
   }
   host.innerHTML=PTS.map(([k,label,col])=>
     `<div class="pt" data-k="${k}"><span><i class="sw" style="background:${col}"></i>${label}</span>
-     <input type="number" step="1" data-f="${k}-x"><input type="number" step="1" data-f="${k}-y"></div>`
+     <input type="number" step="1" data-f="${k}-x"><input type="number" step="1" data-f="${k}-y">
+     <button class="iconbtn" data-lockrow="${k}" aria-pressed="false" title="Lock this point" aria-label="Lock ${label}">🔓</button></div>`
   ).join('');
   host.dataset.built='1';
   host.querySelectorAll('input').forEach(inp=>{
@@ -2023,6 +2043,19 @@ function fillPoints(){
       }
       recompute();
     });
+  });
+  // A locked point can't be dragged (enforced in the canvas pointerdown
+  // handler, which checks ptLocked directly) or typed into -- disabling the
+  // two number inputs here is the other half of that.
+  host.querySelectorAll('button[data-lockrow]').forEach(btn=>{
+    const k=btn.dataset.lockrow;
+    btn.onclick=()=>{
+      ptLocked[k]=!ptLocked[k];
+      btn.setAttribute('aria-pressed',ptLocked[k]);
+      btn.textContent=ptLocked[k]?'🔒':'🔓';
+      btn.title=ptLocked[k]?'Unlock this point':'Lock this point';
+      host.querySelectorAll(`[data-f="${k}-x"],[data-f="${k}-y"]`).forEach(inp=>inp.disabled=ptLocked[k]);
+    };
   });
   fillPoints();
 }
@@ -2047,6 +2080,7 @@ function refreshDerived(skip){
 }
 function fillCfg(){
   Object.keys(C).forEach(k=>{
+    if(k==='sgLock'||k==='spLock') return;  // icon buttons now, not checkboxes -- wired below
     const inp=document.getElementById(k);
     if(!inp) return;
     if(inp.type==='checkbox'){              // stored 1/0 so it resets with the rest
@@ -2066,6 +2100,24 @@ function fillCfg(){
       recompute(false);
     };
   });
+  // Down-tube standoff locks are real C fields (recompute()'s mount-lock glue
+  // reads them directly) but drawn as the same small icon button as every
+  // other lock here, not a checkbox -- so they sit outside the generic loop
+  // above and paint/wire themselves.
+  for(const k of ['sgLock','spLock']){
+    const btn=document.getElementById(k);
+    if(!btn) continue;
+    btn.setAttribute('aria-pressed', !!C[k]);
+    btn.textContent=C[k]?'🔒':'🔓';
+    btn.title=C[k]?'Unlock from the down tube':'Lock to the down tube';
+    btn.onclick=()=>{
+      C[k]=C[k]?0:1;
+      btn.setAttribute('aria-pressed', !!C[k]);
+      btn.textContent=C[k]?'🔒':'🔓';
+      btn.title=C[k]?'Unlock from the down tube':'Lock to the down tube';
+      syncGeom(k); refreshDerived(); fillPoints(); recompute(false);
+    };
+  }
   refreshDerived();
 }
 // Tyre section height isn't typed directly — it tracks the width you'd actually
@@ -2125,6 +2177,10 @@ document.getElementById('pos').oninput=e=>{
 };
 document.getElementById('locklen').onclick=e=>{
   lockLen=!lockLen; e.target.setAttribute('aria-pressed',lockLen);
+  e.target.textContent=lockLen?'🔒':'🔓';
+  e.target.title=lockLen
+    ?'Keep the shock eye to eye fixed while dragging its mounts'
+    :'Shock eye to eye is free while dragging its mounts';
 };
 document.getElementById('showsag').onclick=e=>{
   holdSag=!holdSag; e.target.setAttribute('aria-pressed',holdSag);

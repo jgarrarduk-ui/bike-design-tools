@@ -38,6 +38,42 @@ the twelve intermediate workings behind a second fold inside the stress panel.
 Collapsed, both rails fit a 950px viewport without scrolling; before this they
 scrolled 2191px and 1441px. Mobile went from 4237px of document to 1900px.
 
+**The toolbar (`#bar`) sits above the canvas, not below it.** `#stage`'s
+children are plain flex-column siblings with no order-dependent CSS anywhere
+(checked — no `:first-child`/sibling combinators touch `#canvas`/`#bar`/
+`#charts`), so this was a pure HTML reorder: `#bar` moved before `#canvas`,
+`#msg` (the error banner, normally `display:none`) stayed put right after
+`#canvas`. `#bar`'s rule flipped from `border-top` to `border-bottom` so it
+still visually separates the toolbar from what's below it instead of sitting
+uselessly against the page edge.
+
+**The canvas got shorter on purpose, to leave more of the chart carousel
+visible without scrolling.** `#canvas{flex:1;min-height:230px;max-height:56vh}`
+— the `max-height` is what actually does it: without a cap, `flex:1` lets the
+canvas claim every pixel `#stage` has spare, however tall that leaves the
+carousel. This interacts with `fitView`'s own "crop rather than shrink"
+behaviour (below): making the box shorter effectively widens its aspect ratio,
+which makes the height-driven vertical crop trigger more readily at extreme
+geometries. Checked across `ha` 45–75° and it's clean; **at `ha`≈80° (unrealistic
+for a real bike — nobody runs a head angle that slack) the stem art itself
+starts clipping at the top edge**, confirmed by rendering the identical
+geometry with the `max-height` cap removed, which fixes it — so this is a real,
+known trade-off of asking for a shorter box, not a bug, and not worth chasing
+into geometries no actual bike would use.
+
+**Wheels touch the bottom edge on purpose; the top edge is a tuned pad, not
+zero.** `draw()`'s content box (`index.html:1160`, the `ys` array building `lastBox`)
+is `[ground, F0.steerTop.y+62, post.y+80]`. `ground` already needs no pad — the
+wheel sits exactly on it by construction. The stem (`STEMART`) and saddle
+(`SADDLEART`) pads aren't guesses: measured each art's own transformed bounding
+box above its anchor point (`steerTop`/`post`) across a spread of head and seat
+angles (down to unrealistic extremes, 45° head angle, 68-80° seat angle) and
+took the worst case plus a small margin — 62mm and 80mm respectively. The
+previous flat pads (70/90) were already in that neighbourhood; this only
+trimmed what was provably spare. `fitView`'s own uniform margin
+(`index.html:1099`, "so the ground line clears the edge") also came down
+slightly, from ×1.07 to ×1.03, for a matching trim on all four edges together.
+
 One chart at a time, full strip width, paged by the arrows and the dots —
 `#cdots` is hand-written in the HTML with one `<i>` per `CHART_VIEWS` entry, so
 adding a chart means adding a dot alongside it or paging silently runs one page
@@ -468,6 +504,49 @@ rounding and the mount stays exactly on the tube in both cases. The unlocked
 path (`sgLock` off) is untouched — there was nothing for it to fight, and it
 already worked.
 
+### Locks, as icon buttons
+
+Three different locks in this tool now share one small glyph-only button
+(`.iconbtn`, 22×22, no colour rules of its own — it inherits the base
+`button`/`button[aria-pressed=true]` recolour every other button already
+uses) — 🔓 unlocked, 🔒 locked, `aria-pressed` carrying the real state either
+way. They are NOT the same lock, deliberately, even the two that land on the
+same point (SG/SP):
+
+- **`sgLock`/`spLock`** (down-tube standoff, "Down tube mounts" panel) —
+  **locked by default.** Real `C` fields `recompute()`'s mount-lock glue reads
+  directly (`index.html:949`) — the button is a reskin, not a new mechanism.
+  They used to be separate checkbox `<label>` rows above their standoff field;
+  now the button sits inside that field's own row instead, and `fillCfg()`'s
+  generic `Object.keys(C)` loop explicitly skips `sgLock`/`spLock`
+  (`index.html:2083`) since they're `<button>`s now, not
+  `<input type=checkbox>` — a `<button>`'s `.type` is never `'checkbox'`, so
+  without that exclusion they'd fall into the generic value/`onchange` branch
+  and try to read `.value` off a button. They get their own tiny wiring block
+  right after that loop instead, doing exactly what the checkbox's `onchange`
+  used to: flip `C[k]`, repaint the glyph, run
+  `syncGeom(k); refreshDerived(); fillPoints(); recompute(false);`.
+  `refreshDerived()`'s disabled-toggling for `sgStand`/`spStand`
+  (`index.html:2043`) needed no change — it already reads `C[lock]`, never the
+  checkbox element.
+- **`lockLen`** (shock eye to eye) — **locked by default**, moved from a
+  toolbar text button to an icon next to `eye` (see "Lock shock" above).
+- **The points-panel lock, `ptLocked`** — new, **unlocked by default**, on
+  every row (`PTS`: MP/SP/LP/SE/SG/AX/ID, no exceptions — including SG/SP,
+  which already have the standoff lock above, in a different panel, doing a
+  different job). This one is a plain UI convenience — "don't let this point
+  get dragged or typed into by accident" — not a physical constraint, so it's
+  a bare runtime object (`let ptLocked={}`, unset = unlocked) next to
+  `showWheels` etc., not part of `C`/`G`: not exported, not imported, not
+  touched by any reset button, exactly like every other `show*` flag already
+  isn't. Enforced in two places: the pointerdown handler checks
+  `ptLocked[k]` before it will set `dragKey` (`index.html:1613`, right
+  where `k` is resolved from the hit target — this also covers a locked
+  point's "ghost" marker off top-out, since a ghost shares the same
+  `dataset.key`), and the row's own click handler sets `.disabled` on both
+  number inputs directly rather than routing back through `fillPoints()`'s
+  full render path.
+
 ### Clearance
 
 A pivot is a boss, not a point: `pivotOD` (22mm) gives it a body, and clearance to a
@@ -767,12 +846,26 @@ forward with it.
 `draw()` — `topFrame()`'s `kick:null` (no valid sweep) rests the crank
 horizontal instead of throwing.
 
+**Sized against the chainstay, not picked freestanding.** `CRANK_LEN` is
+165mm (a real crank length); the rod itself is drawn at width 42 — a hair over
+the chainstay's own 40 (`line(G.MP,f.AX,...)`'s outline width), since that's
+the nearest real reference for "how thick does a tube this size actually
+read" — with the pedal-body circle scaled up to match (`r:30`, keeping
+roughly the same proportion to the rod the original 10/14 did).
+
 ## Lock shock
 
 `lockLen` defaults **on**. Eye to eye is a real product spec, not a free variable,
 so dragging one shock mount moves the frame around a fixed shock length by
 default rather than silently stretching it; the drag handler already had this
 logic (it moves the far eye to hold `C.eye`), it just used to start disarmed.
+
+**Its own toolbar button is gone — `#locklen` now sits next to the `eye`
+field it actually governs**, as the same small icon button the pivot and
+down-tube locks use (see "Locks, as icon buttons" below). Same `id`, same
+click handler (with a glyph/`title` flip added), same `C`-level reader in the
+drag handler (`index.html:1637-1657`) — moving it was a location and
+appearance change only, not a behaviour change.
 
 ## Tube shape
 
@@ -787,6 +880,19 @@ different angles, and along the rear stay's multi-segment path. Don't retry
 this without also solving the BB and rear-stay joints — e.g. drawing them as
 one path so linejoin can round the internal corners, or overlaying a circle
 at the BB the width of a real bottom bracket shell.
+
+**The exposed seatpost's square base is not a re-run of that experiment** —
+it's a single bolt-on part (`tubes([[seatTop,post,26,'butt']],...)`, same
+system as the fork stanchion above, not the frame-tube system this section is
+about), one segment, one joint, not a multi-tube convergence, so none of the
+seam problems above apply. `'butt'` squares both ends of that one line
+(`stroke-linecap` is one value per element — confirmed against the current
+`tubes()`/`line()`, `index.html:1179-1181, 1202-1205`), which is exactly
+right for the frame-meeting end (`seatTop`) but wrong for the exposed/saddle
+end (`post`), so the round look there is put back the same way the BB shell
+caps a square-cut frame tube end: two concentric flat circles, outline colour
+then fill colour, radii matching the tube's own outline/fill widths (13 and
+9.5, for a 26mm outline / 19mm fill post).
 
 ## Idler
 
@@ -917,6 +1023,14 @@ mechanism.
 Anchors were recovered by pixel analysis (transparent bores for the shock
 eyelets, largest dark blob for the fork axle). For new artwork, ask for marked
 `anchor-a` / `anchor-b` circles and a `stretch-y` band instead.
+
+**The exposed stanchion's width (36mm) is a standalone number, with nothing
+else riding on it.** It's a plain `tubes()` stroke width on the procedurally
+drawn segment above — checked `FORKART`'s own placement matrix
+(`index.html:981-985, 1285-1291`): fixed `mmPerPx` scale, built purely from
+the fork axle/crown anchors, no reference anywhere to the stanchion line's
+width. Changing it is cosmetic only, same as it always was — it just used to
+read thinner (27) than the real stock it's meant to represent.
 
 `CHAINCAL` in the engine is a 9.8mm fudge calibrating the simplified chain wrap
 model so a nominal chain count lands mid-range on this bike. It does not affect
