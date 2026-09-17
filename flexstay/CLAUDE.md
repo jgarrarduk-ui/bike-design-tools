@@ -1052,6 +1052,41 @@ the fork axle/crown anchors, no reference anywhere to the stanchion line's
 width. Changing it is cosmetic only, same as it always was — it just used to
 read thinner (27) than the real stock it's meant to represent.
 
+**`frame()`'s `crown` used to sit on the steerer axis, not the fork's own
+axis — so the exposed stanchion tilted away from parallel with the fork
+lowers as soon as `C.offset` left zero.** `FA` (the front axle) is
+`raceSeat + axis*along + perp*offset`: on the fork's own axis, which runs
+parallel to the steerer but displaced sideways by the rake. `crown` used to
+be `raceSeat + axis*46` — no `perp*offset` term — so it sat on the *steerer*
+axis instead. At the shipped default (`offset:44`) that is already enough to
+visibly kink the stanchion; the two axes only coincide at `offset=0`, which is
+why the bug hid until someone actually looked at a non-zero-rake fork. Fixed
+by giving `crown` the same `perp*offset` term as `FA`, so both points sit on
+`raceSeat + perp*offset + axis*t` for their own `t` — literally the same line,
+not just parallel to it. `raceSeat` is now returned from `frame()` (it was a
+local before) since the new lower-headset block needs it too.
+
+**Two new hardware blocks, both drawn as `tubes()` segments with a `'butt'`
+cap so they come out as literal rectangles, not tubes** — the same technique
+the square-cut front-triangle tubes already use, not a new drawing primitive:
+- The **fork crown**, `showFork`-gated, centred on the (now-fixed) `F.crown`
+  point and drawn *after* the exposed stanchion so it caps the stanchion's top
+  the way a real crown casting does. 48mm wide against the stanchion's 36mm —
+  "slightly bigger diameter" — and in line with the stanchion because it's
+  built from the same `fu` (=`F.axis`) the stanchion and fork-lower artwork
+  already use.
+- The **lower headset**, `showCockpit`-gated, running `F.htBot` → `F.raceSeat`
+  — that distance is exactly `C.hsLower` by construction, so the block's
+  length tracks the lower-headset-stack field live, the same way the existing
+  upper steerer-stack tube (`F.htTop`→`F.steerTop`) already tracks `stemH`.
+  Drawn at `C.htOD` so it reads as a continuation of the head tube rather than
+  a new tube of its own.
+
+Both use the same fill/stroke pair as the pre-existing upper steerer-stack
+tube (`#b9c0c6`/`#7b848c`) rather than a new colour — they're the same kind of
+part (headset/crown hardware, not a frame tube or the fork casting itself), so
+they share its colour instead of introducing a third.
+
 `CHAINCAL` in the engine is a 9.8mm fudge calibrating the simplified chain wrap
 model so a nominal chain count lands mid-range on this bike. It does not affect
 how far the cage swings, which is what the drawing depends on.
