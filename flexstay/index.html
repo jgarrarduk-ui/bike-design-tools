@@ -1321,8 +1321,11 @@ function draw(){
      fu/axis lands anywhere else on it), so crown and topW are always
      collinear, whatever the offset, jog or compression -- which is what
      keeps the drawn stanchion between them parallel to the head tube AND
-     sitting on the real casting, not just one or the other. */
-  const crown=add(add(F.raceSeat, mul(fp, C.offset+jog)), mul(fu,46));
+     sitting on the real casting, not just one or the other. Centred 21mm up
+     the axis from raceSeat -- exactly the crown block's own half-height
+     below -- so its near edge lands right at raceSeat, closing the gap to
+     the lower headset block instead of floating clear of it. */
+  const crown=add(add(F.raceSeat, mul(fp, C.offset+jog)), mul(fu,21));
   if(showFork){
     tubes([[crown,add(topW,mul(fu,26)),36]],'#cfd5da','#7b848c');   // exposed stanchion
     /* Fork crown: the casting that caps the stanchions and joins them to the
