@@ -760,7 +760,14 @@ the square-cut front-triangle tubes already use, not a new drawing primitive:
   *after* the exposed stanchion so it caps the stanchion's top the way a real
   crown casting does. Wider than the stanchion — "slightly bigger diameter" —
   and in line with the stanchion because it's built from the same `fu`
-  (=`F.axis`) the stanchion and fork-lower artwork already use.
+  (=`F.axis`) the stanchion and fork-lower artwork already use. `crown` sits
+  21mm up the axis from `raceSeat` — exactly the block's own half-height (it
+  spans `crown ± 21` along `fu`) — so its near edge lands right at `raceSeat`,
+  closing the block against the lower headset below instead of floating clear
+  of it with the stanchion showing through the gap. (It was 46mm before this:
+  correct for keeping `crown` and `topW` collinear, but far enough from
+  `raceSeat` to leave a visible gap once the block itself existed to show it.)
+  The height (42mm) doesn't change, only where it sits along the line.
 - The **lower headset**, `showCockpit`-gated, running `F.htBot` → `F.raceSeat`
   — that distance is exactly `C.hsLower` by construction, so the block's
   length tracks the lower-headset-stack field live, the same way the existing
