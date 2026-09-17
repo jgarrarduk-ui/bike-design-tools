@@ -819,16 +819,10 @@ function frame(comp){
      bottom of the head tube: the lower headset stack is in between. External cup
      is 12-13mm, zero stack still a few mm for the crown race itself. */
   const raceSeat=add(htBot, mul(axis,C.hsLower));
-  /* crown sits on the fork's OWN axis — the same line the stanchions and FA lie
-     on, offset from the steerer by the fork's rake (perp*C.offset) — not on the
-     steerer axis itself. Both crown and FA are `raceSeat + perp*offset +
-     axis*t` for their own t, so the exposed stanchion drawn between them is
-     always parallel to (in fact collinear with) the fork lowers, at any offset. */
   const FA=add(add(raceSeat, mul(axis,along)), mul(perp, C.offset));
-  const crown=add(add(raceSeat, mul(axis,46)), mul(perp,C.offset));
   const steerTop=add(htTop, mul(axis,-C.stemH));
   const bar=add(steerTop, mul(perp, C.stemL));
-  return {htTop, htBot, FA, axis, perp, crown, raceSeat, steerTop, bar,
+  return {htTop, htBot, FA, axis, perp, raceSeat, steerTop, bar,
     Rf:C.fw/2+C.tyreF, Rr:C.rw/2+C.tyreR,
     ST:{x:-Math.cos(C.sa*Math.PI/180)*C.st, y:Math.sin(C.sa*Math.PI/180)*C.st}};
 }
@@ -1275,27 +1269,41 @@ function draw(){
   const fm=[ks*mir*fp.x, ks*mir*fp.y, ks*fu.x, ks*fu.y,
             F.FA.x-ks*(mir*K.axle[0]*fp.x + K.axle[1]*fu.x),
             F.FA.y-ks*(mir*K.axle[0]*fp.y + K.axle[1]*fu.y)];
-  /* topW is where the stanchion meets the top of the lower casting. Built from
-     FA using only the AXIAL (fu) component of the artwork's top/axle anchors,
-     never the lateral (fp) one: physically the stanchion telescopes straight
-     into the same leg the axle is bolted to, so it sits on the exact same
-     line as FA and F.crown (raceSeat + perp*offset + axis*t), not shifted
-     further sideways by however far apart K.top and K.axle happen to land in
-     the source image (74.5 vs 154.4px — a real, ~80px lateral gap that used
-     to tilt the drawn stanchion visibly off-parallel from the head tube,
-     worse at higher compression as the segment it's spread across shortens).
-     The stanchion this feeds is guaranteed parallel to the head tube by
-     construction now, not by the artwork happening to line up. */
-  const topW=add(F.FA, mul(fu, ks*(K.top[1]-K.axle[1])));
+  /* topW is where the stanchion meets the top of the lower casting: the exact
+     point K.top maps to under the SAME affine transform `fm` places the whole
+     casting image with (world = FA + ks*mir*fp*(imgX-K.axle[0]) +
+     ks*fu*(imgY-K.axle[1])) -- not a simplified version of it. That matters
+     because the lateral (fp) term is NOT artwork noise to discard: measured
+     the actual PNG (img/fork-lowers.png) and the plain leg tube the stanchion
+     enters really does sit ~39mm (80px) to one side of the axle for its whole
+     straight run (rows 400-800 all centre at x≈75px) before the casting flares
+     out to the axle/dropout boss at x≈154px lower down -- a real, deliberate
+     offset in this fork's lower casting, the same way a lot of real forks'
+     dropouts don't sit on the leg's own centreline. Dropping that term (a
+     previous attempt at this fix) put the stanchion on the AXLE's line
+     instead of the LEG's line: parallel to the head tube, but no longer
+     landing on the actual blue casting drawn beside it. */
+  const jog=mir*ks*(K.top[0]-K.axle[0]);
+  const topW=add(F.FA, add(mul(fp,jog), mul(fu, ks*(K.top[1]-K.axle[1]))));
+  /* crown is not part of the artwork -- it's the (invented) casting that caps
+     the stanchions -- so it has to be placed on this SAME line by hand: the
+     line through raceSeat, offset sideways by rake (C.offset) plus the
+     casting's own jog, running along fu/axis. That's exactly the line topW
+     sits on (FA already includes the rake; adding the jog and moving along
+     fu/axis lands anywhere else on it), so crown and topW are always
+     collinear, whatever the offset, jog or compression -- which is what
+     keeps the drawn stanchion between them parallel to the head tube AND
+     sitting on the real casting, not just one or the other. */
+  const crown=add(add(F.raceSeat, mul(fp, C.offset+jog)), mul(fu,46));
   if(showFork){
-    tubes([[F.crown,add(topW,mul(fu,26)),27]],'#cfd5da','#7b848c');   // exposed stanchion
+    tubes([[crown,add(topW,mul(fu,26)),27]],'#cfd5da','#7b848c');   // exposed stanchion
     /* Fork crown: the casting that caps the stanchions and joins them to the
-       steerer. Square ('butt'), centred on F.crown, in line with the
+       steerer. Square ('butt'), centred on crown, in line with the
        stanchions (drawn after, so it covers the top of the stanchion tube
        the same way a real crown does) and a bit wider than the 27mm
        stanchion — same colour as the lower headset block below, since both
        are headset/crown hardware rather than a frame tube or the fork itself. */
-    tubes([[sub(F.crown,mul(fu,21)),add(F.crown,mul(fu,21)),38,'butt']],'#b9c0c6','#7b848c');
+    tubes([[sub(crown,mul(fu,21)),add(crown,mul(fu,21)),38,'butt']],'#b9c0c6','#7b848c');
     const fg=el('g',{transform:`matrix(${fm.map(v=>v.toFixed(6)).join(' ')})`},g);
     el('image',{href:K.src,x:0,y:0,width:K.w,height:K.h},fg);
   }

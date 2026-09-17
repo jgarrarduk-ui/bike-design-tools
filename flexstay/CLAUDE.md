@@ -692,27 +692,75 @@ eyelets, largest dark blob for the fork axle). For new artwork, ask for marked
 model so a nominal chain count lands mid-range on this bike. It does not affect
 how far the cage swings, which is what the drawing depends on.
 
-**`frame()`'s `crown` used to sit on the steerer axis, not the fork's own
-axis — so the exposed stanchion tilted away from parallel with the fork
-lowers as soon as `C.offset` left zero.** `FA` (the front axle) is
-`raceSeat + axis*along + perp*offset`: on the fork's own axis, which runs
-parallel to the steerer but displaced sideways by the rake. `crown` used to
-be `raceSeat + axis*46` — no `perp*offset` term — so it sat on the *steerer*
-axis instead. The two axes only coincide at `offset=0`, which is why the bug
-hid until someone actually looked at a non-zero-rake fork. Fixed by giving
-`crown` the same `perp*offset` term as `FA`, so both points sit on
-`raceSeat + perp*offset + axis*t` for their own `t` — literally the same line,
-not just parallel to it. `raceSeat` is now returned from `frame()` (it was a
-local before) since the new lower-headset block needs it too.
+**The exposed stanchion has to satisfy two constraints that took three tries
+to get right together: parallel to the head tube, AND landing on the real
+drawn casting, not just one of the two.** The stanchion is `tubes()`-drawn
+between two points, `crown` (top, invented — there's no crown in the fork
+lowers artwork, only the lower assembly) and `topW` (bottom, where it meets
+the lower casting). Both have to sit on the same line for the drawn stanchion
+to be straight and correctly placed at all.
+
+1. **First attempt fixed only `crown`.** It used to be `raceSeat + axis*46` —
+   on the *steerer* axis, no `perp*offset` rake term at all — while `topW` was
+   already on the *fork's* axis (`FA`'s line, offset sideways by `C.offset`
+   plus the casting artwork's own lateral jog, below). Those only coincide at
+   `offset=0`, so the shipped default (`offset:44`) already kinked the drawn
+   stanchion. Giving `crown` the same `perp*offset` term as `FA` made the two
+   *parallel* — but not yet collinear, because `topW` carried an extra term
+   `crown` still didn't.
+2. **Second attempt over-corrected by deleting that extra term from `topW`
+   instead of adding it to `crown`.** `topW` was built from *both* components
+   of `K.top-K.axle`, the fork-lowers artwork's own pixel anchors, which sit
+   ~80px apart laterally (74.5 vs 154.4px) — that looked like measurement
+   noise unrelated to rake, so it got dropped, leaving `topW=FA + fu*(axial
+   distance only)`. That made the segment parallel to the head tube (checked:
+   exactly 0° at every offset and compression tried) — but wrong, because it
+   is now on the *axle's* line, not the *leg's* line. Opened
+   `img/fork-lowers.png` and measured it directly (Python/Pillow, scanning
+   non-transparent pixel spans per row): the plain leg tube the stanchion
+   telescopes into sits at a rock-steady x≈75px from row 400 to row 800, then
+   the casting flares out to a dropout/axle boss centred at x≈154 by row 895
+   — the same ~80px gap the "noise" theory had just deleted. Real forks often
+   do exactly this (the dropout doesn't sit on the leg's own centreline), and
+   this artwork draws it deliberately, so removing it was actively wrong, not
+   just incomplete — it made the stanchion parallel to the head tube while
+   visibly missing the actual blue casting drawn beside it.
+3. **Fixed by keeping `topW` on the artwork's true line and moving `crown` to
+   match, instead of the other way round.** `topW` is now exactly the affine
+   map `fm` already places the rest of the casting image with —
+   `world = FA + ks*mir*fp*(imgX−K.axle[0]) + ks*fu*(imgY−K.axle[1])` —
+   evaluated at `K.top`, no terms dropped. `crown`, since it isn't part of the
+   artwork, is placed by hand on that same line instead: `raceSeat +
+   fp*(C.offset+jog) + fu*46`, where `jog = mir*ks*(K.top[0]-K.axle[0])` is
+   the casting's own lateral offset carried over explicitly rather than
+   assumed away. Both points are now `raceSeat + fp*(C.offset+jog) + fu*t`
+   for their own `t` — collinear by construction, whatever `C.offset`, the
+   casting's `jog`, or compression happen to be, which is what keeps the
+   drawn stanchion parallel to the head tube *and* landing on the actual blue
+   casting together, rather than trading one for the other.
+
+`frame()` no longer returns `crown` at all: it depends on `FORKART`'s pixel
+calibration, which is a drawing concern, not a geometry one, so it's computed
+in `draw()` where `K`/`mir`/`fu`/`fp` already live — the same separation
+`frontTriangle()` already keeps between tube geometry and how it's drawn.
+`raceSeat` **is** still returned from `frame()` (it was a local before): it's
+pure geometry, used by both the stanchion/crown line above and the
+lower-headset block below.
+
+Verified by reading the live SVG rather than re-deriving the maths a third
+time to check it: took the actual `<line>` the stanchion renders as and the
+actual `matrix(...)` transform on the fork-lowers `<image>`, mapped `K.top`
+through that real matrix, and measured its distance to the real drawn line —
+~0.00005mm at offset 0/44/90, i.e. exactly on it, to floating-point precision.
 
 **Two new hardware blocks, both drawn as `tubes()` segments with a `'butt'`
 cap so they come out as literal rectangles, not tubes** — the same technique
-the square-cut front-triangle tubes use, not a new drawing primitive:
-- The **fork crown**, `showFork`-gated, centred on the (now-fixed) `F.crown`
-  point and drawn *after* the exposed stanchion so it caps the stanchion's top
-  the way a real crown casting does. Wider than the stanchion — "slightly
-  bigger diameter" — and in line with the stanchion because it's built from
-  the same `fu` (=`F.axis`) the stanchion and fork-lower artwork already use.
+the square-cut front-triangle tubes already use, not a new drawing primitive:
+- The **fork crown**, `showFork`-gated, centred on `crown` (above) and drawn
+  *after* the exposed stanchion so it caps the stanchion's top the way a real
+  crown casting does. Wider than the stanchion — "slightly bigger diameter" —
+  and in line with the stanchion because it's built from the same `fu`
+  (=`F.axis`) the stanchion and fork-lower artwork already use.
 - The **lower headset**, `showCockpit`-gated, running `F.htBot` → `F.raceSeat`
   — that distance is exactly `C.hsLower` by construction, so the block's
   length tracks the lower-headset-stack field live, the same way the existing
@@ -724,31 +772,6 @@ Both use the same fill/stroke pair as the pre-existing upper steerer-stack
 tube (`#b9c0c6`/`#7b848c`) rather than a new colour — they're the same kind of
 part (headset/crown hardware, not a frame tube or the fork casting itself), so
 they share its colour instead of introducing a third.
-
-**The crown fix above was necessary but not sufficient — `topW`, the
-stanchion's other endpoint, had its own, separate source of the same
-symptom.** Reported back as still wrong after the crown fix shipped: the
-stanchion still wasn't parallel to the head tube. `topW` (where the stanchion
-meets the top of the lower casting) was built from *both* components of
-`K.top-K.axle`, the artwork's own top/axle pixel anchors:
-```
-const topW=add(add(F.FA, mul(fp, ks*mir*(K.top[0]-K.axle[0]))),
-                        mul(fu, ks*(K.top[1]-K.axle[1])));
-```
-`K.top` and `K.axle` sit at pixel x 74.5 and 154.4 — an ~80px lateral (`fp`)
-gap in the source image, unrelated to rake, that doesn't exist on a real fork
-(the stanchion telescopes straight into the same leg the axle bolts to, no
-extra sideways step). Baked into `topW`, that gap put the stanchion's own
-*bottom* end on a line further sideways than `F.crown`'s line — a second,
-independent tilt, present even at `offset=0`, that got worse under
-compression as `along` (and so the segment it's spread across) shortens while
-the fixed pixel-derived gap doesn't. Numerically confirmed before and after:
-11.3°–20.0° off-parallel across offset 0/44/90 and compression 0/40/80mm
-before touching `topW`; exactly 0° after. Fixed by dropping the `fp` term
-entirely — `topW=add(F.FA, mul(fu, ks*(K.top[1]-K.axle[1])))` — so it only
-ever inherits the artwork's *axial* top/axle distance, landing it on the exact
-same `raceSeat + perp*offset + axis*t` line `FA` and `crown` are already on,
-by construction rather than by the source image's anchors happening to agree.
 
 ## Not done
 
