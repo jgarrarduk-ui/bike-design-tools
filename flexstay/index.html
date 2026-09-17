@@ -819,11 +819,16 @@ function frame(comp){
      bottom of the head tube: the lower headset stack is in between. External cup
      is 12-13mm, zero stack still a few mm for the crown race itself. */
   const raceSeat=add(htBot, mul(axis,C.hsLower));
+  /* crown sits on the fork's OWN axis — the same line the stanchions and FA lie
+     on, offset from the steerer by the fork's rake (perp*C.offset) — not on the
+     steerer axis itself. Both crown and FA are `raceSeat + perp*offset +
+     axis*t` for their own t, so the exposed stanchion drawn between them is
+     always parallel to (in fact collinear with) the fork lowers, at any offset. */
   const FA=add(add(raceSeat, mul(axis,along)), mul(perp, C.offset));
-  const crown=add(raceSeat, mul(axis,46));
+  const crown=add(add(raceSeat, mul(axis,46)), mul(perp,C.offset));
   const steerTop=add(htTop, mul(axis,-C.stemH));
   const bar=add(steerTop, mul(perp, C.stemL));
-  return {htTop, htBot, FA, axis, perp, crown, steerTop, bar,
+  return {htTop, htBot, FA, axis, perp, crown, raceSeat, steerTop, bar,
     Rf:C.fw/2+C.tyreF, Rr:C.rw/2+C.tyreR,
     ST:{x:-Math.cos(C.sa*Math.PI/180)*C.st, y:Math.sin(C.sa*Math.PI/180)*C.st}};
 }
@@ -1274,11 +1279,27 @@ function draw(){
                           mul(fu, ks*(K.top[1]-K.axle[1])));
   if(showFork){
     tubes([[F.crown,add(topW,mul(fu,26)),27]],'#cfd5da','#7b848c');   // exposed stanchion
+    /* Fork crown: the casting that caps the stanchions and joins them to the
+       steerer. Square ('butt'), centred on F.crown, in line with the
+       stanchions (drawn after, so it covers the top of the stanchion tube
+       the same way a real crown does) and a bit wider than the 27mm
+       stanchion — same colour as the lower headset block below, since both
+       are headset/crown hardware rather than a frame tube or the fork itself. */
+    tubes([[sub(F.crown,mul(fu,21)),add(F.crown,mul(fu,21)),38,'butt']],'#b9c0c6','#7b848c');
     const fg=el('g',{transform:`matrix(${fm.map(v=>v.toFixed(6)).join(' ')})`},g);
     el('image',{href:K.src,x:0,y:0,width:K.w,height:K.h},fg);
   }
   // cockpit
-  if(showCockpit) tubes([[F.htTop,F.steerTop,22]],'#b9c0c6','#7b848c');   // headset/steerer stack
+  if(showCockpit){
+    /* Lower headset: the cup + crown-race stack between the head tube and
+       where the fork's own axis takes over (F.raceSeat) — its length is
+       exactly C.hsLower, so it visibly grows and shrinks with that field the
+       same way the upper steerer stack tube already does with stemH. Same
+       colour as the fork crown block above; same head-tube diameter so it
+       reads as a continuation of the head tube, not a new tube. */
+    tubes([[F.htBot,F.raceSeat,C.htOD,'butt']],'#b9c0c6','#7b848c');
+    tubes([[F.htTop,F.steerTop,22]],'#b9c0c6','#7b848c');   // headset/steerer stack
+  }
 
   /* ---- front triangle ----
      Tube segments come from frontTriangle() so the drawing and the clearance
