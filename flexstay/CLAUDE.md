@@ -794,11 +794,31 @@ tube, drawn in two separate places. The exposed seatpost and the shock link
 Two arms, one toggle (`showCranks`), one shared rotation — a crank is one rigid
 part, not two independent props that happen to look alike, so both arms read
 the identical `f.kick` every frame and can only ever move together. No artwork
-asset: `CRANK_LEN` (170mm, a plain constant next to `P`/`GDX` — there's no
-config field for it, nothing asked for tuning it) plus a `line()` rod and a
-small filled circle for the pedal body, in the same flat `#5c6b78` already used
-for the chainring/cog/BB dot, reads as drivetrain metal without inventing a new
-material.
+asset: `CRANK_LEN` (165mm, a plain constant next to `P`/`GDX` — there's no
+config field for it, nothing asked for tuning it) plus a `line()` rod, in
+`CRANK_COL` (`#45505a`, defined right after `// ==ENGINE-END==` since it's a
+drawing colour, not geometry) — deliberately darker than the shared `#5c6b78`
+used elsewhere for the chainring/cog/BB dot, so the crank reads as its own
+part rather than more drivetrain metal, even sitting right next to it.
+
+**No pedal-body circle any more.** The original draw also stamped a filled
+circle at the pedal end (`r:30,fill:'#5c6b78'`) to suggest a pedal; it read as
+an oversized grey blob rather than a pedal, so it's gone. `line()` already
+defaults to `'stroke-linecap':'round'` (see "Tube shape" below), so the rod
+alone already draws as a capsule — a rectangle with rounded ends — with
+nothing extra needed at either end.
+
+**The BB axle dot is drawn once, inside the visible-arm block, not the BB
+shell.** A small light circle, `r:12` (24mm diameter) at `(0,0)`, `#cfd5da`
+(the same light metal tone as the fork stanchion outline / seatpost fill
+family) — concentric with the BB, standing in for the axle spindle the
+cranks actually turn on. It belongs to the *crank's* paint order, not the
+frame's: added inside the visible (drive-side) arm's `if(showCranks)` block,
+which is the crank's own last, top-most draw call, so it lands above both
+crank rods and the (separate, frame-coloured) BB shell dot beneath them —
+and, living inside `if(showCranks)`, disappears along with the rest of the
+crank artwork when the toggle is off rather than becoming a permanent BB
+feature.
 
 **`crankPedal(sign)`**, defined once right after `const BB={x:0,y:0}` near the
 top of `draw()` (so both draw sites below can share it), is the whole feature:
@@ -850,8 +870,8 @@ horizontal instead of throwing.
 165mm (a real crank length); the rod itself is drawn at width 42 — a hair over
 the chainstay's own 40 (`line(G.MP,f.AX,...)`'s outline width), since that's
 the nearest real reference for "how thick does a tube this size actually
-read" — with the pedal-body circle scaled up to match (`r:30`, keeping
-roughly the same proportion to the rod the original 10/14 did).
+read." (The pedal-body circle that originally scaled alongside it, `r:30`, is
+gone — see "No pedal-body circle any more," above.)
 
 ## Lock shock
 

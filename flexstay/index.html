@@ -748,6 +748,8 @@ function stayLoads(deg, path, od, wall, axial, bendA, dropZ, yokeZ, leanEnd, lea
 }
 // ==ENGINE-END==
 
+const CRANK_COL = '#45505a'; // darker than the shared drivetrain grey (#5c6b78) -- cranks only
+
 /* ---------- state ---------- */
 const DEF={
   geom:{ MP:{x:12.4,y:63.3}, SP:{x:74.0189028068233,y:162.73336512900167}, FP:{x:-450,y:18.95999999999998},
@@ -1237,8 +1239,7 @@ function draw(){
      the visible arm near the end of this function, same spindle, same kick. */
   if(showCranks){
     const pedal=crankPedal(-1);
-    line(BB, pedal, '#5c6b78', 42);
-    el('circle',{cx:pedal.x,cy:pedal.y,r:30,fill:'#5c6b78'},g);
+    line(BB, pedal, CRANK_COL, 42);
   }
 
   /* ---- drivetrain ----
@@ -1464,8 +1465,8 @@ function draw(){
      precedent the saddle itself is drawn on. */
   if(showCranks){
     const pedal=crankPedal(1);
-    line(BB, pedal, '#5c6b78', 42);
-    el('circle',{cx:pedal.x,cy:pedal.y,r:30,fill:'#5c6b78'},g);
+    line(BB, pedal, CRANK_COL, 42);
+    el('circle',{cx:0,cy:0,r:12,fill:'#cfd5da'},g); // BB axle, 24mm dia., concentric with BB
   }
 
   /* ---- anti-squat and anti-rise construction ----
