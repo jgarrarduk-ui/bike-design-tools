@@ -725,6 +725,31 @@ tube (`#b9c0c6`/`#7b848c`) rather than a new colour — they're the same kind of
 part (headset/crown hardware, not a frame tube or the fork casting itself), so
 they share its colour instead of introducing a third.
 
+**The crown fix above was necessary but not sufficient — `topW`, the
+stanchion's other endpoint, had its own, separate source of the same
+symptom.** Reported back as still wrong after the crown fix shipped: the
+stanchion still wasn't parallel to the head tube. `topW` (where the stanchion
+meets the top of the lower casting) was built from *both* components of
+`K.top-K.axle`, the artwork's own top/axle pixel anchors:
+```
+const topW=add(add(F.FA, mul(fp, ks*mir*(K.top[0]-K.axle[0]))),
+                        mul(fu, ks*(K.top[1]-K.axle[1])));
+```
+`K.top` and `K.axle` sit at pixel x 74.5 and 154.4 — an ~80px lateral (`fp`)
+gap in the source image, unrelated to rake, that doesn't exist on a real fork
+(the stanchion telescopes straight into the same leg the axle bolts to, no
+extra sideways step). Baked into `topW`, that gap put the stanchion's own
+*bottom* end on a line further sideways than `F.crown`'s line — a second,
+independent tilt, present even at `offset=0`, that got worse under
+compression as `along` (and so the segment it's spread across) shortens while
+the fixed pixel-derived gap doesn't. Numerically confirmed before and after:
+11.3°–20.0° off-parallel across offset 0/44/90 and compression 0/40/80mm
+before touching `topW`; exactly 0° after. Fixed by dropping the `fp` term
+entirely — `topW=add(F.FA, mul(fu, ks*(K.top[1]-K.axle[1])))` — so it only
+ever inherits the artwork's *axial* top/axle distance, landing it on the exact
+same `raceSeat + perp*offset + axis*t` line `FA` and `crown` are already on,
+by construction rather than by the source image's anchors happening to agree.
+
 ## Not done
 
 - Beam solve for the stay, letting it find its own deflected shape rather than

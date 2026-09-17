@@ -1275,8 +1275,18 @@ function draw(){
   const fm=[ks*mir*fp.x, ks*mir*fp.y, ks*fu.x, ks*fu.y,
             F.FA.x-ks*(mir*K.axle[0]*fp.x + K.axle[1]*fu.x),
             F.FA.y-ks*(mir*K.axle[0]*fp.y + K.axle[1]*fu.y)];
-  const topW=add(add(F.FA, mul(fp, ks*mir*(K.top[0]-K.axle[0]))),
-                          mul(fu, ks*(K.top[1]-K.axle[1])));
+  /* topW is where the stanchion meets the top of the lower casting. Built from
+     FA using only the AXIAL (fu) component of the artwork's top/axle anchors,
+     never the lateral (fp) one: physically the stanchion telescopes straight
+     into the same leg the axle is bolted to, so it sits on the exact same
+     line as FA and F.crown (raceSeat + perp*offset + axis*t), not shifted
+     further sideways by however far apart K.top and K.axle happen to land in
+     the source image (74.5 vs 154.4px — a real, ~80px lateral gap that used
+     to tilt the drawn stanchion visibly off-parallel from the head tube,
+     worse at higher compression as the segment it's spread across shortens).
+     The stanchion this feeds is guaranteed parallel to the head tube by
+     construction now, not by the artwork happening to line up. */
+  const topW=add(F.FA, mul(fu, ks*(K.top[1]-K.axle[1])));
   if(showFork){
     tubes([[F.crown,add(topW,mul(fu,26)),27]],'#cfd5da','#7b848c');   // exposed stanchion
     /* Fork crown: the casting that caps the stanchions and joins them to the
