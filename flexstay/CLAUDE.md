@@ -1144,16 +1144,37 @@ straight to `guide`/`tension`'s centre points (the old
 `index.html:1329-1333`) reads as visibly wrong — it used to look fine
 against a featureless ring, but not against a toothed wheel. `cageRun`
 (next to `routeIdler`, same file region) is `routeIdler` extended by one
-more link: chainring → guide → tension → cog, three tangent segments
+more link: cog → guide → tension → chainring, three tangent segments
 instead of one, found the same way — `beltRun`'s four candidates
 (external/crossed × two sides) searched at each step, keeping only the one
 where the wrap doesn't reverse at the shared pulley and the chainring/cog
 end up turning the way the drivetrain's own top run already established.
+
+**Order matters here, not just which circles end up joined.** The first
+version connected chainring→guide and tension→cog — the two *outer*
+circles swapped relative to a real chain. Every tangent was still
+genuinely tangent (so nothing looked obviously broken in isolation), but
+it put the long leg where the short one belongs: `guide` sits close to the
+axle (`GDX`/`GDY` is a ~74mm offset off it), so the cog-to-guide leg should
+be short, and the tension-to-chainring leg should be the long one running
+most of the chainstay's length back to the front. The first version drew
+~455mm from chainring to guide and ~134mm from tension to cog — backwards.
+Caught from a marked-up screenshot, not from the render alone: the
+tangency was correct enough to look plausible at a glance, and only
+tracing the real chain's path (cog, round the back, into the guide pulley,
+through tension, the long way back to the chainring) against it exposed
+which pair of circles was wrong. Fixed by swapping `segA`'s and `segC`'s
+circle arguments (`beltRun(AXp,rg,guide,...)` and `beltRun(tension,RJ,BB,rc,...)`)
+and their sense checks (`sCog` at the cog end of `segA`, `sRing` at the
+chainring end of `segC`) — `segB` (guide↔tension) was already right and is
+untouched.
+
 Verified this isn't just algebra: every tangent point lands on its circle
-to floating-point precision, and the wrap keeps hugging the *same* sides of
+to floating-point precision, the short/long leg lengths are the right way
+round throughout the sweep, and the wrap keeps hugging the *same* sides of
 both pulleys — a proper S, matching a real derailleur cage — across the
-whole travel sweep with no flip-flopping frame to frame, since `guide`/
-`tension` move as the cage swings and `cageRun` is solved fresh every call.
+whole travel with no flip-flopping frame to frame, since `guide`/`tension`
+move as the cage swings and `cageRun` is solved fresh every call.
 
 `RJ` (22mm) is reused as the tangent radius rather than adding a separate
 pitch-diameter constant — it's already this tool's own jockey pitch radius
