@@ -1196,19 +1196,29 @@ than adding more abstract search constraints:
   below the axle) — and a crossed tangent is specifically the one that
   runs *between* two circles rather than alongside them, which is what
   that entry looks like geometrically.
-- **guide→tension is the EXTERNAL tangent.** The two jockeys ride on the
-  derailleur's own rigid cage plate, `C.cage` apart. An external tangent
-  between two equal-radius circles has length exactly equal to the centre
-  distance — confirmed numerically equal to `C.cage` to 14 decimal places,
-  where the crossed candidate for the same pair is not. A crossed wrap
-  there would need the chain to pass through the cage plate.
+- **guide→tension is ALSO the CROSSED tangent — the classic derailleur
+  "S".** The chain leaves the guide pulley's right side, crosses over, and
+  arrives at the tension pulley's left side, wrapping on round to its
+  bottom (confirmed against a second marked-up reference: entry/exit
+  angles land at ~130°/-85° on the tension circle across the sweep, a
+  ~120-150° wrap ending at the bottom, exactly as marked up). **This was
+  wrong once already, the other way**: an earlier version of this note
+  argued *external* here, from the tangent length coming out equal to
+  `C.cage` to 14 decimal places — true, but that identity holds for the
+  external tangent between any two EQUAL-radius circles, whichever one is
+  mechanically correct; it only confirmed guide and tension are `C.cage`
+  apart, which was never in question, not which side the chain wraps.
+  Sound-looking numeric confirmation of the wrong thing is worth flagging
+  precisely because it doesn't feel like a guess — check that a piece of
+  "proof" actually bears on the claim it's attached to, not just that it's
+  numerically true.
 
-`cageRun` now fixes those two `crossed` values directly instead of
-searching them; `s1`/`s2` (which of the two sides) are still solved, not
-guessed — exactly one of each still satisfies the reversal check, same as
-before. Only the outer tension-to-chainring leg still searches both
-`crossed` values: it's a long run to the front of the bike with no rigid
-part to tie-break it against, and the existing reversal check already
+`cageRun` now fixes both `crossed` values directly instead of searching
+them; `s1`/`s2` (which of the two sides) are still solved, not guessed —
+exactly one of each still satisfies the reversal check, same as before.
+Only the outer tension-to-chainring leg still searches both `crossed`
+values: it's a long run to the front of the bike with no rigid part to
+tie-break it against, and the existing reversal check already
 narrows it to one candidate once the first two legs are fixed.
 
 `RJ` (22mm) is reused as the tangent radius rather than adding a separate
