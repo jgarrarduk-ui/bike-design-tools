@@ -1137,6 +1137,34 @@ when there is an idler, and left where it was when there is not — so the no-id
 drawing is unchanged, and the idler chain sits on top like the mech, which is the
 correct side of the frame for it anyway.
 
+**The derailleur cage's own chain line is a proper tangent wrap
+(`cageRun`), not a line through the pulley centres.** With the jockey
+wheels drawn as real artwork instead of plain rings, a chain line running
+straight to `guide`/`tension`'s centre points (the old
+`index.html:1329-1333`) reads as visibly wrong — it used to look fine
+against a featureless ring, but not against a toothed wheel. `cageRun`
+(next to `routeIdler`, same file region) is `routeIdler` extended by one
+more link: chainring → guide → tension → cog, three tangent segments
+instead of one, found the same way — `beltRun`'s four candidates
+(external/crossed × two sides) searched at each step, keeping only the one
+where the wrap doesn't reverse at the shared pulley and the chainring/cog
+end up turning the way the drivetrain's own top run already established.
+Verified this isn't just algebra: every tangent point lands on its circle
+to floating-point precision, and the wrap keeps hugging the *same* sides of
+both pulleys — a proper S, matching a real derailleur cage — across the
+whole travel sweep with no flip-flopping frame to frame, since `guide`/
+`tension` move as the cage swings and `cageRun` is solved fresh every call.
+
+`RJ` (22mm) is reused as the tangent radius rather than adding a separate
+pitch-diameter constant — it's already this tool's own jockey pitch radius
+(`chainPath`'s wrap-length formula already assumes it, and it happens to
+match an 11-tooth jockey wheel almost exactly), and `JOCKEYART`'s artwork
+scale already puts the image's own outer tooth-tip radius at exactly `RJ`,
+so the new wrap arc traces right along the artwork's outline with no gap.
+Falls back to the old straight-through-centres line if no combination
+satisfies every constraint (shouldn't happen at realistic geometry, but the
+canvas must never blank on it).
+
 ## Chain length
 
 `C.chainAuto` (on by default) makes the link count a **derived** field, on the

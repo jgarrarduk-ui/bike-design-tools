@@ -520,6 +520,47 @@ function routeIdler(BB,rc,IDp,ri,AXp,rg){
   return null;
 }
 
+/* The rear derailleur's bottom (return-side) chain run -- chainring, under
+   the guide pulley, across to the tension pulley, up to the cog -- properly
+   tangent to each pulley's own radius instead of running through its
+   centre. The topology never varies (a derailleur cage always wraps this
+   same way), but the sign choice is still solved, the way routeIdler solves
+   its one tangent: each pulley's wrap must not reverse between its
+   incoming and outgoing tangent, and the chainring/cog must keep the sense
+   the drivetrain's own top run already established. Returns null (caller
+   falls back to a straight line) if no combination satisfies every
+   constraint -- should not happen at realistic geometry, but the canvas
+   must never blank on it. */
+function cageRun(BB,rc,guide,tension,RJ,AXp,rg){
+  const ref=chainRun(BB,rc,AXp,rg);
+  if(!ref) return null;
+  const dRef=unit(sub(ref.p2,ref.p1));
+  const sRing=wrapSense(BB,ref.p1,dRef), sCog=wrapSense(AXp,ref.p2,dRef);
+  for(const c1 of [false,true]) for(const s1 of [1,-1]){
+    const segA=beltRun(BB,rc,guide,RJ,c1,s1);
+    if(!segA) continue;
+    const dA=unit(sub(segA.p2,segA.p1));
+    if(wrapSense(BB,segA.p1,dA)!==sRing) continue;
+    const sGuide=wrapSense(guide,segA.p2,dA);
+    for(const c2 of [false,true]) for(const s2 of [1,-1]){
+      const segB=beltRun(guide,RJ,tension,RJ,c2,s2);
+      if(!segB) continue;
+      const dB=unit(sub(segB.p2,segB.p1));
+      if(wrapSense(guide,segB.p1,dB)!==sGuide) continue;
+      const sTension=wrapSense(tension,segB.p2,dB);
+      for(const c3 of [false,true]) for(const s3 of [1,-1]){
+        const segC=beltRun(tension,RJ,AXp,rg,c3,s3);
+        if(!segC) continue;
+        const dC=unit(sub(segC.p2,segC.p1));
+        if(wrapSense(tension,segC.p1,dC)!==sTension) continue;
+        if(wrapSense(AXp,segC.p2,dC)!==sCog) continue;
+        return {segs:[segA,segB,segC], sGuide, sTension};
+      }
+    }
+  }
+  return null;
+}
+
 function lineHit(p1,p2,p3,p4){
   const d=cross(sub(p2,p1),sub(p4,p3));
   if(Math.abs(d)<1e-9) return null;
@@ -1327,9 +1368,33 @@ function draw(){
     el('circle',{cx:0,cy:0,r:13,fill:'#5c6b78'},g);           // bottom bracket
     if(!route) drawTop();
     if(runs.length){
-      el('polyline',{points:[{x:f.AX.x-rg*0.5,y:f.AX.y-rg*0.87},guide,tension,
-          {x:BB.x,y:BB.y-rc}].map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
-        fill:'none',stroke:'#39424a','stroke-width':5},g);
+      const wrap=cageRun(BB,rc,guide,tension,RJ,f.AX,rg);
+      if(wrap){
+        const {segs:[segA,segB,segC], sGuide, sTension}=wrap;
+        const arcPts=(c,r,a,b,sense)=>{
+          const t0=Math.atan2(a.y-c.y,a.x-c.x);
+          const sw=arcFrom(c,a,b,sense)*sense;
+          const n=Math.max(2,Math.ceil(Math.abs(sw)/0.2));
+          const pts=[];
+          for(let i=0;i<=n;i++){
+            const t=t0+sw*i/n;
+            pts.push(`${(c.x+r*Math.cos(t)).toFixed(1)},${(c.y+r*Math.sin(t)).toFixed(1)}`);
+          }
+          return pts.join(' ');
+        };
+        line(segA.p1,segA.p2,'#39424a',5);
+        el('polyline',{points:arcPts(guide,RJ,segA.p2,segB.p1,sGuide),
+          fill:'none',stroke:'#39424a','stroke-width':5,'stroke-linejoin':'round'},g);
+        line(segB.p1,segB.p2,'#39424a',5);
+        el('polyline',{points:arcPts(tension,RJ,segB.p2,segC.p1,sTension),
+          fill:'none',stroke:'#39424a','stroke-width':5,'stroke-linejoin':'round'},g);
+        line(segC.p1,segC.p2,'#39424a',5);
+      } else {
+        // never blank the canvas -- old straight-through-centres line as a fallback
+        el('polyline',{points:[{x:f.AX.x-rg*0.5,y:f.AX.y-rg*0.87},guide,tension,
+            {x:BB.x,y:BB.y-rc}].map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
+          fill:'none',stroke:'#39424a','stroke-width':5},g);
+      }
     }
   }
 
