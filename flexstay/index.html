@@ -8,6 +8,7 @@
   --paper:#eef1f3; --grid:#dbe2e7; --grid2:#cbd6dd;
   --ink:#16202a; --ink-soft:#5c6b78;
   --rear:#1f5f8b; --link:#0f766e; --flex:#b32c1e; --shock:#8a5a00; --front:#7a4fb5;
+  --anim:#bf5700;
   --ok:#2f7d32; --rule:#c3ccd3; --panel:#f7f9fa;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -77,22 +78,17 @@ select{width:auto}
 #bar{display:flex;flex-direction:column;gap:7px;
   padding:7px 14px;border-bottom:1px solid var(--rule);
   background:var(--panel)}
-/* space-between spreads a row's own controls from its left edge to its right
-   edge with equal gaps, rather than clumping them to the left with dead
-   space on the right. But space-between on a row that doesn't fill the bar's
-   width stretches the gaps to fill it anyway, which looks broken — so each
-   row only gets it once fitBar() (below) has confirmed that row's own
-   content actually fits the bar's width; otherwise it falls back to plain
-   left-aligned, non-wrapping layout for that row. */
+/* Constant gap, left-justified — buttons stack from the left edge with the
+   same spacing whatever room is left over, rather than stretching that
+   leftover space out between them. */
 .barrow{display:flex;align-items:center;justify-content:flex-start;gap:8px;
   flex-wrap:nowrap}
-.barrow.spread{justify-content:space-between}
 #bar label{margin:0;gap:6px}
 #poslabel{font:12px var(--mono);color:var(--ink-soft);white-space:nowrap}
 /* .bargroup is a semantic/ARIA grouping only now — display:contents drops its
-   own box so its buttons become direct flex children of its .barrow and take
-   part in the same space-between spacing as everything else on that row,
-   instead of being distributed only among themselves inside a sub-box. */
+   own box so its buttons become direct flex children of its .barrow, spaced
+   by that row's own gap like everything else on it, instead of being spaced
+   only among themselves inside a sub-box. */
 .bargroup{display:contents}
 #bar input[type=checkbox]{accent-color:var(--rear)}
 /* Fixed width and centred text so switching the label between "Cycle" and
@@ -112,12 +108,29 @@ button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:
 /* Parts toggles get their own colour — teal against the overlays' blue — so the
    two kinds of pressed button read apart at a glance without a divider. */
 .partbtn[aria-pressed=true]{background:var(--link);border-color:var(--link);color:#fff}
+/* The three position-control buttons (cycle/stop, sag, static) get a third
+   colour again, burnt orange — they're neither an overlay toggle nor a parts
+   toggle, they're "where in the cycle is this", and only one of the three is
+   ever the current one (syncPos keeps their aria-pressed mutually exclusive). */
+#play[aria-pressed=true],#showsag[aria-pressed=true],#staticPos[aria-pressed=true]
+  {background:var(--anim);border-color:var(--anim);color:#fff}
 /* Small glyph-only lock/unlock buttons -- the points-panel row lock, the
    down-tube standoff locks, and the shock length lock all share this one
    size/shape and inherit the base button's colour rules above (including
    the pressed-state recolour) rather than getting their own. */
 .iconbtn{width:22px;height:22px;padding:0;font-size:12px;line-height:1;flex:none}
 input[type=range]{width:220px;accent-color:var(--rear)}
+/* A thin red tick over the slider's own track, at the sag % of its width —
+   not exact against the track's own end-padding (a native range's usable
+   track is inset by half the thumb's width at each end, which a plain
+   percentage doesn't know about), but close enough to read as "here" at
+   this thumb size, and simple. updateSagMark() keeps its left% tied to
+   C.sag whenever that can have changed. */
+#poswrap{position:relative;display:inline-flex;align-items:center;flex:none}
+#sagmark{position:absolute;top:3px;bottom:3px;width:2px;background:var(--flex);
+  pointer-events:none}
+#speedctl{margin:0;gap:5px;flex:none}
+#animSpeed{width:50px}
 /* One chart at a time, full width, so it is as large as the stage allows; the
    arrows page through all four. */
 #charts{display:grid;grid-template-columns:26px 1fr 26px;gap:1px;background:var(--rule);
@@ -159,9 +172,6 @@ svg text{font-family:var(--mono)}
 <div id="app">
 
 <div class="rail left">
-  <h1>Flex-stay kinematics</h1>
-  <p class="sub">Single pivot with shock link. Seat stay carries the compliance.</p>
-
   <!-- The working set: what you move while watching the graph. Everything else
        is setup, folded away until it is wanted. -->
   <h2>Pivots and mounts</h2>
@@ -281,10 +291,15 @@ svg text{font-family:var(--mono)}
 <div id="stage">
   <div id="bar">
     <div class="barrow" id="bar-top">
-      <button id="play">Cycle</button>
-      <button id="showsag" aria-pressed="false">Sag</button>
-      <button id="staticPos">Static</button>
-      <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
+      <button id="play" aria-pressed="false">cycle</button>
+      <button id="showsag" aria-pressed="false">sag</button>
+      <button id="staticPos" aria-pressed="true">static</button>
+      <div id="poswrap">
+        <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
+        <div id="sagmark" title="Sag point"></div>
+      </div>
+      <label id="speedctl"><span>speed %</span>
+        <input type="number" id="animSpeed" min="0" max="100" step="1" value="100"></label>
       <span id="poslabel"></span>
     </div>
     <div class="barrow" id="bar-bottom">
@@ -2127,7 +2142,12 @@ function fillPoints(){
 }
 /* Write the solved-back side of each two-way pair into its box, but never the box
    being typed in — that would fight the cursor. */
+function updateSagMark(){
+  const m=document.getElementById('sagmark');
+  if(m) m.style.left=Math.max(0,Math.min(100,C.sag))+'%';
+}
 function refreshDerived(skip){
+  updateSagMark();
   ['stack','htl','bbh','drop','rc','csl','a2c','links','sgStand','spStand'].forEach(id=>{
     if(id===skip) return;
     const e=document.getElementById(id);
@@ -2248,6 +2268,13 @@ document.addEventListener('wheel',e=>{
 function syncPos(){
   const s=document.getElementById('pos');
   s.value=Math.round(posT*1000);
+  /* The three position-control buttons are mutually exclusive states of the
+     same thing (where the slider is, not what's drawn over it), so one place
+     sets all three every time any of them could have changed, rather than
+     each button's own handler trying to keep the other two in sync with it. */
+  document.getElementById('play').setAttribute('aria-pressed', playing);
+  document.getElementById('showsag').setAttribute('aria-pressed', !playing && holdSag);
+  document.getElementById('staticPos').setAttribute('aria-pressed', !playing && !holdSag && posT===0);
   const f=currentFrame();
   const lbl=document.getElementById('poslabel');
   if(!f){ lbl.textContent=''; lbl.title=''; return; }
@@ -2266,7 +2293,6 @@ function syncPos(){
 
 document.getElementById('pos').oninput=e=>{
   posT=e.target.value/1000; holdSag=false;
-  document.getElementById('showsag').setAttribute('aria-pressed','false');
   draw(); syncPos(); charts();
 };
 document.getElementById('locklen').onclick=e=>{
@@ -2276,9 +2302,9 @@ document.getElementById('locklen').onclick=e=>{
     ?'Keep the shock eye to eye fixed while dragging its mounts'
     :'Shock eye to eye is free while dragging its mounts';
 };
-document.getElementById('showsag').onclick=e=>{
+document.getElementById('showsag').onclick=()=>{
   stopAnimation();
-  holdSag=!holdSag; e.target.setAttribute('aria-pressed',holdSag);
+  holdSag=!holdSag;
   // Holding sag is a position, not just a way of drawing one: land the
   // slider there too, rather than leaving it wherever the animation (now
   // stopped) happened to be when this was pressed.
@@ -2287,7 +2313,7 @@ document.getElementById('showsag').onclick=e=>{
 };
 document.getElementById('staticPos').onclick=()=>{
   stopAnimation();
-  holdSag=false; document.getElementById('showsag').setAttribute('aria-pressed','false');
+  holdSag=false;
   posT=0;
   draw(); syncPos(); charts();
 };
@@ -2382,7 +2408,11 @@ function importJSON(){
 }
 document.getElementById('exportJson').onclick=exportJSON;
 document.getElementById('importJson').onclick=importJSON;
-let raf=null, dir=1;
+let raf=null, dir=1, animSpeed=100;
+document.getElementById('animSpeed').onchange=document.getElementById('animSpeed').oninput=e=>{
+  const v=parseFloat(e.target.value); if(isNaN(v)) return;
+  animSpeed=Math.max(0,Math.min(100,v));
+};
 /* Shared by Sag and Static: both are a specific position, and the animation
    loop repainting every frame from its own posT would otherwise fight
    whichever one was just pressed a moment later, undoing it. */
@@ -2390,20 +2420,20 @@ function stopAnimation(){
   if(!playing) return;
   playing=false;
   cancelAnimationFrame(raf);
-  document.getElementById('play').textContent='Cycle';
+  document.getElementById('play').textContent='cycle';
 }
 document.getElementById('play').onclick=e=>{
   playing=!playing;
-  e.target.textContent = playing?'Stop':'Cycle';
+  e.target.textContent = playing?'stop':'cycle';
   if(playing){
-    holdSag=false; document.getElementById('showsag').setAttribute('aria-pressed','false');
+    holdSag=false;
     const step=()=>{
-      posT+=dir*0.02; if(posT>1){posT=1;dir=-1} if(posT<0){posT=0;dir=1}
+      posT+=dir*0.02*(animSpeed/100); if(posT>1){posT=1;dir=-1} if(posT<0){posT=0;dir=1}
       draw(); syncPos(); charts();
       if(playing) raf=requestAnimationFrame(step);
     };
     step();
-  } else cancelAnimationFrame(raf);
+  } else { cancelAnimationFrame(raf); syncPos(); }
 };
 document.getElementById('cprev').onclick=()=>pageCharts(-1);
 document.getElementById('cnext').onclick=()=>pageCharts(1);
@@ -2424,37 +2454,16 @@ document.getElementById('cnext').onclick=()=>pageCharts(1);
 });
 /* Both panels fit themselves to their own pixel box, and the first paint can run
    before the flex layout has settled, so watch the boxes rather than the window. */
-window.addEventListener('resize',()=>{draw(); charts(); fitBar();});
+window.addEventListener('resize',()=>{draw(); charts();});
 if(window.ResizeObserver){
   let ro=null;
   const refit=()=>{ if(ro) return; ro=requestAnimationFrame(()=>{ro=null; draw(); charts();}); };
   new ResizeObserver(refit).observe(document.getElementById('canvas'));
   new ResizeObserver(refit).observe(document.getElementById('charts'));
-  new ResizeObserver(fitBar).observe(document.getElementById('bar'));
-}
-// .bargroup is display:contents, so its buttons are already direct flex
-// children as far as layout goes — expand it here too, rather than measuring
-// its own (zero-size) box.
-/* Each row decides its own spread independently — two fixed rows, not one
-   wrapping list, so whether the top row's few controls fit its own width has
-   nothing to do with whether the bottom row's many buttons fit theirs. */
-function fitBar(){
-  const bar=document.getElementById('bar');
-  const barCs=getComputedStyle(bar);
-  const available=bar.clientWidth-parseFloat(barCs.paddingLeft)-parseFloat(barCs.paddingRight);
-  document.querySelectorAll('.barrow').forEach(row=>{
-    const items=[];
-    [...row.children].forEach(k=>
-      getComputedStyle(k).display==='contents' ? items.push(...k.children) : items.push(k));
-    const cs=getComputedStyle(row);
-    const gap=parseFloat(cs.columnGap)||0;
-    const needed=items.reduce((s,k)=>s+k.getBoundingClientRect().width,0)+gap*(items.length-1);
-    row.classList.toggle('spread', needed<=available);
-  });
 }
 
 try{
-  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); initDrag(); recompute(false); syncPos(); fitBar();
+  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); initDrag(); recompute(false); syncPos();
 }catch(err){
   const m=document.getElementById('msg');
   m.textContent='Start-up failed: '+err.message; m.className='on';

@@ -35,6 +35,13 @@ right rail leads with travel, balance and spring — the things a pivot move
 changes — and folds the pivot loads and the stay stress calculation away, with
 the twelve intermediate workings behind a second fold inside the stress panel.
 
+**The `<h1>Flex-stay kinematics</h1>` and its subtitle are gone from the top of
+the left rail** — a one-time title, permanently spending vertical space at the
+very top of the panel you look at most. `<h2>Pivots and mounts</h2>` is now the
+rail's first element, taking up the room the title used to hold rather than
+being pushed down by it. The `<title>` tag (browser tab text) is untouched;
+only the on-page heading and its `.sub` line were removed.
+
 Collapsed, both rails fit a 950px viewport without scrolling; before this they
 scrolled 2191px and 1441px. Mobile went from 4237px of document to 1900px.
 
@@ -785,16 +792,22 @@ Fixed by making the two rows actually two boxes: `#bar` is now
 `#bar-bottom`), each its own `flex-wrap:nowrap` flex container. A button
 changing width can make its own row tighter or looser, but it cannot move a
 button onto the *other* row — there is no shared wrap point between them
-anymore, because there is no shared flex context between them anymore.
-`fitBar()` toggles `.spread` (the space-between styling) per row instead of
-once for the whole bar, so a row that doesn't fit its own width falls back to
-left-aligned for itself without affecting the other row's judgement. On a
+anymore, because there is no shared flex context between them anymore. On a
 desktop-width window too narrow for the bottom row's full button count, that
 row now overflows/clips at its own right edge rather than wrapping — a
 tradeoff, but the alternative is exactly the spillover this was fixed to
 stop. The mobile breakpoint (`max-width:900px`) gets its wrapping back,
 `.barrow{flex-wrap:wrap}`, since eleven buttons forced onto one unbreakable
 row would just run off a phone screen.
+
+**Each row's own buttons used to spread across whatever width was left over
+(`fitBar()` toggling a `.spread`/`justify-content:space-between` class per
+row) — reversed in a follow-up to plain `justify-content:flex-start`, a fixed
+gap, stacked from the left edge.** Asked for explicitly: constant spacing,
+not stretched to fill the row. `fitBar()`, its `ResizeObserver`, and the
+`.spread` rule are gone rather than left dead — nothing reads that class any
+more, so keeping the measuring code around would just be a trap for whoever
+next wonders why a row never spreads however wide the window gets.
 
 **`#play` gets a fixed width and centred text for the same reason its own
 label change caused the bug in the first place.** `width:52px;flex:none`,
@@ -840,9 +853,56 @@ anything else, and `Sag` additionally sets `posT=C.sag/100` so the slider
 itself lands on the sag position instead of stopping wherever the animation
 happened to be — "hold it at sag point" means the control that represents
 position, not only the drawing, has to agree. Getting the animation moving
-again needs `Cycle suspension` pressed again deliberately, same as it already
-required after manually dragging the slider (which has cleared `holdSag` on
-its own since before this change).
+again needs `cycle` pressed again deliberately, same as it already required
+after manually dragging the slider (which has cleared `holdSag` on its own
+since before this change).
+
+**`cycle`/`sag`/`static` are lowercase, unlike every other button in the bar
+— a deliberate, follow-up-requested exception, not an oversight to bring back
+into line.** `Stop` (the same button as `cycle`, mid-animation) followed it
+down to `stop` for the same reason, even though only the other three were
+named: it's the identical button, and leaving one of its two labels
+capitalised would have been the actual inconsistency.
+
+**The three are also a matched, mutually-exclusive set of buttons now, in a
+third colour of their own (`--anim`, burnt orange) — neither the overlay
+toggles' blue nor the parts toggles' teal, because they're neither: they say
+*where in the cycle* the drawing is, not what's drawn or what's shown.**
+Exactly one is ever pressed, because between them they exhaust the three
+ways `posT` can be driven: `playing` (`cycle`/`stop`), `holdSag`
+(`sag`), or neither with `posT` sitting at exactly `0` (`static`) — anything
+else (mid-animation stopped by a manual slider drag, say) leaves all three
+unpressed, honestly, rather than forcing one to claim a state it isn't
+actually in. All three `aria-pressed` flags are set from one place,
+`syncPos()` — `playing`, `!playing&&holdSag`, `!playing&&!holdSag&&posT===0`
+— rather than each button's own click handler trying to keep the other two
+in sync with it, which is what the scattered `setAttribute` calls this
+replaced were doing (and why `play`'s own `else` branch, stopping the
+animation on a direct click rather than via `sag`/`static`, needed a
+`syncPos()` added — it previously only cancelled the `raf`, so stopping that
+way left `cycle` glowing orange after the animation had actually already
+stopped).
+
+**A thin red tick on the slider marks the sag point, tied to `C.sag` live.**
+`#poswrap` wraps the range input in a `position:relative` box so `#sagmark`
+(`position:absolute`, `left:X%`) can sit over its track; `updateSagMark()`
+sets that `left` from `C.sag` and runs from inside `refreshDerived()`, which
+already runs after essentially every change that could move `C.sag` (typing
+it directly, resetting, importing a file), so the mark doesn't need its own
+call site to stay current. It's a plain percentage of the input's own box
+width, not the track's actual usable travel (a native range track is inset
+by half the thumb's width at each end, which a CSS percentage on an overlay
+has no way to know about) — close enough to read as "here" at this thumb
+size, and simple, which is what a rough visual reference needs to be.
+
+**Animation speed is a plain 0–100 number field, `#animSpeed`, next to the
+slider** — deliberately no new widget, just another `input[type=number]`
+like every other field in this tool, so it inherits the up/down spinner and
+styling for free rather than needing its own. Scales the per-frame step in
+`play`'s `step()` — `dir*0.02*(animSpeed/100)` — so 100 (default) reproduces
+the original fixed rate exactly and 0 freezes `posT` in place without
+stopping the `raf` loop itself (harmless — it just keeps painting the same
+frame — and simpler than special-casing zero to actually pause).
 
 ## Parts toggles
 
