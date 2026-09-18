@@ -1205,6 +1205,20 @@ Anchors were recovered by pixel analysis (transparent bores for the shock
 eyelets, largest dark blob for the fork axle). For new artwork, ask for marked
 `anchor-a` / `anchor-b` circles and a `stretch-y` band instead.
 
+**The two rear-derailleur jockey wheels (`JOCKEYART`/`jockeyArt`) are real
+artwork now, not procedural rings** — replacing
+`ring(guide,RJ,...); ring(tension,RJ,...)` plus a centre-bolt dot each. This
+is the `WHEELART`/`wheelArt` pattern exactly, not the two-anchor
+stretch pattern above: round, isotropic enough that orientation doesn't
+matter, and only *position* moves (`guide`/`tension`, as the cage swings) —
+nothing in this tool models a pulley's own spin, so there's no rotation to
+apply. `hub`/`nativeR` needed no anchor-finding step either: the supplied
+PNG (1209×1212) was already centred in its own canvas with the teeth
+touching every edge, exactly like `wheel.png`, so `hub` is just the image
+centre and `nativeR` is just the half-width. `RJ` (22mm, already the pulley
+radius used in the chain-wrap-length maths) is unchanged — this only swapped
+how the pulley is drawn, not its size.
+
 **The exposed stanchion's width (36mm) is a standalone number, with nothing
 else riding on it.** It's a plain `tubes()` stroke width on the procedurally
 drawn segment above — checked `FORKART`'s own placement matrix

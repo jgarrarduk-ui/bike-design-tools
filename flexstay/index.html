@@ -1047,6 +1047,13 @@ const WHEELART={
   w:1390, h:1372, hub:[695,686], nativeR:690,
   src:'img/wheel.png'
 };
+/* Isotropic like WHEELART -- teeth already touch the canvas edge and the
+   artwork is already centred, so hub is just the image centre and nativeR
+   is just the half-width. */
+const JOCKEYART={
+  w:1209, h:1212, hub:[604.5,606], nativeR:604.5,
+  src:'img/jockey-wheel.png'
+};
 const SADDLEART={
   w:904, h:278, mount:[550,245],   // where the rails meet the seatpost clamp
   mmPerPx:0.3097,                  // calibrated assuming ~280mm nose-to-tail
@@ -1505,9 +1512,16 @@ function draw(){
     if(route) drawTop();                                 // see drawTop: idler runs go on top
     tubes([[f.AX,guide,15]],'#6b747c','#39424a');        // b-knuckle and body
     tubes([[guide,tension,30]],'#4a5158','#2a3138');     // cage
-    ring(guide,RJ,'#b6bec5',7); ring(tension,RJ,'#b6bec5',7);
-    el('circle',{cx:guide.x,cy:guide.y,r:4,fill:'#2a3138'},g);
-    el('circle',{cx:tension.x,cy:tension.y,r:4,fill:'#2a3138'},g);
+    // The two jockey wheels -- real artwork, not procedural rings. Isotropic
+    // like WHEELART, so only position moves (guide/tension as the cage
+    // swings); nothing here models the pulleys' own spin.
+    const jockeyArt=(c,R)=>{
+      const s=R/JOCKEYART.nativeR;
+      const jm=[s,0,0,s, c.x-s*JOCKEYART.hub[0], c.y-s*JOCKEYART.hub[1]];
+      const jg=el('g',{transform:`matrix(${jm.map(v=>v.toFixed(6)).join(' ')})`},g);
+      el('image',{href:JOCKEYART.src,x:0,y:0,width:JOCKEYART.w,height:JOCKEYART.h},jg);
+    };
+    jockeyArt(guide,RJ); jockeyArt(tension,RJ);
   }
 
   /* ---- axle path ----
