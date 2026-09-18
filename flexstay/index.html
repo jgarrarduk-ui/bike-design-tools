@@ -95,13 +95,18 @@ select{width:auto}
    instead of being distributed only among themselves inside a sub-box. */
 .bargroup{display:contents}
 #bar input[type=checkbox]{accent-color:var(--rear)}
-/* Fixed width and centred text so switching the label between "Cycle
-   suspension" and "Stop" never changes the button's own size — sized to the
-   longer label plus the button's own padding, not a guess. */
-#play{width:118px;flex:none;text-align:center;white-space:nowrap}
+/* Fixed width and centred text so switching the label between "Cycle" and
+   "Stop" never changes the button's own size — sized to the wider of the
+   two plus the button's own padding, not a guess. */
+#play{width:52px;flex:none;text-align:center}
 input[type=number]:disabled{background:#eef1f3;color:var(--ink-soft)}
 button{font:11.5px var(--sans);padding:4px 6px;border:1px solid var(--rule);border-radius:3px;
-  background:#fff;color:var(--ink);cursor:pointer}
+  background:#fff;color:var(--ink);cursor:pointer;white-space:nowrap}
+/* A button's own label never wraps onto a second line inside it — a row
+   running short on space should clip or overflow (already the chosen
+   tradeoff for the no-spillover toolbar), not fold a button's text in on
+   itself, which reads as broken rather than tight. */
+.barrow button{flex-shrink:0}
 button:hover{background:#e9eef1}
 button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:#fff}
 /* Parts toggles get their own colour — teal against the overlays' blue — so the
@@ -276,13 +281,13 @@ svg text{font-family:var(--mono)}
 <div id="stage">
   <div id="bar">
     <div class="barrow" id="bar-top">
-      <button id="play">Cycle suspension</button>
+      <button id="play">Cycle</button>
+      <button id="showsag" aria-pressed="false">Sag</button>
+      <button id="staticPos">Static</button>
       <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
       <span id="poslabel"></span>
     </div>
     <div class="barrow" id="bar-bottom">
-      <button id="showsag" aria-pressed="false">Sag</button>
-      <button id="staticPos">Static</button>
       <span class="bargroup" role="group" aria-label="Overlays and parts drawn">
         <button id="axpath" aria-pressed="true">axle path</button>
         <button id="asline" aria-pressed="false">anti-squat</button>
@@ -2385,11 +2390,11 @@ function stopAnimation(){
   if(!playing) return;
   playing=false;
   cancelAnimationFrame(raf);
-  document.getElementById('play').textContent='Cycle suspension';
+  document.getElementById('play').textContent='Cycle';
 }
 document.getElementById('play').onclick=e=>{
   playing=!playing;
-  e.target.textContent = playing?'Stop':'Cycle suspension';
+  e.target.textContent = playing?'Stop':'Cycle';
   if(playing){
     holdSag=false; document.getElementById('showsag').setAttribute('aria-pressed','false');
     const step=()=>{

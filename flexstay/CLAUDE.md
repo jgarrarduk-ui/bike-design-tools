@@ -797,16 +797,31 @@ stop. The mobile breakpoint (`max-width:900px`) gets its wrapping back,
 row would just run off a phone screen.
 
 **`#play` gets a fixed width and centred text for the same reason its own
-label change caused the bug in the first place.** `width:118px;flex:none`
-sized to fit "Cycle suspension" (the longer of its two labels) plus the
-button's own padding — `Stop` centres inside the same box rather than
-shrinking it.
+label change caused the bug in the first place.** `width:52px;flex:none`,
+sized to the wider of its two labels ("Cycle", "Stop" — shortened from "Cycle
+suspension" in a follow-up, once the row it shares with `Sag`/`Static` made
+the longer label crowd them) plus the button's own padding, so switching
+label never changes the button's own size.
 
-Row order changed too: `Sag` and `axle path` moved from the top row into the
-bottom row, ahead of `anti-squat` — the top row is now purely playback (the
-Cycle/Stop button, the slider, the position label), and everything that
-changes what's drawn, rather than where in the cycle it's drawn, lives on the
-row below.
+Row order: `Sag` and `Static` sit on the top row, immediately right of
+`Cycle`/`Stop` — they're playback controls in the same sense the Cycle
+button and the slider are (all four set *where in the cycle* the drawing
+is), which is also why `axle path` stayed on the bottom row rather than
+following them up: it changes what's overlaid on the drawing, not the
+position being drawn.
+
+**No button's own label wraps onto a second line, even when its row is too
+narrow to fit everything — `axle path` and `anti-squat` did, briefly, once
+`Sag`/`Static` moved off the bottom row and freed width that let the
+survivors' own font-driven natural width start mattering again as things got
+tight.** `white-space:nowrap` is on the base `button` rule now (every button,
+not just these two — the same fix serves any button in either row), and
+`.barrow button{flex-shrink:0}` stops a flex item shrinking narrower than its
+label in the first place, which is what let the text wrap internally instead
+of the row just running out of room. A row that's genuinely too narrow now
+clips or overflows at its own edge — the same tradeoff the no-spillover fix
+above already accepted, just applied one level down (a button's own text,
+not which row it's on).
 
 **`Static`, next to `Sag`, is a one-shot reset to the fully extended
 position** (`posT=0`, `holdSag=false`) rather than a toggle — there is no
