@@ -416,9 +416,33 @@ a tube would be wrong. It gets the clearance check and a readout of the three
 numbers the part is actually made to instead: its offset from each tube and that
 included angle.
 
-**The standoff box is live when locked and greyed when not** — the reverse of
-`a2cAuto`, because here the lock turns a derived readout into an input. Easy to
-wire backwards; both the value and the `.disabled` flag live in `refreshDerived`.
+**The standoff box used to be live when locked and greyed when not** — the
+reverse of `a2cAuto`, on the reasoning that the lock turns a derived readout
+into an input. Reported back as backwards and inconsistent with the rest of
+this tool's locks (the points-panel lock right below, `ptLocked`, is
+unlocked-live/locked-disabled, and so is every other coordinate lock a user
+would compare it to) — a fair complaint even though the old wiring was
+internally consistent on its own terms, since "consistent with itself" isn't
+the bar when every other lock in the same tool reads the opposite way.
+Reversed: `refreshDerived` now disables the box exactly when `C[lock]` is
+set, so locked reads as fixed-and-uneditable and unlocked as free-to-type,
+matching `ptLocked`.
+
+That flip changes what "live" has to mean, though: unlocked used to make the
+box a pure readout (typing did nothing, since `recompute()`'s own unlocked
+branch — `C[off]=standoffOf(dtU,G[k])` — overwrote whatever was typed on the
+very next recompute anyway, which is *why* it was disabled). Making it
+genuinely editable when unlocked needed the box to actually move the point,
+not just accept a value that would be discarded a moment later — so
+`sgStand`/`spStand` were pulled out of `fillCfg()`'s generic
+value-goes-in-`C`-and-nothing-else loop (next to `sgLock`/`spLock`, already
+excluded there for their own reasons) and given their own `onchange`: while
+unlocked, typing calls the exact `onTube(dtU, alongOf(dtU,G[k]), v)` recompute
+would use *if* locked, so the typed number lands the point there directly,
+and the very next `recompute()` reads that same position straight back as an
+identical standoff — a round trip, not a fight. Locked, typing cannot happen
+at all (the box is disabled), so there is nothing for the box's own handler
+to do differently there; `recompute()`'s existing locked branch is unchanged.
 
 **SP's mount matches SG's.** `frontTriangle()`'s draw call used to follow the
 tube-coloured brace tube at `[boss,G.SP,30]` with an extra `r:34` disc, plain
@@ -526,9 +550,9 @@ same point (SG/SP):
   right after that loop instead, doing exactly what the checkbox's `onchange`
   used to: flip `C[k]`, repaint the glyph, run
   `syncGeom(k); refreshDerived(); fillPoints(); recompute(false);`.
-  `refreshDerived()`'s disabled-toggling for `sgStand`/`spStand`
-  (`index.html:2043`) needed no change — it already reads `C[lock]`, never the
-  checkbox element.
+  `sgStand`/`spStand` themselves are excluded from `fillCfg()`'s generic loop
+  too now, alongside the lock buttons — see "Standoffs" above for why they
+  need their own `onchange` rather than the generic one.
 - **`lockLen`** (shock eye to eye) — **locked by default**, moved from a
   toolbar text button to an icon next to `eye` (see "Lock shock" above).
 - **The points-panel lock, `ptLocked`** — new, **unlocked by default**, on
@@ -742,6 +766,68 @@ being edited, sharing the drawing's own scale and origin, and a straight
 ~140mm fork line next to a tight rear arc reads very differently stretched
 across that than it does on its own axes. `chartAxlePath` (in the charts
 section below) is the dedicated version instead.
+
+## The toolbar: two fixed rows, not one that wraps
+
+`#bar` used to be a single flex container with `flex-wrap:wrap`, and
+`fitBar()` measured the whole thing to decide whether it fit on one line
+(space-between) or had wrapped (plain left-aligned). That meant which row a
+button ended up on was never actually fixed — it fell out of how much total
+width everything needed that moment. Reported as a real bug, not a hypothetical:
+the Cycle/Stop button changes width with its own label (`Cycle suspension` vs
+`Stop`), so pressing it changed how much space row one needed, which changed
+how many buttons fit before the wrap point, which moved a button from the
+second row up onto the first — the layout reshuffled itself from user input
+that had nothing to do with layout.
+
+Fixed by making the two rows actually two boxes: `#bar` is now
+`flex-direction:column` holding two `.barrow` children (`#bar-top`,
+`#bar-bottom`), each its own `flex-wrap:nowrap` flex container. A button
+changing width can make its own row tighter or looser, but it cannot move a
+button onto the *other* row — there is no shared wrap point between them
+anymore, because there is no shared flex context between them anymore.
+`fitBar()` toggles `.spread` (the space-between styling) per row instead of
+once for the whole bar, so a row that doesn't fit its own width falls back to
+left-aligned for itself without affecting the other row's judgement. On a
+desktop-width window too narrow for the bottom row's full button count, that
+row now overflows/clips at its own right edge rather than wrapping — a
+tradeoff, but the alternative is exactly the spillover this was fixed to
+stop. The mobile breakpoint (`max-width:900px`) gets its wrapping back,
+`.barrow{flex-wrap:wrap}`, since eleven buttons forced onto one unbreakable
+row would just run off a phone screen.
+
+**`#play` gets a fixed width and centred text for the same reason its own
+label change caused the bug in the first place.** `width:118px;flex:none`
+sized to fit "Cycle suspension" (the longer of its two labels) plus the
+button's own padding — `Stop` centres inside the same box rather than
+shrinking it.
+
+Row order changed too: `Sag` and `axle path` moved from the top row into the
+bottom row, ahead of `anti-squat` — the top row is now purely playback (the
+Cycle/Stop button, the slider, the position label), and everything that
+changes what's drawn, rather than where in the cycle it's drawn, lives on the
+row below.
+
+**`Static`, next to `Sag`, is a one-shot reset to the fully extended
+position** (`posT=0`, `holdSag=false`) rather than a toggle — there is no
+meaningful "un-static" state to hold, unlike `Sag`, which can be turned back
+off to return to wherever the slider already was.
+
+**Both `Sag` and `Static` now stop the animation loop, not just override what
+gets drawn.** `holdSag` used to only change what `currentFrame()` reads
+(`C.sag` instead of `posT`) — pressing Sag mid-animation froze the *picture*
+correctly, but the `raf` loop driving `posT` back and forth every frame kept
+running underneath it, so the slider kept sliding on its own even though the
+bike on screen had stopped following it — exactly the reported symptom.
+Fixed with a shared `stopAnimation()` (cancels `raf`, clears `playing`, resets
+the button's own label) that both `Sag` and `Static` call before doing
+anything else, and `Sag` additionally sets `posT=C.sag/100` so the slider
+itself lands on the sag position instead of stopping wherever the animation
+happened to be — "hold it at sag point" means the control that represents
+position, not only the drawing, has to agree. Getting the animation moving
+again needs `Cycle suspension` pressed again deliberately, same as it already
+required after manually dragging the slider (which has cleared `holdSag` on
+its own since before this change).
 
 ## Parts toggles
 

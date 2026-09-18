@@ -70,25 +70,35 @@ select{width:auto}
 .warn b{color:var(--flex)}
 .good b{color:var(--ok)}
 .note{font-size:11px;color:var(--ink-soft);margin:6px 0 0}
-/* space-between spreads every control from the left edge to the right edge
-   with equal gaps, rather than clumping the playback controls left and the
-   toggles right with dead space in between. But space-between on a wrapped
-   line stretches whatever is left over that line's full width too, which
-   looks broken when a short trailing row is the result — so it only applies
-   once fitBar() (below) has confirmed everything actually fits on one line;
-   otherwise the bar falls back to plain left-aligned wrapping. */
-#bar{display:flex;align-items:center;justify-content:flex-start;gap:8px;
+/* Two fixed rows, not one wrapping list: each .barrow is its own flex
+   container, so a button can never migrate from one row to the other just
+   because something else on its row changed width — the two rows are
+   simply two separate boxes, not one flow that reflows across a break. */
+#bar{display:flex;flex-direction:column;gap:7px;
   padding:7px 14px;border-bottom:1px solid var(--rule);
-  background:var(--panel);flex-wrap:wrap}
-#bar.spread{justify-content:space-between}
+  background:var(--panel)}
+/* space-between spreads a row's own controls from its left edge to its right
+   edge with equal gaps, rather than clumping them to the left with dead
+   space on the right. But space-between on a row that doesn't fill the bar's
+   width stretches the gaps to fill it anyway, which looks broken — so each
+   row only gets it once fitBar() (below) has confirmed that row's own
+   content actually fits the bar's width; otherwise it falls back to plain
+   left-aligned, non-wrapping layout for that row. */
+.barrow{display:flex;align-items:center;justify-content:flex-start;gap:8px;
+  flex-wrap:nowrap}
+.barrow.spread{justify-content:space-between}
 #bar label{margin:0;gap:6px}
 #poslabel{font:12px var(--mono);color:var(--ink-soft);white-space:nowrap}
 /* .bargroup is a semantic/ARIA grouping only now — display:contents drops its
-   own box so its buttons become direct flex children of #bar and take part in
-   the same space-between spacing as everything else, instead of being
-   distributed only among themselves inside a sub-box. */
+   own box so its buttons become direct flex children of its .barrow and take
+   part in the same space-between spacing as everything else on that row,
+   instead of being distributed only among themselves inside a sub-box. */
 .bargroup{display:contents}
 #bar input[type=checkbox]{accent-color:var(--rear)}
+/* Fixed width and centred text so switching the label between "Cycle
+   suspension" and "Stop" never changes the button's own size — sized to the
+   longer label plus the button's own padding, not a guess. */
+#play{width:118px;flex:none;text-align:center;white-space:nowrap}
 input[type=number]:disabled{background:#eef1f3;color:var(--ink-soft)}
 button{font:11.5px var(--sans);padding:4px 6px;border:1px solid var(--rule);border-radius:3px;
   background:#fff;color:var(--ink);cursor:pointer}
@@ -132,7 +142,10 @@ svg text{font-family:var(--mono)}
   #canvas{height:min(46vh,66vw);min-height:210px;flex:none}
   #charts{grid-template-columns:24px 1fr 24px;height:250px}
   input[type=range]{width:auto;flex:1 1 90px;min-width:90px}
-  #bar{gap:8px 10px}
+  /* The no-spillover rule is a desktop-toolbar fix — eleven buttons forced
+     onto one unbreakable row would just overflow off a phone screen, so
+     mobile gets its wrap back, each row independently. */
+  .barrow{gap:8px 10px;flex-wrap:wrap}
   .pt{grid-template-columns:1fr 72px 72px 24px}
 }
 </style>
@@ -262,23 +275,28 @@ svg text{font-family:var(--mono)}
 
 <div id="stage">
   <div id="bar">
-    <button id="play">Cycle</button>
-    <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
-    <span id="poslabel"></span>
-    <button id="showsag" aria-pressed="false">Sag</button>
-    <span class="bargroup" role="group" aria-label="Overlays and parts drawn">
-      <button id="axpath" aria-pressed="true">axle path</button>
-      <button id="asline" aria-pressed="false">anti-squat</button>
-      <button id="arline" aria-pressed="false">anti-rise</button>
-      <button id="forces" aria-pressed="false">forces</button>
-      <button class="partbtn" id="tglWheels"    aria-pressed="true">wheels</button>
-      <button class="partbtn" id="tglDrive"     aria-pressed="true">drivetrain</button>
-      <button class="partbtn" id="tglCockpit"   aria-pressed="true">cockpit</button>
-      <button class="partbtn" id="tglSaddle"    aria-pressed="true">saddle</button>
-      <button class="partbtn" id="tglShock"     aria-pressed="true">shock</button>
-      <button class="partbtn" id="tglFork"      aria-pressed="true">fork</button>
-      <button class="partbtn" id="tglCranks"    aria-pressed="true">cranks</button>
-    </span>
+    <div class="barrow" id="bar-top">
+      <button id="play">Cycle suspension</button>
+      <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
+      <span id="poslabel"></span>
+    </div>
+    <div class="barrow" id="bar-bottom">
+      <button id="showsag" aria-pressed="false">Sag</button>
+      <button id="staticPos">Static</button>
+      <span class="bargroup" role="group" aria-label="Overlays and parts drawn">
+        <button id="axpath" aria-pressed="true">axle path</button>
+        <button id="asline" aria-pressed="false">anti-squat</button>
+        <button id="arline" aria-pressed="false">anti-rise</button>
+        <button id="forces" aria-pressed="false">forces</button>
+        <button class="partbtn" id="tglWheels"    aria-pressed="true">wheels</button>
+        <button class="partbtn" id="tglDrive"     aria-pressed="true">drivetrain</button>
+        <button class="partbtn" id="tglCockpit"   aria-pressed="true">cockpit</button>
+        <button class="partbtn" id="tglSaddle"    aria-pressed="true">saddle</button>
+        <button class="partbtn" id="tglShock"     aria-pressed="true">shock</button>
+        <button class="partbtn" id="tglFork"      aria-pressed="true">fork</button>
+        <button class="partbtn" id="tglCranks"    aria-pressed="true">cranks</button>
+      </span>
+    </div>
   </div>
   <div id="canvas">
     <svg id="draw" preserveAspectRatio="xMidYMid meet"></svg>
@@ -2114,16 +2132,21 @@ function refreshDerived(skip){
   if(a) a.disabled=!!C.a2cAuto;               // derived while the box is ticked
   const lk=document.getElementById('links');
   if(lk) lk.disabled=!!C.chainAuto;
-  /* Reverse of a2c: the lock makes a standoff an input, so the box is live when
-     ticked and a read-only report of the measured value when not. */
+  /* Same convention as every other coordinate lock in this tool (the points
+     panel's own per-point lock, right below): locked means fixed and
+     read-only, unlocked means free to set. Locked, the standoff is pinned to
+     C[off] regardless of what's typed (recompute()'s mount-lock glue below
+     enforces that), so the box just reports it; unlocked, typing sets the
+     point's position directly (wired below), so the box has to be live. */
   for(const [lock,off] of [['sgLock','sgStand'],['spLock','spStand']]){
     const e=document.getElementById(off);
-    if(e) e.disabled=!C[lock];
+    if(e) e.disabled=!!C[lock];
   }
 }
 function fillCfg(){
   Object.keys(C).forEach(k=>{
-    if(k==='sgLock'||k==='spLock') return;  // icon buttons now, not checkboxes -- wired below
+    // icon buttons and custom-wired standoffs, not plain checkboxes/numbers -- wired below
+    if(k==='sgLock'||k==='spLock'||k==='sgStand'||k==='spStand') return;
     const inp=document.getElementById(k);
     if(!inp) return;
     if(inp.type==='checkbox'){              // stored 1/0 so it resets with the rest
@@ -2159,6 +2182,29 @@ function fillCfg(){
       btn.textContent=C[k]?'🔒':'🔓';
       btn.title=C[k]?'Unlock from the down tube':'Lock to the down tube';
       syncGeom(k); refreshDerived(); fillPoints(); recompute(false);
+    };
+  }
+  /* sgStand/spStand sit outside the generic loop too, for the same reason:
+     what typing into them should DO depends on the lock, which the generic
+     loop knows nothing about. Locked, they're read-only (recompute()'s
+     mount-lock glue owns the value, typing would just be overwritten next
+     frame, so the box is disabled above rather than pretending it works).
+     Unlocked, typing sets the point's standoff directly -- the same
+     onTube() call recompute() itself uses when locked -- rather than only
+     being reachable by dragging. */
+  for(const [k,lock,off] of [['SG','sgLock','sgStand'],['SP','spLock','spStand']]){
+    const inp=document.getElementById(off);
+    if(!inp) continue;
+    inp.value=C[off];
+    inp.onchange=inp.oninput=()=>{
+      const v=parseFloat(inp.value); if(isNaN(v)) return;
+      C[off]=v;
+      if(!C[lock]){
+        const dtU=frontTriangle().dtU;
+        G[k]=onTube(dtU, alongOf(dtU,G[k]), v);
+      }
+      refreshDerived(off); fillPoints();
+      recompute(false);
     };
   }
   refreshDerived();
@@ -2226,7 +2272,18 @@ document.getElementById('locklen').onclick=e=>{
     :'Shock eye to eye is free while dragging its mounts';
 };
 document.getElementById('showsag').onclick=e=>{
+  stopAnimation();
   holdSag=!holdSag; e.target.setAttribute('aria-pressed',holdSag);
+  // Holding sag is a position, not just a way of drawing one: land the
+  // slider there too, rather than leaving it wherever the animation (now
+  // stopped) happened to be when this was pressed.
+  if(holdSag) posT=C.sag/100;
+  draw(); syncPos(); charts();
+};
+document.getElementById('staticPos').onclick=()=>{
+  stopAnimation();
+  holdSag=false; document.getElementById('showsag').setAttribute('aria-pressed','false');
+  posT=0;
   draw(); syncPos(); charts();
 };
 document.getElementById('datum').onchange=fillPoints;
@@ -2321,6 +2378,15 @@ function importJSON(){
 document.getElementById('exportJson').onclick=exportJSON;
 document.getElementById('importJson').onclick=importJSON;
 let raf=null, dir=1;
+/* Shared by Sag and Static: both are a specific position, and the animation
+   loop repainting every frame from its own posT would otherwise fight
+   whichever one was just pressed a moment later, undoing it. */
+function stopAnimation(){
+  if(!playing) return;
+  playing=false;
+  cancelAnimationFrame(raf);
+  document.getElementById('play').textContent='Cycle suspension';
+}
 document.getElementById('play').onclick=e=>{
   playing=!playing;
   e.target.textContent = playing?'Stop':'Cycle suspension';
@@ -2364,16 +2430,22 @@ if(window.ResizeObserver){
 // .bargroup is display:contents, so its buttons are already direct flex
 // children as far as layout goes — expand it here too, rather than measuring
 // its own (zero-size) box.
+/* Each row decides its own spread independently — two fixed rows, not one
+   wrapping list, so whether the top row's few controls fit its own width has
+   nothing to do with whether the bottom row's many buttons fit theirs. */
 function fitBar(){
   const bar=document.getElementById('bar');
-  const items=[];
-  [...bar.children].forEach(k=>
-    getComputedStyle(k).display==='contents' ? items.push(...k.children) : items.push(k));
-  const cs=getComputedStyle(bar);
-  const gap=parseFloat(cs.columnGap)||0;
-  const available=bar.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
-  const needed=items.reduce((s,k)=>s+k.getBoundingClientRect().width,0)+gap*(items.length-1);
-  bar.classList.toggle('spread', needed<=available);
+  const barCs=getComputedStyle(bar);
+  const available=bar.clientWidth-parseFloat(barCs.paddingLeft)-parseFloat(barCs.paddingRight);
+  document.querySelectorAll('.barrow').forEach(row=>{
+    const items=[];
+    [...row.children].forEach(k=>
+      getComputedStyle(k).display==='contents' ? items.push(...k.children) : items.push(k));
+    const cs=getComputedStyle(row);
+    const gap=parseFloat(cs.columnGap)||0;
+    const needed=items.reduce((s,k)=>s+k.getBoundingClientRect().width,0)+gap*(items.length-1);
+    row.classList.toggle('spread', needed<=available);
+  });
 }
 
 try{
