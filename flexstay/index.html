@@ -537,23 +537,52 @@ function routeIdler(BB,rc,IDp,ri,AXp,rg){
    way), but the sign choice is still solved, the way routeIdler solves its
    one tangent: each pulley's wrap must not reverse between its incoming
    and outgoing tangent, and the chainring/cog must keep the sense the
-   drivetrain's own top run already established. Returns null (caller
-   falls back to a straight line) if no combination satisfies every
-   constraint -- should not happen at realistic geometry, but the canvas
-   must never blank on it. */
+   drivetrain's own top run already established.
+   That constraint set is NOT enough to pin the cog-guide and guide-tension
+   legs down uniquely, though -- both an external and a crossed beltRun
+   candidate can satisfy "wrap doesn't reverse" at a shared pulley, and one
+   of each pair is geometrically wrong even though it passes that check
+   (confirmed: a candidate run with cog-guide external and guide-tension
+   crossed gave the same tangency/sense results but wrapped the wrong side
+   of the guide pulley, entering from below instead of from the cog above).
+   Two more facts about the FIXED physical arrangement break the tie,
+   and are worth pinning down rather than re-deriving by search every time:
+   - cog-guide is CROSSED. The chain wraps the underside of the cog and
+     descends essentially straight down into the TOP of the guide pulley
+     (guide sits close to and almost directly below the axle) -- a crossed
+     tangent is the one that runs between the two circles rather than
+     alongside them, which is what "wraps under one, straight down into
+     the top of the other, close together" actually looks like.
+   - guide-tension is EXTERNAL. The two pulleys ride on the derailleur's
+     own rigid cage plate, `C.cage` apart -- confirmed numerically, the
+     external tangent's length between two equal-radius circles equals
+     the centre distance exactly, and it comes out equal to `C.cage` to
+     14 decimal places, while the crossed candidate does not. A crossed
+     wrap would need the chain to pass through the cage plate itself,
+     which isn't physically possible.
+   `s1`/`s2` (which of the two sides, for each now-fixed crossed choice)
+   are still solved for, not guessed -- exactly one of each satisfies the
+   "wrap doesn't reverse" check, the same as before. Only the outer
+   tension-to-chainring leg still searches both crossed and both sides:
+   it's a long, unconstrained-by-any-rigid-part run to the front of the
+   bike, with no equivalent physical tie-break, and the existing search
+   already narrows it to one candidate once the first two legs are fixed.
+   Returns null (caller falls back to a straight line) if no combination
+   satisfies every constraint -- should not happen at realistic geometry,
+   but the canvas must never blank on it. */
 function cageRun(BB,rc,guide,tension,RJ,AXp,rg){
   const ref=chainRun(BB,rc,AXp,rg);
   if(!ref) return null;
   const dRef=unit(sub(ref.p2,ref.p1));
   const sRing=wrapSense(BB,ref.p1,dRef), sCog=wrapSense(AXp,ref.p2,dRef);
-  for(const c1 of [false,true]) for(const s1 of [1,-1]){
-    const segA=beltRun(AXp,rg,guide,RJ,c1,s1);
+  for(const s1 of [1,-1]){
+    const segA=beltRun(AXp,rg,guide,RJ,true,s1);        // cog-guide: crossed
     if(!segA) continue;
     const dA=unit(sub(segA.p2,segA.p1));
     if(wrapSense(AXp,segA.p1,dA)!==sCog) continue;
     const sGuide=wrapSense(guide,segA.p2,dA);
-    for(const c2 of [false,true]) for(const s2 of [1,-1]){
-      const segB=beltRun(guide,RJ,tension,RJ,c2,s2);
+    for(const s2 of [1,-1]){
+      const segB=beltRun(guide,RJ,tension,RJ,false,s2); // guide-tension: external
       if(!segB) continue;
       const dB=unit(sub(segB.p2,segB.p1));
       if(wrapSense(guide,segB.p1,dB)!==sGuide) continue;

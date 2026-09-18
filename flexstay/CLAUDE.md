@@ -1176,6 +1176,41 @@ both pulleys — a proper S, matching a real derailleur cage — across the
 whole travel with no flip-flopping frame to frame, since `guide`/`tension`
 move as the cage swings and `cageRun` is solved fresh every call.
 
+**That constraint set alone still wasn't enough to pin the wrap down
+uniquely.** "Wrap doesn't reverse at a shared pulley" and "chainring/cog
+keep the top run's sense" turned out to admit four self-consistent full
+solutions, not one — an external and a crossed `beltRun` candidate can
+each satisfy the reversal check at a given pulley, and the search was
+returning whichever it reached first (`[false,true]`/`[1,-1]` iteration
+order), not the physically correct one. The symptom: the chain entered
+the guide pulley from underneath instead of from the cog above it — every
+tangent point was still exactly on its circle, so it looked like a working
+wrap rather than an obviously broken one, and only checking the actual
+entry/exit angle against a marked-up reference caught it.
+
+Broke the tie with two facts about the fixed physical arrangement, rather
+than adding more abstract search constraints:
+- **cog→guide is the CROSSED tangent.** The chain wraps the cog's
+  underside and drops essentially straight down into the guide pulley's
+  top — they sit close together (`GDX`/`GDY` puts guide almost directly
+  below the axle) — and a crossed tangent is specifically the one that
+  runs *between* two circles rather than alongside them, which is what
+  that entry looks like geometrically.
+- **guide→tension is the EXTERNAL tangent.** The two jockeys ride on the
+  derailleur's own rigid cage plate, `C.cage` apart. An external tangent
+  between two equal-radius circles has length exactly equal to the centre
+  distance — confirmed numerically equal to `C.cage` to 14 decimal places,
+  where the crossed candidate for the same pair is not. A crossed wrap
+  there would need the chain to pass through the cage plate.
+
+`cageRun` now fixes those two `crossed` values directly instead of
+searching them; `s1`/`s2` (which of the two sides) are still solved, not
+guessed — exactly one of each still satisfies the reversal check, same as
+before. Only the outer tension-to-chainring leg still searches both
+`crossed` values: it's a long run to the front of the bike with no rigid
+part to tie-break it against, and the existing reversal check already
+narrows it to one candidate once the first two legs are fixed.
+
 `RJ` (22mm) is reused as the tangent radius rather than adding a separate
 pitch-diameter constant — it's already this tool's own jockey pitch radius
 (`chainPath`'s wrap-length formula already assumes it, and it happens to
