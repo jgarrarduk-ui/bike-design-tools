@@ -5,7 +5,7 @@ the first variant of a planned Suspension Designer family (other linkage
 types are on the roadmap; this folder is the flex-stay one). Single
 self-contained page, no build step, no dependencies.
 
-Live: `jgarrarduk-ui.github.io/bikedesigner/flexstay/`
+Live: `jgarrarduk-ui.github.io/bike-design-tools/flexstay/`
 
 ## What it does
 

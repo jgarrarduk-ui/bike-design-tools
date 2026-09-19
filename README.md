@@ -1,9 +1,9 @@
-# bikedesigner
+# bike design tools
 
 Creature Cycles' bike design tools. Four static, single-file browser tools
 plus a small backend that turns a finished design into a paid order.
 
-Live: `jgarrarduk-ui.github.io/bikedesigner/`
+Live: `jgarrarduk-ui.github.io/bike-design-tools/`
 
 ## Tools
 
