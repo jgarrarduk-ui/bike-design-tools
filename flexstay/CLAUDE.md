@@ -615,6 +615,27 @@ same point (SG/SP):
   number inputs directly rather than routing back through `fillPoints()`'s
   full render path.
 
+**All three now paint through one `paintLock(btn, locked, titles)`.** Each
+lock used to write its own `aria-pressed`/glyph/`title` triple by hand, at
+its click handler and (for `sgLock`/`spLock`) again at initial paint — six
+copies of the same three lines, one silent drift away from a bug (a lock
+that updated `aria-pressed` but forgot the glyph, say). `paintLock` only
+does the paint; each lock still owns its own side effect (disabling inputs
+for the points-panel lock, `applyChange()` for the standoff locks, nothing
+at all for `lockLen`), since those genuinely differ and gluing them together
+would be the wrong kind of shared code.
+
+**And the down-tube standoff locks' `syncGeom(k); refreshDerived();
+fillPoints(); recompute(false);` sequence is `applyChange(k)`** — the same
+four calls a checkbox's `onchange` and a tyre-width `<select>`'s `onchange`
+also ran by hand, now one function next to `refreshDerived()`. The generic
+numeric field's own commit (`fillCfg`'s main loop) stayed separate rather
+than being folded into this too: it needs `refreshDerived(k)`, skipping the
+box currently being typed into, where every `applyChange` caller wants the
+plain `refreshDerived()` — a genuinely different call, not a copy of this
+one, so sharing a name would hide a real difference rather than remove a
+fake one.
+
 ### Clearance
 
 A pivot is a boss, not a point: `pivotOD` (22mm) gives it a body, and clearance to a
@@ -649,9 +670,18 @@ Design name and designer are free text, so they live in `META`, outside `C` —
 input, which would permanently reject a name the moment it looked at the box.
 Export writes `{_meta:{name, designer, date, version}, geom:G, cfg:C}`; import
 parses that same shape and then runs the exact startup sequence the reset button
-uses — `syncGeom(); fillPoints(); fillCfg();` — so a file with an old or partial
-`cfg` still comes out through the same derivation the app applies on every other
-input change.
+uses — `refillAll()` — so a file with an old or partial `cfg` still comes out
+through the same derivation the app applies on every other input change.
+
+**`refillAll()` is the one thing genuinely identical across all four places
+that replace `G`/`C` wholesale** — the two resets, import, and the page-load
+boot sequence — `syncGeom(); fillPoints(); fillCfg(); fillTyreWidths();`, used
+to be typed out by hand at all four. Each site still has its own tail after
+it (whether `posT`/`holdSag` reset to top-out — the two resets and import do,
+`resetGeom` and boot don't, since neither changes which position you're
+looking at — which `recompute()` variant to call, and `initDrag()` running
+once at boot), so only the truly shared part was pulled out, not the whole
+sequence pretending all four are the same operation.
 
 **Import layers the file over the defaults** (`Object.assign` onto a clone of
 `DEF`) rather than replacing `G`/`C` wholesale, so a design saved before a field
@@ -748,13 +778,45 @@ on purpose. Applied at all three sites that recompute from typed text: the
 generic config loop in `fillCfg`, the `sgStand`/`spStand` pair beside it, and
 the points-panel coordinate inputs in `fillPoints`.
 
-**Coil rate at 0% sag.** `rate=Fs/sagF.stroke` divides by the shock's stroke
+**Coil rate at 0% sag.** `rate=Fs/sagFr.stroke` divides by the shock's stroke
 *at the sag point being asked about* — at `C.sag=0` that's a shock that
 hasn't moved yet, so N/mm of a zero-length stroke isn't a real number, and the
 division silently returned `Infinity`. Guarded to `—` below `1e-6`mm of
 stroke rather than computed. Nobody runs zero sag on a real bike, but typing
 it should read as "not available," not paper over it with a value that looks
 like a real spring rate.
+
+**`recompute()` now calls `syncPos()` itself, at the end — this was a real,
+widespread staleness bug, found while deduplicating the boot/reset/import
+sequences, not something anyone had reported.** `syncPos()` writes the
+`#poslabel` text ("142mm wheel · 65.0mm shock") and the cycle/sag/static
+buttons' `aria-pressed` state from `result` and `posT`/`holdSag`. It used to
+be each caller's own job to call it after `recompute()` — and almost none of
+them did: not the generic numeric field commit, not any checkbox, not either
+down-tube lock, not a tyre-width `<select>`, not `resetGeom`. Confirmed with
+the real input path, not just reading the code: typed `rc=500` (a genuine
+travel change, 142mm → 153.9mm) through the actual field, and the toolbar
+label sat at "142mm" regardless — only a drag-release or the animation loop
+happened to call `syncPos()` afterward, so the label was correct by
+coincidence whenever one of *those* had run more recently than anything
+else. `reset` and `importJSON` did call it, but *before* `recompute()`, off
+the stale pre-reset `result` — reading it back afterward, that value simply
+never got corrected, since nothing called `syncPos()` a second time. Fixed
+once, in `recompute()` itself, rather than adding the missing call at every
+site: every caller that already ends in `recompute()` picked up the fix for
+free, and the explicit calls that were already redundant (drag-release, the
+mid-drag `requestAnimationFrame` callback, boot) were removed rather than
+left as harmless duplicates. The few callers that update the display
+*without* calling `recompute()` — the position slider, Sag, Static, the
+animation loop's own step — necessarily keep their own explicit call, since
+there's no `recompute()` for the fix to piggyback on there.
+
+**`sagFrame(f)`/`sprungLoad()` replace five copies of `at(f,C.sag/100)` and
+three of `C.mass*9.81*C.bias/100`** — `readouts()` alone had it twice, under
+two different local names (`sagFrame` and `sagF`), which is what the
+function is now actually called; both computed once per `readouts()` call
+and reused across the stay-stress, spring-rate and pivot-force panels rather
+than re-derived in each.
 
 **Anti-squat is read at the front axle vertical**, not the centre-of-mass
 vertical, and heights are measured from the ground, not from y=0. Getting either
@@ -1395,6 +1457,25 @@ ways so only the spring section stretches — the reservoir rides with the body,
 and the tail and body keep their proportions. The fork lowers never stretch: the
 casting is rigid and slides up a procedurally drawn stanchion, which is the real
 mechanism.
+
+**`wheelArt`/`jockeyArt` are both `isotropicArt(art)`.** Round artwork that
+doesn't need rotating — the wheels and the jockey wheels, so far — was two
+copies of the same six lines differing only in which `*ART` constant they
+scaled. `isotropicArt` takes the constant and returns the draw function, so
+`wheelArt=isotropicArt(WHEELART)` reads as what it is: a wheel-shaped
+instance of a general "round thing, scaled to radius R, centred on its own
+hub" placer, not a one-off. The two-anchor/stretch artwork below (shock,
+fork, stem, saddle) is a different enough shape of problem that it isn't
+folded into this — each of those genuinely has its own anchor pair and its
+own stretch logic, not a shared pattern with a different constant plugged in.
+
+**The idler's chain-wrap arc and each jockey wheel's own wrap arc are one
+`arcPts(c,r,a,b,sense)`,** not two copies of the same sampled-arc loop. Both
+draw the same thing — a chain visibly wrapping a pulley from one tangent
+point to another, in the direction the chain actually travels — so unifying
+them was a plain lift, not a redesign: `arcPts` returns the joined points
+string, and each caller just wraps it in its own `<polyline>` with whatever
+stroke width it wants.
 
 Anchors were recovered by pixel analysis (transparent bores for the shock
 eyelets, largest dark blob for the fork axle). For new artwork, ask for marked

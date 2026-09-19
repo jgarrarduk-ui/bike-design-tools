@@ -1134,6 +1134,17 @@ function recompute(quick){
       m.className='on'; console.error(stage,err);
     }
   }
+  /* The position label and the cycle/sag/static buttons reflect `result`, so
+     they belong here rather than in every caller. They used to be each
+     caller's own job -- most callers (typing into any config field, every
+     checkbox, both locks, the tyre-width selects, "Reset geometry") simply
+     never did it, so the toolbar's own "142mm wheel" total could go stale
+     the moment a change actually altered travel, until something else (a
+     drag, the animation loop) happened to call syncPos() next. The few
+     callers that update the display WITHOUT calling recompute() at all --
+     the position slider, Sag/Static, the animation loop -- still need and
+     keep their own explicit call. */
+  syncPos();
 }
 
 /* ---------- drawing ---------- */
@@ -1374,6 +1385,34 @@ function draw(){
     segs.forEach(([a,b,w,cap])=>line(a,b,edge,w,       null,cap));
     segs.forEach(([a,b,w,cap])=>line(a,b,fill,Math.max(1,w-7),null,cap));
   };
+  /* Shared by anything round enough that orientation doesn't matter -- the
+     wheels and the jockey wheels, so far -- scaling the art's own native
+     radius (measured off the PNG) to whatever radius R the model calls for,
+     centred on its own hub. Returns a draw function rather than drawing
+     directly, so a caller can still choose when in the paint order it goes. */
+  const isotropicArt=art=>(c,R)=>{
+    const s=R/art.nativeR;
+    const m=[s,0,0,s, c.x-s*art.hub[0], c.y-s*art.hub[1]];
+    const ag=el('g',{transform:`matrix(${m.map(v=>v.toFixed(6)).join(' ')})`},g);
+    el('image',{href:art.src,x:0,y:0,width:art.w,height:art.h},ag);
+  };
+  /* Sampled arc points, `a` to `b` about centre `c`, radius `r`, in the
+     direction of `sense` -- used wherever a chain has to visibly wrap a
+     pulley (the idler, and each jockey wheel). Not an SVG arc: the drawing
+     group is y-flipped, which inverts the sense of an arc element's own
+     sweep flag but not of plain sampled points, so sampling sidesteps that
+     rather than working around it. */
+  const arcPts=(c,r,a,b,sense)=>{
+    const t0=Math.atan2(a.y-c.y,a.x-c.x);
+    const sw=arcFrom(c,a,b,sense)*sense;
+    const n=Math.max(2,Math.ceil(Math.abs(sw)/0.2));
+    const pts=[];
+    for(let i=0;i<=n;i++){
+      const t=t0+sw*i/n;
+      pts.push(`${(c.x+r*Math.cos(t)).toFixed(1)},${(c.y+r*Math.sin(t)).toFixed(1)}`);
+    }
+    return pts.join(' ');
+  };
 
   /* ---- ground ---- (level, in root: the bike is what pitches, not the ground) */
   el('rect',{x:gx0,y:gy0,width:gx1-gx0,height:Math.max(0,ground-gy0),
@@ -1381,14 +1420,9 @@ function draw(){
   el('line',{x1:gx0,y1:ground,x2:gx1,y2:ground,stroke:'#aab6bd','stroke-width':3},groundG);
 
   /* ---- wheels ---- */
-  /* Artwork is isotropic (round), so it just scales to whatever radius the
-     current rim+tyre combination gives — no rotation needed. */
-  const wheelArt=(c,R)=>{
-    const s=R/WHEELART.nativeR;
-    const wm=[s,0,0,s, c.x-s*WHEELART.hub[0], c.y-s*WHEELART.hub[1]];
-    const wg=el('g',{transform:`matrix(${wm.map(v=>v.toFixed(6)).join(' ')})`},g);
-    el('image',{href:WHEELART.src,x:0,y:0,width:WHEELART.w,height:WHEELART.h},wg);
-  };
+  // Isotropic (round), so it just scales to whatever radius the current
+  // rim+tyre combination gives -- no rotation needed.
+  const wheelArt=isotropicArt(WHEELART);
   if(showWheels){ wheelArt(f.AX,F.Rr); wheelArt(F.FA,F.Rf); }
 
   /* ---- hidden (far-side) crank arm ----
@@ -1422,20 +1456,9 @@ function draw(){
     runs.forEach(r=>line(r.p1,r.p2,'#39424a',7));
     if(!route) return;
     ring(IDp,ri,'#5c6b78',7);
-    /* The wrap over the idler, so the chain reads as one continuous loop.
-       Sampled rather than an SVG arc: the drawing group is y-flipped, which
-       inverts the sense of an arc's sweep flag but not of plain points. */
-    const a=route.runs[0].p2, b=route.runs[1].p1;
-    const t0=Math.atan2(a.y-IDp.y,a.x-IDp.x);
-    const sw=arcFrom(IDp,a,b,route.sense)*route.sense;
-    const n=Math.max(2,Math.ceil(Math.abs(sw)/0.2));
-    const pts=[];
-    for(let i=0;i<=n;i++){
-      const t=t0+sw*i/n;
-      pts.push(`${(IDp.x+ri*Math.cos(t)).toFixed(1)},${(IDp.y+ri*Math.sin(t)).toFixed(1)}`);
-    }
-    el('polyline',{points:pts.join(' '),fill:'none',stroke:'#39424a',
-      'stroke-width':7,'stroke-linejoin':'round'},g);
+    // the wrap over the idler, so the chain reads as one continuous loop
+    el('polyline',{points:arcPts(IDp,ri,route.runs[0].p2,route.runs[1].p1,route.sense),
+      fill:'none',stroke:'#39424a','stroke-width':7,'stroke-linejoin':'round'},g);
   };
   if(showDrivetrain){
     ring(BB,rc,'#5c6b78',7); ring(f.AX,rg,'#5c6b78',7);
@@ -1445,17 +1468,6 @@ function draw(){
       const wrap=cageRun(BB,rc,guide,tension,RJ,f.AX,rg);
       if(wrap){
         const {segs:[segA,segB,segC], sGuide, sTension}=wrap;
-        const arcPts=(c,r,a,b,sense)=>{
-          const t0=Math.atan2(a.y-c.y,a.x-c.x);
-          const sw=arcFrom(c,a,b,sense)*sense;
-          const n=Math.max(2,Math.ceil(Math.abs(sw)/0.2));
-          const pts=[];
-          for(let i=0;i<=n;i++){
-            const t=t0+sw*i/n;
-            pts.push(`${(c.x+r*Math.cos(t)).toFixed(1)},${(c.y+r*Math.sin(t)).toFixed(1)}`);
-          }
-          return pts.join(' ');
-        };
         line(segA.p1,segA.p2,'#39424a',5);
         el('polyline',{points:arcPts(guide,RJ,segA.p2,segB.p1,sGuide),
           fill:'none',stroke:'#39424a','stroke-width':5,'stroke-linejoin':'round'},g);
@@ -1652,14 +1664,9 @@ function draw(){
     tubes([[f.AX,guide,15]],'#6b747c','#39424a');        // b-knuckle and body
     tubes([[guide,tension,30]],'#4a5158','#2a3138');     // cage
     // The two jockey wheels -- real artwork, not procedural rings. Isotropic
-    // like WHEELART, so only position moves (guide/tension as the cage
+    // like the wheels, so only position moves (guide/tension as the cage
     // swings); nothing here models the pulleys' own spin.
-    const jockeyArt=(c,R)=>{
-      const s=R/JOCKEYART.nativeR;
-      const jm=[s,0,0,s, c.x-s*JOCKEYART.hub[0], c.y-s*JOCKEYART.hub[1]];
-      const jg=el('g',{transform:`matrix(${jm.map(v=>v.toFixed(6)).join(' ')})`},g);
-      el('image',{href:JOCKEYART.src,x:0,y:0,width:JOCKEYART.w,height:JOCKEYART.h},jg);
-    };
+    const jockeyArt=isotropicArt(JOCKEYART);
     jockeyArt(guide,RJ); jockeyArt(tension,RJ);
   }
 
@@ -1806,7 +1813,7 @@ function draw(){
      the suspension cycles. Fixed scale in mm per newton, so the lengths stay
      comparable between positions instead of being renormalised each frame. */
   if(showForces){
-    const Fw=C.mass*9.81*C.bias/100;
+    const Fw=sprungLoad();
     const P=pivotForces(G,f,Fw);
     if(P){
       const FSCALE=0.22;                       // 1 kN reads as 220 mm on the drawing
@@ -1928,7 +1935,7 @@ function initDrag(){
     }
     if(dragRaf) return;                    // at most one solve per frame
     dragRaf=requestAnimationFrame(()=>{
-      dragRaf=null; fillPoints(); recompute(true); syncPos();
+      dragRaf=null; fillPoints(); recompute(true);   // recompute() itself calls syncPos()
     });
   });
   const stop=()=>{
@@ -1936,7 +1943,7 @@ function initDrag(){
     if(!dragKey) return;
     dragKey=null;
     if(dragRaf){cancelAnimationFrame(dragRaf);dragRaf=null}
-    fillPoints(); recompute(false); syncPos();   // full resolution on release
+    fillPoints(); recompute(false);   // full resolution on release
   };
   svg.addEventListener('pointerup',stop);
   svg.addEventListener('pointercancel',stop);
@@ -1997,6 +2004,9 @@ function readouts(){
   const lrTop=lrs[0], lrBot=lrs[lrs.length-1];
   const prog=(lrTop-lrBot)/lrBot*100;
   const eyeNow=dist(G.SE,G.SG);
+  // where the bike actually sits, and what it's carrying there -- shared by
+  // the stay stress, spring rate and pivot-force panels below
+  const sagFr=sagFrame(f), W=sprungLoad();
   R('out-rate').innerHTML=
     row('Wheel travel', travel.toFixed(1)+' mm')+
     row('Leverage, top out', lrTop.toFixed(2))+
@@ -2014,11 +2024,9 @@ function readouts(){
   const fl=f.map(k=>k.flex);
   const peak=fl.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a,0);
   const stayGeo=stayPath(G.FP,G.SE);
-  const Wsag=C.mass*9.81*C.bias/100;
-  const sagFrame=at(f,C.sag/100);
   const stayU=unit(sub(G.SE,G.AX));
   const axialAt=mult=>{
-    const P=pivotForces(G,sagFrame,Wsag*mult);
+    const P=pivotForces(G,sagFr,W*mult);
     if(!P) return 0;
     return -(P.fp.x*stayU.x+P.fp.y*stayU.y)/2;      // per stay, compression positive
   };
@@ -2054,13 +2062,11 @@ function readouts(){
     row('Mech cage swing', (first.cageDeg-last.cageDeg).toFixed(1)+'°',
         f.some(k=>k.cageClamp)?'warn':'');
 
-  const sagF=at(f,C.sag/100);
-  const W=C.mass*9.81*C.bias/100;
-  const lrSag=sagF.lr||lrTop;
+  const lrSag=sagFr.lr||lrTop;
   const Fs=W*lrSag;
   // At 0% sag the shock hasn't moved yet, so N/mm of a zero-length stroke is
   // not a real rate -- report it as unavailable rather than Infinity.
-  const rate=sagF.stroke>1e-6 ? Fs/sagF.stroke : null;
+  const rate=sagFr.stroke>1e-6 ? Fs/sagFr.stroke : null;
   R('out-spring').innerHTML=
     row('Sprung load on rear', W.toFixed(0)+' N')+
     row('Leverage at sag', lrSag.toFixed(2))+
@@ -2068,7 +2074,7 @@ function readouts(){
     row('Coil rate', rate===null ? '—' :
         rate.toFixed(1)+' N/mm · '+(rate*5.7101).toFixed(0)+' lb/in');
 
-  const P2=pivotForces(G,sagF,W);
+  const P2=pivotForces(G,sagFr,W);
   R('out-force').innerHTML = P2 ?
     row('Main pivot', (P2.mainPivot/1000).toFixed(2)+' kN')+
     row('Flex pivot', (P2.flexPivot/1000).toFixed(2)+' kN')+
@@ -2077,7 +2083,13 @@ function readouts(){
     : row('Solver','no solution','warn');
 }
 function at(f,t){return f[Math.min(f.length-1,Math.max(0,Math.round(t*(f.length-1))))]}
-function pick(f,k){const v=at(f,C.sag/100)[k];return v===null||v===undefined?0:v}
+// the frame at the sag position -- `at(f,C.sag/100)`, used everywhere a
+// readout or a chart marks "where the bike actually sits"
+function sagFrame(f){return at(f,C.sag/100)}
+function pick(f,k){const v=sagFrame(f)[k];return v===null||v===undefined?0:v}
+// static rear-wheel share of rider+kit weight, in newtons -- what the shock,
+// the pivots and the stay's axial load are all ultimately reacting against
+function sprungLoad(){return C.mass*9.81*C.bias/100}
 
 /* ---------- charts ----------
    One at a time, full strip width, paged by the arrows. The viewBox is rebuilt
@@ -2143,7 +2155,7 @@ function chart(id,spec){
   });
   el('polyline',{points:f.map(k=>`${X(k.rise)},${Y(k[key])}`).join(' '),
     fill:'none',stroke:'var(--rear)','stroke-width':2.4,'stroke-linejoin':'round'},gg);
-  const s=at(result.frames,C.sag/100);
+  const s=sagFrame(result.frames);
   if(s[key]!==null&&s[key]!==undefined)
     el('circle',{cx:X(s.rise),cy:Y(s[key]),r:4.5,fill:'var(--flex)'},gg);
   const cur=currentFrame();
@@ -2221,7 +2233,7 @@ function chartAxlePath(id){
   // the shared top-out origin both curves now start from
   el('circle',{cx:X(0),cy:Y(0),r:3,fill:'var(--ink-soft)'},gg);
   // sag markers, the same accent every other chart uses for the current sag point
-  const sAX=at(result.frames,C.sag/100).AX;
+  const sAX=sagFrame(result.frames).AX;
   el('circle',{cx:X(sAX.x-rear0.x),cy:Y(sAX.y-rear0.y),r:4.5,fill:'var(--flex)'},gg);
   const sFA=frame(C.forkTravel*C.fsag/100).FA;
   el('circle',{cx:X(sFA.x-front0.x),cy:Y(sFA.y-front0.y),r:4.5,fill:'var(--flex)'},gg);
@@ -2257,6 +2269,18 @@ function debounce(fn,ms){
   const d=(...a)=>{ clearTimeout(t); t=setTimeout(()=>{t=null; fn(...a);},ms); };
   d.flush=()=>{ if(t){clearTimeout(t); t=null;} };
   return d;
+}
+/* Paints a lock icon button's pressed state, glyph and title -- shared by
+   every lock in this tool (the per-point row lock, the two down-tube
+   standoff locks, and the shock length lock), which otherwise each wrote
+   the same three lines by hand and could drift out of step with each other.
+   `titles` is [lockedTitle, unlockedTitle]; the caller still owns whatever
+   side effect the toggle itself has (disabling inputs, re-running the
+   sweep, or nothing at all), since those genuinely differ per lock. */
+function paintLock(btn,locked,titles){
+  btn.setAttribute('aria-pressed', !!locked);
+  btn.textContent = locked ? '🔒' : '🔓';
+  btn.title = locked ? titles[0] : titles[1];
 }
 function datumOffset(){
   const d=document.getElementById('datum').value;
@@ -2301,9 +2325,7 @@ function fillPoints(){
     const k=btn.dataset.lockrow;
     btn.onclick=()=>{
       ptLocked[k]=!ptLocked[k];
-      btn.setAttribute('aria-pressed',ptLocked[k]);
-      btn.textContent=ptLocked[k]?'🔒':'🔓';
-      btn.title=ptLocked[k]?'Unlock this point':'Lock this point';
+      paintLock(btn, ptLocked[k], ['Unlock this point','Lock this point']);
       host.querySelectorAll(`[data-f="${k}-x"],[data-f="${k}-y"]`).forEach(inp=>inp.disabled=ptLocked[k]);
     };
   });
@@ -2337,6 +2359,26 @@ function refreshDerived(skip){
     if(e) e.disabled=!!C[lock];
   }
 }
+/* The standard "a config field changed" sequence -- re-derive whatever
+   depends on it, write the derived boxes back, redraw the points panel (a
+   changed lock or geometry field can move where a point reads relative to
+   its datum), then resolve. Shared by every checkbox, lock button and select
+   in this file except the plain numeric fields (`fillCfg`'s own generic
+   loop), which additionally need to skip re-writing the box the user is
+   still typing into -- `refreshDerived(k)` there, `refreshDerived()` here. */
+function applyChange(k){
+  syncGeom(k); refreshDerived(); fillPoints(); recompute(false);
+}
+/* Re-derives and repaints every input panel from G/C -- shared by every
+   place that replaces G/C wholesale rather than changing one field: the
+   two resets, import, and the initial page load. Each of those four still
+   has its own small tail after this (whether posT/holdSag reset to top-out,
+   which recompute() variant to run, whether initDrag() needs to run once at
+   boot), so this only covers the part that's genuinely identical across
+   all four, not the whole sequence. */
+function refillAll(){
+  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths();
+}
 function fillCfg(){
   Object.keys(C).forEach(k=>{
     // icon buttons and custom-wired standoffs, not plain checkboxes/numbers -- wired below
@@ -2347,7 +2389,7 @@ function fillCfg(){
       inp.checked=!!C[k];
       inp.onchange=()=>{
         C[k]=inp.checked?1:0;
-        syncGeom(k); refreshDerived(); fillPoints(); recompute(false);
+        applyChange(k);
       };
       return;
     }
@@ -2370,15 +2412,12 @@ function fillCfg(){
   for(const k of ['sgLock','spLock']){
     const btn=document.getElementById(k);
     if(!btn) continue;
-    btn.setAttribute('aria-pressed', !!C[k]);
-    btn.textContent=C[k]?'🔒':'🔓';
-    btn.title=C[k]?'Unlock from the down tube':'Lock to the down tube';
+    const titles=['Unlock from the down tube','Lock to the down tube'];
+    paintLock(btn, !!C[k], titles);
     btn.onclick=()=>{
       C[k]=C[k]?0:1;
-      btn.setAttribute('aria-pressed', !!C[k]);
-      btn.textContent=C[k]?'🔒':'🔓';
-      btn.title=C[k]?'Unlock from the down tube':'Lock to the down tube';
-      syncGeom(k); refreshDerived(); fillPoints(); recompute(false);
+      paintLock(btn, !!C[k], titles);
+      applyChange(k);
     };
   }
   /* sgStand/spStand sit outside the generic loop too, for the same reason:
@@ -2424,7 +2463,7 @@ function fillTyreWidths(){
       sel.innerHTML=TYRE_WIDTHS.map(v=>`<option value="${v}">${v} in</option>`).join('');
       sel.onchange=()=>{
         C[k]=parseFloat(sel.value)*25.4;
-        syncGeom(k); refreshDerived(); fillPoints(); recompute(false);
+        applyChange(k);
       };
     }
     if(![...sel.options].some(o=>Math.abs(+o.value-w)<0.005)){
@@ -2471,11 +2510,9 @@ document.getElementById('pos').oninput=e=>{
   draw(); syncPos(); charts();
 };
 document.getElementById('locklen').onclick=e=>{
-  lockLen=!lockLen; e.target.setAttribute('aria-pressed',lockLen);
-  e.target.textContent=lockLen?'🔒':'🔓';
-  e.target.title=lockLen
-    ?'Keep the shock eye to eye fixed while dragging its mounts'
-    :'Shock eye to eye is free while dragging its mounts';
+  lockLen=!lockLen;
+  paintLock(e.target, lockLen, ['Keep the shock eye to eye fixed while dragging its mounts',
+    'Shock eye to eye is free while dragging its mounts']);
 };
 document.getElementById('showsag').onclick=()=>{
   stopAnimation();
@@ -2495,7 +2532,8 @@ document.getElementById('staticPos').onclick=()=>{
 document.getElementById('datum').onchange=fillPoints;
 document.getElementById('reset').onclick=()=>{
   G=structuredClone(DEF.geom); C=structuredClone(DEF.cfg);
-  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); posT=0; holdSag=false; syncPos(); recompute();
+  posT=0; holdSag=false;
+  refillAll(); recompute();
 };
 // Everything in the Frame geometry panel — reach through the fork — without
 // touching pivots, shock, stay section, drivetrain, rider or the design file.
@@ -2505,7 +2543,7 @@ const GEOM_KEYS=['reach','stack','ha','htl','sa','st','ttDrop','bbh','rc','csl',
   'dtOD','stOD','ttOD','htOD','dtWeld','ttWeld','pivotOD'];
 document.getElementById('resetGeom').onclick=()=>{
   GEOM_KEYS.forEach(k=>C[k]=DEF.cfg[k]);
-  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); recompute(false);
+  refillAll(); recompute(false);
 };
 // The four-bar's own points: main pivot, link, shock eye/mount — the levers
 // you actually drag while watching the graph. AX and FP are excluded: AX is
@@ -2577,7 +2615,8 @@ function importJSON(){
         META.designer=(data._meta&&data._meta.designer)||'';
         document.getElementById('designName').value=META.name;
         document.getElementById('designer').value=META.designer;
-        syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); posT=0; holdSag=false; syncPos(); recompute();
+        posT=0; holdSag=false;
+        refillAll(); recompute();
       }catch(err){ alert('Invalid JSON: '+err.message); }
     };
     r.readAsText(file);
@@ -2641,7 +2680,7 @@ if(window.ResizeObserver){
 }
 
 try{
-  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); initDrag(); recompute(false); syncPos();
+  refillAll(); initDrag(); recompute(false);
 }catch(err){
   const m=document.getElementById('msg');
   m.textContent='Start-up failed: '+err.message; m.className='on';
