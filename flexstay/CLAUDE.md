@@ -150,6 +150,20 @@ bend geometry: a straight run out of the dropout, a fixed radius bend, then a
 straight run to the yoke, with the launch angle solved so both ends stay on
 their pivots.
 
+**`G.FP` is kept equal to `G.AX` in exactly one place, unconditionally:**
+`recompute()`'s own `G.FP={...G.AX}`, run at the top of every call. `syncGeom()`
+used to carry a second, conditional copy of this — check whether the two were
+already concentric, then re-sync `G.FP` if so — which read as though it were
+doing real work but never was: every call site reaches `recompute()` shortly
+after `syncGeom()`, so by the time anything ever reads `G.FP` the unconditional
+copy has already run and overwritten whatever the conditional one did or
+didn't do. Confirmed rather than assumed — forced `G.FP` 500mm away from
+`G.AX`, called `syncGeom()` alone, and it came back completely untouched;
+only `recompute()` afterward put it back. Removed the dead branch; the
+invariant itself ("flex pivot always rides with the axle") is unchanged and
+still lives in `recompute()`, just no longer duplicated somewhere it could
+never fire.
+
 **`f.LP` is a solved four-bar point, not a point on the drawn stay curve, so it
 gets its own short mount brace rather than being folded into the stay's own
 line.** `stayPath(f.FP,f.SE)` runs the whole way to the shock eye already, so
@@ -179,6 +193,17 @@ of the tube already there. `C.zone` itself is untouched (still computed, still
 part of the saved/exported shape), since the stress panel's own workings read
 `stayGeo.total`, not this field; only the now-pointless highlight and the
 polyline-head helper that built it are gone.
+
+**Revisited during a later audit, and reaffirmed rather than removed.**
+`C.zone` is genuinely write-only now — nothing in the app reads it, confirmed
+by grep — which is the kind of thing a dead-code pass would normally delete.
+Left alone anyway: it's part of every saved design file's schema, and
+removing a field from an exported format is not something you can quietly
+undo once files carrying it exist in the wild — a decision to make once,
+deliberately, not as a side effect of a cleanup pass. Still recomputed on
+every `recompute()` rather than frozen at whatever value it last held, so an
+old file re-saved through a newer build doesn't carry a stale number for a
+field nobody's using anyway.
 
 Coordinates are millimetres, origin at the bottom bracket, x forward, y up. The
 drawing group applies `scale(1,-1)` so the SVG is y-down inside a y-up model.
@@ -777,9 +802,11 @@ the handler uses `closest('.drag')` — before that, a click on the exact centre
 pivot hit the decorative dot, which has no `dataset.key`, and silently did nothing.
 
 **The rear axle is derived from rear centre and bottom bracket height.**
-`syncGeom()` rewrites `G.AX` from them on every input change and carries `G.FP`
-with it while the two are concentric, so a drag of that point has to write back
-into `C.rc` and `C.bbh` or the next sync silently undoes it. The drag handler
+`syncGeom()` rewrites `G.AX` from them on every input change — `G.FP` is kept
+concentric with it separately, unconditionally, by `recompute()`'s own
+`G.FP={...G.AX}` (see "The model" above), not by anything in `syncGeom()`
+itself — so a drag of that point has to write back into `C.rc` and `C.bbh` or
+the next sync silently undoes it. The drag handler
 does exactly that — but only for `C.rc`. **`bbh` is never written from an axle
 drag, because it is the ground-plane datum** (`ground=-C.bbh` in `draw()`), and
 `syncGeom()` builds the front wheel's height from it too, via `C.stack`. A drag

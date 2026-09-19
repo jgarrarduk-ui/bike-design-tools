@@ -963,15 +963,15 @@ function syncGeom(driver){
   if(driver==='stack')
     C.htl=Math.max(40,(C.stack-faY+cs*C.offset)/s-C.hsLower-along);
   C.stack=faY+s*(C.htl+C.hsLower+along)-cs*C.offset;
-  // the rear wheel sits on the same ground plane; the flex pivot rides with it
-  // when the two are concentric, which is the usual flex-stay layout
+  // the rear wheel sits on the same ground plane; the flex pivot always rides
+  // with it -- recompute()'s own unconditional `G.FP={...G.AX}` is what
+  // actually enforces that (this function doesn't touch G.FP at all), so
+  // there is nothing conditional to do with it here
   const axY=Rr-C.bbh;
   // rear centre is the horizontal run to the axle; chainstay length is the hypotenuse
   if(driver==='csl') C.rc=Math.sqrt(Math.max(1,C.csl*C.csl-axY*axY));
   C.csl=Math.hypot(C.rc,axY);
-  const concentric=Math.abs(G.FP.y-G.AX.y)<1e-9 && Math.abs(G.FP.x-G.AX.x)<1e-9;
   G.AX.x=-C.rc; G.AX.y=axY;
-  if(concentric){G.FP.x=G.AX.x; G.FP.y=G.AX.y}
 }
 
 /* ---------- derived frame points ---------- */
@@ -1098,7 +1098,13 @@ function recompute(quick){
       if(C[lock]) G[k]=onTube(dtU, alongOf(dtU,G[k]), C[off]);
       else        C[off]=Math.round(standoffOf(dtU,G[k])*10)/10;
     }
-    C.zone=Math.round(stayLength());     // bending always spans the whole seat stay
+    // Vestigial, kept on purpose: a leftover field from the old flex-zone
+    // overlay (bending always spans the whole seat stay now, so nothing
+    // reads this any more -- see CLAUDE.md, "The model"). Removing it would
+    // change every saved design file's schema for a field nobody's missed
+    // since; recomputed here so an old export re-saved through this tool
+    // doesn't carry a stale number either.
+    C.zone=Math.round(stayLength());
     result=sweep(G,C,quick?15:61);        // coarse sweep while a point is moving
     if(C.chainAuto&&result.links){
       C.links=result.links;
