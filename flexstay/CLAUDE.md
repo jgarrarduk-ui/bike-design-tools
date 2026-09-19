@@ -745,6 +745,36 @@ catches regressions: with the old code 176 of 400 jittered geometries jammed.
 
 **Test in Safari as well as Chrome.** See above.
 
+**Bisection loops run 30 iterations, not 60 — and `atCompression` seeds its
+search from the previous frame's own angle.** Three separate bisection solves
+in the engine block (`atCompression`'s refinement loop; `stayLoads`'s
+out-of-plane lean angle; `stayPath`'s bend launch angle) all ran 60 iterations
+over an interval under 1.3rad wide. 60 halvings of an interval that size
+resolves to roughly 1e-18rad — far past double-precision noise, let alone
+anything this tool draws or reports at (a micron on a 500mm lever arm is
+already 8e-10rad). Halved to 30 in all three, which still resolves to about
+1e-9rad: a comfortable margin over floating-point noise, not the theoretical
+minimum. All three are pure numerical settings with no observable effect on
+any result — confirmed by re-running the full 51-check suite, which reproduces
+every number bit for bit, since the coarse bracketing step (unchanged) already
+narrows to the final interval and the extra 30 halvings were only ever
+sharpening precision nobody could see.
+
+Separately, `atCompression` gained a fourth, optional argument, `phiHint`:
+`sweep()` now passes the previous frame's converged `phi` in, and the coarse
+bracket search starts from `[phiHint, hi]` instead of always restarting from
+`[0, hi]`. Sound because compression only ever increases along a sweep and
+shock length is monotonically decreasing in compression by definition
+(`comp = L0 - shock`): the residual at the previous frame's own converged
+`phi` is `L0 - prevComp`, strictly greater than this frame's (larger) target
+`L0 - comp`, so it has the same sign the search always started from at `phi=0`
+— just measured much closer to the actual root, so the coarse loop finds its
+bracket in a handful of steps instead of walking most of `[0, hi]` from
+scratch on every one of the 61 frames in a sweep. Same root, same tolerance,
+just less of the interval walked to get there; the first frame has no previous
+`phi` and falls back to 0, exactly as before. Tests call `sweep()`, never
+`atCompression` directly, so the new optional parameter needed no test changes.
+
 **Leverage by three-point quadratic, not a plain central difference.**
 `f.lr` is `d(rise)/d(stroke)`. The old code was a central difference —
 `(q.rise-p.rise)/(q.stroke-p.stroke)` off the frame's two neighbours — clamped
@@ -857,6 +887,45 @@ relative `#canvas` breaks that loop.
 **Both panels fit themselves to their own pixel box**, so the first paint can land
 before the flex layout settles. A `ResizeObserver` on `#canvas` and `#charts`
 refits; the window resize listener alone is not enough.
+
+**`getBoundingClientRect()` is cached, not called fresh every `draw()`/`chart()`.**
+`fitView`, `chart` and `chartAxlePath` each used to call it directly on every
+invocation. Profiled with a CPU profiler attached (Chrome DevTools Protocol,
+`Profiler.start`/`stop` around 300 forced `draw()`+`charts()` calls): it was the
+single most expensive thing either function did, ahead of every SVG element
+either one actually creates — because `getBoundingClientRect()` answers from
+live layout, so it forces the browser to flush whatever DOM mutations are still
+pending first, and `draw()`/`charts()` always have some pending, since they just
+tore down and rebuilt their own SVG a moment before asking. But the canvas's and
+the charts' pixel box only change when the page is actually resized, which the
+`ResizeObserver` above already watches — so there's no reason to pay a fresh
+layout flush on every ordinary redraw (a drag, a typed field, the animation
+loop) just to re-confirm a size that hasn't moved. `canvasRectCache`/
+`chartsRectCache` (next to `VIEW`) hold the last answer; `invalidateRectCache()`
+clears both, called from the window `resize` listener and from inside the
+`ResizeObserver` callback, right before the `draw()`/`charts()` it already
+triggers. Measured effect: `draw()` went from 4.48ms average / 1.80ms best case
+to 3.16ms average / 1.10ms best, and `getBoundingClientRect` dropped out of the
+profile entirely — what's left (createElementNS and setAttribute, ~82% of
+samples between them) is the inherent cost of rebuilding the SVG from scratch
+each frame, not something this fix touches. Verified the cache actually
+invalidates on a real resize and not just once: drove the page through three
+different viewport sizes with Playwright and confirmed both panels' `viewBox`
+tracked each one, not just the first.
+
+**The bigger rewrite — building the SVG scaffold once and updating only
+transforms, instead of tearing it down and rebuilding it every frame — was
+deliberately not done.** It was on the original remediation plan as "the
+biggest [item], so it wants its own session," written before anything had
+actually been profiled. Once `getBoundingClientRect` stopped dominating the
+profile, what was left was `createElementNS`/`setAttribute` at ~3ms average per
+`draw()` — comfortably inside a 16.6ms/60fps frame budget with room to spare
+for layout and paint on top, on ordinary hardware. Rewriting persistent-DOM
+updates in place is a large, invasive change (touches essentially every artwork
+call site) to buy headroom nothing currently needs; the cache fix already
+removed the one disproportionate cost. Left as a documented option, not a TODO
+— worth revisiting only if profiling on materially weaker hardware, or a much
+busier scene, ever shows `draw()` actually costing visible frame time.
 
 **Pivot hit targets are sized in screen pixels**, `HIT_PX * mmPerPx`, so they stay
 grabbable at any zoom. The decorative ring and dot carry `pointer-events:none` and

@@ -430,10 +430,23 @@ function solve(g, phi, prevLP){
     stayAngle: Math.atan2(LP.y-FP.y,LP.x-FP.x)-phi}; // body B angle in body A's frame
 }
 
-// Rotate body A until the shock has been compressed by `comp`.
-function atCompression(g, comp, guess){
+/* Rotate body A until the shock has been compressed by `comp`. `phiHint`, when
+   given, narrows the coarse bracket search to [phiHint, hi] instead of always
+   starting over from [0, hi]. Sound because compression only ever increases
+   along a sweep and shock length is monotonically decreasing in compression
+   by definition (comp = L0 - shock), so the residual's sign at the previous
+   frame's own converged phi is already known: shockAtPhiHint is exactly
+   L0-prevComp, strictly greater than this frame's (larger) target L0-comp, so
+   f(phiHint) is strictly positive here -- the same sign f(0) always had,
+   just measured closer to the actual root. That means the coarse loop below
+   finds its bracket within a handful of iterations instead of walking most of
+   the way across [0,hi] from scratch every frame, without changing what it
+   finds: same root, same tolerance, just less of the interval to search to
+   get there. First frame has no previous phi, so it falls back to 0, exactly
+   as before. */
+function atCompression(g, comp, guess, phiHint){
   const L0=dist(g.SE,g.SG), target=L0-comp;
-  let lo=0, hi=-0.85, prev=null;          // negative phi drives the axle upward
+  let lo=(phiHint||phiHint===0)?phiHint:0, hi=-0.85, prev=null;   // negative phi drives the axle upward
   const f=p=>{const s=solve(g,p,prev); if(!s) return null; prev=s.LP; return s.shock-target};
   /* Rotating by zero still round-trips through the rigid-body transform, so the
      residual at zero compression is floating point noise of either sign rather
@@ -453,7 +466,14 @@ function atCompression(g, comp, guess){
     a=p;fa=v;
   }
   if(b===null) return null;
-  for(let i=0;i<60;i++){
+  /* 30 bisections of an interval no wider than 0.85rad resolves phi to about
+     8e-10rad -- on a 500mm lever arm that's under a micron, already far past
+     any precision this tool draws or reports at. The old 60 was roughly a
+     million times finer than that again, solving for precision nothing here
+     could ever use. Halved, not dropped further, to keep a comfortable
+     margin over floating-point noise rather than chase the theoretical
+     minimum. */
+  for(let i=0;i<30;i++){
     const m=(a+b)/2, v=f(m);
     if(v===null) break;
     if(fa*v<=0){b=m} else {a=m;fa=v}
@@ -731,12 +751,12 @@ function sweep(g,cfg,n=61){
      riding up with the axle, which is what the anti-squat datum is measured from.
      The ground is wherever the un-compressed rear wheel touches. */
   const ground=g.AX.y-Rr;
-  const out=[], routes=[]; let prev=null;
+  const out=[], routes=[]; let prev=null, prevPhi=undefined;
   for(let i=0;i<=n;i++){
-    const s=atCompression(g, cfg.stroke*i/n, prev);
+    const s=atCompression(g, cfg.stroke*i/n, prev, prevPhi);
     if(!s) return {frames:out, error:'The linkage jams before the shock reaches full stroke. '+
         'Usually the shock link is too short to reach, or the second pivot is too far from the main pivot.'};
-    prev=s.LP;
+    prev=s.LP; prevPhi=s.phi;
     const CP={x:s.AX.x, y:ground};
     const IC=g.MP;                                   // wheel carrier is pinned to the frame
     const guide=rot({x:g.AX.x+GDX, y:g.AX.y+GDY}, g.MP, s.phi);
@@ -881,7 +901,9 @@ function stayLoads(deg, path, od, wall, axial, bendA, dropZ, yokeZ, leanEnd, lea
   const la=(leanA||0)*Math.PI/180;
   const reach=b=>main*Math.sin(b)+tail*Math.sin(b+la);
   let blo=-0.5, bhi=0.5;
-  for(let i=0;i<60;i++){ const bm=(blo+bhi)/2; if(reach(bm)<pull) blo=bm; else bhi=bm; }
+  // 30 bisections of a 1rad interval resolves the angle to about 1e-9rad --
+  // see atCompression's own note on the same trade-off
+  for(let i=0;i<30;i++){ const bm=(blo+bhi)/2; if(reach(bm)<pull) blo=bm; else bhi=bm; }
   const bMain=(blo+bhi)/2;
   const eOop=Math.abs((pull*main/L) - main*Math.sin(bMain));
   const leanNeeded=bMain*180/Math.PI;
@@ -1208,7 +1230,9 @@ function stayPath(a,b){
   const fl=t=>{const v=legs(t); return v?v.l1-want:null};
   const flo=fl(lo), fhi=fl(hi);
   if(flo===null||fhi===null||flo*fhi>0) return straight;
-  for(let i=0;i<60;i++){
+  // 30 bisections of a 1.3rad interval resolves the launch angle to about
+  // 1e-9rad -- see atCompression's own note on the same trade-off
+  for(let i=0;i<30;i++){
     const m2=(lo+hi)/2, v=fl(m2);
     if(v===null) break;
     if(flo*v<=0) hi=m2; else lo=m2;
@@ -1245,6 +1269,19 @@ function el(tag,attrs,parent){
    little; the crop is capped so a tall narrow canvas does not slice the frame. */
 let VIEW={x0:-880,y0:-395,w:2130,h:1120};   // last fit, read by the grid, ground and hit radius
 let zoomK=1, panX=0, panY=0, lastBox=null, mmPerPx=1;
+/* getBoundingClientRect() answers from live layout, so asking for it forces
+   the browser to flush whatever DOM changes are still pending first -- and
+   draw()/charts() always have some pending, since they just tore down and
+   rebuilt their own SVG a moment before asking. Measured: with a profiler
+   attached, this single call was the single most expensive thing draw() did
+   each frame, ahead of every element it actually creates. But the canvas's
+   and the charts' own pixel box only change when the page is actually
+   resized -- which the ResizeObserver below already watches -- so there is
+   no reason to pay a fresh layout flush on every ordinary redraw (a drag, a
+   typed field, the animation loop) just to re-confirm a size that hasn't
+   moved. Cached here, invalidated only where an actual resize is detected. */
+let canvasRectCache=null, chartsRectCache=null;
+function invalidateRectCache(){ canvasRectCache=null; chartsRectCache=null; }
 let showForces=false, showAS=false, showAR=false, showPath=true;
 const showLines=()=>showAS||showAR;          // the shared construction lines
 // What gets drawn, as opposed to what gets analysed. All on by default; each
@@ -1259,7 +1296,7 @@ let showWheels=true, showDrivetrain=true, showCockpit=true,
 let ptLocked={};
 const MAXCROP=0.18;                          // never lose more than this fraction of the width
 function fitView(svg,box){
-  const r=svg.getBoundingClientRect();
+  const r=canvasRectCache||(canvasRectCache=svg.getBoundingClientRect());
   const aspect=(r.width>4&&r.height>4)?r.width/r.height:1.9;
   // Fill the canvas, cropping the wheels a little. Always — the overlays do not
   // get to change the framing.
@@ -2120,7 +2157,7 @@ function chart(id,spec){
   if(spec.type==='xy'){ chartAxlePath(id); return; }
   const svg=document.getElementById(id);
   svg.innerHTML='';
-  const r=svg.getBoundingClientRect();
+  const r=chartsRectCache||(chartsRectCache=svg.getBoundingClientRect());
   const W=Math.max(180,Math.round(r.width)), H=Math.max(120,Math.round(r.height));
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   if(!result||!result.frames.length) return;
@@ -2180,7 +2217,7 @@ function chart(id,spec){
 function chartAxlePath(id){
   const svg=document.getElementById(id);
   svg.innerHTML='';
-  const r=svg.getBoundingClientRect();
+  const r=chartsRectCache||(chartsRectCache=svg.getBoundingClientRect());
   const W=Math.max(180,Math.round(r.width)), H=Math.max(120,Math.round(r.height));
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   if(!result||!result.frames.length) return;
@@ -2671,10 +2708,10 @@ document.getElementById('cnext').onclick=()=>pageCharts(1);
 });
 /* Both panels fit themselves to their own pixel box, and the first paint can run
    before the flex layout has settled, so watch the boxes rather than the window. */
-window.addEventListener('resize',()=>{draw(); charts();});
+window.addEventListener('resize',()=>{invalidateRectCache(); draw(); charts();});
 if(window.ResizeObserver){
   let ro=null;
-  const refit=()=>{ if(ro) return; ro=requestAnimationFrame(()=>{ro=null; draw(); charts();}); };
+  const refit=()=>{ if(ro) return; ro=requestAnimationFrame(()=>{ro=null; invalidateRectCache(); draw(); charts();}); };
   new ResizeObserver(refit).observe(document.getElementById('canvas'));
   new ResizeObserver(refit).observe(document.getElementById('charts'));
 }
