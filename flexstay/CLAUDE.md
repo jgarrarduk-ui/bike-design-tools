@@ -14,7 +14,7 @@ Open `index.html`, or serve the folder. It is deployed to GitHub Pages alongside
 cd test && node flexstay-tests.mjs
 ```
 
-51 checks, no install required. The engine sits between the `// ==ENGINE-START==`
+53 checks, no install required. The engine sits between the `// ==ENGINE-START==`
 and `// ==ENGINE-END==` markers and contains **no DOM references**, so the test
 file extracts that block with `new Function()` and runs it headlessly. Keep it
 that way — if DOM code leaks into the engine block the tests stop working.
@@ -733,6 +733,47 @@ different discretizations agreeing to 0.1 points was never guaranteed to
 survive either one getting more correct. See "Leverage by three-point
 quadratic, not a plain central difference" below.
 
+## `draw()` is a sequence of named steps, not one 530-line block
+
+It used to be one function, top to bottom, with `/* ---- section ---- */`
+comments marking where one visual piece ended and the next began — ground,
+wheels, cranks, drivetrain, fork, cockpit, front triangle, rear assembly,
+shock, rear derailleur, axle trail, saddle, anti-squat/anti-rise construction,
+pivots, force vectors. Those comments were already doing the job of naming
+each step; splitting it just turns each one into an actual named function
+(`drawGround`, `drawWheels`, `drawFrontTriangle`, ... `drawForceVectors`) that
+the comment now documents, called in exactly the original order — paint order
+is draw-call order in SVG, so that sequence is load-bearing, not cosmetic.
+
+**Only the shared values stayed at `draw()`'s own scope; everything a single
+step owns outright moved inside that step.** A handful of values are read by
+more than one named function and would otherwise need passing as arguments on
+every call: `rc`/`rg`/`guide`/`tension`/`route`/`runs`/`drawTop` (drivetrain
+rings and the rear derailleur both read them — the comment on this already
+said "computed regardless of the toggle... needs them whether or not this pass
+renders anything," which was really saying "this outlives its own section"),
+and `fu`/`fp` (the fork's own drawing and the stem artwork both read them, and
+`fu`/`fp` also feed the crown/topW/jog geometry the fork step draws from). All
+of those stayed declared in `draw()` itself, in their original position,
+unwrapped. Everything else — `FT`/`dtU`/`foot`/`boss`, `K`/`ks`/`mir`/`fm`/
+`topW`/`jog`/`crown`'s downstream tubes, `path`/`poly`/`lpFoot`, `HIT_PX`/
+`top`/`locked`/`marks`/`ghosts`/`grabPts`/`hitFor`/`grab` — was local to one
+step already in practice, just sitting in the bigger shared scope by accident
+of where the code happened to live; moving it inside its own function makes
+that scoping explicit instead of incidental, so a future edit to one step
+can't quietly start depending on another step's leftover local the way a flat
+530-line function makes easy to do without noticing.
+
+**Verified by literally diffing the drawn SVG, not just by reading the diff.**
+Since this only moves code and adds function wrappers around it — no
+computation changed, no call reordered relative to the original sequence —
+the correct verification is that the rendered output cannot have changed at
+all. Captured `#draw`'s full `outerHTML` before and after, across five states
+(top-out, mid-travel, full compression, every parts toggle off, all back on),
+and the two sets are byte-for-byte identical. `flexstay-tests.mjs` also stays
+green throughout, though that alone wouldn't have caught a drawing regression
+— it only extracts the engine block, which this change never touches.
+
 ## Traps
 
 **Floating point noise at zero compression.** At top-out the target shock length
@@ -954,6 +995,33 @@ position only ever changes by typing bottom bracket height or drop.
 own `fax` and never gets that overwrite, so a stale value there means the tests and
 the app measure at different places. `DEF.cfg.fax` is kept in step with the default
 geometry for the same reason.
+
+**The `stayLoads` test call had drifted from the function it was calling.**
+`REF.cfg` already carried `leanEnd`/`leanA` — the out-of-plane lean bend's own
+parameters — but the test's `stayLoads(...)` call stopped at `dropZ`/`yokeZ`
+and never passed them, an 8-argument call against a 10-argument function.
+`leanEnd`/`leanA` defaulting to `undefined` doesn't throw or read as obviously
+wrong; it silently zeroes the tail segment (`tail=Math.min(Math.max(0,
+leanEnd||0),...)` becomes 0), which makes `eOop` — the whole point of the out
+of plane calculation — converge to the bisection's own floating-point residual
+instead of a real value. "Out of plane bending is counted" passed the whole
+time, printing `0 MPa`, because a value on the order of 1e-7 still satisfies
+`st.sOop>0`: a test that read as green while checking almost nothing. Passing
+`C.leanEnd,C.leanA` through gives 26 MPa instead, a value that actually moves
+if the lean bend geometry does. A signature drift like this doesn't fail
+loudly — it degrades a check into a near-tautology that still prints pass.
+
+**`cageRun` — the derailleur cage's own tangent chain wrap — had no headless
+test coverage at all**, only the Playwright screenshots taken while building
+it. Same rig the cage take-up test above already uses (`BB`, ring/cog pitch
+radii, `AXp`, `guide`, and `tension` built from `guide`/`C.cage`/the sweep
+angle the same way `chainPath` does it), swept across the same
+`CAGE_LO..CAGE_HI` bracket the mech can actually reach: confirms `cageRun`
+solves at every position in that range, and that every one of the three
+returned segments' endpoints sits exactly on the pulley or ring it claims to
+be tangent to. Deliberately reuses the take-up test's geometry rather than
+inventing a second rig, so both tests exercise the one real derailleur-cage
+setup instead of two loosely related ones.
 
 ## Stay structure
 

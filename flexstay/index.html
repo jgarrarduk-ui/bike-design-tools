@@ -1451,30 +1451,13 @@ function draw(){
     return pts.join(' ');
   };
 
-  /* ---- ground ---- (level, in root: the bike is what pitches, not the ground) */
-  el('rect',{x:gx0,y:gy0,width:gx1-gx0,height:Math.max(0,ground-gy0),
-    fill:'#e2e7ea'},groundG);
-  el('line',{x1:gx0,y1:ground,x2:gx1,y2:ground,stroke:'#aab6bd','stroke-width':3},groundG);
-
-  /* ---- wheels ---- */
-  // Isotropic (round), so it just scales to whatever radius the current
-  // rim+tyre combination gives -- no rotation needed.
-  const wheelArt=isotropicArt(WHEELART);
-  if(showWheels){ wheelArt(f.AX,F.Rr); wheelArt(F.FA,F.Rf); }
-
-  /* ---- hidden (far-side) crank arm ----
-     Drawn before the chainring and the frame tubes so both paint over it, the
-     same way a real photo's far-side arm is occluded by them -- the chainring
-     first, then the frame tubes and BB shell further down. 180 degrees from
-     the visible arm near the end of this function, same spindle, same kick. */
-  if(showCranks){
-    const pedal=crankPedal(-1);
-    line(BB, pedal, CRANK_COL, 42);
-  }
-
-  /* ---- drivetrain ----
-     guide/tension are computed regardless of the toggle: the rear derailleur
-     drawing further down needs them whether or not this pass renders anything. */
+  /* Shared geometry: several of the drawing steps below read these, not just
+     the one they're computed next to, so they stay here at draw()'s own scope
+     rather than living inside any one of the named steps. guide/tension/route/
+     runs/drawTop are read by both the drivetrain rings and the rear derailleur
+     step; fu/fp by both the fork and the stem step. Everything a single step
+     owns outright is declared inside that step instead — see each function
+     below for what it needs and nothing more. */
   const rc=C.ring*P/(2*Math.PI), rg=C.cog*P/(2*Math.PI);
   const ri=C.idlerTeeth*P/(2*Math.PI);         // NB C.rc is rear centre; rc here is the ring
   const guide=f.guide||rot({x:G.AX.x+GDX,y:G.AX.y+GDY},G.MP,f.phi);
@@ -1497,32 +1480,6 @@ function draw(){
     el('polyline',{points:arcPts(IDp,ri,route.runs[0].p2,route.runs[1].p1,route.sense),
       fill:'none',stroke:'#39424a','stroke-width':7,'stroke-linejoin':'round'},g);
   };
-  if(showDrivetrain){
-    ring(BB,rc,'#5c6b78',7); ring(f.AX,rg,'#5c6b78',7);
-    el('circle',{cx:0,cy:0,r:13,fill:'#5c6b78'},g);           // bottom bracket
-    if(!route) drawTop();
-    if(runs.length){
-      const wrap=cageRun(BB,rc,guide,tension,RJ,f.AX,rg);
-      if(wrap){
-        const {segs:[segA,segB,segC], sGuide, sTension}=wrap;
-        line(segA.p1,segA.p2,'#39424a',5);
-        el('polyline',{points:arcPts(guide,RJ,segA.p2,segB.p1,sGuide),
-          fill:'none',stroke:'#39424a','stroke-width':5,'stroke-linejoin':'round'},g);
-        line(segB.p1,segB.p2,'#39424a',5);
-        el('polyline',{points:arcPts(tension,RJ,segB.p2,segC.p1,sTension),
-          fill:'none',stroke:'#39424a','stroke-width':5,'stroke-linejoin':'round'},g);
-        line(segC.p1,segC.p2,'#39424a',5);
-      } else {
-        // never blank the canvas -- old straight-through-centres line as a fallback
-        el('polyline',{points:[{x:f.AX.x-rg*0.5,y:f.AX.y-rg*0.87},guide,tension,
-            {x:BB.x,y:BB.y-rc}].map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
-          fill:'none',stroke:'#39424a','stroke-width':5},g);
-      }
-    }
-  }
-
-
-  /* ---- fork and cockpit ---- */
   /* Fork lowers are artwork and never stretch: they slide up the stanchion, which
      is drawn between the crown and the top of the casting and shortens on its own. */
   const K=FORKART, ks=K.mmPerPx, mir=MIRROR_FORK?-1:1;
@@ -1559,28 +1516,112 @@ function draw(){
      below -- so its near edge lands right at raceSeat, closing the gap to
      the lower headset block instead of floating clear of it. */
   const crown=add(add(F.raceSeat, mul(fp, C.offset+jog)), mul(fu,21));
-  if(showFork){
-    tubes([[crown,add(topW,mul(fu,26)),36]],'#cfd5da','#7b848c');   // exposed stanchion
-    /* Fork crown: the casting that caps the stanchions and joins them to the
-       steerer. Square ('butt'), centred on crown, in line with the
-       stanchions (drawn after, so it covers the top of the stanchion tube
-       the same way a real crown does) and a bit wider than the 36mm
-       stanchion — same colour as the lower headset block below, since both
-       are headset/crown hardware rather than a frame tube or the fork itself. */
-    tubes([[sub(crown,mul(fu,21)),add(crown,mul(fu,21)),48,'butt']],'#b9c0c6','#7b848c');
-    const fg=el('g',{transform:`matrix(${fm.map(v=>v.toFixed(6)).join(' ')})`},g);
-    el('image',{href:K.src,x:0,y:0,width:K.w,height:K.h},fg);
+
+  // Paint order, in one place: each step below is named for what it draws and
+  // called in exactly the sequence it always ran in inline. Reordering these
+  // calls reorders the drawing.
+  drawGround();
+  drawWheels();
+  drawHiddenCrank();
+  drawDrivetrainRings();
+  drawFork();
+  drawHeadsetTubes();
+  drawFrontTriangle();
+  drawStem();
+  drawRearAssembly();
+  drawShock();
+  drawRearDerailleur();
+  drawAxleTrail();
+  drawSaddle();
+  drawVisibleCrank();
+  drawASARConstruction();
+  drawPivots();
+  drawForceVectors();
+
+  /* ---- ground ---- (level, in root: the bike is what pitches, not the ground) */
+  function drawGround(){
+    el('rect',{x:gx0,y:gy0,width:gx1-gx0,height:Math.max(0,ground-gy0),
+      fill:'#e2e7ea'},groundG);
+    el('line',{x1:gx0,y1:ground,x2:gx1,y2:ground,stroke:'#aab6bd','stroke-width':3},groundG);
   }
-  // cockpit
-  if(showCockpit){
-    /* Lower headset: the cup + crown-race stack between the head tube and
-       where the fork's own axis takes over (F.raceSeat) — its length is
-       exactly C.hsLower, so it visibly grows and shrinks with that field the
-       same way the upper steerer stack tube already does with stemH. Same
-       colour as the fork crown block above; same head-tube diameter so it
-       reads as a continuation of the head tube, not a new tube. */
-    tubes([[F.htBot,F.raceSeat,C.htOD,'butt']],'#b9c0c6','#7b848c');
-    tubes([[F.htTop,F.steerTop,22]],'#b9c0c6','#7b848c');   // headset/steerer stack
+
+  /* ---- wheels ---- */
+  function drawWheels(){
+    // Isotropic (round), so it just scales to whatever radius the current
+    // rim+tyre combination gives -- no rotation needed.
+    const wheelArt=isotropicArt(WHEELART);
+    if(showWheels){ wheelArt(f.AX,F.Rr); wheelArt(F.FA,F.Rf); }
+  }
+
+  /* ---- hidden (far-side) crank arm ----
+     Drawn before the chainring and the frame tubes so both paint over it, the
+     same way a real photo's far-side arm is occluded by them -- the chainring
+     first, then the frame tubes and BB shell further down. 180 degrees from
+     the visible arm near the end of this function, same spindle, same kick. */
+  function drawHiddenCrank(){
+    if(showCranks){
+      const pedal=crankPedal(-1);
+      line(BB, pedal, CRANK_COL, 42);
+    }
+  }
+
+  /* ---- drivetrain ----
+     guide/tension are computed regardless of the toggle: the rear derailleur
+     drawing further down needs them whether or not this pass renders anything. */
+  function drawDrivetrainRings(){
+    if(showDrivetrain){
+      ring(BB,rc,'#5c6b78',7); ring(f.AX,rg,'#5c6b78',7);
+      el('circle',{cx:0,cy:0,r:13,fill:'#5c6b78'},g);           // bottom bracket
+      if(!route) drawTop();
+      if(runs.length){
+        const wrap=cageRun(BB,rc,guide,tension,RJ,f.AX,rg);
+        if(wrap){
+          const {segs:[segA,segB,segC], sGuide, sTension}=wrap;
+          line(segA.p1,segA.p2,'#39424a',5);
+          el('polyline',{points:arcPts(guide,RJ,segA.p2,segB.p1,sGuide),
+            fill:'none',stroke:'#39424a','stroke-width':5,'stroke-linejoin':'round'},g);
+          line(segB.p1,segB.p2,'#39424a',5);
+          el('polyline',{points:arcPts(tension,RJ,segB.p2,segC.p1,sTension),
+            fill:'none',stroke:'#39424a','stroke-width':5,'stroke-linejoin':'round'},g);
+          line(segC.p1,segC.p2,'#39424a',5);
+        } else {
+          // never blank the canvas -- old straight-through-centres line as a fallback
+          el('polyline',{points:[{x:f.AX.x-rg*0.5,y:f.AX.y-rg*0.87},guide,tension,
+              {x:BB.x,y:BB.y-rc}].map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
+            fill:'none',stroke:'#39424a','stroke-width':5},g);
+        }
+      }
+    }
+  }
+
+  /* ---- fork ---- */
+  function drawFork(){
+    if(showFork){
+      tubes([[crown,add(topW,mul(fu,26)),36]],'#cfd5da','#7b848c');   // exposed stanchion
+      /* Fork crown: the casting that caps the stanchions and joins them to the
+         steerer. Square ('butt'), centred on crown, in line with the
+         stanchions (drawn after, so it covers the top of the stanchion tube
+         the same way a real crown does) and a bit wider than the 36mm
+         stanchion — same colour as the lower headset block below, since both
+         are headset/crown hardware rather than a frame tube or the fork itself. */
+      tubes([[sub(crown,mul(fu,21)),add(crown,mul(fu,21)),48,'butt']],'#b9c0c6','#7b848c');
+      const fg=el('g',{transform:`matrix(${fm.map(v=>v.toFixed(6)).join(' ')})`},g);
+      el('image',{href:K.src,x:0,y:0,width:K.w,height:K.h},fg);
+    }
+  }
+
+  // cockpit: lower headset and steerer stack
+  function drawHeadsetTubes(){
+    if(showCockpit){
+      /* Lower headset: the cup + crown-race stack between the head tube and
+         where the fork's own axis takes over (F.raceSeat) — its length is
+         exactly C.hsLower, so it visibly grows and shrinks with that field the
+         same way the upper steerer stack tube already does with stemH. Same
+         colour as the fork crown block above; same head-tube diameter so it
+         reads as a continuation of the head tube, not a new tube. */
+      tubes([[F.htBot,F.raceSeat,C.htOD,'butt']],'#b9c0c6','#7b848c');
+      tubes([[F.htTop,F.steerTop,22]],'#b9c0c6','#7b848c');   // headset/steerer stack
+    }
   }
 
   /* ---- front triangle ----
@@ -1605,31 +1646,33 @@ function draw(){
      tube at a shallow angle and want the sideways forgiveness. They come after
      the head tube so their outlines still land in the same outline pass and
      leave no seam across the tube they sit on. */
-  const FT=frontTriangle(), dtU=FT.dtU;
-  const foot=mul(dtU, Math.max(60,alongOf(dtU,G.SG)));   // shock mount brace
-  const boss=mul(dtU, Math.max(50,alongOf(dtU,G.SP)));   // second pivot boss
-  tubes([[FT.dt[1],FT.dtTip,FT.dt[3],'butt'],
-         [FT.tt[1],FT.ttTip,FT.tt[3],'butt'],
-         [FT.st[1],FT.st[2],  FT.st[3],'butt'],
-         [FT.ht[1],FT.ht[2],  FT.ht[3],'butt'],
-         [foot,G.SG,26],[boss,G.SP,30]],'#ded4bd','#8a8069');
-  /* The bottom bracket shell caps the square-cut ends of the down and seat
-     tubes, which otherwise leave a notch between them where a round cap used to
-     cover. 38.1mm is the shell, and the same diameter as the down tube, so it
-     lands flush on the down tube's sides and its edge reads as the shell face
-     across the seat tube. Above the tubes, in the tube colours. */
-  const BB_SHELL=38.1;
-  el('circle',{cx:0,cy:0,r:BB_SHELL/2,    fill:'#8a8069'},g);
-  el('circle',{cx:0,cy:0,r:BB_SHELL/2-3.5,fill:'#ded4bd'},g);
-  /* Square where it meets the frame -- a real post is a cut cylinder plunging
-     into the seat tube, not a rounded pin -- and round again at the top: 'butt'
-     squares BOTH ends of one line (stroke-linecap is one value per element), so
-     the exposed-top roundness is put back with the same two-circle cap the BB
-     shell above uses for the same problem (outline colour, then fill colour,
-     radii matching this tube's own outline/fill widths). */
-  tubes([[seatTop,post,26,'butt']],'#b9c0c6','#7b848c');
-  el('circle',{cx:post.x,cy:post.y,r:13,  fill:'#7b848c'},g);
-  el('circle',{cx:post.x,cy:post.y,r:9.5, fill:'#b9c0c6'},g);
+  function drawFrontTriangle(){
+    const FT=frontTriangle(), dtU=FT.dtU;
+    const foot=mul(dtU, Math.max(60,alongOf(dtU,G.SG)));   // shock mount brace
+    const boss=mul(dtU, Math.max(50,alongOf(dtU,G.SP)));   // second pivot boss
+    tubes([[FT.dt[1],FT.dtTip,FT.dt[3],'butt'],
+           [FT.tt[1],FT.ttTip,FT.tt[3],'butt'],
+           [FT.st[1],FT.st[2],  FT.st[3],'butt'],
+           [FT.ht[1],FT.ht[2],  FT.ht[3],'butt'],
+           [foot,G.SG,26],[boss,G.SP,30]],'#ded4bd','#8a8069');
+    /* The bottom bracket shell caps the square-cut ends of the down and seat
+       tubes, which otherwise leave a notch between them where a round cap used to
+       cover. 38.1mm is the shell, and the same diameter as the down tube, so it
+       lands flush on the down tube's sides and its edge reads as the shell face
+       across the seat tube. Above the tubes, in the tube colours. */
+    const BB_SHELL=38.1;
+    el('circle',{cx:0,cy:0,r:BB_SHELL/2,    fill:'#8a8069'},g);
+    el('circle',{cx:0,cy:0,r:BB_SHELL/2-3.5,fill:'#ded4bd'},g);
+    /* Square where it meets the frame -- a real post is a cut cylinder plunging
+       into the seat tube, not a rounded pin -- and round again at the top: 'butt'
+       squares BOTH ends of one line (stroke-linecap is one value per element), so
+       the exposed-top roundness is put back with the same two-circle cap the BB
+       shell above uses for the same problem (outline colour, then fill colour,
+       radii matching this tube's own outline/fill widths). */
+    tubes([[seatTop,post,26,'butt']],'#b9c0c6','#7b848c');
+    el('circle',{cx:post.x,cy:post.y,r:13,  fill:'#7b848c'},g);
+    el('circle',{cx:post.x,cy:post.y,r:9.5, fill:'#b9c0c6'},g);
+  }
 
   /* Stem artwork drawn after the front triangle so it sits on top of the
      frame tubes rather than being painted over by them. Source art is a
@@ -1638,73 +1681,81 @@ function draw(){
      bolts. Anchored there (steererPt) instead of the bore, oriented from
      F.axis/F.perp and rotated 180 about that anchor so the body swings out
      the correct side of the steerer. */
-  if(showCockpit){
-    const SA=STEMART, ss=SA.mmPerPx;
-    const sm=[ss*fp.x, ss*fp.y, -ss*fu.x, -ss*fu.y,
-              F.steerTop.x-(ss*SA.steererPt[0]*fp.x - ss*SA.steererPt[1]*fu.x),
-              F.steerTop.y-(ss*SA.steererPt[0]*fp.y - ss*SA.steererPt[1]*fu.y)];
-    const sg2=el('g',{transform:`matrix(${sm.map(v=>v.toFixed(6)).join(' ')})`},g);
-    el('image',{href:SA.src,x:0,y:0,width:SA.w,height:SA.h},sg2);
+  function drawStem(){
+    if(showCockpit){
+      const SA=STEMART, ss=SA.mmPerPx;
+      const sm=[ss*fp.x, ss*fp.y, -ss*fu.x, -ss*fu.y,
+                F.steerTop.x-(ss*SA.steererPt[0]*fp.x - ss*SA.steererPt[1]*fu.x),
+                F.steerTop.y-(ss*SA.steererPt[0]*fp.y - ss*SA.steererPt[1]*fu.y)];
+      const sg2=el('g',{transform:`matrix(${sm.map(v=>v.toFixed(6)).join(' ')})`},g);
+      el('image',{href:SA.src,x:0,y:0,width:SA.w,height:SA.h},sg2);
+    }
   }
 
   /* ---- rear assembly ---- */
-  const path=stayPath(f.FP,f.SE);
-  const poly=(pts,col,w)=>el('polyline',{
-      points:pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
-      fill:'none',stroke:col,'stroke-width':w,'stroke-linecap':'round',
-      'stroke-linejoin':'round'},g);
-  // outline pass
-  line(G.MP,f.AX,'#134463',40);
-  poly(path.pts,'#134463',30);
-  // fill pass
-  line(G.MP,f.AX,'#8fb6cf',33);
-  poly(path.pts,'#8fb6cf',23);
+  function drawRearAssembly(){
+    const path=stayPath(f.FP,f.SE);
+    const poly=(pts,col,w)=>el('polyline',{
+        points:pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
+        fill:'none',stroke:col,'stroke-width':w,'stroke-linecap':'round',
+        'stroke-linejoin':'round'},g);
+    // outline pass
+    line(G.MP,f.AX,'#134463',40);
+    poly(path.pts,'#134463',30);
+    // fill pass
+    line(G.MP,f.AX,'#8fb6cf',33);
+    poly(path.pts,'#8fb6cf',23);
 
-  /* Link pivot mount: a short brace perpendicular to the stay, the same idea as
-     the shock mount brace on the down tube (frontTriangle's `foot`), rather
-     than the old pair of full-width lines from SE through LP down to a point
-     partway along the stay — those ran the stay's own 30/23 alongside itself
-     for that whole stretch and tapered into it, which read as one oversized,
-     ambiguously-shaped tube instead of a stay with a small boss on it. LP is a
-     solved four-bar point, not a point on this drawn curve, so its foot is
-     the closest point on the path actually on screen — tracks the bend
-     correctly at any geometry instead of assuming LP sits near the SE end. */
-  const lpFoot=closestOnPath(path.pts,f.LP);
-  tubes([[lpFoot,f.LP,22]],'#8fb6cf','#134463');
+    /* Link pivot mount: a short brace perpendicular to the stay, the same idea as
+       the shock mount brace on the down tube (frontTriangle's `foot`), rather
+       than the old pair of full-width lines from SE through LP down to a point
+       partway along the stay — those ran the stay's own 30/23 alongside itself
+       for that whole stretch and tapered into it, which read as one oversized,
+       ambiguously-shaped tube instead of a stay with a small boss on it. LP is a
+       solved four-bar point, not a point on this drawn curve, so its foot is
+       the closest point on the path actually on screen — tracks the bend
+       correctly at any geometry instead of assuming LP sits near the SE end. */
+    const lpFoot=closestOnPath(path.pts,f.LP);
+    tubes([[lpFoot,f.LP,22]],'#8fb6cf','#134463');
+  }
 
   /* ---- shock link and shock ---- */
-  tubes([[G.SP,f.LP,22]],'#4bb3a6','#0b5a53');
+  function drawShock(){
+    tubes([[G.SP,f.LP,22]],'#4bb3a6','#0b5a53');
 
-  /* Shock artwork. The body and the eyelet ends keep their proportions; only the
-     spring section is stretched, so compressing the shock closes the coils up
-     rather than squashing the damper. */
-  if(showShock){
-    const sU=unit(sub(G.SG,f.SE)), sL=dist(f.SE,G.SG);
-    const A=SHOCKART, sc=A.mmPerPx;
-    const dpx=(sL-230)/sc;                       // spring section grows or shrinks
-    const mtx=[sc*sU.x, sc*sU.y, sc*sU.y, -sc*sU.x,
-               f.SE.x-sc*(A.eyeL[0]*sU.x+A.eyeL[1]*sU.y),
-               f.SE.y-sc*(A.eyeL[0]*sU.y-A.eyeL[1]*sU.x)];
-    const sg=el('g',{transform:`matrix(${mtx.map(v=>v.toFixed(6)).join(' ')})`},g);
-    const put=(p,x,y,w,h,stretch)=>el('image',{href:p.src,x:x,y:y,width:w,height:h,
-        ...(stretch?{preserveAspectRatio:'none'}:{})},sg);
-    const springW=Math.max(24,A.spring.w+dpx);
-    put(A.tail,   A.tail.x, 0, A.tail.w, A.h);
-    put(A.spring, A.spring.x, A.yBand, springW, A.spring.h, true);
-    put(A.resv,   A.resv.x+dpx, 0, A.resv.w, A.resv.h);   // rides with the body
-    put(A.body,   A.body.x+dpx, 0, A.body.w, A.h);
+    /* Shock artwork. The body and the eyelet ends keep their proportions; only the
+       spring section is stretched, so compressing the shock closes the coils up
+       rather than squashing the damper. */
+    if(showShock){
+      const sU=unit(sub(G.SG,f.SE)), sL=dist(f.SE,G.SG);
+      const A=SHOCKART, sc=A.mmPerPx;
+      const dpx=(sL-230)/sc;                       // spring section grows or shrinks
+      const mtx=[sc*sU.x, sc*sU.y, sc*sU.y, -sc*sU.x,
+                 f.SE.x-sc*(A.eyeL[0]*sU.x+A.eyeL[1]*sU.y),
+                 f.SE.y-sc*(A.eyeL[0]*sU.y-A.eyeL[1]*sU.x)];
+      const sg=el('g',{transform:`matrix(${mtx.map(v=>v.toFixed(6)).join(' ')})`},g);
+      const put=(p,x,y,w,h,stretch)=>el('image',{href:p.src,x:x,y:y,width:w,height:h,
+          ...(stretch?{preserveAspectRatio:'none'}:{})},sg);
+      const springW=Math.max(24,A.spring.w+dpx);
+      put(A.tail,   A.tail.x, 0, A.tail.w, A.h);
+      put(A.spring, A.spring.x, A.yBand, springW, A.spring.h, true);
+      put(A.resv,   A.resv.x+dpx, 0, A.resv.w, A.resv.h);   // rides with the body
+      put(A.body,   A.body.x+dpx, 0, A.body.w, A.h);
+    }
   }
 
   /* ---- rear derailleur, carried on the dropout ---- */
-  if(showDrivetrain){
-    if(route) drawTop();                                 // see drawTop: idler runs go on top
-    tubes([[f.AX,guide,15]],'#6b747c','#39424a');        // b-knuckle and body
-    tubes([[guide,tension,30]],'#4a5158','#2a3138');     // cage
-    // The two jockey wheels -- real artwork, not procedural rings. Isotropic
-    // like the wheels, so only position moves (guide/tension as the cage
-    // swings); nothing here models the pulleys' own spin.
-    const jockeyArt=isotropicArt(JOCKEYART);
-    jockeyArt(guide,RJ); jockeyArt(tension,RJ);
+  function drawRearDerailleur(){
+    if(showDrivetrain){
+      if(route) drawTop();                                 // see drawTop: idler runs go on top
+      tubes([[f.AX,guide,15]],'#6b747c','#39424a');        // b-knuckle and body
+      tubes([[guide,tension,30]],'#4a5158','#2a3138');     // cage
+      // The two jockey wheels -- real artwork, not procedural rings. Isotropic
+      // like the wheels, so only position moves (guide/tension as the cage
+      // swings); nothing here models the pulleys' own spin.
+      const jockeyArt=isotropicArt(JOCKEYART);
+      jockeyArt(guide,RJ); jockeyArt(tension,RJ);
+    }
   }
 
   /* ---- axle path ----
@@ -1714,12 +1765,14 @@ function draw(){
      whatever it crosses. The front axle gets the same idea, but on its own
      chart in the strip carousel (see chartAxlePath) rather than here — this
      overlay stays rear-only, on the geometry actually being edited. */
-  if(showPath && result.frames.length>1){
-    const pts=result.frames.map(k=>`${k.AX.x.toFixed(1)},${k.AX.y.toFixed(1)}`).join(' ');
-    el('polyline',{points:pts,fill:'none',stroke:'#fff','stroke-width':9,
-      'stroke-linecap':'round',opacity:.85,'pointer-events':'none'},g);
-    el('polyline',{points:pts,fill:'none',stroke:'#c026a3','stroke-width':4,
-      'stroke-dasharray':'9 7','stroke-linecap':'round','pointer-events':'none'},g);
+  function drawAxleTrail(){
+    if(showPath && result.frames.length>1){
+      const pts=result.frames.map(k=>`${k.AX.x.toFixed(1)},${k.AX.y.toFixed(1)}`).join(' ');
+      el('polyline',{points:pts,fill:'none',stroke:'#fff','stroke-width':9,
+        'stroke-linecap':'round',opacity:.85,'pointer-events':'none'},g);
+      el('polyline',{points:pts,fill:'none',stroke:'#c026a3','stroke-width':4,
+        'stroke-dasharray':'9 7','stroke-linecap':'round','pointer-events':'none'},g);
+    }
   }
 
   /* Saddle is set level regardless of seat-tube angle, like a real one --
@@ -1729,21 +1782,25 @@ function draw(){
      is negated (rail sits below the anchor rather than pixel-down reading
      as model-up). The x axis is left unmirrored so the nose points -x
      (toward the rear). */
-  if(showSaddle){
-    const SD=SADDLEART, sds=SD.mmPerPx;
-    const sdNudge=0.15*SD.w*sds;          // sits 15% of its own width forward of the post
-    const sdm=[sds,0,0,-sds, post.x-sds*SD.mount[0]+sdNudge, post.y+sds*SD.mount[1]];
-    const sdg=el('g',{transform:`matrix(${sdm.map(v=>v.toFixed(6)).join(' ')})`},g);
-    el('image',{href:SD.src,x:0,y:0,width:SD.w,height:SD.h},sdg);
+  function drawSaddle(){
+    if(showSaddle){
+      const SD=SADDLEART, sds=SD.mmPerPx;
+      const sdNudge=0.15*SD.w*sds;          // sits 15% of its own width forward of the post
+      const sdm=[sds,0,0,-sds, post.x-sds*SD.mount[0]+sdNudge, post.y+sds*SD.mount[1]];
+      const sdg=el('g',{transform:`matrix(${sdm.map(v=>v.toFixed(6)).join(' ')})`},g);
+      el('image',{href:SD.src,x:0,y:0,width:SD.w,height:SD.h},sdg);
+    }
   }
 
   /* ---- visible (drive-side) crank arm ----
      Drawn last, after the saddle, so it sits on top of everything -- same
      precedent the saddle itself is drawn on. */
-  if(showCranks){
-    const pedal=crankPedal(1);
-    line(BB, pedal, CRANK_COL, 42);
-    el('circle',{cx:0,cy:0,r:12,fill:'#cfd5da'},g); // BB axle, 24mm dia., concentric with BB
+  function drawVisibleCrank(){
+    if(showCranks){
+      const pedal=crankPedal(1);
+      line(BB, pedal, CRANK_COL, 42);
+      el('circle',{cx:0,cy:0,r:12,fill:'#cfd5da'},g); // BB axle, 24mm dia., concentric with BB
+    }
   }
 
   /* ---- anti-squat and anti-rise construction ----
@@ -1752,127 +1809,133 @@ function draw(){
      the front axle, is the anti-squat height. Anti-rise drops the chain out of it
      and runs straight from the contact patch to the instant centre. Both are
      percentages of the centre of mass height, so the 100% mark is drawn too. */
-  if(showLines() && f.CP){
-    const lg=el('g',{'pointer-events':'none'},g);
-    const ln=(a,b,col,w,dash)=>el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:col,
-      'stroke-width':w,...(dash?{'stroke-dasharray':dash}:{})},lg);
-    const fax=C.fax, cog=ground+C.cogh;
-    const thin=Math.max(1.2,1.6*mmPerPx), thick=Math.max(2,2.6*mmPerPx);
-    const top=Math.max(cog, showAS&&f.asH!=null?f.asH:cog, showAR&&f.arH!=null?f.arH:cog);
-    // the front axle vertical everything is read against, and the 100% mark
-    ln({x:fax,y:ground},{x:fax,y:top+60},'#9aa5ad',thin,'10 8');
-    ln({x:fax-46,y:cog},{x:fax+46,y:cog},'#5c6b78',thick);
-    // the chain run and the swingarm line only matter to anti-squat
-    if(showAS && f.ifc){
-      ln(f.CP,f.ifc,'#c9ccd1',thin,'6 6');
-      ln(f.AX,f.ifc,'#c9ccd1',thin,'6 6');
-      el('circle',{cx:f.ifc.x,cy:f.ifc.y,r:Math.max(4,5*mmPerPx),fill:'#8a939b'},lg);
+  function drawASARConstruction(){
+    if(showLines() && f.CP){
+      const lg=el('g',{'pointer-events':'none'},g);
+      const ln=(a,b,col,w,dash)=>el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:col,
+        'stroke-width':w,...(dash?{'stroke-dasharray':dash}:{})},lg);
+      const fax=C.fax, cog=ground+C.cogh;
+      const thin=Math.max(1.2,1.6*mmPerPx), thick=Math.max(2,2.6*mmPerPx);
+      const top=Math.max(cog, showAS&&f.asH!=null?f.asH:cog, showAR&&f.arH!=null?f.arH:cog);
+      // the front axle vertical everything is read against, and the 100% mark
+      ln({x:fax,y:ground},{x:fax,y:top+60},'#9aa5ad',thin,'10 8');
+      ln({x:fax-46,y:cog},{x:fax+46,y:cog},'#5c6b78',thick);
+      // the chain run and the swingarm line only matter to anti-squat
+      if(showAS && f.ifc){
+        ln(f.CP,f.ifc,'#c9ccd1',thin,'6 6');
+        ln(f.AX,f.ifc,'#c9ccd1',thin,'6 6');
+        el('circle',{cx:f.ifc.x,cy:f.ifc.y,r:Math.max(4,5*mmPerPx),fill:'#8a939b'},lg);
+      }
+      if(showAS && f.asH!=null) ln(f.CP,{x:fax,y:f.asH},'var(--rear)',thick);
+      if(showAR && f.arH!=null) ln(f.CP,{x:fax,y:f.arH},'var(--shock)',thick);
+      el('circle',{cx:f.CP.x,cy:f.CP.y,r:Math.max(4,5*mmPerPx),fill:'#39424a'},lg);
+      // the drawing group is y-flipped, so each label carries its own flip back
+      const tag=(x,y,txt,col)=>{
+        const t=el('text',{x:0,y:0,'font-size':Math.max(11,13*mmPerPx),fill:col,
+          'font-weight':600},el('g',{transform:`translate(${x} ${y}) scale(1,-1)`},lg));
+        t.textContent=txt;
+      };
+      /* The framing is fixed, so a ray can leave the top of the view. Keep the
+         labels inside rather than zooming out to chase them, and stack them so two
+         clamped to the same ceiling do not land on top of each other. */
+      const pad=26*mmPerPx, lineH=19*mmPerPx;
+      const lo=VIEW.y0+30*mmPerPx, hi=VIEW.y0+VIEW.h-30*mmPerPx;
+      const labels=[];
+      if(showAS && f.as!=null)
+        labels.push([f.asH,'anti-squat '+f.as.toFixed(0)+'%','var(--rear)']);
+      if(showAR && f.ar!=null)
+        labels.push([f.arH,'anti-rise '+f.ar.toFixed(0)+'%','var(--shock)']);
+      labels.push([cog,'100% of CoG height','#5c6b78']);
+      labels.sort((a,b)=>b[0]-a[0]);                 // highest first, then downwards
+      let prev=Infinity;
+      labels.forEach(([y,txt,col])=>{
+        const at=Math.max(lo, Math.min(Math.min(hi,y), prev-lineH));
+        prev=at; tag(fax+pad, at, txt, col);
+      });
     }
-    if(showAS && f.asH!=null) ln(f.CP,{x:fax,y:f.asH},'var(--rear)',thick);
-    if(showAR && f.arH!=null) ln(f.CP,{x:fax,y:f.arH},'var(--shock)',thick);
-    el('circle',{cx:f.CP.x,cy:f.CP.y,r:Math.max(4,5*mmPerPx),fill:'#39424a'},lg);
-    // the drawing group is y-flipped, so each label carries its own flip back
-    const tag=(x,y,txt,col)=>{
-      const t=el('text',{x:0,y:0,'font-size':Math.max(11,13*mmPerPx),fill:col,
-        'font-weight':600},el('g',{transform:`translate(${x} ${y}) scale(1,-1)`},lg));
-      t.textContent=txt;
-    };
-    /* The framing is fixed, so a ray can leave the top of the view. Keep the
-       labels inside rather than zooming out to chase them, and stack them so two
-       clamped to the same ceiling do not land on top of each other. */
-    const pad=26*mmPerPx, lineH=19*mmPerPx;
-    const lo=VIEW.y0+30*mmPerPx, hi=VIEW.y0+VIEW.h-30*mmPerPx;
-    const labels=[];
-    if(showAS && f.as!=null)
-      labels.push([f.asH,'anti-squat '+f.as.toFixed(0)+'%','var(--rear)']);
-    if(showAR && f.ar!=null)
-      labels.push([f.arH,'anti-rise '+f.ar.toFixed(0)+'%','var(--shock)']);
-    labels.push([cog,'100% of CoG height','#5c6b78']);
-    labels.sort((a,b)=>b[0]-a[0]);                 // highest first, then downwards
-    let prev=Infinity;
-    labels.forEach(([y,txt,col])=>{
-      const at=Math.max(lo, Math.min(Math.min(hi,y), prev-lineH));
-      prev=at; tag(fax+pad, at, txt, col);
-    });
   }
 
   /* ---- pivots ----
      The marker keeps its drawn size. Only the invisible grab target scales, up
      to a comfortable HIT_PX radius on screen — but never so far that it covers
      the pivot next door, or zoomed out you would grab the wrong one. */
-  const HIT_PX=18;
-  const top = !result.frames.length || f===result.frames[0];
-  const locked=C.idlerOn&&C.idlerLock;
-  const marks=[[G.MP,'var(--rear)','MP'],[G.SP,'var(--link)','SP'],[G.SG,'var(--shock)','SG'],
-               [f.LP,'var(--link)',top?'LP':null],[f.SE,'var(--shock)',top?'SE':null],
-               [f.AX,'var(--rear)',top?'AX':null]];
-  /* G.ID holds the top-out position, so a swingarm idler is only grabbable at top
-     out — dragging the rotated marker would write rotated coordinates back. Bolted
-     to the frame it never moves, so it is always grabbable. */
-  // locked they are one point, so it gets one marker — the main pivot's, since
-  // that is the one that stays put and the idler is only along for the ride
-  if(IDp&&!locked) marks.push([IDp,'var(--ok)',(C.idlerMount&&!top)?null:'ID']);
-  const ghosts = top?[] : [['LP','var(--link)'],['SE','var(--shock)'],['AX','var(--rear)']];
-  if(IDp&&C.idlerMount&&!top) ghosts.push(['ID','var(--ok)']);
-  const grabPts=[...marks.filter(m=>m[2]).map(m=>m[0]), ...ghosts.map(([k])=>G[k])];
-  // Each target is capped at half the gap to its own nearest neighbour, so a
-  // crowded pair like the shock eye and the link stays tight while everything
-  // else gets the full fat target. Centres are never covered either way.
-  const hitFor=p=>{
-    let nearest=Infinity;
-    for(const q of grabPts){
-      const d=dist(p,q);
-      if(d>1e-6 && d<nearest) nearest=d;      // coincident points cannot be told apart anyway
-    }
-    return Math.max(14, Math.min(HIT_PX*mmPerPx, nearest*0.5));
-  };
-  const grab=(p,key)=>{
-    const c=el('circle',{cx:p.x,cy:p.y,r:hitFor(p),fill:'transparent',class:'drag'},g);
-    c.dataset.key=key; return c;
-  };
-  marks.forEach(([p,col,key])=>{
-    el('circle',{cx:p.x,cy:p.y,r:14,fill:'#fff',stroke:col,'stroke-width':5,
-      'pointer-events':'none'},g);
-    el('circle',{cx:p.x,cy:p.y,r:5,fill:col,'pointer-events':'none'},g);
-    if(key) grab(p,key);
-  });
-  // off top-out the live points are driven by the solver, so the ghost at the
-  // un-compressed position is what you grab to move them
-  ghosts.forEach(([k,col])=>{
-    el('circle',{cx:G[k].x,cy:G[k].y,r:14,fill:'none',stroke:col,
-      'stroke-width':3,'stroke-dasharray':'6 5',opacity:.8,
-      'pointer-events':'none'},g);
-    grab(G[k],k);
-  });
+  function drawPivots(){
+    const HIT_PX=18;
+    const top = !result.frames.length || f===result.frames[0];
+    const locked=C.idlerOn&&C.idlerLock;
+    const marks=[[G.MP,'var(--rear)','MP'],[G.SP,'var(--link)','SP'],[G.SG,'var(--shock)','SG'],
+                 [f.LP,'var(--link)',top?'LP':null],[f.SE,'var(--shock)',top?'SE':null],
+                 [f.AX,'var(--rear)',top?'AX':null]];
+    /* G.ID holds the top-out position, so a swingarm idler is only grabbable at top
+       out — dragging the rotated marker would write rotated coordinates back. Bolted
+       to the frame it never moves, so it is always grabbable. */
+    // locked they are one point, so it gets one marker — the main pivot's, since
+    // that is the one that stays put and the idler is only along for the ride
+    if(IDp&&!locked) marks.push([IDp,'var(--ok)',(C.idlerMount&&!top)?null:'ID']);
+    const ghosts = top?[] : [['LP','var(--link)'],['SE','var(--shock)'],['AX','var(--rear)']];
+    if(IDp&&C.idlerMount&&!top) ghosts.push(['ID','var(--ok)']);
+    const grabPts=[...marks.filter(m=>m[2]).map(m=>m[0]), ...ghosts.map(([k])=>G[k])];
+    // Each target is capped at half the gap to its own nearest neighbour, so a
+    // crowded pair like the shock eye and the link stays tight while everything
+    // else gets the full fat target. Centres are never covered either way.
+    const hitFor=p=>{
+      let nearest=Infinity;
+      for(const q of grabPts){
+        const d=dist(p,q);
+        if(d>1e-6 && d<nearest) nearest=d;      // coincident points cannot be told apart anyway
+      }
+      return Math.max(14, Math.min(HIT_PX*mmPerPx, nearest*0.5));
+    };
+    const grab=(p,key)=>{
+      const c=el('circle',{cx:p.x,cy:p.y,r:hitFor(p),fill:'transparent',class:'drag'},g);
+      c.dataset.key=key; return c;
+    };
+    marks.forEach(([p,col,key])=>{
+      el('circle',{cx:p.x,cy:p.y,r:14,fill:'#fff',stroke:col,'stroke-width':5,
+        'pointer-events':'none'},g);
+      el('circle',{cx:p.x,cy:p.y,r:5,fill:col,'pointer-events':'none'},g);
+      if(key) grab(p,key);
+    });
+    // off top-out the live points are driven by the solver, so the ghost at the
+    // un-compressed position is what you grab to move them
+    ghosts.forEach(([k,col])=>{
+      el('circle',{cx:G[k].x,cy:G[k].y,r:14,fill:'none',stroke:col,
+        'stroke-width':3,'stroke-dasharray':'6 5',opacity:.8,
+        'pointer-events':'none'},g);
+      grab(G[k],k);
+    });
+  }
 
   /* ---- force vectors ----
      Resolved for the frame being drawn, so they grow, shrink and swing round as
      the suspension cycles. Fixed scale in mm per newton, so the lengths stay
      comparable between positions instead of being renormalised each frame. */
-  if(showForces){
-    const Fw=sprungLoad();
-    const P=pivotForces(G,f,Fw);
-    if(P){
-      const FSCALE=0.22;                       // 1 kN reads as 220 mm on the drawing
-      const arrow=(p,v,col)=>{
-        const m=Math.hypot(v.x,v.y);
-        if(!(m>1)) return;
-        const L=m*FSCALE;
-        const u={x:v.x/m,y:v.y/m}, nrm={x:-u.y,y:u.x};
-        const head=Math.min(L*0.42, Math.max(16,11*mmPerPx));
-        const tip=add(p,mul(u,L)), base=sub(tip,mul(u,head));
-        el('line',{x1:p.x,y1:p.y,x2:base.x,y2:base.y,stroke:col,
-          'stroke-width':Math.max(2.5,3.2*mmPerPx),'stroke-linecap':'round',
-          'pointer-events':'none'},g);
-        el('polygon',{points:[tip,add(base,mul(nrm,head*0.44)),sub(base,mul(nrm,head*0.44))]
-            .map(q=>`${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(' '),
-          fill:col,'pointer-events':'none'},g);
-      };
-      arrow(f.CP,{x:0,y:Fw},'#2f6f3e');          // ground reaction under the tyre
-      arrow(G.MP,P.vec.main, 'var(--rear)');
-      arrow(f.FP,P.vec.flex, 'var(--flex)');
-      arrow(f.SE,P.vec.shock,'var(--shock)');
-      arrow(f.LP,P.vec.link, 'var(--link)');
+  function drawForceVectors(){
+    if(showForces){
+      const Fw=sprungLoad();
+      const P=pivotForces(G,f,Fw);
+      if(P){
+        const FSCALE=0.22;                       // 1 kN reads as 220 mm on the drawing
+        const arrow=(p,v,col)=>{
+          const m=Math.hypot(v.x,v.y);
+          if(!(m>1)) return;
+          const L=m*FSCALE;
+          const u={x:v.x/m,y:v.y/m}, nrm={x:-u.y,y:u.x};
+          const head=Math.min(L*0.42, Math.max(16,11*mmPerPx));
+          const tip=add(p,mul(u,L)), base=sub(tip,mul(u,head));
+          el('line',{x1:p.x,y1:p.y,x2:base.x,y2:base.y,stroke:col,
+            'stroke-width':Math.max(2.5,3.2*mmPerPx),'stroke-linecap':'round',
+            'pointer-events':'none'},g);
+          el('polygon',{points:[tip,add(base,mul(nrm,head*0.44)),sub(base,mul(nrm,head*0.44))]
+              .map(q=>`${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(' '),
+            fill:col,'pointer-events':'none'},g);
+        };
+        arrow(f.CP,{x:0,y:Fw},'#2f6f3e');          // ground reaction under the tyre
+        arrow(G.MP,P.vec.main, 'var(--rear)');
+        arrow(f.FP,P.vec.flex, 'var(--flex)');
+        arrow(f.SE,P.vec.shock,'var(--shock)');
+        arrow(f.LP,P.vec.link, 'var(--link)');
+      }
     }
   }
 }

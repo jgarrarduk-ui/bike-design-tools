@@ -2,7 +2,7 @@ import fs from 'node:fs';
 const src=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==ENGINE-END==')[0];
 const m=new Function(eng+'\nreturn {solve,sweep,pivotForces,stayLoads,dist,circles,chainRun,'+
-  'routeIdler,beltRun,idlerAt,chainPath,CAGE_LO,CAGE_HI,'+
+  'routeIdler,beltRun,idlerAt,chainPath,CAGE_LO,CAGE_HI,cageRun,wrapSense,RJ,'+
   'alongOf,standoffOf,onTube,segDist,unit,sub};')();
 const defs=src.split('const DEF=')[1].split('};')[0]+'}';
 const DEF=new Function('return '+defs)();
@@ -48,7 +48,7 @@ ok('shock reaches exactly full stroke', Math.abs(L.stroke-C.stroke)<0.01, L.stro
 // flex demand
 const peak=f.map(k=>k.flex).reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a,0);
 const geo={total:534,chord:525.5,emax:30.6,leanStart:364};
-const st=m.stayLoads(peak,geo,C.od,C.wall,545,C.bendA,C.dropZ,C.yokeZ);
+const st=m.stayLoads(peak,geo,C.od,C.wall,545,C.bendA,C.dropZ,C.yokeZ,C.leanEnd,C.leanA);
 ok('flex zone rotation stays small', Math.abs(peak)<3, peak.toFixed(2)+' deg');
 ok('stay stress accounts for the axial offset', st.sAx>0&&st.sFlex>0,
    'flex '+st.sFlex.toFixed(0)+' MPa, axial '+st.sAx.toFixed(0)+' MPa');
@@ -78,6 +78,32 @@ ok('all pivot loads finite and positive',
 const cr=m.chainRun({x:0,y:0},C.ring*12.7/(2*Math.PI),G.AX,C.cog*12.7/(2*Math.PI));
 ok('chain run is the upper tangent', cr.p1.y>0&&cr.p2.y>G.AX.y,
    'ring '+cr.p1.y.toFixed(1)+', cog '+cr.p2.y.toFixed(1));
+
+/* cageRun (the derailleur cage's tangent chain wrap, cog -> guide -> tension ->
+   chainring) had no coverage at all -- only Playwright screenshots when it was
+   built. Same geometry the cage take-up test above already uses, swept across
+   the same CAGE_LO..CAGE_HI bracket the cage can actually reach, so both tests
+   exercise the one real derailleur-cage rig rather than two invented ones. */
+{
+  const cBB={x:0,y:0}, cRc=C.ring*12.7/(2*Math.PI), cAXp={x:-450,y:38},
+        cRg=C.cog*12.7/(2*Math.PI), cGuide={x:-454,y:-36};
+  const near=(p,c,r)=>Math.abs(Math.hypot(p.x-c.x,p.y-c.y)-r)<1e-9;
+  let nullCount=0, tangentBad=0, checked=0;
+  for(let t=m.CAGE_LO;t<=m.CAGE_HI+1e-9;t+=0.05){
+    const cTension={x:cGuide.x-Math.sin(t)*C.cage, y:cGuide.y-Math.cos(t)*C.cage};
+    const wrap=m.cageRun(cBB,cRc,cGuide,cTension,m.RJ,cAXp,cRg);
+    if(!wrap){ nullCount++; continue }
+    checked++;
+    const [segA,segB,segC]=wrap.segs;
+    if(!(near(segA.p1,cAXp,cRg) && near(segA.p2,cGuide,m.RJ) &&
+         near(segB.p1,cGuide,m.RJ) && near(segB.p2,cTension,m.RJ) &&
+         near(segC.p1,cTension,m.RJ) && near(segC.p2,cBB,cRc))) tangentBad++;
+  }
+  ok('cage wrap solves across its whole travel bracket', nullCount===0,
+     nullCount+' unsolved of '+(checked+nullCount));
+  ok('every cage wrap segment is tangent to its pulley', tangentBad===0,
+     checked+' positions checked');
+}
 
 // a deliberately impossible link must be rejected, not silently fudged
 const bad=structuredClone(G); bad.SP={x:-72,y:196};      // link too short to follow the stay
