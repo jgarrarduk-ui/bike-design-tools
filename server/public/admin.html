@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Creature Cycles — Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: #f4f4f4; color: #111; }
+
+    /* ── Login ── */
+    #login-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh;
+    }
+    #login-card {
+      background: #fff; border: 1px solid #ddd; border-radius: 8px;
+      padding: 40px; width: 360px;
+    }
+    #login-card h1 { font-size: 18px; margin-bottom: 4px; }
+    #login-card p  { font-size: 12px; color: #999; margin-bottom: 24px; }
+    label { font-size: 13px; display: block; margin-bottom: 6px; }
+    input[type="password"], input[type="file"], select {
+      width: 100%; padding: 9px 12px; border: 1px solid #ccc; border-radius: 4px;
+      font-family: monospace; font-size: 13px; background: #fafafa;
+    }
+    .btn {
+      display: inline-block; padding: 10px 20px; background: #111; color: #fff;
+      border: none; border-radius: 4px; font-family: monospace; font-size: 13px;
+      cursor: pointer; text-decoration: none;
+    }
+    .btn:hover { background: #333; }
+    .btn.outline { background: #fff; color: #111; border: 2px solid #111; }
+    .btn.outline:hover { background: #f4f4f4; }
+    .btn.sm { padding: 6px 14px; font-size: 12px; }
+    .btn.danger { background: #8b3a3a; }
+    #login-error { color: #c00; font-size: 12px; margin-top: 8px; display: none; }
+
+    /* ── App shell ── */
+    #app { display: none; }
+    header {
+      background: #111; color: #fff; padding: 14px 24px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 16px; }
+    header span { font-size: 12px; color: #aaa; }
+
+    /* ── Main ── */
+    main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+
+    /* ── Filters ── */
+    .filters { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+    .filters label { font-size: 13px; }
+    .filters select { width: auto; }
+
+    /* ── Stats ── */
+    .stats { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .stat-card {
+      background: #fff; border: 1px solid #ddd; border-radius: 6px;
+      padding: 16px 20px; min-width: 120px;
+    }
+    .stat-card .n { font-size: 28px; font-weight: bold; }
+    .stat-card .l { font-size: 11px; color: #999; margin-top: 4px; }
+
+    /* ── Table ── */
+    .table-wrap { background: #fff; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #111; color: #fff; padding: 10px 14px; text-align: left; font-weight: normal; }
+    td { padding: 12px 14px; border-bottom: 1px solid #eee; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    /* ── Status badges ── */
+    .badge {
+      display: inline-block; padding: 3px 8px; border-radius: 3px;
+      font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .badge.pending         { background: #e8e8e8; color: #555; }
+    .badge.checkout_created{ background: #fff3cd; color: #856404; }
+    .badge.paid            { background: #cce5ff; color: #004085; }
+    .badge.in_review       { background: #d4edda; color: #155724; }
+    .badge.accepted        { background: #c3e6cb; color: #155724; }
+    .badge.delivered       { background: #d1ecf1; color: #0c5460; }
+    .badge.failed          { background: #f8d7da; color: #721c24; }
+
+    /* ── Actions cell ── */
+    .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100; display: none;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: 8px; padding: 32px;
+      width: 480px; max-width: 95vw;
+    }
+    .modal h2 { font-size: 16px; margin-bottom: 16px; }
+    .modal p  { font-size: 13px; color: #555; margin-bottom: 16px; line-height: 1.6; }
+    .modal .field { margin-bottom: 16px; }
+    .modal .field label { display: block; font-size: 12px; margin-bottom: 6px; color: #666; }
+    .modal .actions { justify-content: flex-end; margin-top: 8px; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px; background: #111; color: #fff;
+      padding: 12px 20px; border-radius: 6px; font-size: 13px;
+      opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 200;
+    }
+    #toast.show { opacity: 1; }
+    #toast.error { background: #8b3a3a; }
+
+    .empty { text-align: center; padding: 40px; color: #999; font-size: 14px; }
+    .loading { text-align: center; padding: 40px; color: #999; }
+  </style>
+</head>
+<body>
+
+<!-- ── Login ─────────────────────────────────────────────────────────────── -->
+<div id="login-screen">
+  <div id="login-card">
+    <h1>Creature Cycles</h1>
+    <p>Admin Panel</p>
+    <label for="pw-input">Password</label>
+    <input type="password" id="pw-input" placeholder="Enter admin password" autocomplete="current-password">
+    <p id="login-error">Incorrect password.</p>
+    <br>
+    <button class="btn" onclick="login()">Sign in</button>
+  </div>
+</div>
+
+<!-- ── App ───────────────────────────────────────────────────────────────── -->
+<div id="app">
+  <header>
+    <h1>Creature Cycles — Orders</h1>
+    <span id="header-env"></span>
+  </header>
+
+  <main>
+    <div class="stats" id="stats"></div>
+
+    <div class="filters">
+      <label>Filter by status:</label>
+      <select id="status-filter" onchange="loadOrders()">
+        <option value="">All orders</option>
+        <option value="paid">Paid — awaiting review</option>
+        <option value="in_review">In review</option>
+        <option value="accepted">Accepted</option>
+        <option value="delivered">Delivered</option>
+        <option value="failed">Failed</option>
+      </select>
+      <button class="btn outline sm" onclick="loadOrders()">Refresh</button>
+    </div>
+
+    <div class="table-wrap">
+      <div id="table-container" class="loading">Loading orders…</div>
+    </div>
+  </main>
+</div>
+
+<!-- ── Send Review Modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="review-modal">
+  <div class="modal">
+    <h2>Send Design Review</h2>
+    <p>Upload the completed design PDF. The customer will receive an email with a
+       download link and an <strong>Accept Design</strong> button.</p>
+    <div class="field">
+      <label>Customer</label>
+      <div id="modal-customer" style="font-size:14px;font-weight:bold;"></div>
+    </div>
+    <div class="field">
+      <label>Design ID</label>
+      <div id="modal-design-id" style="font-size:12px;color:#666;"></div>
+    </div>
+    <div class="field">
+      <label>Design PDF (required)</label>
+      <input type="file" id="review-pdf-input" accept="application/pdf">
+    </div>
+    <div class="actions">
+      <button class="btn outline" onclick="closeModal()">Cancel</button>
+      <button class="btn" id="modal-send-btn" onclick="sendReview()">Send Review Email</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  let password = '';
+  let currentDesignId = '';
+
+  // ── Auth ─────────────────────────────────────────────────────────────────
+  async function login() {
+    const pw = document.getElementById('pw-input').value.trim();
+    if (!pw) return;
+
+    const res = await fetch('/api/admin/orders', {
+      headers: { 'Authorization': 'Bearer ' + pw }
+    });
+
+    if (res.status === 401) {
+      document.getElementById('login-error').style.display = 'block';
+      return;
+    }
+
+    password = pw;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    loadOrders();
+  }
+
+  document.getElementById('pw-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') login();
+  });
+
+  // ── Load orders ───────────────────────────────────────────────────────────
+  async function loadOrders() {
+    const status = document.getElementById('status-filter').value;
+    const url    = '/api/admin/orders' + (status ? '?status=' + status : '');
+
+    document.getElementById('table-container').innerHTML = '<div class="loading">Loading…</div>';
+
+    const res    = await apiFetch(url);
+    const { orders } = await res.json();
+
+    renderStats(orders);
+    renderTable(orders);
+  }
+
+  function renderStats(orders) {
+    const counts = {};
+    orders.forEach(o => { counts[o.status] = (counts[o.status] || 0) + 1; });
+
+    const labels = {
+      paid: 'Awaiting review', in_review: 'In review',
+      accepted: 'Accepted', delivered: 'Delivered', failed: 'Failed'
+    };
+
+    document.getElementById('stats').innerHTML = Object.entries(labels)
+      .map(([k, l]) => `
+        <div class="stat-card">
+          <div class="n">${counts[k] || 0}</div>
+          <div class="l">${l}</div>
+        </div>`)
+      .join('');
+  }
+
+  function renderTable(orders) {
+    if (!orders.length) {
+      document.getElementById('table-container').innerHTML =
+        '<div class="empty">No orders found.</div>';
+      return;
+    }
+
+    const rows = orders.map(o => {
+      const date      = new Date(o.created_at).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+      const actions   = actionsFor(o);
+      return `
+        <tr>
+          <td>${date}</td>
+          <td><strong>${esc(o.customer_name)}</strong><br><span style="color:#999;font-size:11px;">${esc(o.customer_email)}</span></td>
+          <td style="font-size:11px;color:#666;">${o.id.slice(0,8).toUpperCase()}</td>
+          <td><span class="badge ${o.status}">${o.status.replace('_',' ')}</span></td>
+          <td><div class="actions">${actions}</div></td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('table-container').innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th><th>Customer</th><th>Design ID</th><th>Status</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  function actionsFor(o) {
+    const btns = [];
+
+    if (o.status === 'paid') {
+      btns.push(`<button class="btn sm" onclick="openModal('${o.id}','${esc(o.customer_name)}')">Send Review</button>`);
+    }
+
+    if (o.status === 'in_review') {
+      btns.push(`<button class="btn outline sm" onclick="openModal('${o.id}','${esc(o.customer_name)}')">Resend Review</button>`);
+    }
+
+    if (['accepted', 'delivered'].includes(o.status)) {
+      btns.push(`<span style="font-size:12px;color:#2d6a2d;">&#10003; Complete</span>`);
+    }
+
+    if (o.status === 'failed') {
+      btns.push(`<button class="btn danger sm" onclick="openModal('${o.id}','${esc(o.customer_name)}')">Retry Review</button>`);
+    }
+
+    return btns.join('');
+  }
+
+  // ── Review modal ──────────────────────────────────────────────────────────
+  function openModal(designId, customerName) {
+    currentDesignId = designId;
+    document.getElementById('modal-customer').textContent  = customerName;
+    document.getElementById('modal-design-id').textContent = designId.slice(0,8).toUpperCase();
+    document.getElementById('review-pdf-input').value = '';
+    document.getElementById('review-modal').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('review-modal').classList.remove('open');
+    currentDesignId = '';
+  }
+
+  async function sendReview() {
+    const fileInput = document.getElementById('review-pdf-input');
+    if (!fileInput.files.length) {
+      toast('Please select a PDF file.', true);
+      return;
+    }
+
+    const btn = document.getElementById('modal-send-btn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    const formData = new FormData();
+    formData.append('pdf', fileInput.files[0]);
+
+    try {
+      const res = await fetch(`/api/admin/orders/${currentDesignId}/send-review`, {
+        method:  'POST',
+        headers: { 'Authorization': 'Bearer ' + password },
+        body:    formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast(data.error || 'Failed to send review.', true);
+      } else {
+        toast('Review email sent!');
+        closeModal();
+        loadOrders();
+      }
+    } catch (err) {
+      toast('Network error — please try again.', true);
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Send Review Email';
+  }
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
+  function apiFetch(url, opts = {}) {
+    return fetch(url, {
+      ...opts,
+      headers: { 'Authorization': 'Bearer ' + password, ...(opts.headers || {}) },
+    });
+  }
+
+  function toast(msg, error = false) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className   = 'show' + (error ? ' error' : '');
+    setTimeout(() => { el.className = ''; }, 3500);
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Close modal on overlay click
+  document.getElementById('review-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+</script>
+</body>
+</html>

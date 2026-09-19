@@ -1,7 +1,10 @@
-# Flex-stay kinematics tool — working notes
+# Suspension Designer (flex-stay) — working notes
 
-Single-file browser tool for a flex-stay full-suspension MTB. No build step, no
-dependencies. `index.html` plus five PNGs in `img/`.
+Single-file browser tool for a flex-stay full-suspension MTB — the flex-stay
+variant of a planned Suspension Designer family (other linkage types are on
+the roadmap; nothing about that is built yet, so everything below is
+flex-stay-specific unless it says otherwise). No build step, no dependencies.
+`index.html` plus the PNGs in `img/`.
 
 ## Run it
 
@@ -14,7 +17,7 @@ Open `index.html`, or serve the folder. It is deployed to GitHub Pages alongside
 cd test && node flexstay-tests.mjs
 ```
 
-51 checks, no install required. The engine sits between the `// ==ENGINE-START==`
+53 checks, no install required. The engine sits between the `// ==ENGINE-START==`
 and `// ==ENGINE-END==` markers and contains **no DOM references**, so the test
 file extracts that block with `new Function()` and runs it headlessly. Keep it
 that way — if DOM code leaks into the engine block the tests stop working.
@@ -35,13 +38,100 @@ right rail leads with travel, balance and spring — the things a pivot move
 changes — and folds the pivot loads and the stay stress calculation away, with
 the twelve intermediate workings behind a second fold inside the stress panel.
 
+**The `<h1>Flex-stay kinematics</h1>` and its subtitle are gone from the top of
+the left rail** — a one-time title, permanently spending vertical space at the
+very top of the panel you look at most. `<h2>Pivots and mounts</h2>` is now the
+rail's first element, taking up the room the title used to hold rather than
+being pushed down by it. The `<title>` tag (browser tab text) is untouched;
+only the on-page heading and its `.sub` line were removed.
+
 Collapsed, both rails fit a 950px viewport without scrolling; before this they
 scrolled 2191px and 1441px. Mobile went from 4237px of document to 1900px.
 
-One chart at a time, full strip width, paged by the arrows and the four dots.
-Axis ticks are rounded to 1, 2 or 5 times a power of ten (`niceAxis`) and the
-decimals come from the step, not from the quantity — a 0.5 step under a
-whole-number format printed 109, 110, 110, 111 on the anti-rise axis.
+**There was no `<meta name="viewport">` tag, so none of this ever reached an
+actual phone.** The `@media (max-width:900px)` block above (and its own
+document-height numbers) was measured and is correct, but only by narrowing a
+desktop browser window — a real mobile browser with no viewport meta renders
+into a virtual ~980px layout viewport and scales the whole page down to fit,
+so `max-width:900px` never matches no matter how small the physical screen is.
+`frame-designer.html` already carries the tag; this file just didn't. One
+line fixes it: `<meta name="viewport" content="width=device-width,
+initial-scale=1.0">`. Confirmed with a real 390px-wide viewport afterward —
+document width now tracks the device instead of pretending to be a small
+desktop window.
+
+**The toolbar (`#bar`) sits above the canvas, not below it.** `#stage`'s
+children are plain flex-column siblings with no order-dependent CSS anywhere
+(checked — no `:first-child`/sibling combinators touch `#canvas`/`#bar`/
+`#charts`), so this was a pure HTML reorder: `#bar` moved before `#canvas`,
+`#msg` (the error banner, normally `display:none`) stayed put right after
+`#canvas`. `#bar`'s rule flipped from `border-top` to `border-bottom` so it
+still visually separates the toolbar from what's below it instead of sitting
+uselessly against the page edge.
+
+**The canvas got shorter on purpose, to leave more of the chart carousel
+visible without scrolling.** `#canvas{flex:1;min-height:230px;max-height:56vh}`
+— the `max-height` is what actually does it: without a cap, `flex:1` lets the
+canvas claim every pixel `#stage` has spare, however tall that leaves the
+carousel. This interacts with `fitView`'s own "crop rather than shrink"
+behaviour (below): making the box shorter effectively widens its aspect ratio,
+which makes the height-driven vertical crop trigger more readily at extreme
+geometries. Checked across `ha` 45–75° and it's clean; **at `ha`≈80° (unrealistic
+for a real bike — nobody runs a head angle that slack) the stem art itself
+starts clipping at the top edge**, confirmed by rendering the identical
+geometry with the `max-height` cap removed, which fixes it — so this is a real,
+known trade-off of asking for a shorter box, not a bug, and not worth chasing
+into geometries no actual bike would use.
+
+**Wheels touch the bottom edge on purpose; the top edge is a tuned pad, not
+zero.** `draw()`'s content box (`index.html:1160`, the `ys` array building `lastBox`)
+is `[ground, F0.steerTop.y+62, post.y+80]`. `ground` already needs no pad — the
+wheel sits exactly on it by construction. The stem (`STEMART`) and saddle
+(`SADDLEART`) pads aren't guesses: measured each art's own transformed bounding
+box above its anchor point (`steerTop`/`post`) across a spread of head and seat
+angles (down to unrealistic extremes, 45° head angle, 68-80° seat angle) and
+took the worst case plus a small margin — 62mm and 80mm respectively. The
+previous flat pads (70/90) were already in that neighbourhood; this only
+trimmed what was provably spare. `fitView`'s own uniform margin
+(`index.html:1099`, "so the ground line clears the edge") also came down
+slightly, from ×1.07 to ×1.03, for a matching trim on all four edges together.
+
+One chart at a time, full strip width, paged by the arrows and the dots —
+`#cdots` is hand-written in the HTML with one `<i>` per `CHART_VIEWS` entry, so
+adding a chart means adding a dot alongside it or paging silently runs one page
+further than the dots show. Axis ticks are rounded to 1, 2 or 5 times a power
+of ten (`niceAxis`) and the decimals come from the step, not from the quantity
+— a 0.5 step under a whole-number format printed 109, 110, 110, 111 on the
+anti-rise axis.
+
+**One chart, `axlepath`, plots two paths instead of one value against travel.**
+`chart()` dispatches any view carrying `type:'xy'` to `chartAxlePath` instead of
+the normal travel-vs-value renderer. It draws the rear axle's swept path (`f.AX`
+per frame, the same points the `axpath` overlay draws on the bike) against the
+front axle's — which, since the fork has no rear-linkage kinematics of its own,
+is built by sweeping fork travel over the same fraction of stroke as each
+rear-sweep frame, `frame(C.forkTravel*i/(n-1)).FA` — the same 1:1 coupling
+`draw()` already uses to pose the fork on screen when not holding sag, just run
+across the whole sweep instead of one frame. `var(--rear)` against a new
+`var(--front)` purple, with a text legend since a chart, unlike the overlay, has
+no bike around it to place a colour by proximity to.
+
+**Magnified, not absolute — each path is plotted relative to its own top-out
+point, not the frame's real coordinates.** On the real frame the two starting
+points are a wheelbase apart, which is a fact about the bike and has nothing to
+do with the shape either curve traces — the only thing worth comparing here —
+so `rear[0]`/`front[0]` are subtracted off before anything else touches the
+data, landing both curves on a shared origin (drawn as a small grey dot) exactly
+the way the reference "magnified axle path" chart this was modelled on does it.
+That also changes what there is to autoscale to: fitting the box to two small
+relative curves instead of a wheelbase-plus-two-specks is what makes the paths
+fill the window instead of sitting lost in a mostly empty plot. Sag markers are
+translated by the same per-series offset so they still land on their own curve.
+Both axes still share one mm scale (picked from whichever of x or y is tighter
+for the combined bounding box, via the same `niceAxis` step so the grid reads
+as one ladder, not two) — unlike every other chart here, x and y are the same
+kind of quantity, and stretching them differently would bend a path that is,
+physically, a specific shape.
 
 **The canvas has to stay landscape.** `fitView` crops the width to fill the box,
 which is harmless on a wide canvas and takes the wheels clean off a square one.
@@ -62,6 +152,61 @@ The flex pivot is fixed at the rear axle. The seat stay is drawn from its real
 bend geometry: a straight run out of the dropout, a fixed radius bend, then a
 straight run to the yoke, with the launch angle solved so both ends stay on
 their pivots.
+
+**`G.FP` is kept equal to `G.AX` in exactly one place, unconditionally:**
+`recompute()`'s own `G.FP={...G.AX}`, run at the top of every call. `syncGeom()`
+used to carry a second, conditional copy of this — check whether the two were
+already concentric, then re-sync `G.FP` if so — which read as though it were
+doing real work but never was: every call site reaches `recompute()` shortly
+after `syncGeom()`, so by the time anything ever reads `G.FP` the unconditional
+copy has already run and overwritten whatever the conditional one did or
+didn't do. Confirmed rather than assumed — forced `G.FP` 500mm away from
+`G.AX`, called `syncGeom()` alone, and it came back completely untouched;
+only `recompute()` afterward put it back. Removed the dead branch; the
+invariant itself ("flex pivot always rides with the axle") is unchanged and
+still lives in `recompute()`, just no longer duplicated somewhere it could
+never fire.
+
+**`f.LP` is a solved four-bar point, not a point on the drawn stay curve, so it
+gets its own short mount brace rather than being folded into the stay's own
+line.** `stayPath(f.FP,f.SE)` runs the whole way to the shock eye already, so
+the drawn stay and the solved geometry can only ever disagree about where LP
+sits relative to that curve — and on this linkage they do, since LP is body
+B's own rigid point, not something `stayPath` places for you. The old drawing
+papered over that gap with two extra lines, `SE→LP` and `LP→(86% up the
+stay)`, at the stay's own full width — which is a straight line standing in
+for "near enough", and at the stay's own 30/23 it read as one oversized,
+ambiguously-shaped tube rather than a stay with a small part bolted to it.
+`closestOnPath`, next to the general-purpose `segDist` in the engine block,
+finds where LP actually sits closest to the curve that is actually on screen,
+and a
+single short `tubes()` brace — the same idea as the shock mount brace on the
+down tube, `frontTriangle`'s `foot` — runs from there to `f.LP`. Perpendicular
+falls out of "closest point on a straight segment" for free: it's exactly the
+foot of the perpendicular from `f.LP` to whichever segment it lands nearest,
+so there was no separate angle to solve. About 20mm at the shipped default;
+scales with whatever the real geometry does since it is read fresh off
+`path.pts` every frame, not fitted once and left to drift.
+
+**The flex-zone red overlay is gone, along with `polyHead`.** `recompute()`
+sets `C.zone` to the seat stay's own full length on every call — "bending
+always spans the whole seat stay" is already the comment on that line — so the
+overlay was always drawing the entire visible stay in red, doubled up on top
+of the tube already there. `C.zone` itself is untouched (still computed, still
+part of the saved/exported shape), since the stress panel's own workings read
+`stayGeo.total`, not this field; only the now-pointless highlight and the
+polyline-head helper that built it are gone.
+
+**Revisited during a later audit, and reaffirmed rather than removed.**
+`C.zone` is genuinely write-only now — nothing in the app reads it, confirmed
+by grep — which is the kind of thing a dead-code pass would normally delete.
+Left alone anyway: it's part of every saved design file's schema, and
+removing a field from an exported format is not something you can quietly
+undo once files carrying it exist in the wild — a decision to make once,
+deliberately, not as a side effect of a cleanup pass. Still recomputed on
+every `recompute()` rather than frozen at whatever value it last held, so an
+old file re-saved through a newer build doesn't carry a stale number for a
+field nobody's using anyway.
 
 Coordinates are millimetres, origin at the bottom bracket, x forward, y up. The
 drawing group applies `scale(1,-1)` so the SVG is y-down inside a y-up model.
@@ -318,9 +463,43 @@ a tube would be wrong. It gets the clearance check and a readout of the three
 numbers the part is actually made to instead: its offset from each tube and that
 included angle.
 
-**The standoff box is live when locked and greyed when not** — the reverse of
-`a2cAuto`, because here the lock turns a derived readout into an input. Easy to
-wire backwards; both the value and the `.disabled` flag live in `refreshDerived`.
+**The standoff box used to be live when locked and greyed when not** — the
+reverse of `a2cAuto`, on the reasoning that the lock turns a derived readout
+into an input. Reported back as backwards and inconsistent with the rest of
+this tool's locks (the points-panel lock right below, `ptLocked`, is
+unlocked-live/locked-disabled, and so is every other coordinate lock a user
+would compare it to) — a fair complaint even though the old wiring was
+internally consistent on its own terms, since "consistent with itself" isn't
+the bar when every other lock in the same tool reads the opposite way.
+Reversed: `refreshDerived` now disables the box exactly when `C[lock]` is
+set, so locked reads as fixed-and-uneditable and unlocked as free-to-type,
+matching `ptLocked`.
+
+That flip changes what "live" has to mean, though: unlocked used to make the
+box a pure readout (typing did nothing, since `recompute()`'s own unlocked
+branch — `C[off]=standoffOf(dtU,G[k])` — overwrote whatever was typed on the
+very next recompute anyway, which is *why* it was disabled). Making it
+genuinely editable when unlocked needed the box to actually move the point,
+not just accept a value that would be discarded a moment later — so
+`sgStand`/`spStand` were pulled out of `fillCfg()`'s generic
+value-goes-in-`C`-and-nothing-else loop (next to `sgLock`/`spLock`, already
+excluded there for their own reasons) and given their own `onchange`: while
+unlocked, typing calls the exact `onTube(dtU, alongOf(dtU,G[k]), v)` recompute
+would use *if* locked, so the typed number lands the point there directly,
+and the very next `recompute()` reads that same position straight back as an
+identical standoff — a round trip, not a fight. Locked, typing cannot happen
+at all (the box is disabled), so there is nothing for the box's own handler
+to do differently there; `recompute()`'s existing locked branch is unchanged.
+
+**SP's mount matches SG's.** `frontTriangle()`'s draw call used to follow the
+tube-coloured brace tube at `[boss,G.SP,30]` with an extra `r:34` disc, plain
+tan-and-brown like the tubes but large enough, and different enough from the
+brace tube next to it, to read as its own thing rather than as a boss on the
+down tube — a beige-warm colour under any colour-shifted display reads close
+enough to gold to be mistaken for one of the actual gold pivot rings (`SE`/`SG`,
+`var(--shock)`), so "the yellow circle on the linkage pivot" was a fair
+description even though nothing in this file is literally yellow. Removed; SP
+now renders exactly like SG, a brace tube and nothing else.
 
 **Both locks default on, at 55mm.** `DEF.geom.SG`/`DEF.geom.SP` are left at their
 old shipped coordinates — the lock glue in `recompute()` re-derives both from
@@ -332,6 +511,134 @@ to change by hand. This does move the shock mount from where it originally sat
 on "Shock eye to eye, drawn" on a fresh load. That is the honest consequence of
 locking the mount to 55mm rather than a bug; nothing was tuned to hide it.
 
+**"Reset points & mounts" resets the standoff config, not just the coordinate,
+because the two can genuinely disagree.** `DEF.geom.SG`'s own raw coordinate is
+67.1mm off the down tube, not 55 — it only ever reads as 55 on a fresh load
+because `sgLock` defaults on and `recompute()`'s glue forces it there, per the
+paragraph above. So `resetPoints` copying `G.SG=DEF.geom.SG` and stopping there
+used to leave the *displayed* standoff wherever it happened to be before the
+click: locked, the glue would immediately re-derive `G.SG` from the just-reset
+point's own along-tube coordinate but the OLD (unreset) `C.sgStand`, silently
+re-imposing whatever standoff the mount had before, not 55; unlocked, nothing
+touched `C.sgStand`/`C.spStand` or the boxes at all — `resetPoints` never called
+`fillCfg()`, only `fillPoints()`. Fixed by resetting `C.sgStand`/`spStand` and
+`sgLock`/`spLock` to `DEF.cfg` first — matching how `resetGeom` already resets
+`a2cAuto` alongside `a2c` — then placing `G.SG`/`G.SP` with the same `onTube`
+call the lock glue itself uses, at the default standoff. That makes the result
+correct and idempotent whichever way the lock ends up: locked, `recompute()`
+re-derives the identical point (a no-op); unlocked, its readout branch reads
+the standoff back off a point already sitting at exactly 55mm, instead of
+`DEF.geom.SG`'s own real 67.1mm.
+
+**The eye-to-eye length lock (`lockLen`) and the down-tube standoff lock
+(`sgLock`) both claim `G.SG`, and used to fight over it mid-drag.** Dragging
+`SE` or `SG` with `lockLen` on (the default) repositions the *other* one to
+hold `C.eye` — correct in isolation, verified by hand: fresh `unit()` vector
+every event, no stale caching, exact eye-to-eye immediately after it runs. But
+with `sgLock` also on (also the default), `recompute()` runs a frame later on
+the very same drag event and unconditionally snaps `G.SG` back onto the down
+tube at the fixed `C.sgStand`, discarding whatever the length-lock block just
+set — the mount-lock always wins because it runs last, and neither mechanism
+knows the other exists. Dragging `SE` therefore moved `SG` to a length-correct
+position that recompute() immediately un-did; dragging `SG` had the mirror
+problem, anchoring `SE` on the raw pre-recompute position rather than where
+`SG` was actually about to end up. Either way "Shock eye to eye, drawn" came
+out wrong, generically longer, while the *other* point had visibly moved —
+exactly the reported symptom.
+
+Fixed by solving the two constraints together instead of independently, inside
+the same `lockLen` block, whenever `sgLock` is also on:
+- **Dragging `SG`** only ever slides it along the tube anyway (that's the lock
+  working as designed), so the fix snaps `G.SG` there itself —
+  `onTube(dtU, alongOf(dtU,G.SG), C.sgStand)` — before repositioning `SE`, so
+  the eye length is held against where `SG` will actually end up, not a
+  position `recompute()` is about to throw away.
+- **Dragging `SE`** leaves `SG` with exactly one degree of freedom (where along
+  the tube), so the fix intersects the tube's offset line with the circle of
+  radius `C.eye` around the new `SE` — a small quadratic in the along-tube
+  parameter `t`, using the identity `onTube(u,t,off) = onTube(u,0,off) + t·u`
+  (affine in `t` for fixed `off`) and `dtU·dtU=1`. Two roots, one, or none
+  depending on whether the eye can reach the tube from there at all; the root
+  nearer the current `G.SG` is kept, so the mount doesn't flip to the far side
+  mid-drag. No solution (the eye genuinely can't reach) leaves `SG` where it
+  was rather than guess — `recompute()` still holds it on the tube, just not
+  yet at the requested length until the drag comes back in range.
+
+Either branch lands `G.SG` exactly on the offset line at exactly the along-tube
+coordinate it already has, which is precisely what `recompute()`'s own glue
+would compute from it — `alongOf(u, onTube(u,t,off)) === t` for unit `u`,
+regardless of `off` — so the glue's later pass becomes a no-op confirmation
+instead of a clobber. Nothing in `recompute()` itself changed; the drag handler
+just stopped handing it a position it was always going to override. Verified
+with `sgLock` on dragging both `SE` and `SG`: eye-to-eye holds to within
+rounding and the mount stays exactly on the tube in both cases. The unlocked
+path (`sgLock` off) is untouched — there was nothing for it to fight, and it
+already worked.
+
+### Locks, as icon buttons
+
+Three different locks in this tool now share one small glyph-only button
+(`.iconbtn`, 22×22, no colour rules of its own — it inherits the base
+`button`/`button[aria-pressed=true]` recolour every other button already
+uses) — 🔓 unlocked, 🔒 locked, `aria-pressed` carrying the real state either
+way. They are NOT the same lock, deliberately, even the two that land on the
+same point (SG/SP):
+
+- **`sgLock`/`spLock`** (down-tube standoff, "Down tube mounts" panel) —
+  **locked by default.** Real `C` fields `recompute()`'s mount-lock glue reads
+  directly (`index.html:949`) — the button is a reskin, not a new mechanism.
+  They used to be separate checkbox `<label>` rows above their standoff field;
+  now the button sits inside that field's own row instead, and `fillCfg()`'s
+  generic `Object.keys(C)` loop explicitly skips `sgLock`/`spLock`
+  (`index.html:2083`) since they're `<button>`s now, not
+  `<input type=checkbox>` — a `<button>`'s `.type` is never `'checkbox'`, so
+  without that exclusion they'd fall into the generic value/`onchange` branch
+  and try to read `.value` off a button. They get their own tiny wiring block
+  right after that loop instead, doing exactly what the checkbox's `onchange`
+  used to: flip `C[k]`, repaint the glyph, run
+  `syncGeom(k); refreshDerived(); fillPoints(); recompute(false);`.
+  `sgStand`/`spStand` themselves are excluded from `fillCfg()`'s generic loop
+  too now, alongside the lock buttons — see "Standoffs" above for why they
+  need their own `onchange` rather than the generic one.
+- **`lockLen`** (shock eye to eye) — **locked by default**, moved from a
+  toolbar text button to an icon next to `eye` (see "Lock shock" above).
+- **The points-panel lock, `ptLocked`** — new, **unlocked by default**, on
+  every row (`PTS`: MP/SP/LP/SE/SG/AX/ID, no exceptions — including SG/SP,
+  which already have the standoff lock above, in a different panel, doing a
+  different job). This one is a plain UI convenience — "don't let this point
+  get dragged or typed into by accident" — not a physical constraint, so it's
+  a bare runtime object (`let ptLocked={}`, unset = unlocked) next to
+  `showWheels` etc., not part of `C`/`G`: not exported, not imported, not
+  touched by any reset button, exactly like every other `show*` flag already
+  isn't. Enforced in two places: the pointerdown handler checks
+  `ptLocked[k]` before it will set `dragKey` (`index.html:1613`, right
+  where `k` is resolved from the hit target — this also covers a locked
+  point's "ghost" marker off top-out, since a ghost shares the same
+  `dataset.key`), and the row's own click handler sets `.disabled` on both
+  number inputs directly rather than routing back through `fillPoints()`'s
+  full render path.
+
+**All three now paint through one `paintLock(btn, locked, titles)`.** Each
+lock used to write its own `aria-pressed`/glyph/`title` triple by hand, at
+its click handler and (for `sgLock`/`spLock`) again at initial paint — six
+copies of the same three lines, one silent drift away from a bug (a lock
+that updated `aria-pressed` but forgot the glyph, say). `paintLock` only
+does the paint; each lock still owns its own side effect (disabling inputs
+for the points-panel lock, `applyChange()` for the standoff locks, nothing
+at all for `lockLen`), since those genuinely differ and gluing them together
+would be the wrong kind of shared code.
+
+**And the down-tube standoff locks' `syncGeom(k); refreshDerived();
+fillPoints(); recompute(false);` sequence is `applyChange(k)`** — the same
+four calls a checkbox's `onchange` and a tyre-width `<select>`'s `onchange`
+also ran by hand, now one function next to `refreshDerived()`. The generic
+numeric field's own commit (`fillCfg`'s main loop) stayed separate rather
+than being folded into this too: it needs `refreshDerived(k)`, skipping the
+box currently being typed into, where every `applyChange` caller wants the
+plain `refreshDerived()` — a genuinely different call, not a copy of this
+one, so sharing a name would hide a real difference rather than remove a
+fake one.
+
 ### Clearance
 
 A pivot is a boss, not a point: `pivotOD` (22mm) gives it a body, and clearance to a
@@ -341,9 +648,23 @@ the idler when frame-mounted. The readout runs before the no-solution bail-out i
 `readouts()`, because it is pure frame geometry and is most wanted precisely when
 the linkage will not solve.
 
-**Known, and real: at the shipped defaults the main pivot boss overlaps the seat
-tube by about 15mm.** The tool flags it rather than hiding it. Either the pivot
-moves or the housing has to interrupt the tube.
+**A negative number here is known, and real, not a bug to chase.** The tool
+flags an overlap rather than hiding it — either the pivot moves or the housing
+has to interrupt the tube. It reads about -1mm off the seat tube at the current
+shipped defaults, close enough to flush that it is more a reminder to check
+than a finding; it read -15mm against the geometry shipped before that (a much
+lower main pivot), so the number moves with whatever design DEF holds and is
+worth a fresh look after any change there.
+
+**`DEF` is a real, saved design, not a made-up placeholder.** It has been swapped
+wholesale more than once for a design worth shipping as the thing people see on
+first open — most recently for "lowpivot mx", `rw`/`fw` a genuine 584/622 mullet,
+idler off by default, every pivot a solved coordinate rather than something
+round-tripped through 1dp. `resetGeom`, `resetPoints` and the whole-tool reset
+all read straight from it, so swapping it is enough — no coordinate elsewhere
+needs hand-updating, and `test/flexstay-tests.mjs` re-extracts `DEF` from the
+source at test time rather than pinning old numbers, so the shipped-defaults
+checks (below) track it automatically.
 
 ## Save / load
 
@@ -352,9 +673,18 @@ Design name and designer are free text, so they live in `META`, outside `C` —
 input, which would permanently reject a name the moment it looked at the box.
 Export writes `{_meta:{name, designer, date, version}, geom:G, cfg:C}`; import
 parses that same shape and then runs the exact startup sequence the reset button
-uses — `syncGeom(); fillPoints(); fillCfg();` — so a file with an old or partial
-`cfg` still comes out through the same derivation the app applies on every other
-input change.
+uses — `refillAll()` — so a file with an old or partial `cfg` still comes out
+through the same derivation the app applies on every other input change.
+
+**`refillAll()` is the one thing genuinely identical across all four places
+that replace `G`/`C` wholesale** — the two resets, import, and the page-load
+boot sequence — `syncGeom(); fillPoints(); fillCfg(); fillTyreWidths();`, used
+to be typed out by hand at all four. Each site still has its own tail after
+it (whether `posT`/`holdSag` reset to top-out — the two resets and import do,
+`resetGeom` and boot don't, since neither changes which position you're
+looking at — which `recompute()` variant to call, and `initDrag()` running
+once at boot), so only the truly shared part was pulled out, not the whole
+sequence pretending all four are the same operation.
 
 **Import layers the file over the defaults** (`Object.assign` onto a clone of
 `DEF`) rather than replacing `G`/`C` wholesale, so a design saved before a field
@@ -362,6 +692,13 @@ existed keeps that field's default instead of losing it. It used to replace them
 outright, which meant an older file came back with no `G.ID` at all and
 `fillPoints` threw on the idler row. Any field added from here on is safe for the
 same reason.
+
+**Export revokes the blob URL on a timer, not immediately after `.click()`.**
+A browser can start the download asynchronously — Safari especially — so
+calling `URL.revokeObjectURL` on the very next line is a race that can cancel
+the save before it starts. A second's grace before revoking is enough for the
+download to have already grabbed the blob; the URL still gets cleaned up, just
+not on the same tick as the click.
 
 ## Validated against Linkage X3
 
@@ -381,9 +718,64 @@ early exit has the same problem.
 | | Linkage | Tool |
 |---|---|---|
 | Travel | 139 | 139.0 |
-| Progression | 11.3% | 11.4% |
+| Progression | 11.3% | 11.6% |
 | Anti-squat | 113.5% | 113.4% |
 | Anti-rise | 109.5% | 109.5% |
+
+**Progression moved from 11.4% to 11.6% when the leverage stencil below was
+fixed — reported here plainly rather than quietly re-pinned, since it's the
+one number in this table that changed.** It's now 0.3 points off Linkage
+instead of 0.1, still inside the test's ±0.6 tolerance. That's not the fix
+regressing accuracy: `lr` at the two ends of the sweep — top-out and
+bottom-out, exactly what Progression is computed from — used to come from a
+first-order secant while every interior frame got a second-order central
+difference, a real bias in this tool's own curve that had nothing to do with
+Linkage. Fixing it changes which side of Linkage's own number this tool's own
+more-accurate number happens to land on; two independent implementations with
+different discretizations agreeing to 0.1 points was never guaranteed to
+survive either one getting more correct. See "Leverage by three-point
+quadratic, not a plain central difference" below.
+
+## `draw()` is a sequence of named steps, not one 530-line block
+
+It used to be one function, top to bottom, with `/* ---- section ---- */`
+comments marking where one visual piece ended and the next began — ground,
+wheels, cranks, drivetrain, fork, cockpit, front triangle, rear assembly,
+shock, rear derailleur, axle trail, saddle, anti-squat/anti-rise construction,
+pivots, force vectors. Those comments were already doing the job of naming
+each step; splitting it just turns each one into an actual named function
+(`drawGround`, `drawWheels`, `drawFrontTriangle`, ... `drawForceVectors`) that
+the comment now documents, called in exactly the original order — paint order
+is draw-call order in SVG, so that sequence is load-bearing, not cosmetic.
+
+**Only the shared values stayed at `draw()`'s own scope; everything a single
+step owns outright moved inside that step.** A handful of values are read by
+more than one named function and would otherwise need passing as arguments on
+every call: `rc`/`rg`/`guide`/`tension`/`route`/`runs`/`drawTop` (drivetrain
+rings and the rear derailleur both read them — the comment on this already
+said "computed regardless of the toggle... needs them whether or not this pass
+renders anything," which was really saying "this outlives its own section"),
+and `fu`/`fp` (the fork's own drawing and the stem artwork both read them, and
+`fu`/`fp` also feed the crown/topW/jog geometry the fork step draws from). All
+of those stayed declared in `draw()` itself, in their original position,
+unwrapped. Everything else — `FT`/`dtU`/`foot`/`boss`, `K`/`ks`/`mir`/`fm`/
+`topW`/`jog`/`crown`'s downstream tubes, `path`/`poly`/`lpFoot`, `HIT_PX`/
+`top`/`locked`/`marks`/`ghosts`/`grabPts`/`hitFor`/`grab` — was local to one
+step already in practice, just sitting in the bigger shared scope by accident
+of where the code happened to live; moving it inside its own function makes
+that scoping explicit instead of incidental, so a future edit to one step
+can't quietly start depending on another step's leftover local the way a flat
+530-line function makes easy to do without noticing.
+
+**Verified by literally diffing the drawn SVG, not just by reading the diff.**
+Since this only moves code and adds function wrappers around it — no
+computation changed, no call reordered relative to the original sequence —
+the correct verification is that the rendered output cannot have changed at
+all. Captured `#draw`'s full `outerHTML` before and after, across five states
+(top-out, mid-travel, full compression, every parts toggle off, all back on),
+and the two sets are byte-for-byte identical. `flexstay-tests.mjs` also stays
+green throughout, though that alone wouldn't have caught a drawing regression
+— it only extracts the engine block, which this change never touches.
 
 ## Traps
 
@@ -396,6 +788,109 @@ failed in Safari. Anything inside 1e-6 is now treated as a root. The jitter test
 catches regressions: with the old code 176 of 400 jittered geometries jammed.
 
 **Test in Safari as well as Chrome.** See above.
+
+**Bisection loops run 30 iterations, not 60 — and `atCompression` seeds its
+search from the previous frame's own angle.** Three separate bisection solves
+in the engine block (`atCompression`'s refinement loop; `stayLoads`'s
+out-of-plane lean angle; `stayPath`'s bend launch angle) all ran 60 iterations
+over an interval under 1.3rad wide. 60 halvings of an interval that size
+resolves to roughly 1e-18rad — far past double-precision noise, let alone
+anything this tool draws or reports at (a micron on a 500mm lever arm is
+already 8e-10rad). Halved to 30 in all three, which still resolves to about
+1e-9rad: a comfortable margin over floating-point noise, not the theoretical
+minimum. All three are pure numerical settings with no observable effect on
+any result — confirmed by re-running the full 51-check suite, which reproduces
+every number bit for bit, since the coarse bracketing step (unchanged) already
+narrows to the final interval and the extra 30 halvings were only ever
+sharpening precision nobody could see.
+
+Separately, `atCompression` gained a fourth, optional argument, `phiHint`:
+`sweep()` now passes the previous frame's converged `phi` in, and the coarse
+bracket search starts from `[phiHint, hi]` instead of always restarting from
+`[0, hi]`. Sound because compression only ever increases along a sweep and
+shock length is monotonically decreasing in compression by definition
+(`comp = L0 - shock`): the residual at the previous frame's own converged
+`phi` is `L0 - prevComp`, strictly greater than this frame's (larger) target
+`L0 - comp`, so it has the same sign the search always started from at `phi=0`
+— just measured much closer to the actual root, so the coarse loop finds its
+bracket in a handful of steps instead of walking most of `[0, hi]` from
+scratch on every one of the 61 frames in a sweep. Same root, same tolerance,
+just less of the interval walked to get there; the first frame has no previous
+`phi` and falls back to 0, exactly as before. Tests call `sweep()`, never
+`atCompression` directly, so the new optional parameter needed no test changes.
+
+**Leverage by three-point quadratic, not a plain central difference.**
+`f.lr` is `d(rise)/d(stroke)`. The old code was a central difference —
+`(q.rise-p.rise)/(q.stroke-p.stroke)` off the frame's two neighbours — clamped
+at the array ends so the first and last frames used their single neighbour
+instead: a first-order secant sitting next to second-order central
+differences everywhere else. That's `lrTop`/`lrBot`, which is Progression and
+half of the Linkage table above, so the bias sat directly under a validated
+number. Fixed with the derivative of the quadratic through three frames,
+evaluated at the frame's own stroke — interior frames use `[i-1,i,i+1]`, the
+two ends use `[0,1,2]` and `[n-2,n-1,n]`. This is not a different scheme for
+the interior, it's the same one written more generally: for evenly spaced
+points a quadratic's derivative at its own middle point reduces algebraically
+to `(y2-y0)/(x2-x0)`, the old central difference exactly — checked by
+re-running the full suite, which reproduces every interior number bit for
+bit. Falls back to the old secant only if there are fewer than three frames
+to fit a quadratic through, which the app never actually hits (`sweep`'s
+default is 61).
+
+**Typed numeric inputs are debounced, not raw `oninput`.** Every field used
+`inp.onchange=inp.oninput=commit`, so typing a multi-digit number ran a full
+sweep on every keystroke — "4", then "45", then "450" into Rear centre briefly
+reports a jammed linkage and then a mech cage out of range, for values nobody
+asked for. `debounce()` (next to `datumOffset`) delays `oninput`'s sweep until
+typing pauses; `onchange` (blur, or focus leaving the field) calls
+`debounced.flush()` first so a deliberate commit still lands immediately
+rather than waiting out a pause that's already over. Confirmed both ends:
+rapid keystrokes settling on a valid value never flash a message at all, and
+a genuinely bad value the user stops on still reports once the debounce
+settles — this isn't hiding real errors, only the transient ones nobody typed
+on purpose. Applied at all three sites that recompute from typed text: the
+generic config loop in `fillCfg`, the `sgStand`/`spStand` pair beside it, and
+the points-panel coordinate inputs in `fillPoints`.
+
+**Coil rate at 0% sag.** `rate=Fs/sagFr.stroke` divides by the shock's stroke
+*at the sag point being asked about* — at `C.sag=0` that's a shock that
+hasn't moved yet, so N/mm of a zero-length stroke isn't a real number, and the
+division silently returned `Infinity`. Guarded to `—` below `1e-6`mm of
+stroke rather than computed. Nobody runs zero sag on a real bike, but typing
+it should read as "not available," not paper over it with a value that looks
+like a real spring rate.
+
+**`recompute()` now calls `syncPos()` itself, at the end — this was a real,
+widespread staleness bug, found while deduplicating the boot/reset/import
+sequences, not something anyone had reported.** `syncPos()` writes the
+`#poslabel` text ("142mm wheel · 65.0mm shock") and the cycle/sag/static
+buttons' `aria-pressed` state from `result` and `posT`/`holdSag`. It used to
+be each caller's own job to call it after `recompute()` — and almost none of
+them did: not the generic numeric field commit, not any checkbox, not either
+down-tube lock, not a tyre-width `<select>`, not `resetGeom`. Confirmed with
+the real input path, not just reading the code: typed `rc=500` (a genuine
+travel change, 142mm → 153.9mm) through the actual field, and the toolbar
+label sat at "142mm" regardless — only a drag-release or the animation loop
+happened to call `syncPos()` afterward, so the label was correct by
+coincidence whenever one of *those* had run more recently than anything
+else. `reset` and `importJSON` did call it, but *before* `recompute()`, off
+the stale pre-reset `result` — reading it back afterward, that value simply
+never got corrected, since nothing called `syncPos()` a second time. Fixed
+once, in `recompute()` itself, rather than adding the missing call at every
+site: every caller that already ends in `recompute()` picked up the fix for
+free, and the explicit calls that were already redundant (drag-release, the
+mid-drag `requestAnimationFrame` callback, boot) were removed rather than
+left as harmless duplicates. The few callers that update the display
+*without* calling `recompute()` — the position slider, Sag, Static, the
+animation loop's own step — necessarily keep their own explicit call, since
+there's no `recompute()` for the fix to piggyback on there.
+
+**`sagFrame(f)`/`sprungLoad()` replace five copies of `at(f,C.sag/100)` and
+three of `C.mass*9.81*C.bias/100`** — `readouts()` alone had it twice, under
+two different local names (`sagFrame` and `sagF`), which is what the
+function is now actually called; both computed once per `readouts()` call
+and reused across the stay-stress, spring-rate and pivot-force panels rather
+than re-derived in each.
 
 **Anti-squat is read at the front axle vertical**, not the centre-of-mass
 vertical, and heights are measured from the ground, not from y=0. Getting either
@@ -437,15 +932,56 @@ relative `#canvas` breaks that loop.
 before the flex layout settles. A `ResizeObserver` on `#canvas` and `#charts`
 refits; the window resize listener alone is not enough.
 
+**`getBoundingClientRect()` is cached, not called fresh every `draw()`/`chart()`.**
+`fitView`, `chart` and `chartAxlePath` each used to call it directly on every
+invocation. Profiled with a CPU profiler attached (Chrome DevTools Protocol,
+`Profiler.start`/`stop` around 300 forced `draw()`+`charts()` calls): it was the
+single most expensive thing either function did, ahead of every SVG element
+either one actually creates — because `getBoundingClientRect()` answers from
+live layout, so it forces the browser to flush whatever DOM mutations are still
+pending first, and `draw()`/`charts()` always have some pending, since they just
+tore down and rebuilt their own SVG a moment before asking. But the canvas's and
+the charts' pixel box only change when the page is actually resized, which the
+`ResizeObserver` above already watches — so there's no reason to pay a fresh
+layout flush on every ordinary redraw (a drag, a typed field, the animation
+loop) just to re-confirm a size that hasn't moved. `canvasRectCache`/
+`chartsRectCache` (next to `VIEW`) hold the last answer; `invalidateRectCache()`
+clears both, called from the window `resize` listener and from inside the
+`ResizeObserver` callback, right before the `draw()`/`charts()` it already
+triggers. Measured effect: `draw()` went from 4.48ms average / 1.80ms best case
+to 3.16ms average / 1.10ms best, and `getBoundingClientRect` dropped out of the
+profile entirely — what's left (createElementNS and setAttribute, ~82% of
+samples between them) is the inherent cost of rebuilding the SVG from scratch
+each frame, not something this fix touches. Verified the cache actually
+invalidates on a real resize and not just once: drove the page through three
+different viewport sizes with Playwright and confirmed both panels' `viewBox`
+tracked each one, not just the first.
+
+**The bigger rewrite — building the SVG scaffold once and updating only
+transforms, instead of tearing it down and rebuilding it every frame — was
+deliberately not done.** It was on the original remediation plan as "the
+biggest [item], so it wants its own session," written before anything had
+actually been profiled. Once `getBoundingClientRect` stopped dominating the
+profile, what was left was `createElementNS`/`setAttribute` at ~3ms average per
+`draw()` — comfortably inside a 16.6ms/60fps frame budget with room to spare
+for layout and paint on top, on ordinary hardware. Rewriting persistent-DOM
+updates in place is a large, invasive change (touches essentially every artwork
+call site) to buy headroom nothing currently needs; the cache fix already
+removed the one disproportionate cost. Left as a documented option, not a TODO
+— worth revisiting only if profiling on materially weaker hardware, or a much
+busier scene, ever shows `draw()` actually costing visible frame time.
+
 **Pivot hit targets are sized in screen pixels**, `HIT_PX * mmPerPx`, so they stay
 grabbable at any zoom. The decorative ring and dot carry `pointer-events:none` and
 the handler uses `closest('.drag')` — before that, a click on the exact centre of a
 pivot hit the decorative dot, which has no `dataset.key`, and silently did nothing.
 
 **The rear axle is derived from rear centre and bottom bracket height.**
-`syncGeom()` rewrites `G.AX` from them on every input change and carries `G.FP`
-with it while the two are concentric, so a drag of that point has to write back
-into `C.rc` and `C.bbh` or the next sync silently undoes it. The drag handler
+`syncGeom()` rewrites `G.AX` from them on every input change — `G.FP` is kept
+concentric with it separately, unconditionally, by `recompute()`'s own
+`G.FP={...G.AX}` (see "The model" above), not by anything in `syncGeom()`
+itself — so a drag of that point has to write back into `C.rc` and `C.bbh` or
+the next sync silently undoes it. The drag handler
 does exactly that — but only for `C.rc`. **`bbh` is never written from an axle
 drag, because it is the ground-plane datum** (`ground=-C.bbh` in `draw()`), and
 `syncGeom()` builds the front wheel's height from it too, via `C.stack`. A drag
@@ -462,6 +998,33 @@ position only ever changes by typing bottom bracket height or drop.
 own `fax` and never gets that overwrite, so a stale value there means the tests and
 the app measure at different places. `DEF.cfg.fax` is kept in step with the default
 geometry for the same reason.
+
+**The `stayLoads` test call had drifted from the function it was calling.**
+`REF.cfg` already carried `leanEnd`/`leanA` — the out-of-plane lean bend's own
+parameters — but the test's `stayLoads(...)` call stopped at `dropZ`/`yokeZ`
+and never passed them, an 8-argument call against a 10-argument function.
+`leanEnd`/`leanA` defaulting to `undefined` doesn't throw or read as obviously
+wrong; it silently zeroes the tail segment (`tail=Math.min(Math.max(0,
+leanEnd||0),...)` becomes 0), which makes `eOop` — the whole point of the out
+of plane calculation — converge to the bisection's own floating-point residual
+instead of a real value. "Out of plane bending is counted" passed the whole
+time, printing `0 MPa`, because a value on the order of 1e-7 still satisfies
+`st.sOop>0`: a test that read as green while checking almost nothing. Passing
+`C.leanEnd,C.leanA` through gives 26 MPa instead, a value that actually moves
+if the lean bend geometry does. A signature drift like this doesn't fail
+loudly — it degrades a check into a near-tautology that still prints pass.
+
+**`cageRun` — the derailleur cage's own tangent chain wrap — had no headless
+test coverage at all**, only the Playwright screenshots taken while building
+it. Same rig the cage take-up test above already uses (`BB`, ring/cog pitch
+radii, `AXp`, `guide`, and `tension` built from `guide`/`C.cage`/the sweep
+angle the same way `chainPath` does it), swept across the same
+`CAGE_LO..CAGE_HI` bracket the mech can actually reach: confirms `cageRun`
+solves at every position in that range, and that every one of the three
+returned segments' endpoints sits exactly on the pulley or ring it claims to
+be tangent to. Deliberately reuses the take-up test's geometry rather than
+inventing a second rig, so both tests exercise the one real derailleur-cage
+setup instead of two loosely related ones.
 
 ## Stay structure
 
@@ -505,17 +1068,165 @@ because the group they sit in is y-flipped.
 stay and over the spokes, so as a thin `#134463` line it was invisible against a
 30mm-wide stay of exactly that colour. It is a pale halo under a contrasting dash.
 
+**The front axle's path lives in the chart strip, not this overlay.** First
+tried adding it here too, on the same `axpath` toggle — worked, but the request
+was actually for a side-by-side comparison chart, which this overlay is the
+wrong shape for: it is drawn over the bike at whatever geometry is currently
+being edited, sharing the drawing's own scale and origin, and a straight
+~140mm fork line next to a tight rear arc reads very differently stretched
+across that than it does on its own axes. `chartAxlePath` (in the charts
+section below) is the dedicated version instead.
+
+## The toolbar: two fixed rows, not one that wraps
+
+`#bar` used to be a single flex container with `flex-wrap:wrap`, and
+`fitBar()` measured the whole thing to decide whether it fit on one line
+(space-between) or had wrapped (plain left-aligned). That meant which row a
+button ended up on was never actually fixed — it fell out of how much total
+width everything needed that moment. Reported as a real bug, not a hypothetical:
+the Cycle/Stop button changes width with its own label (`Cycle suspension` vs
+`Stop`), so pressing it changed how much space row one needed, which changed
+how many buttons fit before the wrap point, which moved a button from the
+second row up onto the first — the layout reshuffled itself from user input
+that had nothing to do with layout.
+
+Fixed by making the two rows actually two boxes: `#bar` is now
+`flex-direction:column` holding two `.barrow` children (`#bar-top`,
+`#bar-bottom`), each its own `flex-wrap:nowrap` flex container. A button
+changing width can make its own row tighter or looser, but it cannot move a
+button onto the *other* row — there is no shared wrap point between them
+anymore, because there is no shared flex context between them anymore. On a
+desktop-width window too narrow for the bottom row's full button count, that
+row now overflows/clips at its own right edge rather than wrapping — a
+tradeoff, but the alternative is exactly the spillover this was fixed to
+stop. The mobile breakpoint (`max-width:900px`) gets its wrapping back,
+`.barrow{flex-wrap:wrap}`, since eleven buttons forced onto one unbreakable
+row would just run off a phone screen.
+
+**Each row's own buttons used to spread across whatever width was left over
+(`fitBar()` toggling a `.spread`/`justify-content:space-between` class per
+row) — reversed in a follow-up to plain `justify-content:flex-start`, a fixed
+gap, stacked from the left edge.** Asked for explicitly: constant spacing,
+not stretched to fill the row. `fitBar()`, its `ResizeObserver`, and the
+`.spread` rule are gone rather than left dead — nothing reads that class any
+more, so keeping the measuring code around would just be a trap for whoever
+next wonders why a row never spreads however wide the window gets.
+
+**`#play` gets a fixed width and centred text for the same reason its own
+label change caused the bug in the first place.** `width:52px;flex:none`,
+sized to the wider of its two labels ("Cycle", "Stop" — shortened from "Cycle
+suspension" in a follow-up, once the row it shares with `Sag`/`Static` made
+the longer label crowd them) plus the button's own padding, so switching
+label never changes the button's own size.
+
+Row order: `Sag` and `Static` sit on the top row, immediately right of
+`Cycle`/`Stop` — they're playback controls in the same sense the Cycle
+button and the slider are (all four set *where in the cycle* the drawing
+is), which is also why `axle path` stayed on the bottom row rather than
+following them up: it changes what's overlaid on the drawing, not the
+position being drawn.
+
+**No button's own label wraps onto a second line, even when its row is too
+narrow to fit everything — `axle path` and `anti-squat` did, briefly, once
+`Sag`/`Static` moved off the bottom row and freed width that let the
+survivors' own font-driven natural width start mattering again as things got
+tight.** `white-space:nowrap` is on the base `button` rule now (every button,
+not just these two — the same fix serves any button in either row), and
+`.barrow button{flex-shrink:0}` stops a flex item shrinking narrower than its
+label in the first place, which is what let the text wrap internally instead
+of the row just running out of room. A row that's genuinely too narrow now
+clips or overflows at its own edge — the same tradeoff the no-spillover fix
+above already accepted, just applied one level down (a button's own text,
+not which row it's on).
+
+**`Static`, next to `Sag`, is a one-shot reset to the fully extended
+position** (`posT=0`, `holdSag=false`) rather than a toggle — there is no
+meaningful "un-static" state to hold, unlike `Sag`, which can be turned back
+off to return to wherever the slider already was.
+
+**Both `Sag` and `Static` now stop the animation loop, not just override what
+gets drawn.** `holdSag` used to only change what `currentFrame()` reads
+(`C.sag` instead of `posT`) — pressing Sag mid-animation froze the *picture*
+correctly, but the `raf` loop driving `posT` back and forth every frame kept
+running underneath it, so the slider kept sliding on its own even though the
+bike on screen had stopped following it — exactly the reported symptom.
+Fixed with a shared `stopAnimation()` (cancels `raf`, clears `playing`, resets
+the button's own label) that both `Sag` and `Static` call before doing
+anything else, and `Sag` additionally sets `posT=C.sag/100` so the slider
+itself lands on the sag position instead of stopping wherever the animation
+happened to be — "hold it at sag point" means the control that represents
+position, not only the drawing, has to agree. Getting the animation moving
+again needs `cycle` pressed again deliberately, same as it already required
+after manually dragging the slider (which has cleared `holdSag` on its own
+since before this change).
+
+**`cycle`/`sag`/`static` are lowercase, unlike every other button in the bar
+— a deliberate, follow-up-requested exception, not an oversight to bring back
+into line.** `Stop` (the same button as `cycle`, mid-animation) followed it
+down to `stop` for the same reason, even though only the other three were
+named: it's the identical button, and leaving one of its two labels
+capitalised would have been the actual inconsistency.
+
+**The three are also a matched, mutually-exclusive set of buttons now, in a
+third colour of their own (`--anim`, burnt orange) — neither the overlay
+toggles' blue nor the parts toggles' teal, because they're neither: they say
+*where in the cycle* the drawing is, not what's drawn or what's shown.**
+Exactly one is ever pressed, because between them they exhaust the three
+ways `posT` can be driven: `playing` (`cycle`/`stop`), `holdSag`
+(`sag`), or neither with `posT` sitting at exactly `0` (`static`) — anything
+else (mid-animation stopped by a manual slider drag, say) leaves all three
+unpressed, honestly, rather than forcing one to claim a state it isn't
+actually in. All three `aria-pressed` flags are set from one place,
+`syncPos()` — `playing`, `!playing&&holdSag`, `!playing&&!holdSag&&posT===0`
+— rather than each button's own click handler trying to keep the other two
+in sync with it, which is what the scattered `setAttribute` calls this
+replaced were doing (and why `play`'s own `else` branch, stopping the
+animation on a direct click rather than via `sag`/`static`, needed a
+`syncPos()` added — it previously only cancelled the `raf`, so stopping that
+way left `cycle` glowing orange after the animation had actually already
+stopped).
+
+**A thin red tick on the slider marks the sag point, tied to `C.sag` live.**
+`#poswrap` wraps the range input in a `position:relative` box so `#sagmark`
+(`position:absolute`, `left:X%`) can sit over its track; `updateSagMark()`
+sets that `left` from `C.sag` and runs from inside `refreshDerived()`, which
+already runs after essentially every change that could move `C.sag` (typing
+it directly, resetting, importing a file), so the mark doesn't need its own
+call site to stay current. It's a plain percentage of the input's own box
+width, not the track's actual usable travel (a native range track is inset
+by half the thumb's width at each end, which a CSS percentage on an overlay
+has no way to know about) — close enough to read as "here" at this thumb
+size, and simple, which is what a rough visual reference needs to be.
+
+**Animation speed is a plain 0–100 number field, `#animSpeed`, next to the
+slider** — deliberately no new widget, just another `input[type=number]`
+like every other field in this tool, so it inherits the up/down spinner and
+styling for free rather than needing its own. Scales the per-frame step in
+`play`'s `step()` — `dir*0.02*(animSpeed/100)` — so 100 (default) reproduces
+the original fixed rate exactly and 0 freezes `posT` in place without
+stopping the `raf` loop itself (harmless — it just keeps painting the same
+frame — and simpler than special-casing zero to actually pause).
+
 ## Parts toggles
 
-Six buttons — wheels, drivetrain, cockpit, saddle, shock, fork — hide one piece
-of artwork each, all on by default (`showWheels` etc.). They share the bar's one
-toggle cluster with the overlays (axle path, anti-squat, anti-rise, forces)
-rather than getting a second divider: `.partbtn` gives them `--link` teal against
-the overlays' `--rear` blue, so the two kinds of pressed button read apart by
-colour instead of by a text label or a second border. The frame itself (front
-triangle, rear stay, shock link) is never one of them; only bolt-on product
-artwork is. This is where a future crank image replaces the chainring/cog rings
-under the drivetrain flag, without touching anything else.
+Seven buttons — wheels, drivetrain, cockpit, saddle, shock, fork, cranks — hide
+one piece of artwork each, all on by default (`showWheels` etc.). They share
+the bar's one toggle cluster with the overlays (axle path, anti-squat,
+anti-rise, forces) rather than getting a second divider: `.partbtn` gives them
+`--link` teal against the overlays' `--rear` blue, so the two kinds of pressed
+button read apart by colour instead of by a text label or a second border. The
+frame itself (front triangle, rear stay, shock link) is never one of them; only
+bolt-on product artwork is.
+
+**Cranks got their own toggle rather than folding into `drivetrain`** — the
+opposite of what an earlier note here predicted ("a future crank image
+replaces the chainring/cog rings under the drivetrain flag"). Turned out wrong
+once there was an actual reason to draw one: a crank isn't just more drivetrain
+artwork, it's the one piece of artwork on the whole bike that has to visibly
+animate as the suspension cycles (see "Cranks" below), which is a different
+enough concern from "hide the chain/rings" to earn its own flag rather than be
+silently swept into an unrelated one — turning off the chainring shouldn't also
+kill the one thing demonstrating pedal kickback, and vice versa.
 
 The position readout shows current alongside total for both numbers — wheel
 travel and shock stroke — so the slider reads as a fraction of travel, not a
@@ -542,12 +1253,103 @@ toggle is on. `cockpit` covers both the stem art and the headset/steerer stack
 tube, drawn in two separate places. The exposed seatpost and the shock link
 (the actual rocker, teal) are frame, not toggled by anything.
 
+## Cranks
+
+Two arms, one toggle (`showCranks`), one shared rotation — a crank is one rigid
+part, not two independent props that happen to look alike, so both arms read
+the identical `f.kick` every frame and can only ever move together. No artwork
+asset: `CRANK_LEN` (165mm, a plain constant next to `P`/`GDX` — there's no
+config field for it, nothing asked for tuning it) plus a `line()` rod, in
+`CRANK_COL` (`#45505a`, defined right after `// ==ENGINE-END==` since it's a
+drawing colour, not geometry) — deliberately darker than the shared `#5c6b78`
+used elsewhere for the chainring/cog/BB dot, so the crank reads as its own
+part rather than more drivetrain metal, even sitting right next to it.
+
+**No pedal-body circle any more.** The original draw also stamped a filled
+circle at the pedal end (`r:30,fill:'#5c6b78'`) to suggest a pedal; it read as
+an oversized grey blob rather than a pedal, so it's gone. `line()` already
+defaults to `'stroke-linecap':'round'` (see "Tube shape" below), so the rod
+alone already draws as a capsule — a rectangle with rounded ends — with
+nothing extra needed at either end.
+
+**The BB axle dot is drawn once, inside the visible-arm block, not the BB
+shell.** A small light circle, `r:12` (24mm diameter) at `(0,0)`, `#cfd5da`
+(the same light metal tone as the fork stanchion outline / seatpost fill
+family) — concentric with the BB, standing in for the axle spindle the
+cranks actually turn on. It belongs to the *crank's* paint order, not the
+frame's: added inside the visible (drive-side) arm's `if(showCranks)` block,
+which is the crank's own last, top-most draw call, so it lands above both
+crank rods and the (separate, frame-coloured) BB shell dot beneath them —
+and, living inside `if(showCranks)`, disappears along with the rest of the
+crank artwork when the toggle is off rather than becoming a permanent BB
+feature.
+
+**`crankPedal(sign)`**, defined once right after `const BB={x:0,y:0}` near the
+top of `draw()` (so both draw sites below can share it), is the whole feature:
+```js
+const crankPedal=sign=>rot({x:sign*CRANK_LEN,y:0}, BB, (f.kick||0)*Math.PI/180);
+```
+`sign=1` is the arm resting at 0° (pointing +x, "the front of the bike," i.e.
+"right"); `sign=-1` is the same arm 180° round, "left." `rot()` (already used
+for the swingarm idler) does the actual rotating — this needed no new geometry,
+just handing it the one number (`f.kick`) that was already being computed and
+already meant "how far the pedal has been forced round from top-out."
+
+**Painted in two places, not layered with `z-index` or anything clever,**
+because paint order already does the job:
+- The **far-side (hidden) arm** is drawn *first* in this whole region of
+  `draw()` — before even the chainring — so the chainring ring, the frame
+  tubes and the BB shell, all painted afterward, correctly occlude it exactly
+  where they cross it, the same way a real photo's far-side arm disappears
+  behind the chainring and the down tube but is still visible in the gaps.
+  It is not invisible outright — nothing asked for that, and a real one isn't
+  either — only *behind* everything real bike parts would actually be behind.
+- The **near-side (visible) arm** is drawn *last*, right after the saddle,
+  on the same "drawn last so it sits on top of everything" precedent the
+  saddle itself already uses.
+
+Both draw calls are otherwise identical (`line(BB,pedal,'#5c6b78',14)` plus a
+`r:10` pedal-body circle) — only which `crankPedal` sign, and where in the
+function the two calls sit, differ.
+
+**Sign convention, checked, not just derived.** `kick` is positive when the
+top-run chain path *grows* on compression (`sweep()`), which is what forces the
+pedals backward against normal pedaling — that's the whole phenomenon. In this
+tool's x-forward/y-up frame, rolling forward is clockwise (a wheel or crank
+spinning clockwise is what makes the bike move in +x), so forward pedaling is a
+negative angle in `rot()`'s CCW-positive convention, and kickback — backward
+against that — is positive. `crankPedal` uses `+kick` with no negation, which
+falls out of that reasoning, but this is exactly the kind of thing worth
+actually looking at rather than trusting the algebra: rendered at top-out
+(0°, dead horizontal) against full travel (~17° at the shipped default), and
+confirmed the pedal end visibly swings up and back — counter-clockwise, away
+from the forward-pedaling direction — as the suspension compresses, not
+forward with it.
+
+`(f.kick||0)` is the same "never blank the canvas" guard as everywhere else in
+`draw()` — `topFrame()`'s `kick:null` (no valid sweep) rests the crank
+horizontal instead of throwing.
+
+**Sized against the chainstay, not picked freestanding.** `CRANK_LEN` is
+165mm (a real crank length); the rod itself is drawn at width 42 — a hair over
+the chainstay's own 40 (`line(G.MP,f.AX,...)`'s outline width), since that's
+the nearest real reference for "how thick does a tube this size actually
+read." (The pedal-body circle that originally scaled alongside it, `r:30`, is
+gone — see "No pedal-body circle any more," above.)
+
 ## Lock shock
 
 `lockLen` defaults **on**. Eye to eye is a real product spec, not a free variable,
 so dragging one shock mount moves the frame around a fixed shock length by
 default rather than silently stretching it; the drag handler already had this
 logic (it moves the far eye to hold `C.eye`), it just used to start disarmed.
+
+**Its own toolbar button is gone — `#locklen` now sits next to the `eye`
+field it actually governs**, as the same small icon button the pivot and
+down-tube locks use (see "Locks, as icon buttons" below). Same `id`, same
+click handler (with a glyph/`title` flip added), same `C`-level reader in the
+drag handler (`index.html:1637-1657`) — moving it was a location and
+appearance change only, not a behaviour change.
 
 ## Tube shape
 
@@ -562,6 +1364,19 @@ different angles, and along the rear stay's multi-segment path. Don't retry
 this without also solving the BB and rear-stay joints — e.g. drawing them as
 one path so linejoin can round the internal corners, or overlaying a circle
 at the BB the width of a real bottom bracket shell.
+
+**The exposed seatpost's square base is not a re-run of that experiment** —
+it's a single bolt-on part (`tubes([[seatTop,post,26,'butt']],...)`, same
+system as the fork stanchion above, not the frame-tube system this section is
+about), one segment, one joint, not a multi-tube convergence, so none of the
+seam problems above apply. `'butt'` squares both ends of that one line
+(`stroke-linecap` is one value per element — confirmed against the current
+`tubes()`/`line()`, `index.html:1179-1181, 1202-1205`), which is exactly
+right for the frame-meeting end (`seatTop`) but wrong for the exposed/saddle
+end (`post`), so the round look there is put back the same way the BB shell
+caps a square-cut frame tube end: two concentric flat circles, outline colour
+then fill colour, radii matching the tube's own outline/fill widths (13 and
+9.5, for a 26mm outline / 19mm fill post).
 
 ## Idler
 
@@ -584,6 +1399,11 @@ The run that is *not* the force line is constant through the travel either way, 
 `kick` needs no special case — measuring the force run is enough. Two exact-zero
 results pin this down and are worth keeping as tests: an idler concentric with the
 main pivot gives **exactly** zero chain growth, on either mount.
+
+(The engine's own name for this, `kick`, is unchanged — only the UI label moved,
+from "Chain shortening" to "Pedal kickback": what the number measures is chain
+growth turning into a rotation forced onto the pedals through a fixed-length
+chain, and that is the name riders actually know it by.)
 
 **Tangent selection is the whole difficulty.** `chainRun` picks between its two
 candidates by "whichever normal has the greater y", which is fine for a roughly
@@ -619,6 +1439,100 @@ painted later and bury it. `drawTop()` is therefore deferred to the rear-mech st
 when there is an idler, and left where it was when there is not — so the no-idler
 drawing is unchanged, and the idler chain sits on top like the mech, which is the
 correct side of the frame for it anyway.
+
+**The derailleur cage's own chain line is a proper tangent wrap
+(`cageRun`), not a line through the pulley centres.** With the jockey
+wheels drawn as real artwork instead of plain rings, a chain line running
+straight to `guide`/`tension`'s centre points (the old
+`index.html:1329-1333`) reads as visibly wrong — it used to look fine
+against a featureless ring, but not against a toothed wheel. `cageRun`
+(next to `routeIdler`, same file region) is `routeIdler` extended by one
+more link: cog → guide → tension → chainring, three tangent segments
+instead of one, found the same way — `beltRun`'s four candidates
+(external/crossed × two sides) searched at each step, keeping only the one
+where the wrap doesn't reverse at the shared pulley and the chainring/cog
+end up turning the way the drivetrain's own top run already established.
+
+**Order matters here, not just which circles end up joined.** The first
+version connected chainring→guide and tension→cog — the two *outer*
+circles swapped relative to a real chain. Every tangent was still
+genuinely tangent (so nothing looked obviously broken in isolation), but
+it put the long leg where the short one belongs: `guide` sits close to the
+axle (`GDX`/`GDY` is a ~74mm offset off it), so the cog-to-guide leg should
+be short, and the tension-to-chainring leg should be the long one running
+most of the chainstay's length back to the front. The first version drew
+~455mm from chainring to guide and ~134mm from tension to cog — backwards.
+Caught from a marked-up screenshot, not from the render alone: the
+tangency was correct enough to look plausible at a glance, and only
+tracing the real chain's path (cog, round the back, into the guide pulley,
+through tension, the long way back to the chainring) against it exposed
+which pair of circles was wrong. Fixed by swapping `segA`'s and `segC`'s
+circle arguments (`beltRun(AXp,rg,guide,...)` and `beltRun(tension,RJ,BB,rc,...)`)
+and their sense checks (`sCog` at the cog end of `segA`, `sRing` at the
+chainring end of `segC`) — `segB` (guide↔tension) was already right and is
+untouched.
+
+Verified this isn't just algebra: every tangent point lands on its circle
+to floating-point precision, the short/long leg lengths are the right way
+round throughout the sweep, and the wrap keeps hugging the *same* sides of
+both pulleys — a proper S, matching a real derailleur cage — across the
+whole travel with no flip-flopping frame to frame, since `guide`/`tension`
+move as the cage swings and `cageRun` is solved fresh every call.
+
+**That constraint set alone still wasn't enough to pin the wrap down
+uniquely.** "Wrap doesn't reverse at a shared pulley" and "chainring/cog
+keep the top run's sense" turned out to admit four self-consistent full
+solutions, not one — an external and a crossed `beltRun` candidate can
+each satisfy the reversal check at a given pulley, and the search was
+returning whichever it reached first (`[false,true]`/`[1,-1]` iteration
+order), not the physically correct one. The symptom: the chain entered
+the guide pulley from underneath instead of from the cog above it — every
+tangent point was still exactly on its circle, so it looked like a working
+wrap rather than an obviously broken one, and only checking the actual
+entry/exit angle against a marked-up reference caught it.
+
+Broke the tie with two facts about the fixed physical arrangement, rather
+than adding more abstract search constraints:
+- **cog→guide is the CROSSED tangent.** The chain wraps the cog's
+  underside and drops essentially straight down into the guide pulley's
+  top — they sit close together (`GDX`/`GDY` puts guide almost directly
+  below the axle) — and a crossed tangent is specifically the one that
+  runs *between* two circles rather than alongside them, which is what
+  that entry looks like geometrically.
+- **guide→tension is ALSO the CROSSED tangent — the classic derailleur
+  "S".** The chain leaves the guide pulley's right side, crosses over, and
+  arrives at the tension pulley's left side, wrapping on round to its
+  bottom (confirmed against a second marked-up reference: entry/exit
+  angles land at ~130°/-85° on the tension circle across the sweep, a
+  ~120-150° wrap ending at the bottom, exactly as marked up). **This was
+  wrong once already, the other way**: an earlier version of this note
+  argued *external* here, from the tangent length coming out equal to
+  `C.cage` to 14 decimal places — true, but that identity holds for the
+  external tangent between any two EQUAL-radius circles, whichever one is
+  mechanically correct; it only confirmed guide and tension are `C.cage`
+  apart, which was never in question, not which side the chain wraps.
+  Sound-looking numeric confirmation of the wrong thing is worth flagging
+  precisely because it doesn't feel like a guess — check that a piece of
+  "proof" actually bears on the claim it's attached to, not just that it's
+  numerically true.
+
+`cageRun` now fixes both `crossed` values directly instead of searching
+them; `s1`/`s2` (which of the two sides) are still solved, not guessed —
+exactly one of each still satisfies the reversal check, same as before.
+Only the outer tension-to-chainring leg still searches both `crossed`
+values: it's a long run to the front of the bike with no rigid part to
+tie-break it against, and the existing reversal check already
+narrows it to one candidate once the first two legs are fixed.
+
+`RJ` (22mm) is reused as the tangent radius rather than adding a separate
+pitch-diameter constant — it's already this tool's own jockey pitch radius
+(`chainPath`'s wrap-length formula already assumes it, and it happens to
+match an 11-tooth jockey wheel almost exactly), and `JOCKEYART`'s artwork
+scale already puts the image's own outer tooth-tip radius at exactly `RJ`,
+so the new wrap arc traces right along the artwork's outline with no gap.
+Falls back to the old straight-through-centres line if no combination
+satisfies every constraint (shouldn't happen at realistic geometry, but the
+canvas must never blank on it).
 
 ## Chain length
 
@@ -684,13 +1598,50 @@ and the tail and body keep their proportions. The fork lowers never stretch: the
 casting is rigid and slides up a procedurally drawn stanchion, which is the real
 mechanism.
 
+**`wheelArt`/`jockeyArt` are both `isotropicArt(art)`.** Round artwork that
+doesn't need rotating — the wheels and the jockey wheels, so far — was two
+copies of the same six lines differing only in which `*ART` constant they
+scaled. `isotropicArt` takes the constant and returns the draw function, so
+`wheelArt=isotropicArt(WHEELART)` reads as what it is: a wheel-shaped
+instance of a general "round thing, scaled to radius R, centred on its own
+hub" placer, not a one-off. The two-anchor/stretch artwork below (shock,
+fork, stem, saddle) is a different enough shape of problem that it isn't
+folded into this — each of those genuinely has its own anchor pair and its
+own stretch logic, not a shared pattern with a different constant plugged in.
+
+**The idler's chain-wrap arc and each jockey wheel's own wrap arc are one
+`arcPts(c,r,a,b,sense)`,** not two copies of the same sampled-arc loop. Both
+draw the same thing — a chain visibly wrapping a pulley from one tangent
+point to another, in the direction the chain actually travels — so unifying
+them was a plain lift, not a redesign: `arcPts` returns the joined points
+string, and each caller just wraps it in its own `<polyline>` with whatever
+stroke width it wants.
+
 Anchors were recovered by pixel analysis (transparent bores for the shock
 eyelets, largest dark blob for the fork axle). For new artwork, ask for marked
 `anchor-a` / `anchor-b` circles and a `stretch-y` band instead.
 
-`CHAINCAL` in the engine is a 9.8mm fudge calibrating the simplified chain wrap
-model so a nominal chain count lands mid-range on this bike. It does not affect
-how far the cage swings, which is what the drawing depends on.
+**The two rear-derailleur jockey wheels (`JOCKEYART`/`jockeyArt`) are real
+artwork now, not procedural rings** — replacing
+`ring(guide,RJ,...); ring(tension,RJ,...)` plus a centre-bolt dot each. This
+is the `WHEELART`/`wheelArt` pattern exactly, not the two-anchor
+stretch pattern above: round, isotropic enough that orientation doesn't
+matter, and only *position* moves (`guide`/`tension`, as the cage swings) —
+nothing in this tool models a pulley's own spin, so there's no rotation to
+apply. `hub`/`nativeR` needed no anchor-finding step either: the supplied
+PNG (1209×1212) was already centred in its own canvas with the teeth
+touching every edge, exactly like `wheel.png`, so `hub` is just the image
+centre and `nativeR` is just the half-width. `RJ` (22mm, already the pulley
+radius used in the chain-wrap-length maths) is unchanged — this only swapped
+how the pulley is drawn, not its size.
+
+**The exposed stanchion's width (36mm) is a standalone number, with nothing
+else riding on it.** It's a plain `tubes()` stroke width on the procedurally
+drawn segment above — checked `FORKART`'s own placement matrix
+(`index.html:981-985, 1285-1291`): fixed `mmPerPx` scale, built purely from
+the fork axle/crown anchors, no reference anywhere to the stanchion line's
+width. Changing it is cosmetic only, same as it always was — it just used to
+read thinner (27) than the real stock it's meant to represent.
 
 **The exposed stanchion has to satisfy two constraints that took three tries
 to get right together: parallel to the head tube, AND landing on the real
@@ -758,16 +1709,17 @@ cap so they come out as literal rectangles, not tubes** — the same technique
 the square-cut front-triangle tubes already use, not a new drawing primitive:
 - The **fork crown**, `showFork`-gated, centred on `crown` (above) and drawn
   *after* the exposed stanchion so it caps the stanchion's top the way a real
-  crown casting does. Wider than the stanchion — "slightly bigger diameter" —
-  and in line with the stanchion because it's built from the same `fu`
-  (=`F.axis`) the stanchion and fork-lower artwork already use. `crown` sits
-  21mm up the axis from `raceSeat` — exactly the block's own half-height (it
-  spans `crown ± 21` along `fu`) — so its near edge lands right at `raceSeat`,
-  closing the block against the lower headset below instead of floating clear
-  of it with the stanchion showing through the gap. (It was 46mm before this:
-  correct for keeping `crown` and `topW` collinear, but far enough from
-  `raceSeat` to leave a visible gap once the block itself existed to show it.)
-  The height (42mm) doesn't change, only where it sits along the line.
+  crown casting does. 48mm wide against the stanchion's 36mm — "slightly
+  bigger diameter" — and in line with the stanchion because it's built from
+  the same `fu` (=`F.axis`) the stanchion and fork-lower artwork already use.
+  `crown` sits 21mm up the axis from `raceSeat` — exactly the block's own
+  half-height (it spans `crown ± 21` along `fu`) — so its near edge lands
+  right at `raceSeat`, closing the block against the lower headset below
+  instead of floating clear of it with the stanchion showing through the
+  gap. (It was 46mm before this: correct for keeping `crown` and `topW`
+  collinear, but far enough from `raceSeat` to leave a visible gap once the
+  block itself existed to show it.) The height (42mm) doesn't change, only
+  where it sits along the line.
 - The **lower headset**, `showCockpit`-gated, running `F.htBot` → `F.raceSeat`
   — that distance is exactly `C.hsLower` by construction, so the block's
   length tracks the lower-headset-stack field live, the same way the existing
@@ -779,6 +1731,10 @@ Both use the same fill/stroke pair as the pre-existing upper steerer-stack
 tube (`#b9c0c6`/`#7b848c`) rather than a new colour — they're the same kind of
 part (headset/crown hardware, not a frame tube or the fork casting itself), so
 they share its colour instead of introducing a third.
+
+`CHAINCAL` in the engine is a 9.8mm fudge calibrating the simplified chain wrap
+model so a nominal chain count lands mid-range on this bike. It does not affect
+how far the cage swings, which is what the drawing depends on.
 
 ## Not done
 

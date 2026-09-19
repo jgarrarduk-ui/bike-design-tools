@@ -13,10 +13,10 @@
 }
 
 [data-theme="green"] {
-  --bg:          #080f0a;
-  --panel-bg:    #060d08;
-  --toolbar-bg:  #0a1a0d;
-  --hdr-bg:      #0d2010;
+  --bg:          #28272a;
+  --panel-bg:    #222124;
+  --toolbar-bg:  #2e2d31;
+  --hdr-bg:      #333136;
   --border:      #1a3d20;
   --accent:      #166534;
   --accent-hi:   #16a34a;
@@ -33,6 +33,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--bg); }
 
 body {
   background: var(--bg);
@@ -252,26 +253,26 @@ body {
   </a>
 
   <!-- Spring Rate Calculator -->
-  <a class="tool-card placeholder" href="spring-calculator.html">
+  <a class="tool-card" href="spring-calculator.html">
     <div class="card-icon">&#8645;</div>
     <div class="card-body">
-      <span class="card-tag soon">coming soon</span>
+      <span class="card-tag ready">ready</span>
       <div class="card-title">Spring Rate Calculator</div>
       <div class="card-desc">
         Find the ideal rear coil spring rate from your sag target, rider weight and shock travel.
       </div>
-      <span class="card-btn disabled">Coming soon</span>
+      <span class="card-btn">Open tool</span>
     </div>
   </a>
 
-  <!-- Flex-Stay Kinematics -->
+  <!-- Suspension Designer -->
   <a class="tool-card" href="flexstay/index.html">
     <div class="card-icon">&#8767;</div>
     <div class="card-body">
       <span class="card-tag ready">ready</span>
-      <div class="card-title">Flex-Stay Kinematics</div>
+      <div class="card-title">Suspension Designer</div>
       <div class="card-desc">
-        Four-bar suspension solver for flex-stay full-suspension frames. Drag pivots to see leverage ratio, anti-squat/rise and stay bending stress. Validated against Linkage X3.
+        Four-bar suspension kinematics solver. Currently covers flex-stay full-suspension frames — drag pivots to see leverage ratio, anti-squat/rise and stay bending stress, validated against Linkage X3. More linkage types planned.
       </div>
       <span class="card-btn">Open tool</span>
     </div>

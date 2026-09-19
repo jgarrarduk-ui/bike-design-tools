@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Creature Cycles — Bike Designer</title>
+<title>Frame Designer — Creature Cycles</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
 
@@ -55,12 +55,12 @@
 
   /* ── GREEN ── */
   [data-theme="green"] {
-    --input-bg:    #0a1e0d;
+    --input-bg:    #28272a;
     --input-fg:    #86efac;
-    --bg:          #080f0a;
-    --panel-bg:    #060d08;
-    --toolbar-bg:  #0a1a0d;
-    --hdr-bg:      #0f2a14;
+    --bg:          #28272a;
+    --panel-bg:    #222124;
+    --toolbar-bg:  #2e2d31;
+    --hdr-bg:      #333136;
     --border:      #1a3d20;
     --accent:      #166534;
     --accent-hi:   #16a34a;
@@ -94,6 +94,7 @@
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg); }
 
   body {
     background: var(--bg);
@@ -1682,16 +1683,16 @@ const THEMES = {
     errFill:   '#fee2e2',
   },
   green: {
-    bg:        '#080f0a',
-    grid:      '#0d2e14',
-    ground:    '#1a3d20',
+    bg:        '#28272a',
+    grid:      '#313035',
+    ground:    '#3a3a3d',
     wheel:     '#4ade80',
     wheelLbl:  '#166534',
     tubeFill:  '#0f4a20',
     tubeStk:   '#4ade80',
     lugFill:   '#0a3018',
     lugStk:    '#22c55e',
-    bbBore:    '#080f0a',
+    bbBore:    '#28272a',
     crDash:    '#1a4d28',
     forkFill:  '#15803d',
     forkStk:   '#22c55e',

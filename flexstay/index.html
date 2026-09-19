@@ -2,12 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Flex-stay kinematics — Slate Frameworks</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suspension Designer — Creature Cycles</title>
 <style>
 :root{
   --paper:#eef1f3; --grid:#dbe2e7; --grid2:#cbd6dd;
   --ink:#16202a; --ink-soft:#5c6b78;
-  --rear:#1f5f8b; --link:#0f766e; --flex:#b32c1e; --shock:#8a5a00;
+  --rear:#1f5f8b; --link:#0f766e; --flex:#b32c1e; --shock:#8a5a00; --front:#7a4fb5;
+  --anim:#bf5700;
   --ok:#2f7d32; --rule:#c3ccd3; --panel:#f7f9fa;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -20,7 +22,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
 .rail.left{border-right:1px solid var(--rule)}
 .rail.right{border-left:1px solid var(--rule)}
 #stage{display:flex;flex-direction:column;min-width:0}
-#canvas{flex:1;min-height:260px;position:relative;min-width:0}
+#canvas{flex:1;min-height:230px;max-height:56vh;position:relative;min-width:0}
 /* absolute so the SVG's own aspect ratio cannot drive the canvas height */
 #draw{position:absolute;inset:0;width:100%;height:100%;display:block;
   background:var(--paper);touch-action:none;user-select:none}
@@ -59,7 +61,7 @@ input[type=number],input[type=text],select{width:64px;font:12px var(--mono);padd
 input[type=text]{width:140px;font-family:var(--sans)}
 input[type=number]:focus,input[type=text]:focus,select:focus{outline:2px solid var(--rear);outline-offset:-1px}
 select{width:auto}
-.pt{display:grid;grid-template-columns:1fr 72px 72px;gap:5px;align-items:center;margin:4px 0}
+.pt{display:grid;grid-template-columns:1fr 72px 72px 24px;gap:5px;align-items:center;margin:4px 0}
 .pt[hidden]{display:none}          /* display:grid would otherwise beat the hidden attribute */
 .pt span{font-size:12px}
 .pt input{width:100%}
@@ -70,34 +72,66 @@ select{width:auto}
 .warn b{color:var(--flex)}
 .good b{color:var(--ok)}
 .note{font-size:11px;color:var(--ink-soft);margin:6px 0 0}
-/* space-between spreads every control from the left edge to the right edge
-   with equal gaps, rather than clumping the playback controls left and the
-   toggles right with dead space in between. But space-between on a wrapped
-   line stretches whatever is left over that line's full width too, which
-   looks broken when a short trailing row is the result — so it only applies
-   once fitBar() (below) has confirmed everything actually fits on one line;
-   otherwise the bar falls back to plain left-aligned wrapping. */
-#bar{display:flex;align-items:center;justify-content:flex-start;gap:8px;
-  padding:7px 14px;border-top:1px solid var(--rule);
-  background:var(--panel);flex-wrap:wrap}
-#bar.spread{justify-content:space-between}
+/* Two fixed rows, not one wrapping list: each .barrow is its own flex
+   container, so a button can never migrate from one row to the other just
+   because something else on its row changed width — the two rows are
+   simply two separate boxes, not one flow that reflows across a break. */
+#bar{display:flex;flex-direction:column;gap:7px;
+  padding:7px 14px;border-bottom:1px solid var(--rule);
+  background:var(--panel)}
+/* Constant gap, left-justified — buttons stack from the left edge with the
+   same spacing whatever room is left over, rather than stretching that
+   leftover space out between them. */
+.barrow{display:flex;align-items:center;justify-content:flex-start;gap:8px;
+  flex-wrap:nowrap}
 #bar label{margin:0;gap:6px}
 #poslabel{font:12px var(--mono);color:var(--ink-soft);white-space:nowrap}
 /* .bargroup is a semantic/ARIA grouping only now — display:contents drops its
-   own box so its buttons become direct flex children of #bar and take part in
-   the same space-between spacing as everything else, instead of being
-   distributed only among themselves inside a sub-box. */
+   own box so its buttons become direct flex children of its .barrow, spaced
+   by that row's own gap like everything else on it, instead of being spaced
+   only among themselves inside a sub-box. */
 .bargroup{display:contents}
 #bar input[type=checkbox]{accent-color:var(--rear)}
+/* Fixed width and centred text so switching the label between "Cycle" and
+   "Stop" never changes the button's own size — sized to the wider of the
+   two plus the button's own padding, not a guess. */
+#play{width:52px;flex:none;text-align:center}
 input[type=number]:disabled{background:#eef1f3;color:var(--ink-soft)}
 button{font:11.5px var(--sans);padding:4px 6px;border:1px solid var(--rule);border-radius:3px;
-  background:#fff;color:var(--ink);cursor:pointer}
+  background:#fff;color:var(--ink);cursor:pointer;white-space:nowrap}
+/* A button's own label never wraps onto a second line inside it — a row
+   running short on space should clip or overflow (already the chosen
+   tradeoff for the no-spillover toolbar), not fold a button's text in on
+   itself, which reads as broken rather than tight. */
+.barrow button{flex-shrink:0}
 button:hover{background:#e9eef1}
 button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:#fff}
 /* Parts toggles get their own colour — teal against the overlays' blue — so the
    two kinds of pressed button read apart at a glance without a divider. */
 .partbtn[aria-pressed=true]{background:var(--link);border-color:var(--link);color:#fff}
+/* The three position-control buttons (cycle/stop, sag, static) get a third
+   colour again, burnt orange — they're neither an overlay toggle nor a parts
+   toggle, they're "where in the cycle is this", and only one of the three is
+   ever the current one (syncPos keeps their aria-pressed mutually exclusive). */
+#play[aria-pressed=true],#showsag[aria-pressed=true],#staticPos[aria-pressed=true]
+  {background:var(--anim);border-color:var(--anim);color:#fff}
+/* Small glyph-only lock/unlock buttons -- the points-panel row lock, the
+   down-tube standoff locks, and the shock length lock all share this one
+   size/shape and inherit the base button's colour rules above (including
+   the pressed-state recolour) rather than getting their own. */
+.iconbtn{width:22px;height:22px;padding:0;font-size:12px;line-height:1;flex:none}
 input[type=range]{width:220px;accent-color:var(--rear)}
+/* A thin red tick over the slider's own track, at the sag % of its width —
+   not exact against the track's own end-padding (a native range's usable
+   track is inset by half the thumb's width at each end, which a plain
+   percentage doesn't know about), but close enough to read as "here" at
+   this thumb size, and simple. updateSagMark() keeps its left% tied to
+   C.sag whenever that can have changed. */
+#poswrap{position:relative;display:inline-flex;align-items:center;flex:none}
+#sagmark{position:absolute;top:3px;bottom:3px;width:2px;background:var(--flex);
+  pointer-events:none}
+#speedctl{margin:0;gap:5px;flex:none}
+#animSpeed{width:50px}
 /* One chart at a time, full width, so it is as large as the stage allows; the
    arrows page through all four. */
 #charts{display:grid;grid-template-columns:26px 1fr 26px;gap:1px;background:var(--rule);
@@ -127,8 +161,11 @@ svg text{font-family:var(--mono)}
   #canvas{height:min(46vh,66vw);min-height:210px;flex:none}
   #charts{grid-template-columns:24px 1fr 24px;height:250px}
   input[type=range]{width:auto;flex:1 1 90px;min-width:90px}
-  #bar{gap:8px 10px}
-  .pt{grid-template-columns:1fr 72px 72px}
+  /* The no-spillover rule is a desktop-toolbar fix — eleven buttons forced
+     onto one unbreakable row would just overflow off a phone screen, so
+     mobile gets its wrap back, each row independently. */
+  .barrow{gap:8px 10px;flex-wrap:wrap}
+  .pt{grid-template-columns:1fr 72px 72px 24px}
 }
 </style>
 </head>
@@ -136,19 +173,16 @@ svg text{font-family:var(--mono)}
 <div id="app">
 
 <div class="rail left">
-  <h1>Flex-stay kinematics</h1>
-  <p class="sub">Single pivot with shock link. Seat stay carries the compliance.</p>
-
   <!-- The working set: what you move while watching the graph. Everything else
        is setup, folded away until it is wanted. -->
   <h2>Pivots and mounts</h2>
   <div class="btnrow"><button id="resetPoints">Reset points &amp; mounts</button></div>
   <div id="points"></div>
   <h3>Down tube mounts</h3>
-  <label><span>Lock shock mount standoff</span><input type="checkbox" id="sgLock"></label>
-  <label><span>Shock mount off down tube</span><input type="number" id="sgStand" step="1"></label>
-  <label><span>Lock link pivot standoff</span><input type="checkbox" id="spLock"></label>
-  <label><span>Link pivot off down tube</span><input type="number" id="spStand" step="1"></label>
+  <label><span>Shock mount off down tube</span><input type="number" id="sgStand" step="1">
+    <button class="iconbtn" id="sgLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock shock mount standoff">🔒</button></label>
+  <label><span>Link pivot off down tube</span><input type="number" id="spStand" step="1">
+    <button class="iconbtn" id="spLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock link pivot standoff">🔒</button></label>
 
   <p class="note">Drag points on the drawing or type coordinates. Datum:
     <select id="datum">
@@ -159,7 +193,8 @@ svg text{font-family:var(--mono)}
   </p>
 
   <h2>Shock</h2>
-  <label><span>Eye to eye</span><input type="number" id="eye" step="1"></label>
+  <label><span>Eye to eye</span><input type="number" id="eye" step="1">
+    <button class="iconbtn" id="locklen" aria-pressed="true" title="Keep the shock eye to eye fixed while dragging its mounts" aria-label="Lock shock eye to eye">🔒</button></label>
   <label><span>Stroke</span><input type="number" id="stroke" step="0.5"></label>
   <label><span>Rear sag, % of travel</span><input type="number" id="sag" step="1"></label>
 
@@ -255,6 +290,35 @@ svg text{font-family:var(--mono)}
 </div>
 
 <div id="stage">
+  <div id="bar">
+    <div class="barrow" id="bar-top">
+      <button id="play" aria-pressed="false">cycle</button>
+      <button id="showsag" aria-pressed="false">sag</button>
+      <button id="staticPos" aria-pressed="true">static</button>
+      <div id="poswrap">
+        <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
+        <div id="sagmark" title="Sag point"></div>
+      </div>
+      <label id="speedctl"><span>speed %</span>
+        <input type="number" id="animSpeed" min="0" max="100" step="1" value="100"></label>
+      <span id="poslabel"></span>
+    </div>
+    <div class="barrow" id="bar-bottom">
+      <span class="bargroup" role="group" aria-label="Overlays and parts drawn">
+        <button id="axpath" aria-pressed="true">axle path</button>
+        <button id="asline" aria-pressed="false">anti-squat</button>
+        <button id="arline" aria-pressed="false">anti-rise</button>
+        <button id="forces" aria-pressed="false">forces</button>
+        <button class="partbtn" id="tglWheels"    aria-pressed="true">wheels</button>
+        <button class="partbtn" id="tglDrive"     aria-pressed="true">drivetrain</button>
+        <button class="partbtn" id="tglCockpit"   aria-pressed="true">cockpit</button>
+        <button class="partbtn" id="tglSaddle"    aria-pressed="true">saddle</button>
+        <button class="partbtn" id="tglShock"     aria-pressed="true">shock</button>
+        <button class="partbtn" id="tglFork"      aria-pressed="true">fork</button>
+        <button class="partbtn" id="tglCranks"    aria-pressed="true">cranks</button>
+      </span>
+    </div>
+  </div>
   <div id="canvas">
     <svg id="draw" preserveAspectRatio="xMidYMid meet"></svg>
     <div id="zoomctl">
@@ -264,30 +328,11 @@ svg text{font-family:var(--mono)}
     </div>
   </div>
   <div id="msg"></div>
-  <div id="bar">
-    <button id="play">Cycle</button>
-    <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
-    <span id="poslabel"></span>
-    <button id="showsag" aria-pressed="false">Sag</button>
-    <button id="locklen" aria-pressed="true" title="Keep the shock eye to eye fixed while dragging its mounts">Lock shock</button>
-    <span class="bargroup" role="group" aria-label="Overlays and parts drawn">
-      <button id="axpath" aria-pressed="true">axle path</button>
-      <button id="asline" aria-pressed="false">anti-squat</button>
-      <button id="arline" aria-pressed="false">anti-rise</button>
-      <button id="forces" aria-pressed="false">forces</button>
-      <button class="partbtn" id="tglWheels"    aria-pressed="true">wheels</button>
-      <button class="partbtn" id="tglDrive"     aria-pressed="true">drivetrain</button>
-      <button class="partbtn" id="tglCockpit"   aria-pressed="true">cockpit</button>
-      <button class="partbtn" id="tglSaddle"    aria-pressed="true">saddle</button>
-      <button class="partbtn" id="tglShock"     aria-pressed="true">shock</button>
-      <button class="partbtn" id="tglFork"      aria-pressed="true">fork</button>
-    </span>
-  </div>
   <div id="charts">
     <button class="pager" id="cprev" aria-label="Previous chart">&lsaquo;</button>
     <figure class="chart"><figcaption id="cap-a"></figcaption><svg id="c-a"></svg></figure>
     <button class="pager" id="cnext" aria-label="Next chart">&rsaquo;</button>
-    <div id="cdots"><i></i><i></i><i></i><i></i></div>
+    <div id="cdots"><i></i><i></i><i></i><i></i><i></i></div>
   </div>
 </div>
 
@@ -335,6 +380,7 @@ svg text{font-family:var(--mono)}
 <script>
 // ==ENGINE-START==  no DOM below this line until ENGINE-END
 const P = 12.7; // chain pitch, mm
+const CRANK_LEN = 165; // crank arm length, mm -- no config field for this yet
 
 const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y});
 const add=(a,b)=>({x:a.x+b.x,y:a.y+b.y});
@@ -384,10 +430,23 @@ function solve(g, phi, prevLP){
     stayAngle: Math.atan2(LP.y-FP.y,LP.x-FP.x)-phi}; // body B angle in body A's frame
 }
 
-// Rotate body A until the shock has been compressed by `comp`.
-function atCompression(g, comp, guess){
+/* Rotate body A until the shock has been compressed by `comp`. `phiHint`, when
+   given, narrows the coarse bracket search to [phiHint, hi] instead of always
+   starting over from [0, hi]. Sound because compression only ever increases
+   along a sweep and shock length is monotonically decreasing in compression
+   by definition (comp = L0 - shock), so the residual's sign at the previous
+   frame's own converged phi is already known: shockAtPhiHint is exactly
+   L0-prevComp, strictly greater than this frame's (larger) target L0-comp, so
+   f(phiHint) is strictly positive here -- the same sign f(0) always had,
+   just measured closer to the actual root. That means the coarse loop below
+   finds its bracket within a handful of iterations instead of walking most of
+   the way across [0,hi] from scratch every frame, without changing what it
+   finds: same root, same tolerance, just less of the interval to search to
+   get there. First frame has no previous phi, so it falls back to 0, exactly
+   as before. */
+function atCompression(g, comp, guess, phiHint){
   const L0=dist(g.SE,g.SG), target=L0-comp;
-  let lo=0, hi=-0.85, prev=null;          // negative phi drives the axle upward
+  let lo=(phiHint||phiHint===0)?phiHint:0, hi=-0.85, prev=null;   // negative phi drives the axle upward
   const f=p=>{const s=solve(g,p,prev); if(!s) return null; prev=s.LP; return s.shock-target};
   /* Rotating by zero still round-trips through the rigid-body transform, so the
      residual at zero compression is floating point noise of either sign rather
@@ -407,7 +466,14 @@ function atCompression(g, comp, guess){
     a=p;fa=v;
   }
   if(b===null) return null;
-  for(let i=0;i<60;i++){
+  /* 30 bisections of an interval no wider than 0.85rad resolves phi to about
+     8e-10rad -- on a 500mm lever arm that's under a micron, already far past
+     any precision this tool draws or reports at. The old 60 was roughly a
+     million times finer than that again, solving for precision nothing here
+     could ever use. Halved, not dropped further, to keep a comfortable
+     margin over floating-point noise rather than chase the theoretical
+     minimum. */
+  for(let i=0;i<30;i++){
     const m=(a+b)/2, v=f(m);
     if(v===null) break;
     if(fa*v<=0){b=m} else {a=m;fa=v}
@@ -475,6 +541,87 @@ function routeIdler(BB,rc,IDp,ri,AXp,rg){
   return null;
 }
 
+/* The rear derailleur's bottom (return-side) chain run -- cog, under the
+   guide pulley, across to the tension pulley, up to the chainring --
+   properly tangent to each pulley's own radius instead of running through
+   its centre. Order matters here, not just which two circles end up
+   linked: a real chain wraps the TOP run over chainring-to-cog (chainRun,
+   unchanged), then continues round the back of the cog straight into the
+   guide pulley (they sit close together -- GDX/GDY is a short offset off
+   the axle), through the tension pulley, and back the long way to the
+   chainring to complete the loop. Connecting chainring to guide and
+   tension to cog instead (the two outer circles swapped) draws the short
+   leg where the long one belongs and vice versa -- geometrically valid
+   tangents, just the wrong pair of circles joined, and it reads as
+   obviously wrong once you know to look for it.
+   The topology never varies (a derailleur cage always wraps this same
+   way), but the sign choice is still solved, the way routeIdler solves its
+   one tangent: each pulley's wrap must not reverse between its incoming
+   and outgoing tangent, and the chainring/cog must keep the sense the
+   drivetrain's own top run already established.
+   That constraint set is NOT enough to pin the cog-guide and guide-tension
+   legs down uniquely, though -- both an external and a crossed beltRun
+   candidate can satisfy "wrap doesn't reverse" at a shared pulley, and one
+   of each pair is geometrically wrong even though it passes that check.
+   Two more facts about the FIXED physical arrangement break the tie, and
+   are worth pinning down rather than re-deriving by search every time:
+   - cog-guide is CROSSED. The chain wraps the underside of the cog and
+     descends essentially straight down into the TOP of the guide pulley
+     (guide sits close to and almost directly below the axle) -- a crossed
+     tangent is the one that runs between the two circles rather than
+     alongside them, which is what "wraps under one, straight down into
+     the top of the other, close together" actually looks like.
+   - guide-tension is ALSO CROSSED -- the classic derailleur "S": the
+     chain leaves the guide pulley's right side, crosses over, and arrives
+     at the tension pulley's LEFT side, wrapping on round to its bottom.
+     (An earlier version of this comment argued external from the tangent
+     length coming out equal to `C.cage` -- true, but that's just what an
+     external tangent between two EQUAL-radius circles always measures,
+     whichever one is mechanically correct; it confirmed guide and tension
+     are `C.cage` apart, which was never in question, not which side the
+     chain actually wraps. Corrected against a second marked-up reference
+     screenshot after the external version visibly crossed to the wrong
+     side of the tension pulley.)
+   `s1`/`s2` (which of the two sides, for each now-fixed crossed choice)
+   are still solved for, not guessed -- exactly one of each satisfies the
+   "wrap doesn't reverse" check, the same as before. Only the outer
+   tension-to-chainring leg still searches both crossed and both sides:
+   it's a long, unconstrained-by-any-rigid-part run to the front of the
+   bike, with no equivalent physical tie-break, and the existing search
+   already narrows it to one candidate once the first two legs are fixed.
+   Returns null (caller falls back to a straight line) if no combination
+   satisfies every constraint -- should not happen at realistic geometry,
+   but the canvas must never blank on it. */
+function cageRun(BB,rc,guide,tension,RJ,AXp,rg){
+  const ref=chainRun(BB,rc,AXp,rg);
+  if(!ref) return null;
+  const dRef=unit(sub(ref.p2,ref.p1));
+  const sRing=wrapSense(BB,ref.p1,dRef), sCog=wrapSense(AXp,ref.p2,dRef);
+  for(const s1 of [1,-1]){
+    const segA=beltRun(AXp,rg,guide,RJ,true,s1);        // cog-guide: crossed
+    if(!segA) continue;
+    const dA=unit(sub(segA.p2,segA.p1));
+    if(wrapSense(AXp,segA.p1,dA)!==sCog) continue;
+    const sGuide=wrapSense(guide,segA.p2,dA);
+    for(const s2 of [1,-1]){
+      const segB=beltRun(guide,RJ,tension,RJ,true,s2); // guide-tension: crossed
+      if(!segB) continue;
+      const dB=unit(sub(segB.p2,segB.p1));
+      if(wrapSense(guide,segB.p1,dB)!==sGuide) continue;
+      const sTension=wrapSense(tension,segB.p2,dB);
+      for(const c3 of [false,true]) for(const s3 of [1,-1]){
+        const segC=beltRun(tension,RJ,BB,rc,c3,s3);
+        if(!segC) continue;
+        const dC=unit(sub(segC.p2,segC.p1));
+        if(wrapSense(tension,segC.p1,dC)!==sTension) continue;
+        if(wrapSense(BB,segC.p2,dC)!==sRing) continue;
+        return {segs:[segA,segB,segC], sGuide, sTension};
+      }
+    }
+  }
+  return null;
+}
+
 function lineHit(p1,p2,p3,p4){
   const d=cross(sub(p2,p1),sub(p4,p3));
   if(Math.abs(d)<1e-9) return null;
@@ -500,6 +647,18 @@ function segDist(p,a,b){
   const ab=sub(b,a), L2=ab.x*ab.x+ab.y*ab.y;
   const t=L2>1e-9 ? Math.max(0,Math.min(1,((p.x-a.x)*ab.x+(p.y-a.y)*ab.y)/L2)) : 0;
   return dist(p, add(a,mul(ab,t)));
+}
+// the actual closest point on a multi-segment polyline, for a short mount brace
+// drawn perpendicular to whichever segment a pivot actually sits nearest
+function closestOnPath(pts,p){
+  let best=null, bestD=Infinity;
+  for(let i=1;i<pts.length;i++){
+    const a=pts[i-1], b=pts[i], ab=sub(b,a), L2=ab.x*ab.x+ab.y*ab.y;
+    const t=L2>1e-9 ? Math.max(0,Math.min(1,((p.x-a.x)*ab.x+(p.y-a.y)*ab.y)/L2)) : 0;
+    const q=add(a,mul(ab,t)), d=dist(p,q);
+    if(d<bestD){bestD=d; best=q;}
+  }
+  return best;
 }
 
 /* Rear mech geometry, fixed relative to the dropout so it swings with the chainstay. */
@@ -592,12 +751,12 @@ function sweep(g,cfg,n=61){
      riding up with the axle, which is what the anti-squat datum is measured from.
      The ground is wherever the un-compressed rear wheel touches. */
   const ground=g.AX.y-Rr;
-  const out=[], routes=[]; let prev=null;
+  const out=[], routes=[]; let prev=null, prevPhi=undefined;
   for(let i=0;i<=n;i++){
-    const s=atCompression(g, cfg.stroke*i/n, prev);
+    const s=atCompression(g, cfg.stroke*i/n, prev, prevPhi);
     if(!s) return {frames:out, error:'The linkage jams before the shock reaches full stroke. '+
         'Usually the shock link is too short to reach, or the second pivot is too far from the main pivot.'};
-    prev=s.LP;
+    prev=s.LP; prevPhi=s.phi;
     const CP={x:s.AX.x, y:ground};
     const IC=g.MP;                                   // wheel carrier is pinned to the frame
     const guide=rot({x:g.AX.x+GDX, y:g.AX.y+GDY}, g.MP, s.phi);
@@ -629,12 +788,39 @@ function sweep(g,cfg,n=61){
   });
   const a0=out[0].stayAngle;
   out.forEach(f=>f.flex=(f.stayAngle-a0)*180/Math.PI);
-  // leverage by central difference on wheel rise against shock stroke
-  out.forEach((f,i)=>{
-    const p=out[Math.max(0,i-1)], q=out[Math.min(out.length-1,i+1)];
-    const ds=q.stroke-p.stroke;
-    f.lr = ds>1e-9 ? (q.rise-p.rise)/ds : null;
-  });
+  /* Leverage is d(rise)/d(stroke), by the derivative of the quadratic through
+     three frames -- not a plain central difference, because a central
+     difference has nowhere to reach at the two ends of the sweep and used to
+     fall back there to a one-sided secant against a single neighbour
+     instead. That's first-order accurate where the interior is second-order,
+     so "Leverage, top out" and "Leverage, bottom out" -- the two numbers
+     this tool actually reports, and half of what Progression is computed
+     from -- carried a systematic bias the rest of the curve didn't. A
+     three-point quadratic fixes that at the ends and is exactly equivalent
+     to the old central difference in the interior: for evenly spaced points,
+     a quadratic's derivative at its own middle point reduces algebraically
+     to (y2-y0)/(x2-x0), the same central difference, so interior frames are
+     unaffected bit-for-bit reasoning, not just numerically close. */
+  const quadDeriv=(x0,y0,x1,y1,x2,y2,xAt)=>
+    y0*(2*xAt-x1-x2)/((x0-x1)*(x0-x2)) +
+    y1*(2*xAt-x0-x2)/((x1-x0)*(x1-x2)) +
+    y2*(2*xAt-x0-x1)/((x2-x0)*(x2-x1));
+  if(out.length>=3){
+    out.forEach((f,i)=>{
+      const j = i===0 ? 0 : (i===out.length-1 ? out.length-3 : i-1);
+      const a=out[j], b=out[j+1], c=out[j+2];
+      const ok=Math.abs(a.stroke-b.stroke)>1e-9 && Math.abs(b.stroke-c.stroke)>1e-9 &&
+                Math.abs(a.stroke-c.stroke)>1e-9;
+      f.lr = ok ? quadDeriv(a.stroke,a.rise,b.stroke,b.rise,c.stroke,c.rise,f.stroke) : null;
+    });
+  } else {
+    // too few frames for a quadratic -- the old secant is the only option
+    out.forEach((f,i)=>{
+      const p=out[Math.max(0,i-1)], q=out[Math.min(out.length-1,i+1)];
+      const ds=q.stroke-p.stroke;
+      f.lr = ds>1e-9 ? (q.rise-p.rise)/ds : null;
+    });
+  }
   return {frames:out, error:null, links};
 }
 
@@ -715,7 +901,9 @@ function stayLoads(deg, path, od, wall, axial, bendA, dropZ, yokeZ, leanEnd, lea
   const la=(leanA||0)*Math.PI/180;
   const reach=b=>main*Math.sin(b)+tail*Math.sin(b+la);
   let blo=-0.5, bhi=0.5;
-  for(let i=0;i<60;i++){ const bm=(blo+bhi)/2; if(reach(bm)<pull) blo=bm; else bhi=bm; }
+  // 30 bisections of a 1rad interval resolves the angle to about 1e-9rad --
+  // see atCompression's own note on the same trade-off
+  for(let i=0;i<30;i++){ const bm=(blo+bhi)/2; if(reach(bm)<pull) blo=bm; else bhi=bm; }
   const bMain=(blo+bhi)/2;
   const eOop=Math.abs((pull*main/L) - main*Math.sin(bMain));
   const leanNeeded=bMain*180/Math.PI;
@@ -729,17 +917,19 @@ function stayLoads(deg, path, od, wall, axial, bendA, dropZ, yokeZ, leanEnd, lea
 }
 // ==ENGINE-END==
 
+const CRANK_COL = '#45505a'; // darker than the shared drivetrain grey (#5c6b78) -- cranks only
+
 /* ---------- state ---------- */
 const DEF={
-  geom:{ MP:{x:-2.5,y:66.4}, SP:{x:66.7,y:140.5}, FP:{x:-452.5,y:29.4},
-         LP:{x:6.9,y:271.8}, SE:{x:1.6,y:293.9}, SG:{x:229.8,y:322.1},
-         AX:{x:-452.5,y:29.4}, ID:{x:0,y:125} },
-  cfg:{ eye:230, stroke:65, zone:531, bendR:115, bendA:42, bendStart:50, leanEnd:55, leanA:8, dropW:148, shockW:33, peakG:3, od:16, wall:0.9, ring:32, cog:21,
-        mass:85, bias:58, cogh:1057, sag:30, fsag:20, fax:844.4,
-        rw:622, fw:622, tyreR:60.96, tyreF:60.96, reach:485, stack:654.5, ha:63.3, htl:130,
-        sa:76, st:430, ttDrop:90, bbh:334, drop:38, rc:450, csl:451.6,
+  geom:{ MP:{x:12.4,y:63.3}, SP:{x:74.0189028068233,y:162.73336512900167}, FP:{x:-450,y:18.95999999999998},
+         LP:{x:6.9,y:271.8}, SE:{x:7.4,y:294.8}, SG:{x:233.5689296680683,y:337.611219361806},
+         AX:{x:-450,y:18.95999999999998}, ID:{x:0,y:125} },
+  cfg:{ eye:230, stroke:65, zone:551, bendR:115, bendA:42, bendStart:50, leanEnd:55, leanA:8, dropW:148, shockW:33, peakG:3, od:16, wall:0.9, ring:32, cog:21,
+        mass:85, bias:58, cogh:1057, sag:30, fsag:20, fax:844.3592543050977,
+        rw:584, fw:622, tyreR:60.96, tyreF:60.96, reach:485, stack:654.5403733659439, ha:63.3, htl:130,
+        sa:76, st:430, ttDrop:90, bbh:334, drop:18.95999999999998, rc:450, csl:450.39924689102224,
         a2c:571, a2cAuto:1, hsLower:13, offset:44, forkTravel:160,
-        stemL:10, stemH:70, links:124, cage:62,
+        stemL:10, stemH:65, links:122, cage:62,
         dtOD:38.1, stOD:34.95, ttOD:32, htOD:46.5, dtWeld:12, ttWeld:14, pivotOD:22,
         sgStand:55, sgLock:1, spStand:55, spLock:1,
         chainAuto:1,
@@ -795,15 +985,15 @@ function syncGeom(driver){
   if(driver==='stack')
     C.htl=Math.max(40,(C.stack-faY+cs*C.offset)/s-C.hsLower-along);
   C.stack=faY+s*(C.htl+C.hsLower+along)-cs*C.offset;
-  // the rear wheel sits on the same ground plane; the flex pivot rides with it
-  // when the two are concentric, which is the usual flex-stay layout
+  // the rear wheel sits on the same ground plane; the flex pivot always rides
+  // with it -- recompute()'s own unconditional `G.FP={...G.AX}` is what
+  // actually enforces that (this function doesn't touch G.FP at all), so
+  // there is nothing conditional to do with it here
   const axY=Rr-C.bbh;
   // rear centre is the horizontal run to the axle; chainstay length is the hypotenuse
   if(driver==='csl') C.rc=Math.sqrt(Math.max(1,C.csl*C.csl-axY*axY));
   C.csl=Math.hypot(C.rc,axY);
-  const concentric=Math.abs(G.FP.y-G.AX.y)<1e-9 && Math.abs(G.FP.x-G.AX.x)<1e-9;
   G.AX.x=-C.rc; G.AX.y=axY;
-  if(concentric){G.FP.x=G.AX.x; G.FP.y=G.AX.y}
 }
 
 /* ---------- derived frame points ---------- */
@@ -930,7 +1120,13 @@ function recompute(quick){
       if(C[lock]) G[k]=onTube(dtU, alongOf(dtU,G[k]), C[off]);
       else        C[off]=Math.round(standoffOf(dtU,G[k])*10)/10;
     }
-    C.zone=Math.round(stayLength());     // bending always spans the whole seat stay
+    // Vestigial, kept on purpose: a leftover field from the old flex-zone
+    // overlay (bending always spans the whole seat stay now, so nothing
+    // reads this any more -- see CLAUDE.md, "The model"). Removing it would
+    // change every saved design file's schema for a field nobody's missed
+    // since; recomputed here so an old export re-saved through this tool
+    // doesn't carry a stale number either.
+    C.zone=Math.round(stayLength());
     result=sweep(G,C,quick?15:61);        // coarse sweep while a point is moving
     if(C.chainAuto&&result.links){
       C.links=result.links;
@@ -960,6 +1156,17 @@ function recompute(quick){
       m.className='on'; console.error(stage,err);
     }
   }
+  /* The position label and the cycle/sag/static buttons reflect `result`, so
+     they belong here rather than in every caller. They used to be each
+     caller's own job -- most callers (typing into any config field, every
+     checkbox, both locks, the tyre-width selects, "Reset geometry") simply
+     never did it, so the toolbar's own "142mm wheel" total could go stale
+     the moment a change actually altered travel, until something else (a
+     drag, the animation loop) happened to call syncPos() next. The few
+     callers that update the display WITHOUT calling recompute() at all --
+     the position slider, Sag/Static, the animation loop -- still need and
+     keep their own explicit call. */
+  syncPos();
 }
 
 /* ---------- drawing ---------- */
@@ -987,6 +1194,13 @@ const STEMART={
 const WHEELART={
   w:1390, h:1372, hub:[695,686], nativeR:690,
   src:'img/wheel.png'
+};
+/* Isotropic like WHEELART -- teeth already touch the canvas edge and the
+   artwork is already centred, so hub is just the image centre and nativeR
+   is just the half-width. */
+const JOCKEYART={
+  w:1209, h:1212, hub:[604.5,606], nativeR:604.5,
+  src:'img/jockey-wheel.png'
 };
 const SADDLEART={
   w:904, h:278, mount:[550,245],   // where the rails meet the seatpost clamp
@@ -1016,7 +1230,9 @@ function stayPath(a,b){
   const fl=t=>{const v=legs(t); return v?v.l1-want:null};
   const flo=fl(lo), fhi=fl(hi);
   if(flo===null||fhi===null||flo*fhi>0) return straight;
-  for(let i=0;i<60;i++){
+  // 30 bisections of a 1.3rad interval resolves the launch angle to about
+  // 1e-9rad -- see atCompression's own note on the same trade-off
+  for(let i=0;i<30;i++){
     const m2=(lo+hi)/2, v=fl(m2);
     if(v===null) break;
     if(flo*v<=0) hi=m2; else lo=m2;
@@ -1042,19 +1258,6 @@ function stayPath(a,b){
   return {pts, total, l1:v.l1, l2:v.l2, chord:dist(a,b), emax,
           leanEnd:C.leanEnd};
 }
-// the first `want` millimetres of a polyline, for the flex zone marker
-function polyHead(pts, want){
-  const out=[pts[0]]; let acc=0;
-  for(let i=1;i<pts.length;i++){
-    const d=dist(pts[i],pts[i-1]);
-    if(acc+d>=want){
-      out.push(add(pts[i-1], mul(sub(pts[i],pts[i-1]), (want-acc)/d)));
-      return out;
-    }
-    acc+=d; out.push(pts[i]);
-  }
-  return out;
-}
 function el(tag,attrs,parent){
   const n=document.createElementNS(SVG,tag);
   for(const k in attrs) n.setAttribute(k,attrs[k]);
@@ -1066,16 +1269,34 @@ function el(tag,attrs,parent){
    little; the crop is capped so a tall narrow canvas does not slice the frame. */
 let VIEW={x0:-880,y0:-395,w:2130,h:1120};   // last fit, read by the grid, ground and hit radius
 let zoomK=1, panX=0, panY=0, lastBox=null, mmPerPx=1;
+/* getBoundingClientRect() answers from live layout, so asking for it forces
+   the browser to flush whatever DOM changes are still pending first -- and
+   draw()/charts() always have some pending, since they just tore down and
+   rebuilt their own SVG a moment before asking. Measured: with a profiler
+   attached, this single call was the single most expensive thing draw() did
+   each frame, ahead of every element it actually creates. But the canvas's
+   and the charts' own pixel box only change when the page is actually
+   resized -- which the ResizeObserver below already watches -- so there is
+   no reason to pay a fresh layout flush on every ordinary redraw (a drag, a
+   typed field, the animation loop) just to re-confirm a size that hasn't
+   moved. Cached here, invalidated only where an actual resize is detected. */
+let canvasRectCache=null, chartsRectCache=null;
+function invalidateRectCache(){ canvasRectCache=null; chartsRectCache=null; }
 let showForces=false, showAS=false, showAR=false, showPath=true;
 const showLines=()=>showAS||showAR;          // the shared construction lines
 // What gets drawn, as opposed to what gets analysed. All on by default; each
 // hides one piece of artwork so a design in progress isn't obscured by parts
 // that aren't the point right now. The frame itself is never one of these.
 let showWheels=true, showDrivetrain=true, showCockpit=true,
-    showSaddle=true, showShock=true, showFork=true;
+    showSaddle=true, showShock=true, showFork=true, showCranks=true;
+// Per-point drag/type lock, keyed by PTS key. Unset/falsy = unlocked (the
+// default for every point) -- pure UI convenience, not part of C/G, so it
+// isn't exported/imported or touched by any reset button, same as showWheels
+// etc. above.
+let ptLocked={};
 const MAXCROP=0.18;                          // never lose more than this fraction of the width
 function fitView(svg,box){
-  const r=svg.getBoundingClientRect();
+  const r=canvasRectCache||(canvasRectCache=svg.getBoundingClientRect());
   const aspect=(r.width>4&&r.height>4)?r.width/r.height:1.9;
   // Fill the canvas, cropping the wheels a little. Always — the overlays do not
   // get to change the framing.
@@ -1084,7 +1305,7 @@ function fitView(svg,box){
   // one cannot: there the same fraction takes the wheels off, so taper it away.
   const crop=Math.max(0,Math.min(MAXCROP,(aspect-1.1)*0.36));
   const hCap  =box.w*(1-crop)/aspect;                  // never crop most of the width
-  const h=Math.max(hCover,hCap)*1.07/zoomK;            // margin so the ground line clears the edge
+  const h=Math.max(hCover,hCap)*1.03/zoomK;            // margin so the ground line clears the edge
   const w=h*aspect;
   mmPerPx=r.width>4 ? w/r.width : 1;
   return {x0:box.cx+panX-w/2, y0:box.cy+panY-h/2, w, h};
@@ -1133,6 +1354,11 @@ function draw(){
   const F=frame(C.forkTravel*Math.max(0,Math.min(1,tFront)));
   const ground=-C.bbh;                           // the datum: both wheels sit on it
   const BB={x:0,y:0};
+  // Pedal-end point for a crank arm resting at angle 0 (pointing +x, "right")
+  // before kickback rotates it about the bottom bracket. sign=-1 gives the
+  // other arm, 180 degrees opposite, on the same rigid spindle -- both arms
+  // read the one f.kick, since they can only ever turn together.
+  const crankPedal=sign=>rot({x:sign*CRANK_LEN,y:0}, BB, (f.kick||0)*Math.PI/180);
   const seatTop=F.ST, post=add(seatTop,mul(unit(sub(seatTop,BB)),150));
   /* The framing is fixed. It comes from the static geometry — fork extended,
      suspension at top out — so cycling the suspension, holding at sag or turning
@@ -1140,7 +1366,7 @@ function draw(){
      inputs, the canvas size and the zoom control move it. */
   const F0=frame(0), ax0=n?result.frames[0].AX:G.AX;
   const xs=[ax0.x-F0.Rr, ax0.x+F0.Rr, F0.FA.x-F0.Rf, F0.FA.x+F0.Rf];
-  const ys=[ground, F0.steerTop.y+70, post.y+90];
+  const ys=[ground, F0.steerTop.y+62, post.y+80];
   const bx0=Math.min(...xs), bx1=Math.max(...xs);
   const by0=Math.min(...ys), by1=Math.max(...ys);
   lastBox={cx:(bx0+bx1)/2, cy:(by0+by1)/2, w:bx1-bx0, h:by1-by0};
@@ -1196,26 +1422,42 @@ function draw(){
     segs.forEach(([a,b,w,cap])=>line(a,b,edge,w,       null,cap));
     segs.forEach(([a,b,w,cap])=>line(a,b,fill,Math.max(1,w-7),null,cap));
   };
-
-  /* ---- ground ---- (level, in root: the bike is what pitches, not the ground) */
-  el('rect',{x:gx0,y:gy0,width:gx1-gx0,height:Math.max(0,ground-gy0),
-    fill:'#e2e7ea'},groundG);
-  el('line',{x1:gx0,y1:ground,x2:gx1,y2:ground,stroke:'#aab6bd','stroke-width':3},groundG);
-
-  /* ---- wheels ---- */
-  /* Artwork is isotropic (round), so it just scales to whatever radius the
-     current rim+tyre combination gives — no rotation needed. */
-  const wheelArt=(c,R)=>{
-    const s=R/WHEELART.nativeR;
-    const wm=[s,0,0,s, c.x-s*WHEELART.hub[0], c.y-s*WHEELART.hub[1]];
-    const wg=el('g',{transform:`matrix(${wm.map(v=>v.toFixed(6)).join(' ')})`},g);
-    el('image',{href:WHEELART.src,x:0,y:0,width:WHEELART.w,height:WHEELART.h},wg);
+  /* Shared by anything round enough that orientation doesn't matter -- the
+     wheels and the jockey wheels, so far -- scaling the art's own native
+     radius (measured off the PNG) to whatever radius R the model calls for,
+     centred on its own hub. Returns a draw function rather than drawing
+     directly, so a caller can still choose when in the paint order it goes. */
+  const isotropicArt=art=>(c,R)=>{
+    const s=R/art.nativeR;
+    const m=[s,0,0,s, c.x-s*art.hub[0], c.y-s*art.hub[1]];
+    const ag=el('g',{transform:`matrix(${m.map(v=>v.toFixed(6)).join(' ')})`},g);
+    el('image',{href:art.src,x:0,y:0,width:art.w,height:art.h},ag);
   };
-  if(showWheels){ wheelArt(f.AX,F.Rr); wheelArt(F.FA,F.Rf); }
+  /* Sampled arc points, `a` to `b` about centre `c`, radius `r`, in the
+     direction of `sense` -- used wherever a chain has to visibly wrap a
+     pulley (the idler, and each jockey wheel). Not an SVG arc: the drawing
+     group is y-flipped, which inverts the sense of an arc element's own
+     sweep flag but not of plain sampled points, so sampling sidesteps that
+     rather than working around it. */
+  const arcPts=(c,r,a,b,sense)=>{
+    const t0=Math.atan2(a.y-c.y,a.x-c.x);
+    const sw=arcFrom(c,a,b,sense)*sense;
+    const n=Math.max(2,Math.ceil(Math.abs(sw)/0.2));
+    const pts=[];
+    for(let i=0;i<=n;i++){
+      const t=t0+sw*i/n;
+      pts.push(`${(c.x+r*Math.cos(t)).toFixed(1)},${(c.y+r*Math.sin(t)).toFixed(1)}`);
+    }
+    return pts.join(' ');
+  };
 
-  /* ---- drivetrain ----
-     guide/tension are computed regardless of the toggle: the rear derailleur
-     drawing further down needs them whether or not this pass renders anything. */
+  /* Shared geometry: several of the drawing steps below read these, not just
+     the one they're computed next to, so they stay here at draw()'s own scope
+     rather than living inside any one of the named steps. guide/tension/route/
+     runs/drawTop are read by both the drivetrain rings and the rear derailleur
+     step; fu/fp by both the fork and the stem step. Everything a single step
+     owns outright is declared inside that step instead — see each function
+     below for what it needs and nothing more. */
   const rc=C.ring*P/(2*Math.PI), rg=C.cog*P/(2*Math.PI);
   const ri=C.idlerTeeth*P/(2*Math.PI);         // NB C.rc is rear centre; rc here is the ring
   const guide=f.guide||rot({x:G.AX.x+GDX,y:G.AX.y+GDY},G.MP,f.phi);
@@ -1234,34 +1476,10 @@ function draw(){
     runs.forEach(r=>line(r.p1,r.p2,'#39424a',7));
     if(!route) return;
     ring(IDp,ri,'#5c6b78',7);
-    /* The wrap over the idler, so the chain reads as one continuous loop.
-       Sampled rather than an SVG arc: the drawing group is y-flipped, which
-       inverts the sense of an arc's sweep flag but not of plain points. */
-    const a=route.runs[0].p2, b=route.runs[1].p1;
-    const t0=Math.atan2(a.y-IDp.y,a.x-IDp.x);
-    const sw=arcFrom(IDp,a,b,route.sense)*route.sense;
-    const n=Math.max(2,Math.ceil(Math.abs(sw)/0.2));
-    const pts=[];
-    for(let i=0;i<=n;i++){
-      const t=t0+sw*i/n;
-      pts.push(`${(IDp.x+ri*Math.cos(t)).toFixed(1)},${(IDp.y+ri*Math.sin(t)).toFixed(1)}`);
-    }
-    el('polyline',{points:pts.join(' '),fill:'none',stroke:'#39424a',
-      'stroke-width':7,'stroke-linejoin':'round'},g);
+    // the wrap over the idler, so the chain reads as one continuous loop
+    el('polyline',{points:arcPts(IDp,ri,route.runs[0].p2,route.runs[1].p1,route.sense),
+      fill:'none',stroke:'#39424a','stroke-width':7,'stroke-linejoin':'round'},g);
   };
-  if(showDrivetrain){
-    ring(BB,rc,'#5c6b78',7); ring(f.AX,rg,'#5c6b78',7);
-    el('circle',{cx:0,cy:0,r:13,fill:'#5c6b78'},g);           // bottom bracket
-    if(!route) drawTop();
-    if(runs.length){
-      el('polyline',{points:[{x:f.AX.x-rg*0.5,y:f.AX.y-rg*0.87},guide,tension,
-          {x:BB.x,y:BB.y-rc}].map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
-        fill:'none',stroke:'#39424a','stroke-width':5},g);
-    }
-  }
-
-
-  /* ---- fork and cockpit ---- */
   /* Fork lowers are artwork and never stretch: they slide up the stanchion, which
      is drawn between the crown and the top of the casting and shortens on its own. */
   const K=FORKART, ks=K.mmPerPx, mir=MIRROR_FORK?-1:1;
@@ -1298,28 +1516,112 @@ function draw(){
      below -- so its near edge lands right at raceSeat, closing the gap to
      the lower headset block instead of floating clear of it. */
   const crown=add(add(F.raceSeat, mul(fp, C.offset+jog)), mul(fu,21));
-  if(showFork){
-    tubes([[crown,add(topW,mul(fu,26)),27]],'#cfd5da','#7b848c');   // exposed stanchion
-    /* Fork crown: the casting that caps the stanchions and joins them to the
-       steerer. Square ('butt'), centred on crown, in line with the
-       stanchions (drawn after, so it covers the top of the stanchion tube
-       the same way a real crown does) and a bit wider than the 27mm
-       stanchion — same colour as the lower headset block below, since both
-       are headset/crown hardware rather than a frame tube or the fork itself. */
-    tubes([[sub(crown,mul(fu,21)),add(crown,mul(fu,21)),38,'butt']],'#b9c0c6','#7b848c');
-    const fg=el('g',{transform:`matrix(${fm.map(v=>v.toFixed(6)).join(' ')})`},g);
-    el('image',{href:K.src,x:0,y:0,width:K.w,height:K.h},fg);
+
+  // Paint order, in one place: each step below is named for what it draws and
+  // called in exactly the sequence it always ran in inline. Reordering these
+  // calls reorders the drawing.
+  drawGround();
+  drawWheels();
+  drawHiddenCrank();
+  drawDrivetrainRings();
+  drawFork();
+  drawHeadsetTubes();
+  drawFrontTriangle();
+  drawStem();
+  drawRearAssembly();
+  drawShock();
+  drawRearDerailleur();
+  drawAxleTrail();
+  drawSaddle();
+  drawVisibleCrank();
+  drawASARConstruction();
+  drawPivots();
+  drawForceVectors();
+
+  /* ---- ground ---- (level, in root: the bike is what pitches, not the ground) */
+  function drawGround(){
+    el('rect',{x:gx0,y:gy0,width:gx1-gx0,height:Math.max(0,ground-gy0),
+      fill:'#e2e7ea'},groundG);
+    el('line',{x1:gx0,y1:ground,x2:gx1,y2:ground,stroke:'#aab6bd','stroke-width':3},groundG);
   }
-  // cockpit
-  if(showCockpit){
-    /* Lower headset: the cup + crown-race stack between the head tube and
-       where the fork's own axis takes over (F.raceSeat) — its length is
-       exactly C.hsLower, so it visibly grows and shrinks with that field the
-       same way the upper steerer stack tube already does with stemH. Same
-       colour as the fork crown block above; same head-tube diameter so it
-       reads as a continuation of the head tube, not a new tube. */
-    tubes([[F.htBot,F.raceSeat,C.htOD,'butt']],'#b9c0c6','#7b848c');
-    tubes([[F.htTop,F.steerTop,22]],'#b9c0c6','#7b848c');   // headset/steerer stack
+
+  /* ---- wheels ---- */
+  function drawWheels(){
+    // Isotropic (round), so it just scales to whatever radius the current
+    // rim+tyre combination gives -- no rotation needed.
+    const wheelArt=isotropicArt(WHEELART);
+    if(showWheels){ wheelArt(f.AX,F.Rr); wheelArt(F.FA,F.Rf); }
+  }
+
+  /* ---- hidden (far-side) crank arm ----
+     Drawn before the chainring and the frame tubes so both paint over it, the
+     same way a real photo's far-side arm is occluded by them -- the chainring
+     first, then the frame tubes and BB shell further down. 180 degrees from
+     the visible arm near the end of this function, same spindle, same kick. */
+  function drawHiddenCrank(){
+    if(showCranks){
+      const pedal=crankPedal(-1);
+      line(BB, pedal, CRANK_COL, 42);
+    }
+  }
+
+  /* ---- drivetrain ----
+     guide/tension are computed regardless of the toggle: the rear derailleur
+     drawing further down needs them whether or not this pass renders anything. */
+  function drawDrivetrainRings(){
+    if(showDrivetrain){
+      ring(BB,rc,'#5c6b78',7); ring(f.AX,rg,'#5c6b78',7);
+      el('circle',{cx:0,cy:0,r:13,fill:'#5c6b78'},g);           // bottom bracket
+      if(!route) drawTop();
+      if(runs.length){
+        const wrap=cageRun(BB,rc,guide,tension,RJ,f.AX,rg);
+        if(wrap){
+          const {segs:[segA,segB,segC], sGuide, sTension}=wrap;
+          line(segA.p1,segA.p2,'#39424a',5);
+          el('polyline',{points:arcPts(guide,RJ,segA.p2,segB.p1,sGuide),
+            fill:'none',stroke:'#39424a','stroke-width':5,'stroke-linejoin':'round'},g);
+          line(segB.p1,segB.p2,'#39424a',5);
+          el('polyline',{points:arcPts(tension,RJ,segB.p2,segC.p1,sTension),
+            fill:'none',stroke:'#39424a','stroke-width':5,'stroke-linejoin':'round'},g);
+          line(segC.p1,segC.p2,'#39424a',5);
+        } else {
+          // never blank the canvas -- old straight-through-centres line as a fallback
+          el('polyline',{points:[{x:f.AX.x-rg*0.5,y:f.AX.y-rg*0.87},guide,tension,
+              {x:BB.x,y:BB.y-rc}].map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
+            fill:'none',stroke:'#39424a','stroke-width':5},g);
+        }
+      }
+    }
+  }
+
+  /* ---- fork ---- */
+  function drawFork(){
+    if(showFork){
+      tubes([[crown,add(topW,mul(fu,26)),36]],'#cfd5da','#7b848c');   // exposed stanchion
+      /* Fork crown: the casting that caps the stanchions and joins them to the
+         steerer. Square ('butt'), centred on crown, in line with the
+         stanchions (drawn after, so it covers the top of the stanchion tube
+         the same way a real crown does) and a bit wider than the 36mm
+         stanchion — same colour as the lower headset block below, since both
+         are headset/crown hardware rather than a frame tube or the fork itself. */
+      tubes([[sub(crown,mul(fu,21)),add(crown,mul(fu,21)),48,'butt']],'#b9c0c6','#7b848c');
+      const fg=el('g',{transform:`matrix(${fm.map(v=>v.toFixed(6)).join(' ')})`},g);
+      el('image',{href:K.src,x:0,y:0,width:K.w,height:K.h},fg);
+    }
+  }
+
+  // cockpit: lower headset and steerer stack
+  function drawHeadsetTubes(){
+    if(showCockpit){
+      /* Lower headset: the cup + crown-race stack between the head tube and
+         where the fork's own axis takes over (F.raceSeat) — its length is
+         exactly C.hsLower, so it visibly grows and shrinks with that field the
+         same way the upper steerer stack tube already does with stemH. Same
+         colour as the fork crown block above; same head-tube diameter so it
+         reads as a continuation of the head tube, not a new tube. */
+      tubes([[F.htBot,F.raceSeat,C.htOD,'butt']],'#b9c0c6','#7b848c');
+      tubes([[F.htTop,F.steerTop,22]],'#b9c0c6','#7b848c');   // headset/steerer stack
+    }
   }
 
   /* ---- front triangle ----
@@ -1344,25 +1646,33 @@ function draw(){
      tube at a shallow angle and want the sideways forgiveness. They come after
      the head tube so their outlines still land in the same outline pass and
      leave no seam across the tube they sit on. */
-  const FT=frontTriangle(), dtU=FT.dtU;
-  const foot=mul(dtU, Math.max(60,alongOf(dtU,G.SG)));   // shock mount brace
-  const boss=mul(dtU, Math.max(50,alongOf(dtU,G.SP)));   // second pivot boss
-  tubes([[FT.dt[1],FT.dtTip,FT.dt[3],'butt'],
-         [FT.tt[1],FT.ttTip,FT.tt[3],'butt'],
-         [FT.st[1],FT.st[2],  FT.st[3],'butt'],
-         [FT.ht[1],FT.ht[2],  FT.ht[3],'butt'],
-         [foot,G.SG,26],[boss,G.SP,30]],'#ded4bd','#8a8069');
-  /* The bottom bracket shell caps the square-cut ends of the down and seat
-     tubes, which otherwise leave a notch between them where a round cap used to
-     cover. 38.1mm is the shell, and the same diameter as the down tube, so it
-     lands flush on the down tube's sides and its edge reads as the shell face
-     across the seat tube. Above the tubes, in the tube colours. */
-  const BB_SHELL=38.1;
-  el('circle',{cx:0,cy:0,r:BB_SHELL/2,    fill:'#8a8069'},g);
-  el('circle',{cx:0,cy:0,r:BB_SHELL/2-3.5,fill:'#ded4bd'},g);
-  el('circle',{cx:G.SP.x,cy:G.SP.y,r:34,fill:'#ded4bd',stroke:'#8a8069',
-    'stroke-width':7},g);
-  tubes([[seatTop,post,26]],'#b9c0c6','#7b848c');
+  function drawFrontTriangle(){
+    const FT=frontTriangle(), dtU=FT.dtU;
+    const foot=mul(dtU, Math.max(60,alongOf(dtU,G.SG)));   // shock mount brace
+    const boss=mul(dtU, Math.max(50,alongOf(dtU,G.SP)));   // second pivot boss
+    tubes([[FT.dt[1],FT.dtTip,FT.dt[3],'butt'],
+           [FT.tt[1],FT.ttTip,FT.tt[3],'butt'],
+           [FT.st[1],FT.st[2],  FT.st[3],'butt'],
+           [FT.ht[1],FT.ht[2],  FT.ht[3],'butt'],
+           [foot,G.SG,26],[boss,G.SP,30]],'#ded4bd','#8a8069');
+    /* The bottom bracket shell caps the square-cut ends of the down and seat
+       tubes, which otherwise leave a notch between them where a round cap used to
+       cover. 38.1mm is the shell, and the same diameter as the down tube, so it
+       lands flush on the down tube's sides and its edge reads as the shell face
+       across the seat tube. Above the tubes, in the tube colours. */
+    const BB_SHELL=38.1;
+    el('circle',{cx:0,cy:0,r:BB_SHELL/2,    fill:'#8a8069'},g);
+    el('circle',{cx:0,cy:0,r:BB_SHELL/2-3.5,fill:'#ded4bd'},g);
+    /* Square where it meets the frame -- a real post is a cut cylinder plunging
+       into the seat tube, not a rounded pin -- and round again at the top: 'butt'
+       squares BOTH ends of one line (stroke-linecap is one value per element), so
+       the exposed-top roundness is put back with the same two-circle cap the BB
+       shell above uses for the same problem (outline colour, then fill colour,
+       radii matching this tube's own outline/fill widths). */
+    tubes([[seatTop,post,26,'butt']],'#b9c0c6','#7b848c');
+    el('circle',{cx:post.x,cy:post.y,r:13,  fill:'#7b848c'},g);
+    el('circle',{cx:post.x,cy:post.y,r:9.5, fill:'#b9c0c6'},g);
+  }
 
   /* Stem artwork drawn after the front triangle so it sits on top of the
      frame tubes rather than being painted over by them. Source art is a
@@ -1371,78 +1681,98 @@ function draw(){
      bolts. Anchored there (steererPt) instead of the bore, oriented from
      F.axis/F.perp and rotated 180 about that anchor so the body swings out
      the correct side of the steerer. */
-  if(showCockpit){
-    const SA=STEMART, ss=SA.mmPerPx;
-    const sm=[ss*fp.x, ss*fp.y, -ss*fu.x, -ss*fu.y,
-              F.steerTop.x-(ss*SA.steererPt[0]*fp.x - ss*SA.steererPt[1]*fu.x),
-              F.steerTop.y-(ss*SA.steererPt[0]*fp.y - ss*SA.steererPt[1]*fu.y)];
-    const sg2=el('g',{transform:`matrix(${sm.map(v=>v.toFixed(6)).join(' ')})`},g);
-    el('image',{href:SA.src,x:0,y:0,width:SA.w,height:SA.h},sg2);
+  function drawStem(){
+    if(showCockpit){
+      const SA=STEMART, ss=SA.mmPerPx;
+      const sm=[ss*fp.x, ss*fp.y, -ss*fu.x, -ss*fu.y,
+                F.steerTop.x-(ss*SA.steererPt[0]*fp.x - ss*SA.steererPt[1]*fu.x),
+                F.steerTop.y-(ss*SA.steererPt[0]*fp.y - ss*SA.steererPt[1]*fu.y)];
+      const sg2=el('g',{transform:`matrix(${sm.map(v=>v.toFixed(6)).join(' ')})`},g);
+      el('image',{href:SA.src,x:0,y:0,width:SA.w,height:SA.h},sg2);
+    }
   }
 
   /* ---- rear assembly ---- */
-  const path=stayPath(f.FP,f.SE);
-  const poly=(pts,col,w)=>el('polyline',{
-      points:pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
-      fill:'none',stroke:col,'stroke-width':w,'stroke-linecap':'round',
-      'stroke-linejoin':'round'},g);
-  const yokeBack=path.pts[Math.round((path.pts.length-1)*0.86)];
-  // outline pass
-  line(G.MP,f.AX,'#134463',40);
-  poly(path.pts,'#134463',30);
-  line(f.SE,f.LP,'#134463',30); line(f.LP,yokeBack,'#134463',30);
-  // fill pass
-  line(G.MP,f.AX,'#8fb6cf',33);
-  poly(path.pts,'#8fb6cf',23);
-  line(f.SE,f.LP,'#8fb6cf',23); line(f.LP,yokeBack,'#8fb6cf',23);
+  function drawRearAssembly(){
+    const path=stayPath(f.FP,f.SE);
+    const poly=(pts,col,w)=>el('polyline',{
+        points:pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
+        fill:'none',stroke:col,'stroke-width':w,'stroke-linecap':'round',
+        'stroke-linejoin':'round'},g);
+    // outline pass
+    line(G.MP,f.AX,'#134463',40);
+    poly(path.pts,'#134463',30);
+    // fill pass
+    line(G.MP,f.AX,'#8fb6cf',33);
+    poly(path.pts,'#8fb6cf',23);
 
-  // flex zone, measured along the stay from the dropout
-  poly(polyHead(path.pts, Math.min(C.zone, path.total)),'var(--flex)',9);
+    /* Link pivot mount: a short brace perpendicular to the stay, the same idea as
+       the shock mount brace on the down tube (frontTriangle's `foot`), rather
+       than the old pair of full-width lines from SE through LP down to a point
+       partway along the stay — those ran the stay's own 30/23 alongside itself
+       for that whole stretch and tapered into it, which read as one oversized,
+       ambiguously-shaped tube instead of a stay with a small boss on it. LP is a
+       solved four-bar point, not a point on this drawn curve, so its foot is
+       the closest point on the path actually on screen — tracks the bend
+       correctly at any geometry instead of assuming LP sits near the SE end. */
+    const lpFoot=closestOnPath(path.pts,f.LP);
+    tubes([[lpFoot,f.LP,22]],'#8fb6cf','#134463');
+  }
 
   /* ---- shock link and shock ---- */
-  tubes([[G.SP,f.LP,22]],'#4bb3a6','#0b5a53');
+  function drawShock(){
+    tubes([[G.SP,f.LP,22]],'#4bb3a6','#0b5a53');
 
-  /* Shock artwork. The body and the eyelet ends keep their proportions; only the
-     spring section is stretched, so compressing the shock closes the coils up
-     rather than squashing the damper. */
-  if(showShock){
-    const sU=unit(sub(G.SG,f.SE)), sL=dist(f.SE,G.SG);
-    const A=SHOCKART, sc=A.mmPerPx;
-    const dpx=(sL-230)/sc;                       // spring section grows or shrinks
-    const mtx=[sc*sU.x, sc*sU.y, sc*sU.y, -sc*sU.x,
-               f.SE.x-sc*(A.eyeL[0]*sU.x+A.eyeL[1]*sU.y),
-               f.SE.y-sc*(A.eyeL[0]*sU.y-A.eyeL[1]*sU.x)];
-    const sg=el('g',{transform:`matrix(${mtx.map(v=>v.toFixed(6)).join(' ')})`},g);
-    const put=(p,x,y,w,h,stretch)=>el('image',{href:p.src,x:x,y:y,width:w,height:h,
-        ...(stretch?{preserveAspectRatio:'none'}:{})},sg);
-    const springW=Math.max(24,A.spring.w+dpx);
-    put(A.tail,   A.tail.x, 0, A.tail.w, A.h);
-    put(A.spring, A.spring.x, A.yBand, springW, A.spring.h, true);
-    put(A.resv,   A.resv.x+dpx, 0, A.resv.w, A.resv.h);   // rides with the body
-    put(A.body,   A.body.x+dpx, 0, A.body.w, A.h);
+    /* Shock artwork. The body and the eyelet ends keep their proportions; only the
+       spring section is stretched, so compressing the shock closes the coils up
+       rather than squashing the damper. */
+    if(showShock){
+      const sU=unit(sub(G.SG,f.SE)), sL=dist(f.SE,G.SG);
+      const A=SHOCKART, sc=A.mmPerPx;
+      const dpx=(sL-230)/sc;                       // spring section grows or shrinks
+      const mtx=[sc*sU.x, sc*sU.y, sc*sU.y, -sc*sU.x,
+                 f.SE.x-sc*(A.eyeL[0]*sU.x+A.eyeL[1]*sU.y),
+                 f.SE.y-sc*(A.eyeL[0]*sU.y-A.eyeL[1]*sU.x)];
+      const sg=el('g',{transform:`matrix(${mtx.map(v=>v.toFixed(6)).join(' ')})`},g);
+      const put=(p,x,y,w,h,stretch)=>el('image',{href:p.src,x:x,y:y,width:w,height:h,
+          ...(stretch?{preserveAspectRatio:'none'}:{})},sg);
+      const springW=Math.max(24,A.spring.w+dpx);
+      put(A.tail,   A.tail.x, 0, A.tail.w, A.h);
+      put(A.spring, A.spring.x, A.yBand, springW, A.spring.h, true);
+      put(A.resv,   A.resv.x+dpx, 0, A.resv.w, A.resv.h);   // rides with the body
+      put(A.body,   A.body.x+dpx, 0, A.body.w, A.h);
+    }
   }
 
   /* ---- rear derailleur, carried on the dropout ---- */
-  if(showDrivetrain){
-    if(route) drawTop();                                 // see drawTop: idler runs go on top
-    tubes([[f.AX,guide,15]],'#6b747c','#39424a');        // b-knuckle and body
-    tubes([[guide,tension,30]],'#4a5158','#2a3138');     // cage
-    ring(guide,RJ,'#b6bec5',7); ring(tension,RJ,'#b6bec5',7);
-    el('circle',{cx:guide.x,cy:guide.y,r:4,fill:'#2a3138'},g);
-    el('circle',{cx:tension.x,cy:tension.y,r:4,fill:'#2a3138'},g);
+  function drawRearDerailleur(){
+    if(showDrivetrain){
+      if(route) drawTop();                                 // see drawTop: idler runs go on top
+      tubes([[f.AX,guide,15]],'#6b747c','#39424a');        // b-knuckle and body
+      tubes([[guide,tension,30]],'#4a5158','#2a3138');     // cage
+      // The two jockey wheels -- real artwork, not procedural rings. Isotropic
+      // like the wheels, so only position moves (guide/tension as the cage
+      // swings); nothing here models the pulleys' own spin.
+      const jockeyArt=isotropicArt(JOCKEYART);
+      jockeyArt(guide,RJ); jockeyArt(tension,RJ);
+    }
   }
 
   /* ---- axle path ----
      It runs up out of the flex pivot, right along the seat stay and over the
      spokes, so on its own it was a thin dark line lost against a fat one of the
      same colour. A pale casing under a contrasting dash keeps it readable
-     whatever it crosses. */
-  if(showPath && result.frames.length>1){
-    const pts=result.frames.map(k=>`${k.AX.x.toFixed(1)},${k.AX.y.toFixed(1)}`).join(' ');
-    el('polyline',{points:pts,fill:'none',stroke:'#fff','stroke-width':9,
-      'stroke-linecap':'round',opacity:.85,'pointer-events':'none'},g);
-    el('polyline',{points:pts,fill:'none',stroke:'#c026a3','stroke-width':4,
-      'stroke-dasharray':'9 7','stroke-linecap':'round','pointer-events':'none'},g);
+     whatever it crosses. The front axle gets the same idea, but on its own
+     chart in the strip carousel (see chartAxlePath) rather than here — this
+     overlay stays rear-only, on the geometry actually being edited. */
+  function drawAxleTrail(){
+    if(showPath && result.frames.length>1){
+      const pts=result.frames.map(k=>`${k.AX.x.toFixed(1)},${k.AX.y.toFixed(1)}`).join(' ');
+      el('polyline',{points:pts,fill:'none',stroke:'#fff','stroke-width':9,
+        'stroke-linecap':'round',opacity:.85,'pointer-events':'none'},g);
+      el('polyline',{points:pts,fill:'none',stroke:'#c026a3','stroke-width':4,
+        'stroke-dasharray':'9 7','stroke-linecap':'round','pointer-events':'none'},g);
+    }
   }
 
   /* Saddle is set level regardless of seat-tube angle, like a real one --
@@ -1452,12 +1782,25 @@ function draw(){
      is negated (rail sits below the anchor rather than pixel-down reading
      as model-up). The x axis is left unmirrored so the nose points -x
      (toward the rear). */
-  if(showSaddle){
-    const SD=SADDLEART, sds=SD.mmPerPx;
-    const sdNudge=0.15*SD.w*sds;          // sits 15% of its own width forward of the post
-    const sdm=[sds,0,0,-sds, post.x-sds*SD.mount[0]+sdNudge, post.y+sds*SD.mount[1]];
-    const sdg=el('g',{transform:`matrix(${sdm.map(v=>v.toFixed(6)).join(' ')})`},g);
-    el('image',{href:SD.src,x:0,y:0,width:SD.w,height:SD.h},sdg);
+  function drawSaddle(){
+    if(showSaddle){
+      const SD=SADDLEART, sds=SD.mmPerPx;
+      const sdNudge=0.15*SD.w*sds;          // sits 15% of its own width forward of the post
+      const sdm=[sds,0,0,-sds, post.x-sds*SD.mount[0]+sdNudge, post.y+sds*SD.mount[1]];
+      const sdg=el('g',{transform:`matrix(${sdm.map(v=>v.toFixed(6)).join(' ')})`},g);
+      el('image',{href:SD.src,x:0,y:0,width:SD.w,height:SD.h},sdg);
+    }
+  }
+
+  /* ---- visible (drive-side) crank arm ----
+     Drawn last, after the saddle, so it sits on top of everything -- same
+     precedent the saddle itself is drawn on. */
+  function drawVisibleCrank(){
+    if(showCranks){
+      const pedal=crankPedal(1);
+      line(BB, pedal, CRANK_COL, 42);
+      el('circle',{cx:0,cy:0,r:12,fill:'#cfd5da'},g); // BB axle, 24mm dia., concentric with BB
+    }
   }
 
   /* ---- anti-squat and anti-rise construction ----
@@ -1466,127 +1809,133 @@ function draw(){
      the front axle, is the anti-squat height. Anti-rise drops the chain out of it
      and runs straight from the contact patch to the instant centre. Both are
      percentages of the centre of mass height, so the 100% mark is drawn too. */
-  if(showLines() && f.CP){
-    const lg=el('g',{'pointer-events':'none'},g);
-    const ln=(a,b,col,w,dash)=>el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:col,
-      'stroke-width':w,...(dash?{'stroke-dasharray':dash}:{})},lg);
-    const fax=C.fax, cog=ground+C.cogh;
-    const thin=Math.max(1.2,1.6*mmPerPx), thick=Math.max(2,2.6*mmPerPx);
-    const top=Math.max(cog, showAS&&f.asH!=null?f.asH:cog, showAR&&f.arH!=null?f.arH:cog);
-    // the front axle vertical everything is read against, and the 100% mark
-    ln({x:fax,y:ground},{x:fax,y:top+60},'#9aa5ad',thin,'10 8');
-    ln({x:fax-46,y:cog},{x:fax+46,y:cog},'#5c6b78',thick);
-    // the chain run and the swingarm line only matter to anti-squat
-    if(showAS && f.ifc){
-      ln(f.CP,f.ifc,'#c9ccd1',thin,'6 6');
-      ln(f.AX,f.ifc,'#c9ccd1',thin,'6 6');
-      el('circle',{cx:f.ifc.x,cy:f.ifc.y,r:Math.max(4,5*mmPerPx),fill:'#8a939b'},lg);
+  function drawASARConstruction(){
+    if(showLines() && f.CP){
+      const lg=el('g',{'pointer-events':'none'},g);
+      const ln=(a,b,col,w,dash)=>el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:col,
+        'stroke-width':w,...(dash?{'stroke-dasharray':dash}:{})},lg);
+      const fax=C.fax, cog=ground+C.cogh;
+      const thin=Math.max(1.2,1.6*mmPerPx), thick=Math.max(2,2.6*mmPerPx);
+      const top=Math.max(cog, showAS&&f.asH!=null?f.asH:cog, showAR&&f.arH!=null?f.arH:cog);
+      // the front axle vertical everything is read against, and the 100% mark
+      ln({x:fax,y:ground},{x:fax,y:top+60},'#9aa5ad',thin,'10 8');
+      ln({x:fax-46,y:cog},{x:fax+46,y:cog},'#5c6b78',thick);
+      // the chain run and the swingarm line only matter to anti-squat
+      if(showAS && f.ifc){
+        ln(f.CP,f.ifc,'#c9ccd1',thin,'6 6');
+        ln(f.AX,f.ifc,'#c9ccd1',thin,'6 6');
+        el('circle',{cx:f.ifc.x,cy:f.ifc.y,r:Math.max(4,5*mmPerPx),fill:'#8a939b'},lg);
+      }
+      if(showAS && f.asH!=null) ln(f.CP,{x:fax,y:f.asH},'var(--rear)',thick);
+      if(showAR && f.arH!=null) ln(f.CP,{x:fax,y:f.arH},'var(--shock)',thick);
+      el('circle',{cx:f.CP.x,cy:f.CP.y,r:Math.max(4,5*mmPerPx),fill:'#39424a'},lg);
+      // the drawing group is y-flipped, so each label carries its own flip back
+      const tag=(x,y,txt,col)=>{
+        const t=el('text',{x:0,y:0,'font-size':Math.max(11,13*mmPerPx),fill:col,
+          'font-weight':600},el('g',{transform:`translate(${x} ${y}) scale(1,-1)`},lg));
+        t.textContent=txt;
+      };
+      /* The framing is fixed, so a ray can leave the top of the view. Keep the
+         labels inside rather than zooming out to chase them, and stack them so two
+         clamped to the same ceiling do not land on top of each other. */
+      const pad=26*mmPerPx, lineH=19*mmPerPx;
+      const lo=VIEW.y0+30*mmPerPx, hi=VIEW.y0+VIEW.h-30*mmPerPx;
+      const labels=[];
+      if(showAS && f.as!=null)
+        labels.push([f.asH,'anti-squat '+f.as.toFixed(0)+'%','var(--rear)']);
+      if(showAR && f.ar!=null)
+        labels.push([f.arH,'anti-rise '+f.ar.toFixed(0)+'%','var(--shock)']);
+      labels.push([cog,'100% of CoG height','#5c6b78']);
+      labels.sort((a,b)=>b[0]-a[0]);                 // highest first, then downwards
+      let prev=Infinity;
+      labels.forEach(([y,txt,col])=>{
+        const at=Math.max(lo, Math.min(Math.min(hi,y), prev-lineH));
+        prev=at; tag(fax+pad, at, txt, col);
+      });
     }
-    if(showAS && f.asH!=null) ln(f.CP,{x:fax,y:f.asH},'var(--rear)',thick);
-    if(showAR && f.arH!=null) ln(f.CP,{x:fax,y:f.arH},'var(--shock)',thick);
-    el('circle',{cx:f.CP.x,cy:f.CP.y,r:Math.max(4,5*mmPerPx),fill:'#39424a'},lg);
-    // the drawing group is y-flipped, so each label carries its own flip back
-    const tag=(x,y,txt,col)=>{
-      const t=el('text',{x:0,y:0,'font-size':Math.max(11,13*mmPerPx),fill:col,
-        'font-weight':600},el('g',{transform:`translate(${x} ${y}) scale(1,-1)`},lg));
-      t.textContent=txt;
-    };
-    /* The framing is fixed, so a ray can leave the top of the view. Keep the
-       labels inside rather than zooming out to chase them, and stack them so two
-       clamped to the same ceiling do not land on top of each other. */
-    const pad=26*mmPerPx, lineH=19*mmPerPx;
-    const lo=VIEW.y0+30*mmPerPx, hi=VIEW.y0+VIEW.h-30*mmPerPx;
-    const labels=[];
-    if(showAS && f.as!=null)
-      labels.push([f.asH,'anti-squat '+f.as.toFixed(0)+'%','var(--rear)']);
-    if(showAR && f.ar!=null)
-      labels.push([f.arH,'anti-rise '+f.ar.toFixed(0)+'%','var(--shock)']);
-    labels.push([cog,'100% of CoG height','#5c6b78']);
-    labels.sort((a,b)=>b[0]-a[0]);                 // highest first, then downwards
-    let prev=Infinity;
-    labels.forEach(([y,txt,col])=>{
-      const at=Math.max(lo, Math.min(Math.min(hi,y), prev-lineH));
-      prev=at; tag(fax+pad, at, txt, col);
-    });
   }
 
   /* ---- pivots ----
      The marker keeps its drawn size. Only the invisible grab target scales, up
      to a comfortable HIT_PX radius on screen — but never so far that it covers
      the pivot next door, or zoomed out you would grab the wrong one. */
-  const HIT_PX=18;
-  const top = !result.frames.length || f===result.frames[0];
-  const locked=C.idlerOn&&C.idlerLock;
-  const marks=[[G.MP,'var(--rear)','MP'],[G.SP,'var(--link)','SP'],[G.SG,'var(--shock)','SG'],
-               [f.LP,'var(--link)',top?'LP':null],[f.SE,'var(--shock)',top?'SE':null],
-               [f.AX,'var(--rear)',top?'AX':null]];
-  /* G.ID holds the top-out position, so a swingarm idler is only grabbable at top
-     out — dragging the rotated marker would write rotated coordinates back. Bolted
-     to the frame it never moves, so it is always grabbable. */
-  // locked they are one point, so it gets one marker — the main pivot's, since
-  // that is the one that stays put and the idler is only along for the ride
-  if(IDp&&!locked) marks.push([IDp,'var(--ok)',(C.idlerMount&&!top)?null:'ID']);
-  const ghosts = top?[] : [['LP','var(--link)'],['SE','var(--shock)'],['AX','var(--rear)']];
-  if(IDp&&C.idlerMount&&!top) ghosts.push(['ID','var(--ok)']);
-  const grabPts=[...marks.filter(m=>m[2]).map(m=>m[0]), ...ghosts.map(([k])=>G[k])];
-  // Each target is capped at half the gap to its own nearest neighbour, so a
-  // crowded pair like the shock eye and the link stays tight while everything
-  // else gets the full fat target. Centres are never covered either way.
-  const hitFor=p=>{
-    let nearest=Infinity;
-    for(const q of grabPts){
-      const d=dist(p,q);
-      if(d>1e-6 && d<nearest) nearest=d;      // coincident points cannot be told apart anyway
-    }
-    return Math.max(14, Math.min(HIT_PX*mmPerPx, nearest*0.5));
-  };
-  const grab=(p,key)=>{
-    const c=el('circle',{cx:p.x,cy:p.y,r:hitFor(p),fill:'transparent',class:'drag'},g);
-    c.dataset.key=key; return c;
-  };
-  marks.forEach(([p,col,key])=>{
-    el('circle',{cx:p.x,cy:p.y,r:14,fill:'#fff',stroke:col,'stroke-width':5,
-      'pointer-events':'none'},g);
-    el('circle',{cx:p.x,cy:p.y,r:5,fill:col,'pointer-events':'none'},g);
-    if(key) grab(p,key);
-  });
-  // off top-out the live points are driven by the solver, so the ghost at the
-  // un-compressed position is what you grab to move them
-  ghosts.forEach(([k,col])=>{
-    el('circle',{cx:G[k].x,cy:G[k].y,r:14,fill:'none',stroke:col,
-      'stroke-width':3,'stroke-dasharray':'6 5',opacity:.8,
-      'pointer-events':'none'},g);
-    grab(G[k],k);
-  });
+  function drawPivots(){
+    const HIT_PX=18;
+    const top = !result.frames.length || f===result.frames[0];
+    const locked=C.idlerOn&&C.idlerLock;
+    const marks=[[G.MP,'var(--rear)','MP'],[G.SP,'var(--link)','SP'],[G.SG,'var(--shock)','SG'],
+                 [f.LP,'var(--link)',top?'LP':null],[f.SE,'var(--shock)',top?'SE':null],
+                 [f.AX,'var(--rear)',top?'AX':null]];
+    /* G.ID holds the top-out position, so a swingarm idler is only grabbable at top
+       out — dragging the rotated marker would write rotated coordinates back. Bolted
+       to the frame it never moves, so it is always grabbable. */
+    // locked they are one point, so it gets one marker — the main pivot's, since
+    // that is the one that stays put and the idler is only along for the ride
+    if(IDp&&!locked) marks.push([IDp,'var(--ok)',(C.idlerMount&&!top)?null:'ID']);
+    const ghosts = top?[] : [['LP','var(--link)'],['SE','var(--shock)'],['AX','var(--rear)']];
+    if(IDp&&C.idlerMount&&!top) ghosts.push(['ID','var(--ok)']);
+    const grabPts=[...marks.filter(m=>m[2]).map(m=>m[0]), ...ghosts.map(([k])=>G[k])];
+    // Each target is capped at half the gap to its own nearest neighbour, so a
+    // crowded pair like the shock eye and the link stays tight while everything
+    // else gets the full fat target. Centres are never covered either way.
+    const hitFor=p=>{
+      let nearest=Infinity;
+      for(const q of grabPts){
+        const d=dist(p,q);
+        if(d>1e-6 && d<nearest) nearest=d;      // coincident points cannot be told apart anyway
+      }
+      return Math.max(14, Math.min(HIT_PX*mmPerPx, nearest*0.5));
+    };
+    const grab=(p,key)=>{
+      const c=el('circle',{cx:p.x,cy:p.y,r:hitFor(p),fill:'transparent',class:'drag'},g);
+      c.dataset.key=key; return c;
+    };
+    marks.forEach(([p,col,key])=>{
+      el('circle',{cx:p.x,cy:p.y,r:14,fill:'#fff',stroke:col,'stroke-width':5,
+        'pointer-events':'none'},g);
+      el('circle',{cx:p.x,cy:p.y,r:5,fill:col,'pointer-events':'none'},g);
+      if(key) grab(p,key);
+    });
+    // off top-out the live points are driven by the solver, so the ghost at the
+    // un-compressed position is what you grab to move them
+    ghosts.forEach(([k,col])=>{
+      el('circle',{cx:G[k].x,cy:G[k].y,r:14,fill:'none',stroke:col,
+        'stroke-width':3,'stroke-dasharray':'6 5',opacity:.8,
+        'pointer-events':'none'},g);
+      grab(G[k],k);
+    });
+  }
 
   /* ---- force vectors ----
      Resolved for the frame being drawn, so they grow, shrink and swing round as
      the suspension cycles. Fixed scale in mm per newton, so the lengths stay
      comparable between positions instead of being renormalised each frame. */
-  if(showForces){
-    const Fw=C.mass*9.81*C.bias/100;
-    const P=pivotForces(G,f,Fw);
-    if(P){
-      const FSCALE=0.22;                       // 1 kN reads as 220 mm on the drawing
-      const arrow=(p,v,col)=>{
-        const m=Math.hypot(v.x,v.y);
-        if(!(m>1)) return;
-        const L=m*FSCALE;
-        const u={x:v.x/m,y:v.y/m}, nrm={x:-u.y,y:u.x};
-        const head=Math.min(L*0.42, Math.max(16,11*mmPerPx));
-        const tip=add(p,mul(u,L)), base=sub(tip,mul(u,head));
-        el('line',{x1:p.x,y1:p.y,x2:base.x,y2:base.y,stroke:col,
-          'stroke-width':Math.max(2.5,3.2*mmPerPx),'stroke-linecap':'round',
-          'pointer-events':'none'},g);
-        el('polygon',{points:[tip,add(base,mul(nrm,head*0.44)),sub(base,mul(nrm,head*0.44))]
-            .map(q=>`${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(' '),
-          fill:col,'pointer-events':'none'},g);
-      };
-      arrow(f.CP,{x:0,y:Fw},'#2f6f3e');          // ground reaction under the tyre
-      arrow(G.MP,P.vec.main, 'var(--rear)');
-      arrow(f.FP,P.vec.flex, 'var(--flex)');
-      arrow(f.SE,P.vec.shock,'var(--shock)');
-      arrow(f.LP,P.vec.link, 'var(--link)');
+  function drawForceVectors(){
+    if(showForces){
+      const Fw=sprungLoad();
+      const P=pivotForces(G,f,Fw);
+      if(P){
+        const FSCALE=0.22;                       // 1 kN reads as 220 mm on the drawing
+        const arrow=(p,v,col)=>{
+          const m=Math.hypot(v.x,v.y);
+          if(!(m>1)) return;
+          const L=m*FSCALE;
+          const u={x:v.x/m,y:v.y/m}, nrm={x:-u.y,y:u.x};
+          const head=Math.min(L*0.42, Math.max(16,11*mmPerPx));
+          const tip=add(p,mul(u,L)), base=sub(tip,mul(u,head));
+          el('line',{x1:p.x,y1:p.y,x2:base.x,y2:base.y,stroke:col,
+            'stroke-width':Math.max(2.5,3.2*mmPerPx),'stroke-linecap':'round',
+            'pointer-events':'none'},g);
+          el('polygon',{points:[tip,add(base,mul(nrm,head*0.44)),sub(base,mul(nrm,head*0.44))]
+              .map(q=>`${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(' '),
+            fill:col,'pointer-events':'none'},g);
+        };
+        arrow(f.CP,{x:0,y:Fw},'#2f6f3e');          // ground reaction under the tyre
+        arrow(G.MP,P.vec.main, 'var(--rear)');
+        arrow(f.FP,P.vec.flex, 'var(--flex)');
+        arrow(f.SE,P.vec.shock,'var(--shock)');
+        arrow(f.LP,P.vec.link, 'var(--link)');
+      }
     }
   }
 }
@@ -1602,6 +1951,7 @@ function initDrag(){
     // closest() so the hit target still works if a decoration ends up on top
     const hit=e.target.closest&&e.target.closest('.drag');
     const k=hit&&hit.dataset.key;
+    if(k && ptLocked[k]) return;             // locked: not pannable either, just inert
     if(!k){                                  // empty canvas: drag to pan
       panFrom=toMM(e,svg); svg.setPointerCapture(e.pointerId);
       svg.classList.add('panning'); e.preventDefault(); return;
@@ -1624,13 +1974,53 @@ function initDrag(){
     if(C.idlerOn&&C.idlerLock&&(dragKey==='MP'||dragKey==='ID')){
       G.MP={...G[dragKey]}; G.ID={...G[dragKey]};
     }
-    // with the lock on, the far eye follows so the shock keeps its eye to eye
+    // with the lock on, the far eye follows so the shock keeps its eye to eye.
+    // When the mount is ALSO locked to the down tube (sgLock), doing that
+    // independently is wrong: recompute()'s mount-lock glue runs moments later
+    // on the same frame and unconditionally snaps G.SG back onto the tube at
+    // the fixed standoff, discarding whatever this block just computed -- the
+    // eye-to-eye length that comes out the other side is whatever falls out
+    // of that snap, not C.eye. Solve the two constraints jointly instead, so
+    // that later snap becomes a no-op confirmation rather than a clobber.
     if(lockLen && (dragKey==='SE'||dragKey==='SG')){
-      const far = dragKey==='SE' ? 'SG' : 'SE';
-      const d=sub(G[far],G[dragKey]);
-      if(len(d)>1e-6){
-        const q=add(G[dragKey], mul(unit(d), C.eye));
-        G[far]={x:Math.round(q.x*10)/10, y:Math.round(q.y*10)/10};
+      if(C.sgLock){
+        const dtU=frontTriangle().dtU;
+        if(dragKey==='SG'){
+          // dragging the mount can only ever slide it along the tube -- match
+          // what recompute() is about to do to it, then hold the eye length
+          // off THAT, not off the raw off-tube drop point.
+          G.SG=onTube(dtU, alongOf(dtU,G.SG), C.sgStand);
+          const d=sub(G.SE,G.SG);
+          if(len(d)>1e-6){
+            const q=add(G.SG, mul(unit(d), C.eye));
+            G.SE={x:Math.round(q.x*10)/10, y:Math.round(q.y*10)/10};
+          }
+        } else {
+          // dragging the eye: SG has exactly one degree of freedom left --
+          // where along the tube -- so intersect the tube's offset line with
+          // the circle of radius C.eye around the new SE, instead of moving
+          // SG somewhere recompute() will not honour.
+          const base=onTube(dtU,0,C.sgStand), w=sub(base,G.SE);
+          const b=2*alongOf(dtU,w), c=alongOf(w,w)-C.eye*C.eye, disc=b*b-4*c;
+          if(disc>=0){
+            const s=Math.sqrt(disc), t1=(-b+s)/2, t2=(-b-s)/2;
+            const p1=onTube(dtU,t1,C.sgStand), p2=onTube(dtU,t2,C.sgStand);
+            const p=dist(p1,G.SG)<=dist(p2,G.SG) ? p1 : p2;  // nearer root: no side-flip mid-drag
+            G.SG={x:Math.round(p.x*10)/10, y:Math.round(p.y*10)/10};
+          }
+          // else: the eye can't reach the tube from here -- leave SG put
+          // rather than guess; recompute() still holds it on the tube, just
+          // not yet at the requested length, until the drag comes back in range.
+        }
+      } else {
+        // unchanged: SG isn't tube-locked, so there's nothing for this to
+        // fight, and the original reposition-along-current-direction is correct.
+        const far = dragKey==='SE' ? 'SG' : 'SE';
+        const d=sub(G[far],G[dragKey]);
+        if(len(d)>1e-6){
+          const q=add(G[dragKey], mul(unit(d), C.eye));
+          G[far]={x:Math.round(q.x*10)/10, y:Math.round(q.y*10)/10};
+        }
       }
     }
     // The rear axle is derived from rear centre and bottom bracket height, so a
@@ -1645,7 +2035,7 @@ function initDrag(){
     }
     if(dragRaf) return;                    // at most one solve per frame
     dragRaf=requestAnimationFrame(()=>{
-      dragRaf=null; fillPoints(); recompute(true); syncPos();
+      dragRaf=null; fillPoints(); recompute(true);   // recompute() itself calls syncPos()
     });
   });
   const stop=()=>{
@@ -1653,7 +2043,7 @@ function initDrag(){
     if(!dragKey) return;
     dragKey=null;
     if(dragRaf){cancelAnimationFrame(dragRaf);dragRaf=null}
-    fillPoints(); recompute(false); syncPos();   // full resolution on release
+    fillPoints(); recompute(false);   // full resolution on release
   };
   svg.addEventListener('pointerup',stop);
   svg.addEventListener('pointercancel',stop);
@@ -1714,6 +2104,9 @@ function readouts(){
   const lrTop=lrs[0], lrBot=lrs[lrs.length-1];
   const prog=(lrTop-lrBot)/lrBot*100;
   const eyeNow=dist(G.SE,G.SG);
+  // where the bike actually sits, and what it's carrying there -- shared by
+  // the stay stress, spring rate and pivot-force panels below
+  const sagFr=sagFrame(f), W=sprungLoad();
   R('out-rate').innerHTML=
     row('Wheel travel', travel.toFixed(1)+' mm')+
     row('Leverage, top out', lrTop.toFixed(2))+
@@ -1731,11 +2124,9 @@ function readouts(){
   const fl=f.map(k=>k.flex);
   const peak=fl.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a,0);
   const stayGeo=stayPath(G.FP,G.SE);
-  const Wsag=C.mass*9.81*C.bias/100;
-  const sagFrame=at(f,C.sag/100);
   const stayU=unit(sub(G.SE,G.AX));
   const axialAt=mult=>{
-    const P=pivotForces(G,sagFrame,Wsag*mult);
+    const P=pivotForces(G,sagFr,W*mult);
     if(!P) return 0;
     return -(P.fp.x*stayU.x+P.fp.y*stayU.y)/2;      // per stay, compression positive
   };
@@ -1767,22 +2158,23 @@ function readouts(){
     row('Anti-rise at sag', pick(f,'ar').toFixed(0)+' %')+
     row('Rearward at full travel', (first.AX.x-last.AX.x).toFixed(1)+' mm')+
     row('Peak rearward', (first.AX.x-Math.min(...xs)).toFixed(1)+' mm')+
-    row('Chain shortening', (last.kick??0).toFixed(1)+'°')+
+    row('Pedal kickback', (last.kick??0).toFixed(1)+'°')+
     row('Mech cage swing', (first.cageDeg-last.cageDeg).toFixed(1)+'°',
         f.some(k=>k.cageClamp)?'warn':'');
 
-  const sagF=at(f,C.sag/100);
-  const W=C.mass*9.81*C.bias/100;
-  const lrSag=sagF.lr||lrTop;
+  const lrSag=sagFr.lr||lrTop;
   const Fs=W*lrSag;
-  const rate=Fs/sagF.stroke;                    // N/mm, linear coil, no preload
+  // At 0% sag the shock hasn't moved yet, so N/mm of a zero-length stroke is
+  // not a real rate -- report it as unavailable rather than Infinity.
+  const rate=sagFr.stroke>1e-6 ? Fs/sagFr.stroke : null;
   R('out-spring').innerHTML=
     row('Sprung load on rear', W.toFixed(0)+' N')+
     row('Leverage at sag', lrSag.toFixed(2))+
     row('Shock force at sag', Fs.toFixed(0)+' N')+
-    row('Coil rate', rate.toFixed(1)+' N/mm · '+(rate*5.7101).toFixed(0)+' lb/in');
+    row('Coil rate', rate===null ? '—' :
+        rate.toFixed(1)+' N/mm · '+(rate*5.7101).toFixed(0)+' lb/in');
 
-  const P2=pivotForces(G,sagF,W);
+  const P2=pivotForces(G,sagFr,W);
   R('out-force').innerHTML = P2 ?
     row('Main pivot', (P2.mainPivot/1000).toFixed(2)+' kN')+
     row('Flex pivot', (P2.flexPivot/1000).toFixed(2)+' kN')+
@@ -1791,7 +2183,13 @@ function readouts(){
     : row('Solver','no solution','warn');
 }
 function at(f,t){return f[Math.min(f.length-1,Math.max(0,Math.round(t*(f.length-1))))]}
-function pick(f,k){const v=at(f,C.sag/100)[k];return v===null||v===undefined?0:v}
+// the frame at the sag position -- `at(f,C.sag/100)`, used everywhere a
+// readout or a chart marks "where the bike actually sits"
+function sagFrame(f){return at(f,C.sag/100)}
+function pick(f,k){const v=sagFrame(f)[k];return v===null||v===undefined?0:v}
+// static rear-wheel share of rider+kit weight, in newtons -- what the shock,
+// the pivots and the stay's axial load are all ultimately reacting against
+function sprungLoad(){return C.mass*9.81*C.bias/100}
 
 /* ---------- charts ----------
    One at a time, full strip width, paged by the arrows. The viewBox is rebuilt
@@ -1802,7 +2200,8 @@ const CHART_VIEWS=[
   {key:'lr',   title:'Leverage ratio',        dec:2},
   {key:'as',   title:'Anti-squat, %',         dec:0},
   {key:'ar',   title:'Anti-rise, %',          dec:0},
-  {key:'kick', title:'Chain shortening, deg', dec:1}
+  {key:'kick', title:'Pedal kickback, deg', dec:1},
+  {key:'axlepath', title:'Axle paths from top-out, mm', dec:0, type:'xy'}
 ];
 let chartPage=0;
 
@@ -1818,9 +2217,10 @@ function niceAxis(lo,hi,want){
 }
 
 function chart(id,spec){
+  if(spec.type==='xy'){ chartAxlePath(id); return; }
   const svg=document.getElementById(id);
   svg.innerHTML='';
-  const r=svg.getBoundingClientRect();
+  const r=chartsRectCache||(chartsRectCache=svg.getBoundingClientRect());
   const W=Math.max(180,Math.round(r.width)), H=Math.max(120,Math.round(r.height));
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   if(!result||!result.frames.length) return;
@@ -1855,13 +2255,94 @@ function chart(id,spec){
   });
   el('polyline',{points:f.map(k=>`${X(k.rise)},${Y(k[key])}`).join(' '),
     fill:'none',stroke:'var(--rear)','stroke-width':2.4,'stroke-linejoin':'round'},gg);
-  const s=at(result.frames,C.sag/100);
+  const s=sagFrame(result.frames);
   if(s[key]!==null&&s[key]!==undefined)
     el('circle',{cx:X(s.rise),cy:Y(s[key]),r:4.5,fill:'var(--flex)'},gg);
   const cur=currentFrame();
   if(cur&&cur[key]!==null&&cur[key]!==undefined)
     el('line',{x1:X(cur.rise),y1:T-8,x2:X(cur.rise),y2:H-B,stroke:'var(--ink-soft)',
       'stroke-width':1.2,'stroke-dasharray':'3 3'},gg);
+}
+
+/* Rear and front axle paths, side by side on one plot instead of the overlay
+   on the main drawing (which stays rear-only, on the geometry actually being
+   edited). The fork has no rear-linkage kinematics of its own, so its path is
+   built the same way the main drawing already poses the fork on screen when
+   not holding sag — the same fraction of fork travel as each rear-sweep frame
+   is through its own stroke — just run across the whole sweep instead of one
+   frame.
+
+   Unlike every other strip chart, both axes here are the same quantity (mm of
+   axle position), so they share one scale: stretching x against y would bend
+   a path that is, physically, a specific shape. mm-per-px is picked once, from
+   whichever axis is tighter for the combined bounding box of both paths, and
+   the plot is centred in the space that leaves. */
+function chartAxlePath(id){
+  const svg=document.getElementById(id);
+  svg.innerHTML='';
+  const r=chartsRectCache||(chartsRectCache=svg.getBoundingClientRect());
+  const W=Math.max(180,Math.round(r.width)), H=Math.max(120,Math.round(r.height));
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  if(!result||!result.frames.length) return;
+  const n=result.frames.length;
+  if(n<2) return;
+  const rear=result.frames.map(f=>f.AX);
+  const front=result.frames.map((f,i)=>frame(C.forkTravel*i/(n-1)).FA);
+  /* Magnified axle path: each series plotted relative to ITS OWN top-out
+     position, not the frame's real coordinates. On the real frame the two
+     start points are a wheelbase apart, which is a fact about the bike, not
+     about the shape of either curve — the only thing worth comparing here —
+     so both origins are moved to (0,0) and the two curves land on top of one
+     another the way the reference chart does it. That also means the data
+     to scale to is now just these two small curves rather than a wheelbase,
+     so the same fit-to-box logic below fills the window with them instead of
+     leaving them as two specks either side of a mostly empty plot. */
+  const rear0=rear[0], front0=front[0];
+  const rel=(pts,o)=>pts.map(p=>({x:p.x-o.x,y:p.y-o.y}));
+  const rearR=rel(rear,rear0), frontR=rel(front,front0);
+  const L=50,B=30,T=24,Rp=16;
+  const pts=[...rearR,...frontR];
+  const xr0=Math.min(...pts.map(p=>p.x)), xr1=Math.max(...pts.map(p=>p.x));
+  const yr0=Math.min(...pts.map(p=>p.y)), yr1=Math.max(...pts.map(p=>p.y));
+  const pad=Math.max(xr1-xr0,yr1-yr0,1e-6)*0.08;
+  const x0=xr0-pad, x1=xr1+pad, y0=yr0-pad, y1=yr1+pad;
+  const availW=W-L-Rp, availH=H-B-T;
+  const scale=Math.min(availW/(x1-x0), availH/(y1-y0));
+  const cx=(x0+x1)/2, cy=(y0+y1)/2, midX=L+availW/2, midY=T+availH/2;
+  const X=v=>midX+(v-cx)*scale;
+  const Y=v=>midY-(v-cy)*scale;                    // y-up data, y-down screen
+  const gg=el('g',{},svg);
+  // One shared step for both axes, so the grid reads as a single mm scale
+  // rather than two independent ones that happen to share a plot.
+  const ax=niceAxis(Math.min(x0,y0),Math.max(x1,y1),H>240?5:4);
+  for(let v=Math.ceil(x0/ax.step)*ax.step; v<=x1; v+=ax.step){
+    el('line',{x1:X(v),y1:T,x2:X(v),y2:T+availH,stroke:'var(--grid2)','stroke-width':.8},gg);
+    el('text',{x:X(v),y:T+availH+16,'text-anchor':'middle','font-size':11,
+      fill:'var(--ink-soft)'},gg).textContent=v.toFixed(0);
+  }
+  for(let v=Math.ceil(y0/ax.step)*ax.step; v<=y1; v+=ax.step){
+    el('line',{x1:L,y1:Y(v),x2:L+availW,y2:Y(v),stroke:'var(--grid2)','stroke-width':.8},gg);
+    el('text',{x:L-6,y:Y(v)+4,'text-anchor':'end','font-size':11,
+      fill:'var(--ink-soft)'},gg).textContent=v.toFixed(0);
+  }
+  const path=arr=>arr.map(p=>`${X(p.x)},${Y(p.y)}`).join(' ');
+  el('polyline',{points:path(rearR),fill:'none',stroke:'var(--rear)','stroke-width':2.4,
+    'stroke-linejoin':'round'},gg);
+  el('polyline',{points:path(frontR),fill:'none',stroke:'var(--front)','stroke-width':2.4,
+    'stroke-linejoin':'round'},gg);
+  // the shared top-out origin both curves now start from
+  el('circle',{cx:X(0),cy:Y(0),r:3,fill:'var(--ink-soft)'},gg);
+  // sag markers, the same accent every other chart uses for the current sag point
+  const sAX=sagFrame(result.frames).AX;
+  el('circle',{cx:X(sAX.x-rear0.x),cy:Y(sAX.y-rear0.y),r:4.5,fill:'var(--flex)'},gg);
+  const sFA=frame(C.forkTravel*C.fsag/100).FA;
+  el('circle',{cx:X(sFA.x-front0.x),cy:Y(sFA.y-front0.y),r:4.5,fill:'var(--flex)'},gg);
+  // legend
+  const ly=T+4;
+  el('line',{x1:L+2,y1:ly,x2:L+16,y2:ly,stroke:'var(--rear)','stroke-width':2.4},gg);
+  el('text',{x:L+20,y:ly+4,'font-size':11,fill:'var(--ink-soft)'},gg).textContent='rear';
+  el('line',{x1:L+54,y1:ly,x2:L+68,y2:ly,stroke:'var(--front)','stroke-width':2.4},gg);
+  el('text',{x:L+72,y:ly+4,'font-size':11,fill:'var(--ink-soft)'},gg).textContent='front';
 }
 function charts(){
   const v=CHART_VIEWS[chartPage];
@@ -1876,6 +2357,31 @@ function pageCharts(d){
 }
 
 /* ---------- inputs ---------- */
+/* A full sweep runs on every keystroke (see the three call sites below), so
+   typing a multi-digit number recomputes against every intermediate value —
+   "4", then "45", then "450" into Rear centre briefly reports a jammed
+   linkage and then a mech cage out of range, for a geometry nobody actually
+   asked for. Debounced so only the settled value (typing paused, or the
+   field blurred) triggers the sweep; `flush` lets a blur/change commit
+   immediately instead of waiting out a pause that's already over. */
+function debounce(fn,ms){
+  let t=null;
+  const d=(...a)=>{ clearTimeout(t); t=setTimeout(()=>{t=null; fn(...a);},ms); };
+  d.flush=()=>{ if(t){clearTimeout(t); t=null;} };
+  return d;
+}
+/* Paints a lock icon button's pressed state, glyph and title -- shared by
+   every lock in this tool (the per-point row lock, the two down-tube
+   standoff locks, and the shock length lock), which otherwise each wrote
+   the same three lines by hand and could drift out of step with each other.
+   `titles` is [lockedTitle, unlockedTitle]; the caller still owns whatever
+   side effect the toggle itself has (disabling inputs, re-running the
+   sweep, or nothing at all), since those genuinely differ per lock. */
+function paintLock(btn,locked,titles){
+  btn.setAttribute('aria-pressed', !!locked);
+  btn.textContent = locked ? '🔒' : '🔓';
+  btn.title = locked ? titles[0] : titles[1];
+}
 function datumOffset(){
   const d=document.getElementById('datum').value;
   if(d==='AX') return G.AX;
@@ -1896,11 +2402,12 @@ function fillPoints(){
   }
   host.innerHTML=PTS.map(([k,label,col])=>
     `<div class="pt" data-k="${k}"><span><i class="sw" style="background:${col}"></i>${label}</span>
-     <input type="number" step="1" data-f="${k}-x"><input type="number" step="1" data-f="${k}-y"></div>`
+     <input type="number" step="1" data-f="${k}-x"><input type="number" step="1" data-f="${k}-y">
+     <button class="iconbtn" data-lockrow="${k}" aria-pressed="false" title="Lock this point" aria-label="Lock ${label}">🔓</button></div>`
   ).join('');
   host.dataset.built='1';
   host.querySelectorAll('input').forEach(inp=>{
-    inp.addEventListener('input',()=>{
+    inp.addEventListener('input',debounce(()=>{
       const [k,ax]=inp.dataset.f.split('-');
       const off=datumOffset();
       const v=parseFloat(inp.value); if(isNaN(v)) return;
@@ -1909,13 +2416,29 @@ function fillPoints(){
         G.MP={...G[k]}; G.ID={...G[k]};
       }
       recompute();
-    });
+    },150));
+  });
+  // A locked point can't be dragged (enforced in the canvas pointerdown
+  // handler, which checks ptLocked directly) or typed into -- disabling the
+  // two number inputs here is the other half of that.
+  host.querySelectorAll('button[data-lockrow]').forEach(btn=>{
+    const k=btn.dataset.lockrow;
+    btn.onclick=()=>{
+      ptLocked[k]=!ptLocked[k];
+      paintLock(btn, ptLocked[k], ['Unlock this point','Lock this point']);
+      host.querySelectorAll(`[data-f="${k}-x"],[data-f="${k}-y"]`).forEach(inp=>inp.disabled=ptLocked[k]);
+    };
   });
   fillPoints();
 }
 /* Write the solved-back side of each two-way pair into its box, but never the box
    being typed in — that would fight the cursor. */
+function updateSagMark(){
+  const m=document.getElementById('sagmark');
+  if(m) m.style.left=Math.max(0,Math.min(100,C.sag))+'%';
+}
 function refreshDerived(skip){
+  updateSagMark();
   ['stack','htl','bbh','drop','rc','csl','a2c','links','sgStand','spStand'].forEach(id=>{
     if(id===skip) return;
     const e=document.getElementById(id);
@@ -1925,34 +2448,104 @@ function refreshDerived(skip){
   if(a) a.disabled=!!C.a2cAuto;               // derived while the box is ticked
   const lk=document.getElementById('links');
   if(lk) lk.disabled=!!C.chainAuto;
-  /* Reverse of a2c: the lock makes a standoff an input, so the box is live when
-     ticked and a read-only report of the measured value when not. */
+  /* Same convention as every other coordinate lock in this tool (the points
+     panel's own per-point lock, right below): locked means fixed and
+     read-only, unlocked means free to set. Locked, the standoff is pinned to
+     C[off] regardless of what's typed (recompute()'s mount-lock glue below
+     enforces that), so the box just reports it; unlocked, typing sets the
+     point's position directly (wired below), so the box has to be live. */
   for(const [lock,off] of [['sgLock','sgStand'],['spLock','spStand']]){
     const e=document.getElementById(off);
-    if(e) e.disabled=!C[lock];
+    if(e) e.disabled=!!C[lock];
   }
+}
+/* The standard "a config field changed" sequence -- re-derive whatever
+   depends on it, write the derived boxes back, redraw the points panel (a
+   changed lock or geometry field can move where a point reads relative to
+   its datum), then resolve. Shared by every checkbox, lock button and select
+   in this file except the plain numeric fields (`fillCfg`'s own generic
+   loop), which additionally need to skip re-writing the box the user is
+   still typing into -- `refreshDerived(k)` there, `refreshDerived()` here. */
+function applyChange(k){
+  syncGeom(k); refreshDerived(); fillPoints(); recompute(false);
+}
+/* Re-derives and repaints every input panel from G/C -- shared by every
+   place that replaces G/C wholesale rather than changing one field: the
+   two resets, import, and the initial page load. Each of those four still
+   has its own small tail after this (whether posT/holdSag reset to top-out,
+   which recompute() variant to run, whether initDrag() needs to run once at
+   boot), so this only covers the part that's genuinely identical across
+   all four, not the whole sequence. */
+function refillAll(){
+  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths();
 }
 function fillCfg(){
   Object.keys(C).forEach(k=>{
+    // icon buttons and custom-wired standoffs, not plain checkboxes/numbers -- wired below
+    if(k==='sgLock'||k==='spLock'||k==='sgStand'||k==='spStand') return;
     const inp=document.getElementById(k);
     if(!inp) return;
     if(inp.type==='checkbox'){              // stored 1/0 so it resets with the rest
       inp.checked=!!C[k];
       inp.onchange=()=>{
         C[k]=inp.checked?1:0;
-        syncGeom(k); refreshDerived(); fillPoints(); recompute(false);
+        applyChange(k);
       };
       return;
     }
     inp.value=C[k];
-    inp.onchange=inp.oninput=()=>{
+    const commit=()=>{
       const v=parseFloat(inp.value); if(isNaN(v)) return;
       C[k]=v;
       syncGeom(k);                          // k names the box that was just typed
       refreshDerived(k); fillPoints();
       recompute(false);
     };
+    const debounced=debounce(commit,150);
+    inp.oninput=debounced;
+    inp.onchange=()=>{ debounced.flush(); commit(); };
   });
+  // Down-tube standoff locks are real C fields (recompute()'s mount-lock glue
+  // reads them directly) but drawn as the same small icon button as every
+  // other lock here, not a checkbox -- so they sit outside the generic loop
+  // above and paint/wire themselves.
+  for(const k of ['sgLock','spLock']){
+    const btn=document.getElementById(k);
+    if(!btn) continue;
+    const titles=['Unlock from the down tube','Lock to the down tube'];
+    paintLock(btn, !!C[k], titles);
+    btn.onclick=()=>{
+      C[k]=C[k]?0:1;
+      paintLock(btn, !!C[k], titles);
+      applyChange(k);
+    };
+  }
+  /* sgStand/spStand sit outside the generic loop too, for the same reason:
+     what typing into them should DO depends on the lock, which the generic
+     loop knows nothing about. Locked, they're read-only (recompute()'s
+     mount-lock glue owns the value, typing would just be overwritten next
+     frame, so the box is disabled above rather than pretending it works).
+     Unlocked, typing sets the point's standoff directly -- the same
+     onTube() call recompute() itself uses when locked -- rather than only
+     being reachable by dragging. */
+  for(const [k,lock,off] of [['SG','sgLock','sgStand'],['SP','spLock','spStand']]){
+    const inp=document.getElementById(off);
+    if(!inp) continue;
+    inp.value=C[off];
+    const commit=()=>{
+      const v=parseFloat(inp.value); if(isNaN(v)) return;
+      C[off]=v;
+      if(!C[lock]){
+        const dtU=frontTriangle().dtU;
+        G[k]=onTube(dtU, alongOf(dtU,G[k]), v);
+      }
+      refreshDerived(off); fillPoints();
+      recompute(false);
+    };
+    const debounced=debounce(commit,150);
+    inp.oninput=debounced;
+    inp.onchange=()=>{ debounced.flush(); commit(); };
+  }
   refreshDerived();
 }
 // Tyre section height isn't typed directly — it tracks the width you'd actually
@@ -1970,7 +2563,7 @@ function fillTyreWidths(){
       sel.innerHTML=TYRE_WIDTHS.map(v=>`<option value="${v}">${v} in</option>`).join('');
       sel.onchange=()=>{
         C[k]=parseFloat(sel.value)*25.4;
-        syncGeom(k); refreshDerived(); fillPoints(); recompute(false);
+        applyChange(k);
       };
     }
     if(![...sel.options].some(o=>Math.abs(+o.value-w)<0.005)){
@@ -1989,6 +2582,13 @@ document.addEventListener('wheel',e=>{
 function syncPos(){
   const s=document.getElementById('pos');
   s.value=Math.round(posT*1000);
+  /* The three position-control buttons are mutually exclusive states of the
+     same thing (where the slider is, not what's drawn over it), so one place
+     sets all three every time any of them could have changed, rather than
+     each button's own handler trying to keep the other two in sync with it. */
+  document.getElementById('play').setAttribute('aria-pressed', playing);
+  document.getElementById('showsag').setAttribute('aria-pressed', !playing && holdSag);
+  document.getElementById('staticPos').setAttribute('aria-pressed', !playing && !holdSag && posT===0);
   const f=currentFrame();
   const lbl=document.getElementById('poslabel');
   if(!f){ lbl.textContent=''; lbl.title=''; return; }
@@ -2007,20 +2607,33 @@ function syncPos(){
 
 document.getElementById('pos').oninput=e=>{
   posT=e.target.value/1000; holdSag=false;
-  document.getElementById('showsag').setAttribute('aria-pressed','false');
   draw(); syncPos(); charts();
 };
 document.getElementById('locklen').onclick=e=>{
-  lockLen=!lockLen; e.target.setAttribute('aria-pressed',lockLen);
+  lockLen=!lockLen;
+  paintLock(e.target, lockLen, ['Keep the shock eye to eye fixed while dragging its mounts',
+    'Shock eye to eye is free while dragging its mounts']);
 };
-document.getElementById('showsag').onclick=e=>{
-  holdSag=!holdSag; e.target.setAttribute('aria-pressed',holdSag);
+document.getElementById('showsag').onclick=()=>{
+  stopAnimation();
+  holdSag=!holdSag;
+  // Holding sag is a position, not just a way of drawing one: land the
+  // slider there too, rather than leaving it wherever the animation (now
+  // stopped) happened to be when this was pressed.
+  if(holdSag) posT=C.sag/100;
+  draw(); syncPos(); charts();
+};
+document.getElementById('staticPos').onclick=()=>{
+  stopAnimation();
+  holdSag=false;
+  posT=0;
   draw(); syncPos(); charts();
 };
 document.getElementById('datum').onchange=fillPoints;
 document.getElementById('reset').onclick=()=>{
   G=structuredClone(DEF.geom); C=structuredClone(DEF.cfg);
-  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); posT=0; holdSag=false; syncPos(); recompute();
+  posT=0; holdSag=false;
+  refillAll(); recompute();
 };
 // Everything in the Frame geometry panel — reach through the fork — without
 // touching pivots, shock, stay section, drivetrain, rider or the design file.
@@ -2030,7 +2643,7 @@ const GEOM_KEYS=['reach','stack','ha','htl','sa','st','ttDrop','bbh','rc','csl',
   'dtOD','stOD','ttOD','htOD','dtWeld','ttWeld','pivotOD'];
 document.getElementById('resetGeom').onclick=()=>{
   GEOM_KEYS.forEach(k=>C[k]=DEF.cfg[k]);
-  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); recompute(false);
+  refillAll(); recompute(false);
 };
 // The four-bar's own points: main pivot, link, shock eye/mount — the levers
 // you actually drag while watching the graph. AX and FP are excluded: AX is
@@ -2042,7 +2655,23 @@ const POINT_KEYS=['MP','SP','LP','SE','SG','ID'];
 document.getElementById('resetPoints').onclick=()=>{
   POINT_KEYS.forEach(k=>G[k]=structuredClone(DEF.geom[k]));
   G.FP={...G.AX};
-  syncGeom(); fillPoints(); recompute(false);
+  // recompute()'s mount-lock glue re-derives SG/SP from a FIXED standoff every
+  // call, so restoring the raw default coordinate alone isn't enough -- the
+  // shipped SG coordinate genuinely isn't 55mm off the down tube (it's 67.1mm;
+  // see "Both locks default on, at 55mm"), and only ever reads as 55 because
+  // the lock forces it there. Reset the standoff config and the lock flags too
+  // -- matching how resetGeom resets a2cAuto alongside a2c -- then re-place
+  // SG/SP at exactly the default standoff so the result is correct whichever
+  // way the lock ends up: locked, recompute() re-derives the identical point
+  // (a no-op); unlocked, its readout branch reads the standoff back off a
+  // point already sitting at exactly that distance.
+  C.sgLock=DEF.cfg.sgLock;   C.spLock=DEF.cfg.spLock;
+  C.sgStand=DEF.cfg.sgStand; C.spStand=DEF.cfg.spStand;
+  syncGeom();
+  const dtU=frontTriangle().dtU;
+  for(const [k,off] of [['SG','sgStand'],['SP','spStand']])
+    G[k]=onTube(dtU, alongOf(dtU,G[k]), C[off]);
+  fillPoints(); fillCfg(); recompute(false);
 };
 
 /* ---------- design name / export / import ----------
@@ -2062,7 +2691,10 @@ function exportJSON(){
   const a=document.createElement('a');
   const slug=(META.name||'flexstay-design').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'')||'flexstay-design';
   a.href=URL.createObjectURL(blob); a.download=slug+'.json'; a.click();
-  URL.revokeObjectURL(a.href);
+  // Deferred, not synchronous -- some browsers (Safari in particular) start
+  // the download asynchronously, and revoking the URL immediately after
+  // .click() can race it and cancel the save.
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
 }
 function importJSON(){
   const inp=document.createElement('input'); inp.type='file'; inp.accept='.json';
@@ -2083,7 +2715,8 @@ function importJSON(){
         META.designer=(data._meta&&data._meta.designer)||'';
         document.getElementById('designName').value=META.name;
         document.getElementById('designer').value=META.designer;
-        syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); posT=0; holdSag=false; syncPos(); recompute();
+        posT=0; holdSag=false;
+        refillAll(); recompute();
       }catch(err){ alert('Invalid JSON: '+err.message); }
     };
     r.readAsText(file);
@@ -2092,19 +2725,32 @@ function importJSON(){
 }
 document.getElementById('exportJson').onclick=exportJSON;
 document.getElementById('importJson').onclick=importJSON;
-let raf=null, dir=1;
+let raf=null, dir=1, animSpeed=100;
+document.getElementById('animSpeed').onchange=document.getElementById('animSpeed').oninput=e=>{
+  const v=parseFloat(e.target.value); if(isNaN(v)) return;
+  animSpeed=Math.max(0,Math.min(100,v));
+};
+/* Shared by Sag and Static: both are a specific position, and the animation
+   loop repainting every frame from its own posT would otherwise fight
+   whichever one was just pressed a moment later, undoing it. */
+function stopAnimation(){
+  if(!playing) return;
+  playing=false;
+  cancelAnimationFrame(raf);
+  document.getElementById('play').textContent='cycle';
+}
 document.getElementById('play').onclick=e=>{
   playing=!playing;
-  e.target.textContent = playing?'Stop':'Cycle suspension';
+  e.target.textContent = playing?'stop':'cycle';
   if(playing){
-    holdSag=false; document.getElementById('showsag').setAttribute('aria-pressed','false');
+    holdSag=false;
     const step=()=>{
-      posT+=dir*0.02; if(posT>1){posT=1;dir=-1} if(posT<0){posT=0;dir=1}
+      posT+=dir*0.02*(animSpeed/100); if(posT>1){posT=1;dir=-1} if(posT<0){posT=0;dir=1}
       draw(); syncPos(); charts();
       if(playing) raf=requestAnimationFrame(step);
     };
     step();
-  } else cancelAnimationFrame(raf);
+  } else { cancelAnimationFrame(raf); syncPos(); }
 };
 document.getElementById('cprev').onclick=()=>pageCharts(-1);
 document.getElementById('cnext').onclick=()=>pageCharts(1);
@@ -2118,37 +2764,23 @@ document.getElementById('cnext').onclick=()=>pageCharts(1);
  ['tglCockpit',()=>showCockpit=!showCockpit,     ()=>showCockpit],
  ['tglSaddle', ()=>showSaddle=!showSaddle,       ()=>showSaddle],
  ['tglShock',  ()=>showShock=!showShock,         ()=>showShock],
- ['tglFork',   ()=>showFork=!showFork,           ()=>showFork]].forEach(([id,flip,read])=>{
+ ['tglFork',   ()=>showFork=!showFork,           ()=>showFork],
+ ['tglCranks', ()=>showCranks=!showCranks,       ()=>showCranks]].forEach(([id,flip,read])=>{
   const b=document.getElementById(id);
   b.onclick=()=>{ flip(); b.setAttribute('aria-pressed',read()); draw(); };
 });
 /* Both panels fit themselves to their own pixel box, and the first paint can run
    before the flex layout has settled, so watch the boxes rather than the window. */
-window.addEventListener('resize',()=>{draw(); charts(); fitBar();});
+window.addEventListener('resize',()=>{invalidateRectCache(); draw(); charts();});
 if(window.ResizeObserver){
   let ro=null;
-  const refit=()=>{ if(ro) return; ro=requestAnimationFrame(()=>{ro=null; draw(); charts();}); };
+  const refit=()=>{ if(ro) return; ro=requestAnimationFrame(()=>{ro=null; invalidateRectCache(); draw(); charts();}); };
   new ResizeObserver(refit).observe(document.getElementById('canvas'));
   new ResizeObserver(refit).observe(document.getElementById('charts'));
-  new ResizeObserver(fitBar).observe(document.getElementById('bar'));
-}
-// .bargroup is display:contents, so its buttons are already direct flex
-// children as far as layout goes — expand it here too, rather than measuring
-// its own (zero-size) box.
-function fitBar(){
-  const bar=document.getElementById('bar');
-  const items=[];
-  [...bar.children].forEach(k=>
-    getComputedStyle(k).display==='contents' ? items.push(...k.children) : items.push(k));
-  const cs=getComputedStyle(bar);
-  const gap=parseFloat(cs.columnGap)||0;
-  const available=bar.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
-  const needed=items.reduce((s,k)=>s+k.getBoundingClientRect().width,0)+gap*(items.length-1);
-  bar.classList.toggle('spread', needed<=available);
 }
 
 try{
-  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths(); initDrag(); recompute(false); syncPos(); fitBar();
+  refillAll(); initDrag(); recompute(false);
 }catch(err){
   const m=document.getElementById('msg');
   m.textContent='Start-up failed: '+err.message; m.className='on';

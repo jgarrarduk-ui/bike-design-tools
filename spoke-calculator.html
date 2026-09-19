@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Creature Cycles — Spoke Length Calculator</title>
+<title>Spoke Length Calculator — Creature Cycles</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap');
 
@@ -13,12 +13,12 @@
 }
 
 [data-theme="green"] {
-  --input-bg:    #080f0a;
+  --input-bg:    #28272a;
   --input-fg:    #4ade80;
-  --bg:          #080f0a;
-  --panel-bg:    #060d08;
-  --toolbar-bg:  #0a1a0d;
-  --hdr-bg:      #0d2010;
+  --bg:          #28272a;
+  --panel-bg:    #222124;
+  --toolbar-bg:  #2e2d31;
+  --hdr-bg:      #333136;
   --border:      #1a3d20;
   --accent:      #166534;
   --accent-hi:   #16a34a;
@@ -37,7 +37,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { height: 100%; }
+html { height: 100%; background: var(--bg); }
 
 body {
   background: var(--bg);
@@ -207,11 +207,6 @@ body {
 }
 .preset-sel:focus { border-color: var(--accent); }
 
-.hub-diagram-wrap {
-  border-bottom: 1px solid var(--border);
-  padding: 10px 12px 2px;
-  background: var(--panel-bg);
-}
 
 .guide-cols {
   display: grid;
@@ -411,19 +406,46 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   min-width: 0;
 }
-#hub-section {
+/* ── Upper row: hub image left, result cards right ── */
+#upper-row {
+  display: flex;
+  flex-direction: row;
   flex-shrink: 0;
-  background: var(--panel-bg);
   border-bottom: 1px solid var(--border);
 }
-#result-panel {
+#hub-section {
+  flex: 0 0 52%;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  background: var(--panel-bg);
+}
+.hub-diagram-wrap {
+  padding: 8px 12px;
+}
+.hub-diagram-wrap picture {
+  display: block;
+  width: 100%;
+}
+.hub-diagram-wrap img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+#result-cards {
   flex: 1;
-  overflow-y: auto;
-  border-radius: 0;
-  border: none;
+  min-width: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* ── Lower area: buying guide + nearby sizes ── */
+#result-info {
+  flex-shrink: 0;
+  padding: 12px;
 }
 
 @media (max-width: 680px) {
@@ -436,13 +458,14 @@ body {
     gap: 8px;
     align-items: stretch;
   }
-  /* display:contents lets #right-col's children participate in #main's flex order */
-  #right-col { display: contents; }
+  #right-col  { display: contents; }
+  #upper-row  { display: contents; }
   #hub-section {
     order: 1;
     width: 100%;
     border: 1px solid var(--border);
     border-radius: 4px;
+    border-right: 1px solid var(--border);
     background: var(--panel-bg);
   }
   #input-panel {
@@ -454,10 +477,16 @@ body {
     border-radius: 4px;
     flex-shrink: 0;
   }
-  #result-panel {
+  #result-cards {
     order: 3;
     width: 100%;
-    overflow-y: visible;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  #result-info {
+    order: 4;
+    width: 100%;
     border: 1px solid var(--border);
     border-radius: 4px;
     flex-shrink: 0;
@@ -667,59 +696,34 @@ body {
         3-cross: standard pattern — each spoke crosses 3 others before reaching the rim. Best strength and fatigue resistance for road and MTB wheels.
       </div>
 
-      <button id="calc-btn" onclick="calculate()">Calculate Spoke Lengths</button>
+      <button id="calc-btn" onclick="calculateAndScroll()">Calculate Spoke Lengths</button>
     </div>
   </div>
 
-  <!-- ══ Right column: hub diagram + results ══ -->
+  <!-- ══ Right column ══ -->
   <div id="right-col">
 
-    <!-- Hub dimensions -->
-    <div id="hub-section">
-      <div class="panel-hdr">hub dimensions</div>
-      <div class="hub-diagram-wrap">
-        <svg viewBox="0 0 480 148" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block">
-          <line x1="10" y1="74" x2="470" y2="74" stroke="var(--border)" stroke-width="1" stroke-dasharray="5,4"/>
-          <rect x="180" y="50" width="120" height="48" rx="2"
-                fill="var(--hdr-bg)" stroke="var(--accent-br)" stroke-width="1.2"/>
-          <rect x="104" y="34" width="12" height="80" rx="2"
-                fill="var(--hdr-bg)" stroke="var(--accent-br)" stroke-width="1.2"/>
-          <ellipse cx="110" cy="74" rx="38" ry="38"
-                   fill="none" stroke="var(--accent-hi)" stroke-width="1" stroke-dasharray="4,3"/>
-          <circle cx="110" cy="36" r="3" fill="var(--accent-br)" stroke="var(--bg)" stroke-width="1"/>
-          <rect x="364" y="34" width="12" height="80" rx="2"
-                fill="var(--hdr-bg)" stroke="var(--accent-br)" stroke-width="1.2"/>
-          <ellipse cx="370" cy="74" rx="30" ry="30"
-                   fill="none" stroke="var(--accent-hi)" stroke-width="1" stroke-dasharray="4,3"/>
-          <circle cx="370" cy="44" r="3" fill="var(--accent-br)" stroke="var(--bg)" stroke-width="1"/>
-          <line x1="240" y1="108" x2="110" y2="108" stroke="var(--text-lo)" stroke-width="0.8"/>
-          <polygon points="110,105 104,108 110,111" fill="var(--text-lo)"/>
-          <polygon points="240,105 246,108 240,111" fill="var(--text-lo)"/>
-          <text x="175" y="121" text-anchor="middle" fill="var(--text-mid)" font-size="9" font-family="var(--font-mono)">CTF left (NDS)</text>
-          <line x1="240" y1="130" x2="370" y2="130" stroke="var(--text-lo)" stroke-width="0.8"/>
-          <polygon points="370,127 376,130 370,133" fill="var(--text-lo)"/>
-          <polygon points="240,127 234,130 240,133" fill="var(--text-lo)"/>
-          <text x="305" y="143" text-anchor="middle" fill="var(--text-mid)" font-size="9" font-family="var(--font-mono)">CTF right (DS)</text>
-          <line x1="110" y1="74" x2="110" y2="36" stroke="var(--text-lo)" stroke-width="0.8" stroke-dasharray="2,2"/>
-          <text x="60" y="53" text-anchor="middle" fill="var(--text-mid)" font-size="9" font-family="var(--font-mono)">PCD left</text>
-          <line x1="370" y1="74" x2="370" y2="44" stroke="var(--text-lo)" stroke-width="0.8" stroke-dasharray="2,2"/>
-          <text x="424" y="53" text-anchor="middle" fill="var(--text-mid)" font-size="9" font-family="var(--font-mono)">PCD right</text>
-          <line x1="88" y1="36" x2="107" y2="36" stroke="var(--accent-hi)" stroke-width="0.8"/>
-          <text x="50" y="36" text-anchor="middle" fill="var(--text-lo)" font-size="8" font-family="var(--font-mono)">hole Ø</text>
-          <text x="110" y="20" text-anchor="middle" fill="var(--text-lo)" font-size="9" font-family="var(--font)" letter-spacing="1">NDS</text>
-          <text x="370" y="20" text-anchor="middle" fill="var(--text-lo)" font-size="9" font-family="var(--font)" letter-spacing="1">DS</text>
-          <line x1="240" y1="66" x2="240" y2="82" stroke="var(--accent-hi)" stroke-width="1"/>
-          <text x="240" y="62" text-anchor="middle" fill="var(--text-lo)" font-size="8" font-family="var(--font)">&#9650;</text>
-        </svg>
-        <div class="hint" style="text-align:center;padding-bottom:4px">cross-section schematic — not to scale</div>
-      </div>
-    </div>
+    <!-- Upper row: hub image left + result cards right -->
+    <div id="upper-row">
 
-    <!-- Results -->
-    <div id="result-panel" class="panel">
-      <div class="panel-hdr">results</div>
-      <div class="panel-body" id="result-body"></div>
-    </div>
+      <div id="hub-section">
+        <div class="panel-hdr">hub dimensions</div>
+        <div class="hub-diagram-wrap">
+          <picture>
+            <source srcset="hub-diagram.webp" type="image/webp">
+            <img src="hub-diagram.png" alt="Hub cross-section diagram showing hub width, CTF left, CTF right, flange PCD left and flange PCD right dimensions">
+          </picture>
+        </div>
+      </div>
+
+      <div id="result-cards">
+        <div class="panel-hdr" style="margin:-12px -12px 10px">results</div>
+      </div>
+
+    </div><!-- #upper-row -->
+
+    <!-- Lower area: buying guide + nearby sizes -->
+    <div id="result-info"></div>
 
   </div><!-- #right-col -->
 
@@ -921,16 +925,18 @@ function calculate() {
   const holeDia = parseFloat(document.getElementById('hole-dia').value);
 
   if ([ERD, N, fldL, fldR, ctfL, ctfR, holeDia].some(v => isNaN(v) || v <= 0)) {
-    document.getElementById('result-body').innerHTML =
+    document.getElementById('result-cards').innerHTML =
       '<div class="placeholder" style="color:var(--warn)">Please enter valid values for all fields.</div>';
+    document.getElementById('result-info').innerHTML = '';
     return;
   }
 
   // Validate cross pattern vs spoke count
   const maxCross = Math.floor(N / 4);
   if (K > maxCross) {
-    document.getElementById('result-body').innerHTML =
+    document.getElementById('result-cards').innerHTML =
       `<div class="placeholder" style="color:var(--warn)">${K}-cross is too high for a ${N}-hole wheel. Maximum is ${maxCross}-cross.</div>`;
+    document.getElementById('result-info').innerHTML = '';
     return;
   }
 
@@ -941,15 +947,14 @@ function calculate() {
   const recR = floorMm(Lr);
   const symm = Math.abs(Ll - Lr) < 0.5;
 
-  let html = '';
-
-  // ── Result cards ──
-  html += '<div class="result-pair">';
+  // ── Result cards (upper-right) ──
+  let cardsHtml = '<div class="panel-hdr" style="margin:-12px -12px 10px">results</div>';
+  cardsHtml += '<div class="result-pair">';
   [
     { label: 'Left / Non-Drive Side (NDS)', len: Ll, rec: recL },
     { label: 'Right / Drive Side (DS)',      len: Lr, rec: recR },
   ].forEach(({ label, len, rec }) => {
-    html += `
+    cardsHtml += `
       <div class="result-card">
         <div class="r-side">${label}</div>
         <div class="r-calc">Calculated: <strong>${len.toFixed(2)} mm</strong></div>
@@ -958,18 +963,19 @@ function calculate() {
         <div class="r-qty">&times; ${spkPerSide} spokes</div>
       </div>`;
   });
-  html += '</div>';
+  cardsHtml += '</div>';
 
-  // ── Symmetric note ──
   if (symm) {
-    html += `<div class="note green">
+    cardsHtml += `<div class="note green">
       Left and right lengths differ by less than 0.5 mm &mdash; you can use
       <strong>${recL} mm</strong> for all <strong>${N}</strong> spokes.
     </div>`;
   }
 
-  // ── Buying guide ──
-  html += `<div class="note purple">
+  document.getElementById('result-cards').innerHTML = cardsHtml;
+
+  // ── Buying guide + nearby sizes (lower area) ──
+  let infoHtml = `<div class="note purple">
     <strong>J-bend buying guide:</strong>
     <ul class="guide-cols">
       <li>Round <strong>down</strong> to nearest mm — shorter is safer.</li>
@@ -981,12 +987,11 @@ function calculate() {
     </ul>
   </div>`;
 
-  // ── Nearby sizes table ──
   const lo = Math.min(recL, recR) - 3;
   const hi = Math.max(recL, recR) + 4;
 
-  html += `<div class="sec" style="margin-top:6px">nearby spoke sizes</div>`;
-  html += `<div class="sizes-wrap">
+  infoHtml += `<div class="sec" style="margin-top:6px">nearby spoke sizes</div>`;
+  infoHtml += `<div class="sizes-wrap">
     <table class="sizes-table">
       <thead><tr>
         <th>Size (mm)</th>
@@ -997,23 +1002,26 @@ function calculate() {
   for (let sz = lo; sz <= hi; sz++) {
     const rcL = rowClass(sz, recL, Ll);
     const rcR = rowClass(sz, recR, Lr);
-    // Overall row class: best > long > ok > short (long is more alarming than ok)
     const priority = c => ({ 'sz-best':4, 'sz-long':3, 'sz-ok':2, 'sz-short':1 }[c] || 0);
     const cls = priority(rcL) >= priority(rcR) ? rcL : rcR;
-
     const noteL = sz === recL ? `&#10003; recommended (${diffLabel(sz, Ll)})` : diffLabel(sz, Ll);
     const noteR = sz === recR ? `&#10003; recommended (${diffLabel(sz, Lr)})` : diffLabel(sz, Lr);
-
-    html += `<tr class="${cls}"><td>${sz}</td><td>${noteL}</td><td>${noteR}</td></tr>`;
+    infoHtml += `<tr class="${cls}"><td>${sz}</td><td>${noteL}</td><td>${noteR}</td></tr>`;
   }
 
-  html += `</tbody></table></div>`;
+  infoHtml += `</tbody></table></div>`;
 
-  document.getElementById('result-body').innerHTML = html;
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.getElementById('result-info').innerHTML = infoHtml;
 }
 
 // Calculate with defaults on first load
+function calculateAndScroll() {
+  calculate();
+  if (window.innerWidth <= 680) {
+    document.getElementById('result-cards').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
 document.addEventListener('DOMContentLoaded', calculate);
 </script>
 </body>
