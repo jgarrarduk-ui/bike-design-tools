@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flex-stay kinematics — Slate Frameworks</title>
 <style>
 :root{
@@ -767,12 +768,39 @@ function sweep(g,cfg,n=61){
   });
   const a0=out[0].stayAngle;
   out.forEach(f=>f.flex=(f.stayAngle-a0)*180/Math.PI);
-  // leverage by central difference on wheel rise against shock stroke
-  out.forEach((f,i)=>{
-    const p=out[Math.max(0,i-1)], q=out[Math.min(out.length-1,i+1)];
-    const ds=q.stroke-p.stroke;
-    f.lr = ds>1e-9 ? (q.rise-p.rise)/ds : null;
-  });
+  /* Leverage is d(rise)/d(stroke), by the derivative of the quadratic through
+     three frames -- not a plain central difference, because a central
+     difference has nowhere to reach at the two ends of the sweep and used to
+     fall back there to a one-sided secant against a single neighbour
+     instead. That's first-order accurate where the interior is second-order,
+     so "Leverage, top out" and "Leverage, bottom out" -- the two numbers
+     this tool actually reports, and half of what Progression is computed
+     from -- carried a systematic bias the rest of the curve didn't. A
+     three-point quadratic fixes that at the ends and is exactly equivalent
+     to the old central difference in the interior: for evenly spaced points,
+     a quadratic's derivative at its own middle point reduces algebraically
+     to (y2-y0)/(x2-x0), the same central difference, so interior frames are
+     unaffected bit-for-bit reasoning, not just numerically close. */
+  const quadDeriv=(x0,y0,x1,y1,x2,y2,xAt)=>
+    y0*(2*xAt-x1-x2)/((x0-x1)*(x0-x2)) +
+    y1*(2*xAt-x0-x2)/((x1-x0)*(x1-x2)) +
+    y2*(2*xAt-x0-x1)/((x2-x0)*(x2-x1));
+  if(out.length>=3){
+    out.forEach((f,i)=>{
+      const j = i===0 ? 0 : (i===out.length-1 ? out.length-3 : i-1);
+      const a=out[j], b=out[j+1], c=out[j+2];
+      const ok=Math.abs(a.stroke-b.stroke)>1e-9 && Math.abs(b.stroke-c.stroke)>1e-9 &&
+                Math.abs(a.stroke-c.stroke)>1e-9;
+      f.lr = ok ? quadDeriv(a.stroke,a.rise,b.stroke,b.rise,c.stroke,c.rise,f.stroke) : null;
+    });
+  } else {
+    // too few frames for a quadratic -- the old secant is the only option
+    out.forEach((f,i)=>{
+      const p=out[Math.max(0,i-1)], q=out[Math.min(out.length-1,i+1)];
+      const ds=q.stroke-p.stroke;
+      f.lr = ds>1e-9 ? (q.rise-p.rise)/ds : null;
+    });
+  }
   return {frames:out, error:null, links};
 }
 
@@ -2024,12 +2052,15 @@ function readouts(){
   const W=C.mass*9.81*C.bias/100;
   const lrSag=sagF.lr||lrTop;
   const Fs=W*lrSag;
-  const rate=Fs/sagF.stroke;                    // N/mm, linear coil, no preload
+  // At 0% sag the shock hasn't moved yet, so N/mm of a zero-length stroke is
+  // not a real rate -- report it as unavailable rather than Infinity.
+  const rate=sagF.stroke>1e-6 ? Fs/sagF.stroke : null;
   R('out-spring').innerHTML=
     row('Sprung load on rear', W.toFixed(0)+' N')+
     row('Leverage at sag', lrSag.toFixed(2))+
     row('Shock force at sag', Fs.toFixed(0)+' N')+
-    row('Coil rate', rate.toFixed(1)+' N/mm · '+(rate*5.7101).toFixed(0)+' lb/in');
+    row('Coil rate', rate===null ? '—' :
+        rate.toFixed(1)+' N/mm · '+(rate*5.7101).toFixed(0)+' lb/in');
 
   const P2=pivotForces(G,sagF,W);
   R('out-force').innerHTML = P2 ?
@@ -2208,6 +2239,19 @@ function pageCharts(d){
 }
 
 /* ---------- inputs ---------- */
+/* A full sweep runs on every keystroke (see the three call sites below), so
+   typing a multi-digit number recomputes against every intermediate value —
+   "4", then "45", then "450" into Rear centre briefly reports a jammed
+   linkage and then a mech cage out of range, for a geometry nobody actually
+   asked for. Debounced so only the settled value (typing paused, or the
+   field blurred) triggers the sweep; `flush` lets a blur/change commit
+   immediately instead of waiting out a pause that's already over. */
+function debounce(fn,ms){
+  let t=null;
+  const d=(...a)=>{ clearTimeout(t); t=setTimeout(()=>{t=null; fn(...a);},ms); };
+  d.flush=()=>{ if(t){clearTimeout(t); t=null;} };
+  return d;
+}
 function datumOffset(){
   const d=document.getElementById('datum').value;
   if(d==='AX') return G.AX;
@@ -2233,7 +2277,7 @@ function fillPoints(){
   ).join('');
   host.dataset.built='1';
   host.querySelectorAll('input').forEach(inp=>{
-    inp.addEventListener('input',()=>{
+    inp.addEventListener('input',debounce(()=>{
       const [k,ax]=inp.dataset.f.split('-');
       const off=datumOffset();
       const v=parseFloat(inp.value); if(isNaN(v)) return;
@@ -2242,7 +2286,7 @@ function fillPoints(){
         G.MP={...G[k]}; G.ID={...G[k]};
       }
       recompute();
-    });
+    },150));
   });
   // A locked point can't be dragged (enforced in the canvas pointerdown
   // handler, which checks ptLocked directly) or typed into -- disabling the
@@ -2302,13 +2346,16 @@ function fillCfg(){
       return;
     }
     inp.value=C[k];
-    inp.onchange=inp.oninput=()=>{
+    const commit=()=>{
       const v=parseFloat(inp.value); if(isNaN(v)) return;
       C[k]=v;
       syncGeom(k);                          // k names the box that was just typed
       refreshDerived(k); fillPoints();
       recompute(false);
     };
+    const debounced=debounce(commit,150);
+    inp.oninput=debounced;
+    inp.onchange=()=>{ debounced.flush(); commit(); };
   });
   // Down-tube standoff locks are real C fields (recompute()'s mount-lock glue
   // reads them directly) but drawn as the same small icon button as every
@@ -2340,7 +2387,7 @@ function fillCfg(){
     const inp=document.getElementById(off);
     if(!inp) continue;
     inp.value=C[off];
-    inp.onchange=inp.oninput=()=>{
+    const commit=()=>{
       const v=parseFloat(inp.value); if(isNaN(v)) return;
       C[off]=v;
       if(!C[lock]){
@@ -2350,6 +2397,9 @@ function fillCfg(){
       refreshDerived(off); fillPoints();
       recompute(false);
     };
+    const debounced=debounce(commit,150);
+    inp.oninput=debounced;
+    inp.onchange=()=>{ debounced.flush(); commit(); };
   }
   refreshDerived();
 }
@@ -2497,7 +2547,10 @@ function exportJSON(){
   const a=document.createElement('a');
   const slug=(META.name||'flexstay-design').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'')||'flexstay-design';
   a.href=URL.createObjectURL(blob); a.download=slug+'.json'; a.click();
-  URL.revokeObjectURL(a.href);
+  // Deferred, not synchronous -- some browsers (Safari in particular) start
+  // the download asynchronously, and revoking the URL immediately after
+  // .click() can race it and cancel the save.
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
 }
 function importJSON(){
   const inp=document.createElement('input'); inp.type='file'; inp.accept='.json';

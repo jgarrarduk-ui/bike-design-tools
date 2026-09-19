@@ -45,6 +45,18 @@ only the on-page heading and its `.sub` line were removed.
 Collapsed, both rails fit a 950px viewport without scrolling; before this they
 scrolled 2191px and 1441px. Mobile went from 4237px of document to 1900px.
 
+**There was no `<meta name="viewport">` tag, so none of this ever reached an
+actual phone.** The `@media (max-width:900px)` block above (and its own
+document-height numbers) was measured and is correct, but only by narrowing a
+desktop browser window — a real mobile browser with no viewport meta renders
+into a virtual ~980px layout viewport and scales the whole page down to fit,
+so `max-width:900px` never matches no matter how small the physical screen is.
+`frame-designer.html` already carries the tag; this file just didn't. One
+line fixes it: `<meta name="viewport" content="width=device-width,
+initial-scale=1.0">`. Confirmed with a real 390px-wide viewport afterward —
+document width now tracks the device instead of pretending to be a small
+desktop window.
+
 **The toolbar (`#bar`) sits above the canvas, not below it.** `#stage`'s
 children are plain flex-column siblings with no order-dependent CSS anywhere
 (checked — no `:first-child`/sibling combinators touch `#canvas`/`#bar`/
@@ -623,6 +635,13 @@ outright, which meant an older file came back with no `G.ID` at all and
 `fillPoints` threw on the idler row. Any field added from here on is safe for the
 same reason.
 
+**Export revokes the blob URL on a timer, not immediately after `.click()`.**
+A browser can start the download asynchronously — Safari especially — so
+calling `URL.revokeObjectURL` on the very next line is a race that can cancel
+the save before it starts. A second's grace before revoking is enough for the
+download to have already grabbed the blob; the URL still gets cleaned up, just
+not on the same tick as the click.
+
 ## Validated against Linkage X3
 
 The validation belongs to the **solver**, not to whatever the app ships as its
@@ -641,9 +660,23 @@ early exit has the same problem.
 | | Linkage | Tool |
 |---|---|---|
 | Travel | 139 | 139.0 |
-| Progression | 11.3% | 11.4% |
+| Progression | 11.3% | 11.6% |
 | Anti-squat | 113.5% | 113.4% |
 | Anti-rise | 109.5% | 109.5% |
+
+**Progression moved from 11.4% to 11.6% when the leverage stencil below was
+fixed — reported here plainly rather than quietly re-pinned, since it's the
+one number in this table that changed.** It's now 0.3 points off Linkage
+instead of 0.1, still inside the test's ±0.6 tolerance. That's not the fix
+regressing accuracy: `lr` at the two ends of the sweep — top-out and
+bottom-out, exactly what Progression is computed from — used to come from a
+first-order secant while every interior frame got a second-order central
+difference, a real bias in this tool's own curve that had nothing to do with
+Linkage. Fixing it changes which side of Linkage's own number this tool's own
+more-accurate number happens to land on; two independent implementations with
+different discretizations agreeing to 0.1 points was never guaranteed to
+survive either one getting more correct. See "Leverage by three-point
+quadratic, not a plain central difference" below.
 
 ## Traps
 
@@ -656,6 +689,47 @@ failed in Safari. Anything inside 1e-6 is now treated as a root. The jitter test
 catches regressions: with the old code 176 of 400 jittered geometries jammed.
 
 **Test in Safari as well as Chrome.** See above.
+
+**Leverage by three-point quadratic, not a plain central difference.**
+`f.lr` is `d(rise)/d(stroke)`. The old code was a central difference —
+`(q.rise-p.rise)/(q.stroke-p.stroke)` off the frame's two neighbours — clamped
+at the array ends so the first and last frames used their single neighbour
+instead: a first-order secant sitting next to second-order central
+differences everywhere else. That's `lrTop`/`lrBot`, which is Progression and
+half of the Linkage table above, so the bias sat directly under a validated
+number. Fixed with the derivative of the quadratic through three frames,
+evaluated at the frame's own stroke — interior frames use `[i-1,i,i+1]`, the
+two ends use `[0,1,2]` and `[n-2,n-1,n]`. This is not a different scheme for
+the interior, it's the same one written more generally: for evenly spaced
+points a quadratic's derivative at its own middle point reduces algebraically
+to `(y2-y0)/(x2-x0)`, the old central difference exactly — checked by
+re-running the full suite, which reproduces every interior number bit for
+bit. Falls back to the old secant only if there are fewer than three frames
+to fit a quadratic through, which the app never actually hits (`sweep`'s
+default is 61).
+
+**Typed numeric inputs are debounced, not raw `oninput`.** Every field used
+`inp.onchange=inp.oninput=commit`, so typing a multi-digit number ran a full
+sweep on every keystroke — "4", then "45", then "450" into Rear centre briefly
+reports a jammed linkage and then a mech cage out of range, for values nobody
+asked for. `debounce()` (next to `datumOffset`) delays `oninput`'s sweep until
+typing pauses; `onchange` (blur, or focus leaving the field) calls
+`debounced.flush()` first so a deliberate commit still lands immediately
+rather than waiting out a pause that's already over. Confirmed both ends:
+rapid keystrokes settling on a valid value never flash a message at all, and
+a genuinely bad value the user stops on still reports once the debounce
+settles — this isn't hiding real errors, only the transient ones nobody typed
+on purpose. Applied at all three sites that recompute from typed text: the
+generic config loop in `fillCfg`, the `sgStand`/`spStand` pair beside it, and
+the points-panel coordinate inputs in `fillPoints`.
+
+**Coil rate at 0% sag.** `rate=Fs/sagF.stroke` divides by the shock's stroke
+*at the sag point being asked about* — at `C.sag=0` that's a shock that
+hasn't moved yet, so N/mm of a zero-length stroke isn't a real number, and the
+division silently returned `Infinity`. Guarded to `—` below `1e-6`mm of
+stroke rather than computed. Nobody runs zero sag on a real bike, but typing
+it should read as "not available," not paper over it with a value that looks
+like a real spring rate.
 
 **Anti-squat is read at the front axle vertical**, not the centre-of-mass
 vertical, and heights are measured from the ground, not from y=0. Getting either
