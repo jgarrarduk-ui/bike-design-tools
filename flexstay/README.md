@@ -1,7 +1,9 @@
-# Flex-stay kinematics
+# Suspension Designer — flex-stay
 
-Browser tool for designing a flex-stay full-suspension mountain bike frame.
-Single self-contained page, no build step, no dependencies.
+Browser tool for designing a flex-stay full-suspension mountain bike frame —
+the first variant of a planned Suspension Designer family (other linkage
+types are on the roadmap; this folder is the flex-stay one). Single
+self-contained page, no build step, no dependencies.
 
 Live: `jgarrarduk-ui.github.io/bikedesigner/flexstay/`
 

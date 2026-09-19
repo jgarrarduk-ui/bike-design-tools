@@ -1,7 +1,10 @@
-# Flex-stay kinematics tool — working notes
+# Suspension Designer (flex-stay) — working notes
 
-Single-file browser tool for a flex-stay full-suspension MTB. No build step, no
-dependencies. `index.html` plus five PNGs in `img/`.
+Single-file browser tool for a flex-stay full-suspension MTB — the flex-stay
+variant of a planned Suspension Designer family (other linkage types are on
+the roadmap; nothing about that is built yet, so everything below is
+flex-stay-specific unless it says otherwise). No build step, no dependencies.
+`index.html` plus the PNGs in `img/`.
 
 ## Run it
 

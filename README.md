@@ -12,16 +12,19 @@ Live: `jgarrarduk-ui.github.io/bikedesigner/`
 | Frame Designer | `frame-designer.html` | Parametric bicycle frame geometry: angles, lengths, stack/reach, drawn live. |
 | Spoke Length Calculator | `spoke-calculator.html` | J-bend spoke lengths for 1×, 2× and 3× lacing, with rim and hub presets. |
 | Spring Rate Calculator | `spring-calculator.html` | Rear coil spring rate from sag target, rider weight and shock travel. |
-| Flex-Stay Kinematics | `flexstay/index.html` | Four-bar suspension solver for flex-stay full-suspension frames — leverage ratio, anti-squat/anti-rise, pedal kickback, stay bending stress, derailleur cage take-up. Validated against Linkage X3. |
+| Suspension Designer | `flexstay/index.html` | Four-bar suspension kinematics solver. Currently the flex-stay variant — leverage ratio, anti-squat/anti-rise, pedal kickback, stay bending stress, derailleur cage take-up, validated against Linkage X3 — with other linkage types planned. |
 
 Each is a single HTML file: no build step, no dependencies, open it directly
 or serve the folder. `index.html` at the repo root is the landing page that
 links to all four.
 
-Flex-Stay is the most actively developed and the most heavily documented —
-see `flexstay/README.md` for what it does and `flexstay/CLAUDE.md` for the
-architecture, every non-obvious fix and why, and what's deliberately not done.
-It also has the only test suite in the repo (`flexstay/test/`).
+Suspension Designer is the most actively developed and the most heavily
+documented — see `flexstay/README.md` for what it does and `flexstay/CLAUDE.md`
+for the architecture, every non-obvious fix and why, and what's deliberately
+not done. It also has the only test suite in the repo (`flexstay/test/`). The
+folder is still called `flexstay/` because that's the only variant that
+exists yet; see the recommendations on restructuring once a second one is
+built.
 
 ## Layout
 
