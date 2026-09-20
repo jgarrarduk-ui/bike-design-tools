@@ -17,7 +17,7 @@ Open `index.html`, or serve the folder. It is deployed to GitHub Pages alongside
 cd test && node flexstay-tests.mjs
 ```
 
-53 checks, no install required. The engine sits between the `// ==ENGINE-START==`
+57 checks, no install required. The engine sits between the `// ==ENGINE-START==`
 and `// ==ENGINE-END==` markers and contains **no DOM references**, so the test
 file extracts that block with `new Function()` and runs it headlessly. Keep it
 that way — if DOM code leaks into the engine block the tests stop working.
@@ -244,6 +244,27 @@ bend geometry: a straight run out of the dropout, a fixed radius bend, then a
 straight run to the yoke, with the launch angle solved so both ends stay on
 their pivots.
 
+**`C.shockMount` chooses which rigid body the shock eye belongs to: the seat
+stay (body B, default) or the shock link itself — a rocker/bell-crank-driven
+shock instead of a stay-driven one.** Both are real, common suspension
+architectures; the table above only ever described the first. In `solve()`,
+`SE` is placed by rigidly mapping a reference pair onto this frame's solved
+pair and carrying `g.SE` along: `place(g.FP,g.LP,FP,LP,g.SE)` for body B
+(unchanged). For the link, `g.SP` never moves, so the equivalent expression
+`place(g.SP,g.LP,g.SP,LP,g.SE)` has `a0=a1=g.SP` — it reduces to a pure
+rotation about the fixed `SP`, by whatever angle `LP` has swept, applied to
+`SE` — same helper, a different pair of anchors, because `SP` rather than
+`FP` is what stays put. At `phi=0` (top-out) both expressions are the
+identity map regardless of mode — `FP` and the solved `LP` both equal their
+stored rest values either way — so flipping the toggle never moves the
+drawing at top-out; only the shock's behaviour away from top-out changes.
+Threaded as a plain optional parameter on `solve`/`atCompression` (not the
+whole `cfg`, unlike `idlerAt`/`topRun` — only one boolean matters on this
+path), extracted once in `sweep()` from `cfg.shockMount`, absent/falsy
+reproducing today's stay-driven behaviour exactly (same pattern `idlerOn`/
+`idlerMount` already established: a field the frozen Linkage-X3 fixture
+doesn't carry, and doesn't need to, since `undefined` is the safe default).
+
 **`G.FP` is kept equal to `G.AX` in exactly one place, unconditionally:**
 `recompute()`'s own `G.FP={...G.AX}`, run at the top of every call. `syncGeom()`
 used to carry a second, conditional copy of this — check whether the two were
@@ -260,24 +281,40 @@ never fire.
 
 **`f.LP` is a solved four-bar point, not a point on the drawn stay curve, so it
 gets its own short mount brace rather than being folded into the stay's own
-line.** `stayPath(f.FP,f.SE)` runs the whole way to the shock eye already, so
-the drawn stay and the solved geometry can only ever disagree about where LP
-sits relative to that curve — and on this linkage they do, since LP is body
-B's own rigid point, not something `stayPath` places for you. The old drawing
-papered over that gap with two extra lines, `SE→LP` and `LP→(86% up the
-stay)`, at the stay's own full width — which is a straight line standing in
-for "near enough", and at the stay's own 30/23 it read as one oversized,
-ambiguously-shaped tube rather than a stay with a small part bolted to it.
-`closestOnPath`, next to the general-purpose `segDist` in the engine block,
-finds where LP actually sits closest to the curve that is actually on screen,
-and a
-single short `tubes()` brace — the same idea as the shock mount brace on the
-down tube, `frontTriangle`'s `foot` — runs from there to `f.LP`. Perpendicular
-falls out of "closest point on a straight segment" for free: it's exactly the
-foot of the perpendicular from `f.LP` to whichever segment it lands nearest,
-so there was no separate angle to solve. About 20mm at the shipped default;
-scales with whatever the real geometry does since it is read fresh off
-`path.pts` every frame, not fitted once and left to drift.
+line.** `stayPath(f.FP,f.SE)` (seat-stay mode) runs the whole way to the shock
+eye already, so the drawn stay and the solved geometry can only ever disagree
+about where LP sits relative to that curve — and on this linkage they do,
+since LP is body B's own rigid point, not something `stayPath` places for
+you. The old drawing papered over that gap with two extra lines, `SE→LP` and
+`LP→(86% up the stay)`, at the stay's own full width — which is a straight
+line standing in for "near enough", and at the stay's own 30/23 it read as
+one oversized, ambiguously-shaped tube rather than a stay with a small part
+bolted to it. `closestOnPath`, next to the general-purpose `segDist` in the
+engine block, finds where LP actually sits closest to the curve that is
+actually on screen, and a single short `tubes()` brace — the same idea as the
+shock mount brace on the down tube, `frontTriangle`'s `foot` — runs from there
+to `f.LP`. Perpendicular falls out of "closest point on a straight segment"
+for free: it's exactly the foot of the perpendicular from `f.LP` to whichever
+segment it lands nearest, so there was no separate angle to solve. About
+20mm at the shipped default; scales with whatever the real geometry does
+since it is read fresh off `path.pts` every frame, not fitted once and left
+to drift.
+
+**In linkage mode (`C.shockMount=1`) the curve and the brace swap roles.**
+The stay's own tube has no reason to reach `SE` any more — the shock eye now
+belongs to the link, not the stay — so `drawRearAssembly` draws
+`stayPath(f.FP,f.LP)` instead: the tube stops at its own real physical end,
+`LP`, with no boss needed there since it's now the curve's own endpoint. `SE`
+is the one now off the drawn structure, so it gets the brace instead, via the
+exact same `closestOnPath` call with the target swapped. `drawShock` grows a
+second `tubes()` arm from the fixed `SP` out to `f.SE` (16mm, narrower than
+the 22mm `SP`→`LP` arm, a first-pass judgment call), so the link reads as one
+rigid two-armed rocker rather than the shock floating unattached to anything
+drawn. On the shipped default geometry the two arms sit only about 9-10°
+apart (`LP`/`SE` are ~23mm apart at the end of ~130-150mm arms) — checked
+directly against the drawn line endpoints, not just assumed — so they read
+as a narrow, near-parallel bell-crank rather than a wide V; a real design
+with `LP`/`SE` further apart would splay more.
 
 **The flex-zone red overlay is gone, along with `polyHead`.** `recompute()`
 sets `C.zone` to the seat stay's own full length on every call — "bending
@@ -1147,6 +1184,16 @@ one construction block: the front axle vertical and the 100% of centre-of-mass
 -height mark are drawn for either, the chain run and axle-to-instant-centre lines
 only for anti-squat since braking does not involve the chain.
 
+**Force vectors are suppressed entirely in linkage mode (`C.shockMount=1`),
+not just the shock/link arrows.** `pivotForces` solves one linear system for
+all four vectors under a moment balance that assumes the shock reacts on the
+seat stay — false once it reacts on the link/rocker instead. That makes the
+main-pivot/flex-pivot arrows just as unreliable as the shock/link ones, since
+they all fall out of the same solve; suppressing only the two most obviously
+shock-related arrows would leave the other two looking authoritative while
+resting on the same wrong assumption. See "Not done" for the properly-
+rederived version this defers.
+
 **Centre of gravity marker (`showCog`, off by default).** Drawn at
 `(cgx, ground+C.cogh)` — the same height `drawASARConstruction`'s "100% of CoG
 height" line already uses, so this marker's own y always lands exactly on
@@ -1859,3 +1906,12 @@ how far the cage swings, which is what the drawing depends on.
 - Anti-squat referenced to the fully extended front axle rather than the current
   one. Linkage recalculates it; this does not.
 - Save/load and URL sharing.
+- Pivot-force and stay-stress rederivation for a linkage-driven shock
+  (`C.shockMount=1`). `pivotForces`'s force balance assumes the shock and
+  link both react on the seat-stay body pinned at the flex pivot, which is
+  false once the shock reacts on the link/rocker instead — a genuinely
+  different two-body mechanics problem (seat stay: link load and flex-pivot
+  reaction only; link: shock load, the link's own reaction, and the second
+  pivot's reaction), not a parameter change. Both readouts show a "not
+  modeled" message in that mode rather than a number that would look exactly
+  as authoritative as a correct one.

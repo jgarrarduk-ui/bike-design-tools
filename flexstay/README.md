@@ -14,7 +14,11 @@ seat stay carries the compliance instead of a pivot. Drag any pivot or type
 coordinates and everything recomputes: leverage ratio, anti-squat, anti-rise,
 chain shortening, pedal kickback, axle path, spring rate, static pivot loads,
 derailleur cage take-up, and the bending stress in the seat stay including the
-axial load acting through the offset of the bend.
+axial load acting through the offset of the bend. The shock can be mounted
+either straight to the seat stay (stay-driven, the default) or to the small
+link instead (rocker/bell-crank-driven) — the leverage curve and drawing are
+correct in either mode; the pivot-load and stay-stress panels are not yet
+rederived for the linkage-driven case and say so plainly rather than guess.
 
 The drawing is a full elevation, not a schematic: wheels, fork, cockpit,
 cranks (both arms, rotating with kickback as the suspension cycles), saddle,
@@ -41,7 +45,7 @@ CLAUDE.md     architecture, traps, and what is not done
 cd test && node flexstay-tests.mjs
 ```
 
-53 checks, nothing to install. The engine has no DOM references so the tests
+57 checks, nothing to install. The engine has no DOM references so the tests
 extract and run it directly.
 
 ## Validated against Linkage X3

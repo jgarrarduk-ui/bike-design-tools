@@ -229,6 +229,9 @@ svg text{font-family:var(--mono)}
     <button class="iconbtn" id="locklen" aria-pressed="true" title="Keep the shock eye to eye fixed while dragging its mounts" aria-label="Lock shock eye to eye">🔒</button></label>
   <label><span>Stroke</span><input type="number" id="stroke" step="0.5"></label>
   <label><span>Rear sag, % of travel</span><input type="number" id="sag" step="1"></label>
+  <label><span>Shock connected to</span><select id="shockMount">
+    <option value="0">seat stay</option><option value="1">linkage</option>
+  </select></label>
 
   <div class="tabs">
     <div class="tabbar" role="tablist">
@@ -465,13 +468,22 @@ function place(a0,b0,a1,b1,p){
    link    link pivot to second pivot               pinned to ground at SP
    shock   shock eye to shock ground
    One degree of freedom: a four-bar MP-FP-LP-SP.                                    */
-function solve(g, phi, prevLP){
+function solve(g, phi, prevLP, linkageMode){
   const FP=rot(g.FP,g.MP,phi), AX=rot(g.AX,g.MP,phi);
   const hit=circles(FP, dist(g.FP,g.LP), g.SP, dist(g.SP,g.LP));
   if(!hit) return null;
   const ref=prevLP||g.LP;
   const LP = dist(hit[0],ref)<=dist(hit[1],ref) ? hit[0] : hit[1];
-  const SE = place(g.FP,g.LP,FP,LP,g.SE);
+  /* Shock eye rigid to body B (the seat stay) by default -- place() maps the
+     rest pair (FP,LP) onto this frame's (FP,LP) and carries SE along for the
+     ride. linkageMode instead makes SE rigid to the LP-SP link/rocker: SP
+     never moves, so place(g.SP,g.LP,g.SP,LP,g.SE) reduces to a pure rotation
+     about the fixed SP by whatever angle LP has swept -- a different rigid
+     body, same helper. At phi=0 both branches reduce to the identity map
+     (FP and the solved LP both equal their rest values), so SE=g.SE either
+     way: switching modes never jumps the drawing at top-out, only away from
+     it. */
+  const SE = linkageMode ? place(g.SP,g.LP,g.SP,LP,g.SE) : place(g.FP,g.LP,FP,LP,g.SE);
   return {phi,FP,AX,LP,SE,
     shock: dist(SE,g.SG),
     rise: AX.y-g.AX.y,
@@ -492,10 +504,10 @@ function solve(g, phi, prevLP){
    finds: same root, same tolerance, just less of the interval to search to
    get there. First frame has no previous phi, so it falls back to 0, exactly
    as before. */
-function atCompression(g, comp, guess, phiHint){
+function atCompression(g, comp, guess, phiHint, linkageMode){
   const L0=dist(g.SE,g.SG), target=L0-comp;
   let lo=(phiHint||phiHint===0)?phiHint:0, hi=-0.85, prev=null;   // negative phi drives the axle upward
-  const f=p=>{const s=solve(g,p,prev); if(!s) return null; prev=s.LP; return s.shock-target};
+  const f=p=>{const s=solve(g,p,prev,linkageMode); if(!s) return null; prev=s.LP; return s.shock-target};
   /* Rotating by zero still round-trips through the rigid-body transform, so the
      residual at zero compression is floating point noise of either sign rather
      than a clean zero. Treating that as a real sign meant the bracket search
@@ -503,13 +515,13 @@ function atCompression(g, comp, guess, phiHint){
   const TOL=1e-6;
   let fa=f(lo);
   if(fa===null) return null;
-  if(Math.abs(fa)<=TOL) return solve(g,lo,guess);
+  if(Math.abs(fa)<=TOL) return solve(g,lo,guess,linkageMode);
   let a=lo, b=null;
   const N=140;
   for(let i=1;i<=N;i++){
     const p=lo+(hi-lo)*i/N, v=f(p);
     if(v===null) break;
-    if(Math.abs(v)<=TOL) return solve(g,p,guess);
+    if(Math.abs(v)<=TOL) return solve(g,p,guess,linkageMode);
     if(fa*v<0){b=p;break}
     a=p;fa=v;
   }
@@ -526,7 +538,7 @@ function atCompression(g, comp, guess, phiHint){
     if(v===null) break;
     if(fa*v<=0){b=m} else {a=m;fa=v}
   }
-  return solve(g,(a+b)/2,guess);
+  return solve(g,(a+b)/2,guess,linkageMode);
 }
 
 // Upper chain run: the tangent that runs over the top of both circles.
@@ -801,7 +813,7 @@ function sweep(g,cfg,n=61){
   const ground=g.AX.y-Rr;
   const out=[], routes=[]; let prev=null, prevPhi=undefined;
   for(let i=0;i<=n;i++){
-    const s=atCompression(g, cfg.stroke*i/n, prev, prevPhi);
+    const s=atCompression(g, cfg.stroke*i/n, prev, prevPhi, cfg.shockMount);
     if(!s) return {frames:out, error:'The linkage jams before the shock reaches full stroke. '+
         'Usually the shock link is too short to reach, or the second pivot is too far from the main pivot.'};
     prev=s.LP; prevPhi=s.phi;
@@ -973,6 +985,7 @@ const DEF={
          LP:{x:6.9,y:271.8}, SE:{x:7.4,y:294.8}, SG:{x:233.5689296680683,y:337.611219361806},
          AX:{x:-450,y:18.95999999999998}, ID:{x:0,y:125} },
   cfg:{ eye:230, stroke:65, zone:551, bendR:115, bendA:42, bendStart:50, leanEnd:55, leanA:8, dropW:148, shockW:33, peakG:3, od:16, wall:0.9, ring:32, cog:21,
+        shockMount:0, // 0 = seat stay (default), 1 = linkage
         mass:85, bias:58, cogh:1057, sag:30, fsag:20, fax:844.3592543050977,
         rw:584, fw:622, tyreR:60.96, tyreF:60.96, reach:485, stack:654.5403733659439, ha:63.3, htl:130,
         sa:76, st:430, ttDrop:90, bbh:334, drop:18.95999999999998, rc:450, csl:450.39924689102224,
@@ -1145,8 +1158,9 @@ function frontTriangle(){
           dt, tt, st, ht, all:[dt,tt,st,ht]};
 }
 
-// Arc length of the drawn seat stay, dropout to shock eye.
-function stayLength(){ return stayPath(G.FP,G.SE).total; }
+// Arc length of the drawn seat stay, dropout to wherever it physically ends
+// (the shock eye, or the link pivot in linkage mode -- see drawRearAssembly).
+function stayLength(){ return stayPath(G.FP, C.shockMount?G.LP:G.SE).total; }
 function recompute(quick){
   const m=document.getElementById('msg');
   try{
@@ -1743,7 +1757,11 @@ function draw(){
 
   /* ---- rear assembly ---- */
   function drawRearAssembly(){
-    const path=stayPath(f.FP,f.SE);
+    /* The stay's own physical tube reaches to SE by default (shock bolted
+       straight to the seat stay); in linkage mode it stops at LP instead --
+       SE now belongs to the link/rocker, drawn separately in drawShock(),
+       and the stay has no reason to stretch toward it. */
+    const path = C.shockMount ? stayPath(f.FP,f.LP) : stayPath(f.FP,f.SE);
     const poly=(pts,col,w)=>el('polyline',{
         points:pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
         fill:'none',stroke:col,'stroke-width':w,'stroke-linecap':'round',
@@ -1755,22 +1773,33 @@ function draw(){
     line(G.MP,f.AX,'#8fb6cf',33);
     poly(path.pts,'#8fb6cf',23);
 
-    /* Link pivot mount: a short brace perpendicular to the stay, the same idea as
+    /* Mount brace: a short stub perpendicular to the stay, the same idea as
        the shock mount brace on the down tube (frontTriangle's `foot`), rather
        than the old pair of full-width lines from SE through LP down to a point
        partway along the stay — those ran the stay's own 30/23 alongside itself
        for that whole stretch and tapered into it, which read as one oversized,
-       ambiguously-shaped tube instead of a stay with a small boss on it. LP is a
-       solved four-bar point, not a point on this drawn curve, so its foot is
-       the closest point on the path actually on screen — tracks the bend
-       correctly at any geometry instead of assuming LP sits near the SE end. */
-    const lpFoot=closestOnPath(path.pts,f.LP);
-    tubes([[lpFoot,f.LP,22]],'#8fb6cf','#134463');
+       ambiguously-shaped tube instead of a stay with a small boss on it.
+       Whichever of LP/SE isn't this frame's curve endpoint is a solved point
+       not actually on the drawn path, so its foot is the closest point on the
+       path actually on screen — tracks the bend correctly at any geometry
+       instead of assuming it sits near the curve's own end. Seat-stay mode:
+       LP gets the brace (SE is the curve's own end). Linkage mode: the curve
+       ends at LP instead, so SE is the one that needs bracing now. */
+    const braceTarget = C.shockMount ? f.SE : f.LP;
+    const foot=closestOnPath(path.pts,braceTarget);
+    tubes([[foot,braceTarget,22]],'#8fb6cf','#134463');
   }
 
   /* ---- shock link and shock ---- */
   function drawShock(){
     tubes([[G.SP,f.LP,22]],'#4bb3a6','#0b5a53');
+    // Linkage mode: the same rigid part also carries the shock -- a second
+    // arm from the same fixed pivot SP out to SE, so it reads as one
+    // two-armed rocker/bell-crank rather than the shock floating unattached
+    // to anything drawn. Narrower than the LP arm (16 vs 22mm) as a first
+    // pass -- a secondary arm, not the link's main member; adjust by eye if
+    // it reads too heavy or too thin once rendered.
+    if(C.shockMount) tubes([[G.SP,f.SE,16]],'#4bb3a6','#0b5a53');
 
     /* Shock artwork. The body and the eyelet ends keep their proportions; only the
        spring section is stretched, so compressing the shock closes the coils up
@@ -2004,9 +2033,14 @@ function draw(){
   /* ---- force vectors ----
      Resolved for the frame being drawn, so they grow, shrink and swing round as
      the suspension cycles. Fixed scale in mm per newton, so the lengths stay
-     comparable between positions instead of being renormalised each frame. */
+     comparable between positions instead of being renormalised each frame.
+     Suppressed entirely (not just the shock/link arrows) in linkage mode:
+     pivotForces solves one linear system for all four vectors under an
+     assumption that's false in that mode, so the main-pivot/flex-pivot
+     arrows it also returns are equally suspect, not just the two most
+     directly tied to the shock. */
   function drawForceVectors(){
-    if(showForces){
+    if(showForces && !C.shockMount){
       const Fw=sprungLoad();
       const P=pivotForces(G,f,Fw);
       if(P){
@@ -2216,36 +2250,50 @@ function readouts(){
     row('Chainstay length', C.csl.toFixed(1)+' mm')+
     row('Wheelbase', (frame(0).FA.x-first.AX.x).toFixed(0)+' mm');
 
-  const fl=f.map(k=>k.flex);
-  const peak=fl.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a,0);
-  const stayGeo=stayPath(G.FP,G.SE);
-  const stayU=unit(sub(G.SE,G.AX));
-  const axialAt=mult=>{
-    const P=pivotForces(G,sagFr,W*mult);
-    if(!P) return 0;
-    return -(P.fp.x*stayU.x+P.fp.y*stayU.y)/2;      // per stay, compression positive
-  };
-  const st=stayLoads(peak,stayGeo,C.od,C.wall,axialAt(1),C.bendA,C.dropW/2,C.shockW/2,C.leanEnd,C.leanA);
-  const pk=stayLoads(peak,stayGeo,C.od,C.wall,axialAt(C.peakG),C.bendA,C.dropW/2,C.shockW/2,C.leanEnd,C.leanA);
-  R('out-flex').innerHTML=
-    row('Resultant at sag', st.combined.toFixed(0)+' MPa', st.combined>250?'warn':'good')+
-    row('Resultant at '+C.peakG+' g', pk.combined.toFixed(0)+' MPa',
-        pk.combined>350?'warn':'good')+
-    row('Flex pivot rotation', peak.toFixed(2)+'°')+
-    row('Bend and flex', st.oppose?'oppose':'add', st.oppose?'good':'warn');
-  R('out-flexdetail').innerHTML=
-    row('Developed length', stayGeo.total.toFixed(0)+' mm')+
-    row('Offset from chord, in plane', st.eccentricity.toFixed(1)+' mm')+
-    row('Offset from chord, out of plane', st.eOop.toFixed(1)+' mm')+
-    row('Lean of the main run', st.leanNeeded.toFixed(1)+'°')+
-    row('Second moment of area', st.I.toFixed(0)+' mm⁴')+
-    row('Euler load, per stay', (st.Pcr/1000).toFixed(1)+' kN')+
-    row('Stress from imposed rotation', st.sFlex.toFixed(0)+' MPa')+
-    row('Axial force per stay, sag', st.axial.toFixed(0)+' N')+
-    row('P-delta amplification, sag', st.amp.toFixed(2))+
-    row('Axial stress, in plane', st.sAx.toFixed(0)+' MPa')+
-    row('Axial stress, out of plane', st.sOop.toFixed(0)+' MPa')+
-    row('Axial force per stay, '+C.peakG+' g', pk.axial.toFixed(0)+' N');
+  /* The stress model assumes the shock reacts on the seat stay itself --
+     both the imposed-rotation stress and the axial force path through it
+     (axialAt, via pivotForces' body-B moment balance) are only correct for
+     that topology. In linkage mode the shock reacts on the link/rocker
+     instead, a different rigid body pinned at a different point, and
+     properly reworking these equations for that case is real, deferred
+     mechanics (see CLAUDE.md, "Not done") -- not attempted here. Flag it
+     plainly instead of computing and showing a number that would look
+     exactly as authoritative as a correct one. */
+  if(C.shockMount){
+    R('out-flex').innerHTML=row('Seat stay stress','not modeled for a linkage-driven shock yet','warn');
+    R('out-flexdetail').innerHTML=row('Workings','not modeled for a linkage-driven shock yet','warn');
+  } else {
+    const fl=f.map(k=>k.flex);
+    const peak=fl.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a,0);
+    const stayGeo=stayPath(G.FP,G.SE);
+    const stayU=unit(sub(G.SE,G.AX));
+    const axialAt=mult=>{
+      const P=pivotForces(G,sagFr,W*mult);
+      if(!P) return 0;
+      return -(P.fp.x*stayU.x+P.fp.y*stayU.y)/2;      // per stay, compression positive
+    };
+    const st=stayLoads(peak,stayGeo,C.od,C.wall,axialAt(1),C.bendA,C.dropW/2,C.shockW/2,C.leanEnd,C.leanA);
+    const pk=stayLoads(peak,stayGeo,C.od,C.wall,axialAt(C.peakG),C.bendA,C.dropW/2,C.shockW/2,C.leanEnd,C.leanA);
+    R('out-flex').innerHTML=
+      row('Resultant at sag', st.combined.toFixed(0)+' MPa', st.combined>250?'warn':'good')+
+      row('Resultant at '+C.peakG+' g', pk.combined.toFixed(0)+' MPa',
+          pk.combined>350?'warn':'good')+
+      row('Flex pivot rotation', peak.toFixed(2)+'°')+
+      row('Bend and flex', st.oppose?'oppose':'add', st.oppose?'good':'warn');
+    R('out-flexdetail').innerHTML=
+      row('Developed length', stayGeo.total.toFixed(0)+' mm')+
+      row('Offset from chord, in plane', st.eccentricity.toFixed(1)+' mm')+
+      row('Offset from chord, out of plane', st.eOop.toFixed(1)+' mm')+
+      row('Lean of the main run', st.leanNeeded.toFixed(1)+'°')+
+      row('Second moment of area', st.I.toFixed(0)+' mm⁴')+
+      row('Euler load, per stay', (st.Pcr/1000).toFixed(1)+' kN')+
+      row('Stress from imposed rotation', st.sFlex.toFixed(0)+' MPa')+
+      row('Axial force per stay, sag', st.axial.toFixed(0)+' N')+
+      row('P-delta amplification, sag', st.amp.toFixed(2))+
+      row('Axial stress, in plane', st.sAx.toFixed(0)+' MPa')+
+      row('Axial stress, out of plane', st.sOop.toFixed(0)+' MPa')+
+      row('Axial force per stay, '+C.peakG+' g', pk.axial.toFixed(0)+' N');
+  }
 
   const xs=f.map(k=>k.AX.x);
   R('out-balance').innerHTML=
@@ -2269,13 +2317,20 @@ function readouts(){
     row('Coil rate', rate===null ? '—' :
         rate.toFixed(1)+' N/mm · '+(rate*5.7101).toFixed(0)+' lb/in');
 
+  // Same reason as the stress panel above: pivotForces' moment balance
+  // assumes the shock reacts on the seat stay, false in linkage mode. Left
+  // running either way (it's cheap, and its own correctness is untouched
+  // by this feature) but its numbers only reach the screen when they mean
+  // what they say.
   const P2=pivotForces(G,sagFr,W);
-  R('out-force').innerHTML = P2 ?
-    row('Main pivot', (P2.mainPivot/1000).toFixed(2)+' kN')+
-    row('Flex pivot', (P2.flexPivot/1000).toFixed(2)+' kN')+
-    row('Shock link', (P2.link/1000).toFixed(2)+' kN')+
-    row('Shock', (P2.shock/1000).toFixed(2)+' kN')
-    : row('Solver','no solution','warn');
+  R('out-force').innerHTML = C.shockMount
+    ? row('Pivot loads','not modeled for a linkage-driven shock yet','warn')
+    : (P2 ?
+        row('Main pivot', (P2.mainPivot/1000).toFixed(2)+' kN')+
+        row('Flex pivot', (P2.flexPivot/1000).toFixed(2)+' kN')+
+        row('Shock link', (P2.link/1000).toFixed(2)+' kN')+
+        row('Shock', (P2.shock/1000).toFixed(2)+' kN')
+      : row('Solver','no solution','warn'));
 }
 function at(f,t){return f[Math.min(f.length-1,Math.max(0,Math.round(t*(f.length-1))))]}
 // the frame at the sag position -- `at(f,C.sag/100)`, used everywhere a

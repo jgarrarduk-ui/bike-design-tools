@@ -116,6 +116,32 @@ ok('concentric pivots give near zero stay flex', !cr2.error &&
    Math.max(...cr2.frames.map(k=>Math.abs(k.flex)))<0.05,
    cr2.error?'jammed':Math.max(...cr2.frames.map(k=>Math.abs(k.flex))).toFixed(4)+' deg');
 
+/* ---------- shock-to-linkage mount toggle ---------- */
+// shockMount is absent from REF.cfg, same as idlerOn/idlerMount/idlerLock --
+// falsy/undefined must reproduce today's seat-stay behaviour exactly.
+const stayRun=m.sweep(structuredClone(G),{...C, shockMount:0});
+const linkRun=m.sweep(structuredClone(G),{...C, shockMount:1});
+ok('shock-mount toggle does not jam either mode', !stayRun.error && !linkRun.error,
+   (stayRun.error||'')+' '+(linkRun.error||''));
+ok('shockMount:0 sweeps identically to the untouched default',
+   !stayRun.error && f.every((k,i)=>
+     Math.abs(k.SE.x-stayRun.frames[i].SE.x)<1e-9 && Math.abs(k.SE.y-stayRun.frames[i].SE.y)<1e-9));
+ok('shock eye does not jump at top-out when switching modes',
+   !stayRun.error && !linkRun.error &&
+   m.dist(stayRun.frames[0].SE, linkRun.frames[0].SE)<1e-6,
+   m.dist(stayRun.frames[0].SE, linkRun.frames[0].SE).toExponential(2)+' mm');
+{
+  // sweep()/atCompression() each re-solve phi per mode to hit the same target
+  // shock compression, which can mask how different the two SE formulas
+  // actually are (the bisection partly compensates). Call solve() directly
+  // at one fixed, arbitrary phi instead, to check the formula itself rather
+  // than its outcome after a self-correcting search.
+  const s0=m.solve(G,-0.3,null,false), s1=m.solve(G,-0.3,null,true);
+  const d=m.dist(s0.SE,s1.SE);
+  ok('shock eye diverges between modes away from top-out', d>0.5,
+     d.toFixed(2)+' mm apart at a fixed phi');
+}
+
 console.log('\ntravel '+L.rise.toFixed(1)+' mm | leverage '+F0.lr.toFixed(2)+' to '+L.lr.toFixed(2)+
   ' | progression '+prog.toFixed(1)+'%');
 console.log('anti-squat at top out '+F0.as.toFixed(1)+'% (Linkage 113.5) | anti-rise '+
