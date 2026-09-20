@@ -33,25 +33,42 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
 h1{font-size:14px;margin:0 0 2px;font-weight:650;letter-spacing:.2px}
 .sub{color:var(--ink-soft);font-size:11px;margin:0 0 14px}
 h2{font-size:11px;font-weight:650;color:var(--ink-soft);margin:18px 0 7px;
-   padding-bottom:4px;border-bottom:1px solid var(--rule)}
+   padding-bottom:4px;border-bottom:1px solid var(--rule);
+   display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 h2:first-of-type{margin-top:4px}
+/* A heading's own action button (e.g. Pivots and mounts' Reset) rides inline
+   with it via the flex row above, rather than its own separate .btnrow --
+   condenses the two into one line without a new layout primitive. */
+h2 button{flex:none;font-weight:500}
 h3{font-size:10px;font-weight:650;color:var(--ink-soft);text-transform:uppercase;
    letter-spacing:.7px;margin:15px 0 4px}
-/* Collapsed groups read as a stacked list of headings: setup you open when you
-   want it, out of the way of the pivots and the graph the rest of the time. */
-.grp{border-bottom:1px solid var(--rule)}
-.grp:first-of-type{border-top:1px solid var(--rule);margin-top:16px}
-.grp[open]{padding-bottom:10px}
-.grp>summary{position:relative;list-style:none;cursor:pointer;user-select:none;
-  font-size:11px;font-weight:650;color:var(--ink-soft);padding:9px 0 9px 15px}
-.grp>summary::-webkit-details-marker{display:none}
-.grp>summary::after{content:"";position:absolute;left:2px;top:calc(50% - 3px);
-  width:5px;height:5px;border-right:1.5px solid currentColor;
-  border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .12s}
-.grp[open]>summary::after{transform:rotate(45deg) translate(-1px,-1px)}
-.grp>summary:hover,.grp[open]>summary{color:var(--ink)}
-.grp.sub{border:none;border-top:1px dotted var(--rule);margin-top:10px;padding-bottom:0}
-.grp.sub>summary{font-weight:500;padding:7px 0 7px 15px}
+/* Tabbed panels replace what used to be a stack of independently foldable
+   <details> groups. A tab bar reuses the base button styling entirely (font,
+   padding, border, hover) -- .tabbtn only adds the layout (equal-ish width,
+   wrapping onto a second row in a narrow rail) and reuses the same blue
+   [aria-pressed=true] already means "the active one" elsewhere in this UI
+   (the play/sag/static trio, the overlay toggles), so a tab's [aria-selected]
+   gets that identical treatment rather than inventing a second "active"
+   colour language. */
+.tabs{margin-top:14px;padding-top:2px;border-top:1px solid var(--rule)}
+.tabbar{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 10px}
+.tabbtn{flex:1 1 auto;min-width:58px}
+.tabbtn[aria-selected=true]{background:var(--rear);border-color:var(--rear);color:#fff}
+.tabpanel[hidden]{display:none}
+/* The seat-stay-stress "Workings" breakdown used to be a nested fold inside
+   its own panel; it is dense enough (twelve intermediate numbers) that it
+   reads better as its own layer than squeezed under the summary numbers, so
+   it is a native <dialog> instead -- free focus trap, Escape-to-close and
+   top-layer stacking, no hand-rolled modal plumbing. */
+dialog{border:1px solid var(--rule);border-radius:4px;padding:0;
+  background:var(--panel);color:var(--ink);max-width:340px;width:90vw;
+  max-height:80vh}
+dialog::backdrop{background:rgba(22,32,42,.35)}
+.dlg-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:10px 12px;border-bottom:1px solid var(--rule);font-size:11px;
+  font-weight:650;color:var(--ink-soft);position:sticky;top:0;background:var(--panel)}
+dialog .readout{padding:3px 12px}
+dialog .readout:last-child{padding-bottom:12px}
 .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 2px}
 .btnrow button{flex:1;min-width:70px}
 label{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:5px 0}
@@ -175,16 +192,14 @@ svg text{font-family:var(--mono)}
 <div class="rail left">
   <!-- The working set: what you move while watching the graph. Everything else
        is setup, folded away until it is wanted. -->
-  <h2>Pivots and mounts</h2>
-  <div class="btnrow"><button id="resetPoints">Reset points &amp; mounts</button></div>
+  <h2>Pivots and mounts<button id="resetPoints">Reset</button></h2>
   <div id="points"></div>
-  <h3>Down tube mounts</h3>
   <label><span>Shock mount off down tube</span><input type="number" id="sgStand" step="1">
     <button class="iconbtn" id="sgLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock shock mount standoff">🔒</button></label>
   <label><span>Link pivot off down tube</span><input type="number" id="spStand" step="1">
     <button class="iconbtn" id="spLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock link pivot standoff">🔒</button></label>
 
-  <p class="note">Drag points on the drawing or type coordinates. Datum:
+  <p class="note">Datum:
     <select id="datum">
       <option value="BB">bottom bracket</option>
       <option value="AX">rear axle</option>
@@ -198,95 +213,100 @@ svg text{font-family:var(--mono)}
   <label><span>Stroke</span><input type="number" id="stroke" step="0.5"></label>
   <label><span>Rear sag, % of travel</span><input type="number" id="sag" step="1"></label>
 
-  <details class="grp" id="grp-frame">
-    <summary>Frame geometry</summary>
-    <div class="btnrow"><button id="resetGeom">Reset geometry</button></div>
-    <label><span>Reach</span><input type="number" id="reach" step="5"></label>
-    <label><span>Stack</span><input type="number" id="stack" step="5"></label>
-    <label><span>Head tube angle</span><input type="number" id="ha" step="0.5"></label>
-    <label><span>Head tube length</span><input type="number" id="htl" step="5"></label>
-    <label><span>Seat tube angle</span><input type="number" id="sa" step="0.5"></label>
-    <label><span>Seat tube length</span><input type="number" id="st" step="5"></label>
-    <label><span>Top tube drop at seat tube</span><input type="number" id="ttDrop" step="5"></label>
-    <label><span>Bottom bracket height</span><input type="number" id="bbh" step="1"></label>
-    <label><span>Rear centre</span><input type="number" id="rc" step="5"></label>
-    <label><span>Chainstay length</span><input type="number" id="csl" step="5"></label>
-    <label><span>Bottom bracket drop</span><input type="number" id="drop" step="1"></label>
-    <h3>Tubes</h3>
-    <label><span>Down tube OD</span><input type="number" id="dtOD" step="0.1"></label>
-    <label><span>Seat tube OD</span><input type="number" id="stOD" step="0.1"></label>
-    <label><span>Top tube OD</span><input type="number" id="ttOD" step="0.1"></label>
-    <label><span>Head tube OD</span><input type="number" id="htOD" step="0.1"></label>
-    <label><span>Down tube weld clearance</span><input type="number" id="dtWeld" step="1"></label>
-    <label><span>Top tube weld clearance</span><input type="number" id="ttWeld" step="1"></label>
-    <label><span>Pivot body dia.</span><input type="number" id="pivotOD" step="1"></label>
-    <h3>Cockpit</h3>
-    <label><span>Stem length</span><input type="number" id="stemL" step="5"></label>
-    <label><span>Stem rise above head tube</span><input type="number" id="stemH" step="5"></label>
-    <h3>Wheels</h3>
-    <label><span>Front wheel</span><select id="fw"><option value="559">26 in</option><option value="584">27.5 in</option><option value="622">29 in</option><option value="686">32 in</option></select></label>
-    <label><span>Rear wheel</span><select id="rw"><option value="559">26 in</option><option value="584">27.5 in</option><option value="622">29 in</option><option value="686">32 in</option></select></label>
-    <label><span>Front tyre width</span><select id="tyreFWidth"></select></label>
-    <label><span>Rear tyre width</span><select id="tyreRWidth"></select></label>
-    <h3>Fork</h3>
-    <label><span>Travel</span><input type="number" id="forkTravel" step="10"></label>
-    <label><span>Standard axle to crown</span><input type="checkbox" id="a2cAuto"></label>
-    <label><span>Axle to crown, extended</span><input type="number" id="a2c" step="5"></label>
-    <label><span>Lower headset stack</span><input type="number" id="hsLower" step="0.5"></label>
-    <label><span>Offset</span><input type="number" id="offset" step="1"></label>
-    <label><span>Front sag, % of travel</span><input type="number" id="fsag" step="1"></label>
-    <h3>As drawn</h3>
-    <div id="out-geom"></div>
-  </details>
-
-  <details class="grp" id="grp-stay">
-    <summary>Seat stay section</summary>
-    <label><span>Tube outside dia.</span><input type="number" id="od" step="0.5"></label>
-    <label><span>Wall thickness</span><input type="number" id="wall" step="0.05"></label>
-    <label><span>Bend radius</span><input type="number" id="bendR" step="10"></label>
-    <label><span>Bend angle</span><input type="number" id="bendA" step="1"></label>
-    <label><span>Straight before bend</span><input type="number" id="bendStart" step="5"></label>
-    <label><span>Lean bend from shock mount</span><input type="number" id="leanEnd" step="5"></label>
-    <label><span>Lean bend angle</span><input type="number" id="leanA" step="1"></label>
-    <label><span>Rear dropout spacing</span><input type="number" id="dropW" step="1"></label>
-    <label><span>Shock mount width</span><input type="number" id="shockW" step="1"></label>
-  </details>
-
-  <details class="grp" id="grp-drive">
-    <summary>Transmission</summary>
-    <label><span>Chainring teeth</span><input type="number" id="ring" step="1"></label>
-    <label><span>Sprocket teeth</span><input type="number" id="cog" step="1"></label>
-    <label><span>Fit chain to geometry</span><input type="checkbox" id="chainAuto"></label>
-    <label><span>Chain links</span><input type="number" id="links" step="2"></label>
-    <label><span>Mech cage length</span><input type="number" id="cage" step="2"></label>
-    <h3>Idler</h3>
-    <label><span>Run chain over idler</span><input type="checkbox" id="idlerOn"></label>
-    <label><span>Idler teeth</span><input type="number" id="idlerTeeth" step="1"></label>
-    <label><span>Mounted to</span><select id="idlerMount">
-      <option value="0">main frame</option><option value="1">swingarm</option>
-    </select></label>
-    <label><span>Idler on main pivot axis</span><input type="checkbox" id="idlerLock"></label>
-  </details>
-
-  <details class="grp" id="grp-rider">
-    <summary>Rider and load</summary>
-    <label><span>Rider plus kit, kg</span><input type="number" id="mass" step="1"></label>
-    <label><span>Peak load, g</span><input type="number" id="peakG" step="0.5"></label>
-    <label><span>Rear wheel share, %</span><input type="number" id="bias" step="1"></label>
-    <label><span>Centre of mass height</span><input type="number" id="cogh" step="10"></label>
-  </details>
-
-  <details class="grp" id="grp-design">
-    <summary>Design file</summary>
-    <label><span>Design name</span><input type="text" id="designName" placeholder="untitled"></label>
-    <label><span>Designer</span><input type="text" id="designer" placeholder="your name"></label>
-    <div class="btnrow">
-      <button id="exportJson">Export</button>
-      <button id="importJson">Import</button>
-      <button id="reset">Reset</button>
+  <div class="tabs">
+    <div class="tabbar" role="tablist">
+      <button class="tabbtn" role="tab" aria-selected="true"  data-tab="frame">Frame geometry</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="stay">Seat stay section</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="drive">Transmission</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="rider">Rider and load</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="design">Design file</button>
     </div>
-    <p class="note" id="build">build 2.0</p>
-  </details>
+
+    <div class="tabpanel" data-panel="frame">
+      <div class="btnrow"><button id="resetGeom">Reset geometry</button></div>
+      <label><span>Reach</span><input type="number" id="reach" step="5"></label>
+      <label><span>Stack</span><input type="number" id="stack" step="5"></label>
+      <label><span>Head tube angle</span><input type="number" id="ha" step="0.5"></label>
+      <label><span>Head tube length</span><input type="number" id="htl" step="5"></label>
+      <label><span>Seat tube angle</span><input type="number" id="sa" step="0.5"></label>
+      <label><span>Seat tube length</span><input type="number" id="st" step="5"></label>
+      <label><span>Top tube drop at seat tube</span><input type="number" id="ttDrop" step="5"></label>
+      <label><span>Bottom bracket height</span><input type="number" id="bbh" step="1"></label>
+      <label><span>Rear centre</span><input type="number" id="rc" step="5"></label>
+      <label><span>Chainstay length</span><input type="number" id="csl" step="5"></label>
+      <label><span>Bottom bracket drop</span><input type="number" id="drop" step="1"></label>
+      <h3>Tubes</h3>
+      <label><span>Down tube OD</span><input type="number" id="dtOD" step="0.1"></label>
+      <label><span>Seat tube OD</span><input type="number" id="stOD" step="0.1"></label>
+      <label><span>Top tube OD</span><input type="number" id="ttOD" step="0.1"></label>
+      <label><span>Head tube OD</span><input type="number" id="htOD" step="0.1"></label>
+      <label><span>Down tube weld clearance</span><input type="number" id="dtWeld" step="1"></label>
+      <label><span>Top tube weld clearance</span><input type="number" id="ttWeld" step="1"></label>
+      <label><span>Pivot body dia.</span><input type="number" id="pivotOD" step="1"></label>
+      <h3>Cockpit</h3>
+      <label><span>Stem length</span><input type="number" id="stemL" step="5"></label>
+      <label><span>Stem rise above head tube</span><input type="number" id="stemH" step="5"></label>
+      <h3>Wheels</h3>
+      <label><span>Front wheel</span><select id="fw"><option value="559">26 in</option><option value="584">27.5 in</option><option value="622">29 in</option><option value="686">32 in</option></select></label>
+      <label><span>Rear wheel</span><select id="rw"><option value="559">26 in</option><option value="584">27.5 in</option><option value="622">29 in</option><option value="686">32 in</option></select></label>
+      <label><span>Front tyre width</span><select id="tyreFWidth"></select></label>
+      <label><span>Rear tyre width</span><select id="tyreRWidth"></select></label>
+      <h3>Fork</h3>
+      <label><span>Travel</span><input type="number" id="forkTravel" step="10"></label>
+      <label><span>Standard axle to crown</span><input type="checkbox" id="a2cAuto"></label>
+      <label><span>Axle to crown, extended</span><input type="number" id="a2c" step="5"></label>
+      <label><span>Lower headset stack</span><input type="number" id="hsLower" step="0.5"></label>
+      <label><span>Offset</span><input type="number" id="offset" step="1"></label>
+      <label><span>Front sag, % of travel</span><input type="number" id="fsag" step="1"></label>
+      <h3>As drawn</h3>
+      <div id="out-geom"></div>
+    </div>
+
+    <div class="tabpanel" data-panel="stay" hidden>
+      <label><span>Tube outside dia.</span><input type="number" id="od" step="0.5"></label>
+      <label><span>Wall thickness</span><input type="number" id="wall" step="0.05"></label>
+      <label><span>Bend radius</span><input type="number" id="bendR" step="10"></label>
+      <label><span>Bend angle</span><input type="number" id="bendA" step="1"></label>
+      <label><span>Straight before bend</span><input type="number" id="bendStart" step="5"></label>
+      <label><span>Lean bend from shock mount</span><input type="number" id="leanEnd" step="5"></label>
+      <label><span>Lean bend angle</span><input type="number" id="leanA" step="1"></label>
+      <label><span>Rear dropout spacing</span><input type="number" id="dropW" step="1"></label>
+      <label><span>Shock mount width</span><input type="number" id="shockW" step="1"></label>
+    </div>
+
+    <div class="tabpanel" data-panel="drive" hidden>
+      <label><span>Chainring teeth</span><input type="number" id="ring" step="1"></label>
+      <label><span>Sprocket teeth</span><input type="number" id="cog" step="1"></label>
+      <label><span>Fit chain to geometry</span><input type="checkbox" id="chainAuto"></label>
+      <label><span>Chain links</span><input type="number" id="links" step="2"></label>
+      <label><span>Mech cage length</span><input type="number" id="cage" step="2"></label>
+      <h3>Idler</h3>
+      <label><span>Run chain over idler</span><input type="checkbox" id="idlerOn"></label>
+      <label><span>Idler teeth</span><input type="number" id="idlerTeeth" step="1"></label>
+      <label><span>Mounted to</span><select id="idlerMount">
+        <option value="0">main frame</option><option value="1">swingarm</option>
+      </select></label>
+      <label><span>Idler on main pivot axis</span><input type="checkbox" id="idlerLock"></label>
+    </div>
+
+    <div class="tabpanel" data-panel="rider" hidden>
+      <label><span>Rider plus kit, kg</span><input type="number" id="mass" step="1"></label>
+      <label><span>Peak load, g</span><input type="number" id="peakG" step="0.5"></label>
+      <label><span>Rear wheel share, %</span><input type="number" id="bias" step="1"></label>
+      <label><span>Centre of mass height</span><input type="number" id="cogh" step="10"></label>
+    </div>
+
+    <div class="tabpanel" data-panel="design" hidden>
+      <label><span>Design name</span><input type="text" id="designName" placeholder="untitled"></label>
+      <label><span>Designer</span><input type="text" id="designer" placeholder="your name"></label>
+      <div class="btnrow">
+        <button id="exportJson">Export</button>
+        <button id="importJson">Import</button>
+        <button id="reset">Reset</button>
+      </div>
+      <p class="note" id="build">build 2.0</p>
+    </div>
+  </div>
 </div>
 
 <div id="stage">
@@ -305,6 +325,7 @@ svg text{font-family:var(--mono)}
     </div>
     <div class="barrow" id="bar-bottom">
       <span class="bargroup" role="group" aria-label="Overlays and parts drawn">
+        <button id="showcog" aria-pressed="false">centre of gravity</button>
         <button id="axpath" aria-pressed="true">axle path</button>
         <button id="asline" aria-pressed="false">anti-squat</button>
         <button id="arline" aria-pressed="false">anti-rise</button>
@@ -344,38 +365,48 @@ svg text{font-family:var(--mono)}
   <h2>Balance</h2>
   <div id="out-balance"></div>
 
-  <h2>Spring</h2>
-  <div id="out-spring"></div>
+  <div class="tabs">
+    <div class="tabbar" role="tablist">
+      <button class="tabbtn" role="tab" aria-selected="true"  data-tab="spring">Spring</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="tubes">Frame tubes</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="force">Pivot loads at sag</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="flex">Seat stay stress</button>
+    </div>
 
-  <details class="grp">
-    <summary>Frame tubes</summary>
-    <div id="out-tubes"></div>
-    <p class="note">Gap from each pivot body to the nearest tube wall, so a boss
-       does not end up inside a tube. The main pivot's two offsets and the down
-       tube to seat tube angle are what its printed housing is made to, and change
-       with every frame size.</p>
-  </details>
+    <div class="tabpanel" data-panel="spring">
+      <div id="out-spring"></div>
+    </div>
 
-  <details class="grp">
-    <summary>Pivot loads at sag</summary>
-    <div id="out-force"></div>
-    <p class="note">Static, in plane, from the rear wheel load alone. No braking or
-       cornering case yet.</p>
-  </details>
+    <div class="tabpanel" data-panel="tubes" hidden>
+      <div id="out-tubes"></div>
+      <p class="note">Gap from each pivot body to the nearest tube wall, so a boss
+         does not end up inside a tube. The main pivot's two offsets and the down
+         tube to seat tube angle are what its printed housing is made to, and change
+         with every frame size.</p>
+    </div>
 
-  <details class="grp">
-    <summary>Seat stay stress</summary>
-    <div id="out-flex"></div>
-    <p class="note">Steel tubing, constant section, load shared by two stays. Out of
-       plane bending from the lean does not cancel against the flex, so the two are
-       combined as a resultant moment.</p>
-    <details class="grp sub">
-      <summary>Workings</summary>
-      <div id="out-flexdetail"></div>
-    </details>
-  </details>
+    <div class="tabpanel" data-panel="force" hidden>
+      <div id="out-force"></div>
+      <p class="note">Static, in plane, from the rear wheel load alone. No braking or
+         cornering case yet.</p>
+    </div>
+
+    <div class="tabpanel" data-panel="flex" hidden>
+      <div id="out-flex"></div>
+      <p class="note">Steel tubing, constant section, load shared by two stays. Out of
+         plane bending from the lean does not cancel against the flex, so the two are
+         combined as a resultant moment.</p>
+      <div class="btnrow"><button id="flexWorkingsOpen">Workings</button></div>
+    </div>
+  </div>
 </div>
 </div>
+
+<dialog id="flexWorkings">
+  <div class="dlg-hdr"><span>Seat stay stress — workings</span>
+    <button class="iconbtn" id="flexWorkingsClose" aria-label="Close workings">✕</button></div>
+  <div id="out-flexdetail"></div>
+</dialog>
 
 <script>
 // ==ENGINE-START==  no DOM below this line until ENGINE-END
@@ -1282,7 +1313,7 @@ let zoomK=1, panX=0, panY=0, lastBox=null, mmPerPx=1;
    moved. Cached here, invalidated only where an actual resize is detected. */
 let canvasRectCache=null, chartsRectCache=null;
 function invalidateRectCache(){ canvasRectCache=null; chartsRectCache=null; }
-let showForces=false, showAS=false, showAR=false, showPath=true;
+let showForces=false, showAS=false, showAR=false, showCog=false, showPath=true;
 const showLines=()=>showAS||showAR;          // the shared construction lines
 // What gets drawn, as opposed to what gets analysed. All on by default; each
 // hides one piece of artwork so a design in progress isn't obscured by parts
@@ -1535,6 +1566,7 @@ function draw(){
   drawSaddle();
   drawVisibleCrank();
   drawASARConstruction();
+  drawCoG();
   drawPivots();
   drawForceVectors();
 
@@ -1853,6 +1885,52 @@ function draw(){
         prev=at; tag(fax+pad, at, txt, col);
       });
     }
+  }
+
+  /* ---- centre of gravity ----
+     This IS the point anti-squat and anti-rise are measured against -- both
+     are percentages of how high it sits above the ground (C.cogh), and
+     drawASARConstruction's "100% of CoG height" line is drawn at exactly this
+     point's own y. Only the height was ever a modelled quantity, though: cogh
+     is the one field this tool asks for. The fore-aft (x) position drawn here
+     is derived, not modelled -- back-solved from the static weight
+     distribution the pivot-force panel already uses (C.bias, rear wheel's
+     share of total weight) by simple lever balance about the two contact
+     patches: a rear share of `bias`% puts the CoG `(1-bias/100)` of the
+     wheelbase forward of the rear axle, the same fraction of the wheelbase
+     the front wheel itself carries. bias=50 (even split) lands it at the
+     midpoint; bias=100 (impossible, but the limit) collapses it onto the
+     rear axle; bias=0 sends it to the front axle -- all three checked by
+     hand, not just asserted. Uses the same fixed, static references
+     (ax0, C.fax, ground) as the anti-squat construction above, for the same
+     reason: this point is rigidly fixed to the frame+rider system, so it
+     does not move as the suspension cycles, only as the geometry itself
+     changes. Independent of showLines()/showAS/showAR -- its own toggle. */
+  function drawCoG(){
+    if(!showCog) return;
+    const wheelbase=C.fax-ax0.x;
+    const cgx=ax0.x+wheelbase*(1-C.bias/100), cgy=ground+C.cogh;
+    const R=Math.max(9,11*mmPerPx);
+    const cg=el('g',{transform:`translate(${cgx} ${cgy})`,'pointer-events':'none'},g);
+    // the standard engineering "target" symbol: a circle with two opposite
+    // quadrants filled, rotationally symmetric so the drawing group's own
+    // y-flip cannot make it read backwards
+    const wedge=(a0,a1)=>{
+      const x0=R*Math.cos(a0), y0=R*Math.sin(a0), x1=R*Math.cos(a1), y1=R*Math.sin(a1);
+      return `M0,0 L${x0.toFixed(2)},${y0.toFixed(2)} A${R.toFixed(2)},${R.toFixed(2)} 0 0 1 `+
+             `${x1.toFixed(2)},${y1.toFixed(2)} Z`;
+    };
+    el('circle',{cx:0,cy:0,r:R,fill:'#fff'},cg);
+    el('path',{d:wedge(0,Math.PI/2),fill:'#2a3138'},cg);
+    el('path',{d:wedge(Math.PI,Math.PI*1.5),fill:'#2a3138'},cg);
+    el('circle',{cx:0,cy:0,r:R,fill:'none',stroke:'#2a3138','stroke-width':1.5},cg);
+    // a fresh group at the label's own absolute point, not nested inside cg's
+    // translate -- same pattern drawASARConstruction's tag() uses, so the
+    // y-flip back is computed once, at the actual label position
+    const t=el('text',{x:0,y:0,'font-size':Math.max(11,13*mmPerPx),fill:'#2a3138',
+      'font-weight':600},el('g',{transform:`translate(${cgx+R*1.4} ${cgy}) scale(1,-1)`,
+      'pointer-events':'none'},g));
+    t.textContent='CoG';
   }
 
   /* ---- pivots ----
@@ -2758,6 +2836,7 @@ document.getElementById('cnext').onclick=()=>pageCharts(1);
 [['forces',    ()=>showForces=!showForces,       ()=>showForces],
  ['asline',    ()=>showAS=!showAS,               ()=>showAS],
  ['arline',    ()=>showAR=!showAR,               ()=>showAR],
+ ['showcog',   ()=>showCog=!showCog,             ()=>showCog],
  ['axpath',    ()=>showPath=!showPath,           ()=>showPath],
  ['tglWheels', ()=>showWheels=!showWheels,       ()=>showWheels],
  ['tglDrive',  ()=>showDrivetrain=!showDrivetrain, ()=>showDrivetrain],
@@ -2769,6 +2848,26 @@ document.getElementById('cnext').onclick=()=>pageCharts(1);
   const b=document.getElementById(id);
   b.onclick=()=>{ flip(); b.setAttribute('aria-pressed',read()); draw(); };
 });
+/* Generic tab switcher: works for any .tabs block (the left rail's Frame
+   geometry group and the right rail's Spring group both use it) purely off
+   data-tab/data-panel, so a third one needs no new wiring. One listener per
+   tab bar rather than per button, since a fixed set of tabs never changes
+   after boot. */
+document.querySelectorAll('.tabs').forEach(tabs=>{
+  const bar=tabs.querySelector('.tabbar');
+  const btns=[...tabs.querySelectorAll('.tabbtn')], panels=[...tabs.querySelectorAll('.tabpanel')];
+  bar.addEventListener('click',e=>{
+    const b=e.target.closest('.tabbtn'); if(!b) return;
+    const k=b.dataset.tab;
+    btns.forEach(x=>x.setAttribute('aria-selected', String(x===b)));
+    panels.forEach(p=>p.hidden = p.dataset.panel!==k);
+  });
+});
+// Seat stay stress' twelve intermediate numbers are dense enough to want their
+// own layer rather than a nested fold -- a native <dialog> for free focus
+// handling and Escape-to-close instead of a hand-rolled modal.
+document.getElementById('flexWorkingsOpen').onclick=()=>document.getElementById('flexWorkings').showModal();
+document.getElementById('flexWorkingsClose').onclick=()=>document.getElementById('flexWorkings').close();
 /* Both panels fit themselves to their own pixel box, and the first paint can run
    before the flex layout has settled, so watch the boxes rather than the window. */
 window.addEventListener('resize',()=>{invalidateRectCache(); draw(); charts();});

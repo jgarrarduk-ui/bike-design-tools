@@ -32,11 +32,76 @@ Three columns: inputs left, drawing and graph in the middle, outputs right.
 
 The left rail is ordered by how often you touch it. Pivots and shock sit open at
 the top because they are what you drag while watching the graph; frame geometry,
-stay section, transmission, rider and the design file are `<details class="grp">`
-folds, because geometry is normally set once, first, and then left alone. The
-right rail leads with travel, balance and spring — the things a pivot move
-changes — and folds the pivot loads and the stay stress calculation away, with
-the twelve intermediate workings behind a second fold inside the stress panel.
+stay section, transmission, rider and the design file are a tabbed panel below
+them, because geometry is normally set once, first, and then left alone. The
+right rail leads with travel and balance — the things a pivot move changes —
+then a second tabbed panel for spring, frame tubes, pivot loads and the stay
+stress calculation, with the twelve intermediate workings in a popup dialog off
+the stress tab rather than a fold inside it. See "Tabbed panels" below for why
+these are tabs now rather than the `<details class="grp">` folds they used to be.
+
+**Tabbed panels replaced two independent stacks of `<details class="grp">`
+folds.** Both the left rail's five setup groups (frame geometry, seat stay
+section, transmission, rider and load, design file) and the right rail's four
+verification groups (spring, frame tubes, pivot loads at sag, seat stay
+stress) used to be foldable accordions, each opened and closed independently
+— nothing stopped every one of the nine from being open at once, at which
+point a fold buys nothing over a plain heading. A tab group enforces the thing
+an accordion only suggests: exactly one panel visible per group. Both groups
+share one generic mechanism (`.tabs`/`.tabbar`/`.tabbtn`/`.tabpanel`, wired by
+a single delegated click listener per `.tabs` block keyed off `data-tab`/
+`data-panel`) rather than two copies of the same logic, so a third tab group
+later needs no new JS, only the markup. `.tabbtn` deliberately adds no font,
+padding, border or hover rules of its own — a tab button is still a plain
+`<button>`, so it inherits all of that from the one base `button{}` rule for
+free, and picking "the active tab" up `[aria-selected=true]` re-uses the exact
+blue `[aria-pressed=true]` already means everywhere else in this UI (play/sag/
+static, the overlay toggles) rather than inventing a second "this one's
+active" colour. Every underlying `id="out-*"` div these panels were already
+being filled by (`out-geom`, `out-tubes`, `out-force`, `out-flex`, `out-spring`,
+etc.) is untouched — `readouts()`/`fillCfg()` never knew or cared whether their
+target div sat inside a `<details>` or a `<div class="tabpanel">`, so none of
+that code needed to change.
+
+**The "Workings" breakdown under Seat stay stress is a `<dialog>` now, not a
+nested fold inside a fold.** Twelve intermediate numbers were already a fold
+inside the stress panel's own fold (`.grp.sub`); once the outer fold became a
+tab, nesting a second foldable layer inside a tab panel read as one disclosure
+mechanism too many. A native `<dialog>` (`showModal()`/`close()`) gives a free
+focus trap, Escape-to-close and top-layer stacking with no hand-rolled
+backdrop or focus management — opened from a plain button in the Seat stay
+stress tab, and still just writing into the same `#out-flexdetail` div
+`readouts()` always has.
+
+**Both rails' tab labels wrap onto a second row rather than being
+abbreviated.** At 292px/268px rail widths, five and four full-length labels
+("Seat stay section", "Pivot loads at sag") do not fit one row — the
+alternative was shortening them ("Stay", "Pivots"), which reads as more
+"condensed" but starts costing clarity. `flex-wrap` on `.tabbar` plus
+auto-width buttons (not equal-width columns) lets each label keep its full
+text and wrap the row instead, the same trade this file already made for the
+mobile toolbar (`.barrow{flex-wrap:wrap}` under the 900px breakpoint).
+Confirmed at both a 1500px desktop width and a 420px mobile width — reads
+clean at both, no clipped or overlapping labels either way.
+
+**`<h2>Pivots and mounts</h2>` now carries its own Reset button inline**,
+rather than a separate `.btnrow` underneath it — `h2{display:flex;
+justify-content:space-between}` puts the button flush right on the same line
+as the heading text for free. This rule is on every `<h2>` in the file, not
+just this one, since a heading with a single text-node child lays out
+identically under flex or block (flex only changes anything once there is a
+second flex item to place, which is only true here). Renamed "Reset points &
+mounts" to "Reset" now that the button sits directly under its own heading
+and no longer needs to restate what it resets. The "Drag points on the
+drawing or type coordinates." hint above the Datum selector is gone too — the
+same information a first-time user needs once, permanently spending a line
+for everyone after that; the Datum selector itself is untouched, still doing
+real work.  The `<h3>Down tube mounts</h3>` heading above the two standoff
+fields is gone as well, for the same reason `<h3>Tubes</h3>` etc. still exist
+elsewhere: those headings each group several fields under one topic, but here
+there were only ever the two fields (shock mount, link pivot) directly below
+`<h2>Pivots and mounts</h2>` already labelling the same idea one level up —
+the second heading was restating the first, not adding structure.
 
 **The `<h1>Flex-stay kinematics</h1>` and its subtitle are gone from the top of
 the left rail** — a one-time title, permanently spending vertical space at the
@@ -1050,11 +1115,34 @@ Both stays share the axial load.
 
 ## Overlays
 
-Four toggles in the bar. Axle path is on by default, the rest off. Force vectors resolve `pivotForces`
+Five toggles in the bar. Axle path is on by default, the rest off. Force vectors resolve `pivotForces`
 for the frame on screen. Anti-squat and anti-rise are separate toggles that share
 one construction block: the front axle vertical and the 100% of centre-of-mass
 -height mark are drawn for either, the chain run and axle-to-instant-centre lines
 only for anti-squat since braking does not involve the chain.
+
+**Centre of gravity marker (`showCog`, off by default).** Drawn at
+`(cgx, ground+C.cogh)` — the same height `drawASARConstruction`'s "100% of CoG
+height" line already uses, so this marker's own y always lands exactly on
+that line when both are on. `cogh` is the one CoG-related field this tool
+actually asks for; there was never a modelled fore-aft (x) position, so `cgx`
+is derived, not read off a config field: back-solved from `C.bias` (the rear
+wheel's static share of total weight, already used by `sprungLoad()` for the
+pivot-force panel) by a plain lever balance about the two contact patches —
+a rear share of `bias`% puts the CoG `(1-bias/100)` of the wheelbase forward
+of the rear axle, the same fraction of the wheelbase the front wheel itself
+carries. Checked at the three sanity points: `bias=50` lands it at the
+midpoint, `bias→100` collapses it onto the rear axle, `bias→0` sends it to
+the front axle. Uses the same fixed, static references (`ax0`, `C.fax`,
+`ground`) the anti-squat construction already does, and for the same reason
+— this point is rigid to the frame+rider system, so it must not appear to
+drift as the suspension cycles, only when the geometry itself changes. Drawn
+as the standard engineering "target" symbol (a circle, two opposite quadrants
+filled) rather than a plain dot, specifically because it is rotationally
+symmetric: the drawing group's own `scale(1,-1)` y-flip cannot make a
+diagonal-quadrant pattern read as mirrored or backwards the way an
+asymmetric glyph could. Independent of `showAS`/`showAR`/`showLines()` — its
+own toggle, drawn whether or not the anti-squat/anti-rise construction is on.
 
 **The framing is fixed.** `fitView` takes its content box from the static geometry
 — `frame(0)` and the top-out axle — so cycling the suspension, holding at sag or
@@ -1100,7 +1188,7 @@ desktop-width window too narrow for the bottom row's full button count, that
 row now overflows/clips at its own right edge rather than wrapping — a
 tradeoff, but the alternative is exactly the spillover this was fixed to
 stop. The mobile breakpoint (`max-width:900px`) gets its wrapping back,
-`.barrow{flex-wrap:wrap}`, since eleven buttons forced onto one unbreakable
+`.barrow{flex-wrap:wrap}`, since a dozen buttons forced onto one unbreakable
 row would just run off a phone screen.
 
 **Each row's own buttons used to spread across whatever width was left over
