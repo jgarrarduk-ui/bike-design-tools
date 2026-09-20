@@ -17,9 +17,26 @@
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans)}
-#app{display:grid;grid-template-columns:292px minmax(560px,1fr) 268px;height:100vh}
+/* Left rail is 18px wider than its content actually needs (292px), and that
+   spare 18px is deliberately never usable content width -- see .rail's own
+   scrollbar-gutter note below for why. */
+#app{display:grid;grid-template-columns:310px minmax(560px,1fr) 268px;height:100vh}
+/* scrollbar-gutter:stable reserves a scrollbar-width strip permanently,
+   whether or not this rail's current tab is actually tall enough to need
+   one. Without it, switching from a short tab (Design file) to a long one
+   (Frame geometry) made the vertical scrollbar appear and eat into the
+   content width right when the tab already needed the most room -- every
+   label and input visibly narrowed by the scrollbar's own width, on the one
+   tab that could least afford it. The 18px added to the left rail's column
+   above is what makes this free: reserving the gutter shrinks the content
+   box by that same amount on EVERY tab, so without the matching width
+   increase the short tabs would end up narrower than they used to be, not
+   just the long one stop being narrower than them. Left rail only: checked
+   the right rail's own four tabs at a 800px-tall viewport and none of them
+   scroll, so reserving a gutter there would only ever cost width for no
+   benefit. */
 .rail{overflow-y:auto;background:var(--panel);padding:14px 14px 40px}
-.rail.left{border-right:1px solid var(--rule)}
+.rail.left{border-right:1px solid var(--rule);scrollbar-gutter:stable}
 .rail.right{border-left:1px solid var(--rule)}
 #stage{display:flex;flex-direction:column;min-width:0}
 #canvas{flex:1;min-height:230px;max-height:56vh;position:relative;min-width:0}

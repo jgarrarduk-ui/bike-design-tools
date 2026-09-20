@@ -74,7 +74,7 @@ stress tab, and still just writing into the same `#out-flexdetail` div
 `readouts()` always has.
 
 **Both rails' tab labels wrap onto a second row rather than being
-abbreviated.** At 292px/268px rail widths, five and four full-length labels
+abbreviated.** At 310px/268px rail widths, five and four full-length labels
 ("Seat stay section", "Pivot loads at sag") do not fit one row — the
 alternative was shortening them ("Stay", "Pivots"), which reads as more
 "condensed" but starts costing clarity. `flex-wrap` on `.tabbar` plus
@@ -83,6 +83,32 @@ text and wrap the row instead, the same trade this file already made for the
 mobile toolbar (`.barrow{flex-wrap:wrap}` under the 900px breakpoint).
 Confirmed at both a 1500px desktop width and a 420px mobile width — reads
 clean at both, no clipped or overlapping labels either way.
+
+**The left rail's tabs used to visibly change width depending on which one
+was open, because the rail's vertical scrollbar came and went with the tab's
+own content height.** Design file (short) never needed to scroll; Frame
+geometry (the longest tab by a wide margin — reach through the whole fork
+section, plus its own "As drawn" readout) almost always did, at any ordinary
+window height. `overflow-y:auto`'s scrollbar takes its width out of the
+content box only when it's actually showing, so switching onto the one tab
+with the most fields was also the moment every one of those fields' inputs
+got narrower — reported as the panel visibly "compressing" on that tab, which
+is exactly backwards from what a busy tab needs.
+
+Fixed with `scrollbar-gutter:stable` on `.rail.left`, which reserves a
+scrollbar-width strip unconditionally, whether or not the current tab is
+tall enough to need one — so the content box is the same width on every tab,
+scrolling or not. That reservation is itself 18px of width no tab can ever
+use, so the left column in `#app`'s `grid-template-columns` grew from 292px
+to 310px to give it back; without that the fix would have made every tab
+narrower than before, not just stopped the busiest one from being narrower
+than the rest. Deliberately scoped to `.rail.left` alone, not the shared
+`.rail` rule both columns use: checked the right rail's four tabs at an
+800px-tall viewport and none of them come close to scrolling, so reserving a
+gutter there would only cost width for a problem that doesn't exist on that
+side. `scrollbar-gutter` needs Safari 17.4+ (spring 2024) — old enough now
+not to be a practical concern, but worth knowing if this ever needs a
+fallback for something older.
 
 **`<h2>Pivots and mounts</h2>` now carries its own Reset button inline**,
 rather than a separate `.btnrow` underneath it — `h2{display:flex;
