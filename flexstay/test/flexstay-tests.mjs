@@ -187,6 +187,29 @@ ok('shipped defaults give sane travel',
    && shipped.frames[shipped.frames.length-1].rise<250,
    shipped.frames.length>2?shipped.frames[shipped.frames.length-1].rise.toFixed(1)+' mm':'no frames');
 
+/* Every shipped configuration has to solve, not just PRESETS[0] (which is DEF,
+   already covered above). Each preset is a DELTA over DEF, layered here exactly
+   the way the app's own presetDesign() layers it, so a preset that forgets a
+   field is tested against the same fallback the app would give it. Extracted
+   from source like DEF, so adding a configuration adds its checks for free. */
+const ps=src.split('const PRESETS=')[1].split('\n];')[0]+'\n]';
+const PRESETS=new Function('return '+ps)();
+ok('every preset is named and described',
+   PRESETS.length>1 && PRESETS.every(p=>p.name&&p.note&&p.geom&&p.cfg), PRESETS.length+' presets');
+PRESETS.forEach((p,i)=>{
+  const g=Object.assign(structuredClone(DEF.geom), structuredClone(p.geom));
+  const c=Object.assign(structuredClone(DEF.cfg),  structuredClone(p.cfg));
+  const r=m.sweep(g,c);
+  const last=r.frames&&r.frames.length?r.frames[r.frames.length-1]:null;
+  ok('preset '+i+' sweeps without jamming', !r.error, p.name+(r.error?': '+r.error:''));
+  ok('preset '+i+' gives sane travel',
+     !!last && last.rise>50 && last.rise<250, last?last.rise.toFixed(1)+' mm':'no frames');
+  // catches a mistyped SE/SG in a preset: the drawn eye-to-eye has to agree
+  // with the shock the preset says it is built around
+  ok('preset '+i+' eye-to-eye matches its shock spec',
+     Math.abs(m.dist(g.SE,g.SG)-c.eye)<2, m.dist(g.SE,g.SG).toFixed(1)+' vs '+c.eye);
+});
+
 /* ---------- idler ---------- */
 const ridge=t=>t*12.7/(2*Math.PI);           // pitch radius from a tooth count
 // the idler is off in REF, so switching it on must be the only thing that changes

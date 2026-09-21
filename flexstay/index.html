@@ -47,6 +47,16 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
 #zoomctl{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:4px}
 #zoomctl button{width:26px;height:26px;padding:0;font-size:14px;line-height:1;
   background:#fffc;backdrop-filter:blur(2px)}
+/* The configuration picker mirrors #zoomctl across the canvas -- same translucent
+   overlay treatment so the two read as one class of on-canvas control. A sibling
+   of #draw, not a child, so it never competes with initDrag()'s pointer and wheel
+   handlers on the SVG itself. */
+#configctl{position:absolute;top:10px;left:10px}
+#configctl button{background:#fffc;backdrop-filter:blur(2px)}
+.cfgopt{padding:10px 12px}
+.cfgopt+.cfgopt{border-top:1px solid var(--rule)}
+.cfgopt button{width:100%;text-align:left}
+.cfgopt .note{margin:4px 0 0}
 h1{font-size:14px;margin:0 0 2px;font-weight:650;letter-spacing:.2px}
 .sub{color:var(--ink-soft);font-size:11px;margin:0 0 14px}
 h2{font-size:11px;font-weight:650;color:var(--ink-soft);margin:18px 0 7px;
@@ -89,6 +99,11 @@ dialog .readout:last-child{padding-bottom:12px}
 .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 2px}
 .btnrow button{flex:1;min-width:70px}
 label{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:5px 0}
+/* The `hidden` attribute is only `display:none` from the UA stylesheet, so the
+   author rule above silently beats it and a hidden <label> stays on screen.
+   Same scoped-selector fix .tabpanel[hidden] already uses, rather than
+   !important. Rows the active configuration doesn't own rely on this. */
+label[hidden]{display:none}
 label span{flex:1;min-width:0}
 input[type=number],input[type=text],select{width:64px;font:12px var(--mono);padding:3px 5px;
   border:1px solid var(--rule);border-radius:3px;background:#fff;color:var(--ink)}
@@ -211,9 +226,9 @@ svg text{font-family:var(--mono)}
        is setup, folded away until it is wanted. -->
   <h2>Pivots and mounts<button id="resetPoints">Reset</button></h2>
   <div id="points"></div>
-  <label><span>Shock mount off down tube</span><input type="number" id="sgStand" step="1">
+  <label id="sgStandRow"><span>Shock mount off down tube</span><input type="number" id="sgStand" step="1">
     <button class="iconbtn" id="sgLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock shock mount standoff">🔒</button></label>
-  <label><span>Link pivot off down tube</span><input type="number" id="spStand" step="1">
+  <label id="spStandRow"><span id="spStandLabel">Link pivot off down tube</span><input type="number" id="spStand" step="1">
     <button class="iconbtn" id="spLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock link pivot standoff">🔒</button></label>
 
   <p class="note">Datum:
@@ -229,7 +244,7 @@ svg text{font-family:var(--mono)}
     <button class="iconbtn" id="locklen" aria-pressed="true" title="Keep the shock eye to eye fixed while dragging its mounts" aria-label="Lock shock eye to eye">🔒</button></label>
   <label><span>Stroke</span><input type="number" id="stroke" step="0.5"></label>
   <label><span>Rear sag, % of travel</span><input type="number" id="sag" step="1"></label>
-  <label><span>Shock connected to</span><select id="shockMount">
+  <label id="shockMountRow"><span>Shock connected to</span><select id="shockMount">
     <option value="0">seat stay</option><option value="1">linkage</option>
   </select></label>
 
@@ -362,6 +377,7 @@ svg text{font-family:var(--mono)}
   </div>
   <div id="canvas">
     <svg id="draw" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="configctl"><button id="configOpen" title="Suspension configuration">config</button></div>
     <div id="zoomctl">
       <button id="zin"  title="Zoom in"       aria-label="Zoom in">+</button>
       <button id="zout" title="Zoom out"      aria-label="Zoom out">&minus;</button>
@@ -421,6 +437,12 @@ svg text{font-family:var(--mono)}
   </div>
 </div>
 </div>
+
+<dialog id="configMenu">
+  <div class="dlg-hdr"><span>Suspension configuration</span>
+    <button class="iconbtn" id="configClose" aria-label="Close configurations">✕</button></div>
+  <div id="configList"></div>
+</dialog>
 
 <dialog id="flexWorkings">
   <div class="dlg-hdr"><span>Seat stay stress — workings</span>
@@ -986,6 +1008,7 @@ const DEF={
          AX:{x:-450,y:18.95999999999998}, ID:{x:0,y:125} },
   cfg:{ eye:230, stroke:65, zone:551, bendR:115, bendA:42, bendStart:50, leanEnd:55, leanA:8, dropW:148, shockW:33, peakG:3, od:16, wall:0.9, ring:32, cog:21,
         shockMount:0, // 0 = seat stay (default), 1 = linkage
+        config:0,     // which PRESETS entry this design is: 0 = downtube mounted, 1 = rocker
         mass:85, bias:58, cogh:1057, sag:30, fsag:20, fax:844.3592543050977,
         rw:584, fw:622, tyreR:60.96, tyreF:60.96, reach:485, stack:654.5403733659439, ha:63.3, htl:130,
         sa:76, st:430, ttDrop:90, bbh:334, drop:18.95999999999998, rc:450, csl:450.39924689102224,
@@ -995,6 +1018,36 @@ const DEF={
         sgStand:55, sgLock:1, spStand:55, spLock:1,
         chainAuto:1,
         idlerOn:0, idlerTeeth:14, idlerMount:0, idlerLock:0 }  // mount 0 = frame, 1 = swingarm
+};
+/* The named frame architectures. Each is a DELTA over DEF, layered exactly the
+   way importJSON layers a saved design file, so a preset carries only what it
+   actually changes and inherits any field added to DEF later for free.
+   PRESETS[0] is DEF itself, which is why its deltas are empty.
+
+   This block sits AFTER DEF on purpose: test/flexstay-tests.mjs extracts DEF by
+   splitting the source on `const DEF=` and then on the first `};`, so anything
+   declared after DEF's own closing brace is invisible to that extractor and
+   cannot break it. */
+const PRESETS=[
+  { name:'Flex-stay 4-bar — Downtube mounted',
+    note:'Shock and link pivot both bracketed off the down tube.',
+    geom:{}, cfg:{} },
+  { name:'Flex-stay 4-bar — Rocker',
+    note:'Link pivots off the seat tube and drives the shock.',
+    geom:{ SP:{x:-38,y:260.8}, LP:{x:-138.4,y:319.3},
+           SE:{x:28.7,y:308.9}, SG:{x:57.4,y:80.7} },
+    cfg:{ shockMount:1, sgStand:12, sgLock:0, spStand:26.2, spLock:1 } }
+];
+/* The design a given config means by "back to square one" -- what every reset
+   button restores, now that "the defaults" depends on which architecture you
+   are drawing. The delta itself never carries `config`, so it is stamped on
+   here rather than being repeated in every preset. */
+const presetDesign=i=>{
+  const p=PRESETS[i]||PRESETS[0];
+  const d={geom:Object.assign(structuredClone(DEF.geom), structuredClone(p.geom)),
+           cfg: Object.assign(structuredClone(DEF.cfg),  structuredClone(p.cfg))};
+  d.cfg.config=(PRESETS[i]?i:0);
+  return d;
 };
 let G=structuredClone(DEF.geom), C=structuredClone(DEF.cfg);
 let result=null, posT=0, playing=false, holdSag=false;
@@ -1158,6 +1211,27 @@ function frontTriangle(){
           dt, tt, st, ht, all:[dt,tt,st,ht]};
 }
 
+/* Which tube a welded-on mount's standoff is measured from. The shock mount is
+   a bracket on the down tube in every config; the link pivot moves to the seat
+   tube on the rocker config, where the rocker bolts to the seat tube instead.
+   No new geometry is needed for that -- frontTriangle() already returns stU,
+   and alongOf/standoffOf/onTube are all BB-origin, which both tubes share.
+
+   `sgn` normalises which side of a tube reads positive. standoffOf's positive
+   side is the one the down tube's mounts sit on (that is what its own comment
+   means by "positive"), but the seat tube's mounts sit on its NEGATIVE side --
+   so without this flip an ordinary 26mm seat-tube bracket would report -26 in
+   the box. The locked/unlocked round trip survives it: alongOf(u,onTube(u,t,off))
+   === t for unit u whatever off is, so sgn cancels between the locked write and
+   the unlocked read exactly as it does today.
+
+   FT is passed in wherever the caller already has one -- frontTriangle() runs a
+   four-pass mitre solve and is not free. */
+function mountAxis(k, FT){
+  FT=FT||frontTriangle();
+  return (k==='SP' && C.config===1) ? {u:FT.stU, sgn:-1} : {u:FT.dtU, sgn:1};
+}
+
 // Arc length of the drawn seat stay, dropout to wherever it physically ends
 // (the shock eye, or the link pivot in linkage mode -- see drawRearAssembly).
 function stayLength(){ return stayPath(G.FP, C.shockMount?G.LP:G.SE).total; }
@@ -1173,14 +1247,18 @@ function recompute(quick){
        can swing under them and they keep that one dimension, sliding along to
        wherever they already were. Unlocked the number simply reports. The main
        pivot is deliberately absent — its printed housing is unique to each frame
-       size, so pinning it to a tube would be wrong. dtU comes from frontTriangle()
-       rather than its own htBot-based line, so it is whatever axis the down tube
-       is actually drawn along right now (weld clearance slides it slightly) — the
-       lock can never disagree with what's on screen. */
-    const dtU=frontTriangle().dtU;
+       size, so pinning it to a tube would be wrong. The axis comes from
+       frontTriangle() rather than its own htBot-based line, so it is whatever
+       axis the tube is actually drawn along right now (weld clearance slides it
+       slightly) — the lock can never disagree with what's on screen. Which tube
+       each mount answers to is mountAxis()'s job, since the link pivot sits on
+       the seat tube on the rocker config; FT is fetched once and shared rather
+       than re-solved per mount. */
+    const FT=frontTriangle();
     for(const [k,lock,off] of [['SG','sgLock','sgStand'],['SP','spLock','spStand']]){
-      if(C[lock]) G[k]=onTube(dtU, alongOf(dtU,G[k]), C[off]);
-      else        C[off]=Math.round(standoffOf(dtU,G[k])*10)/10;
+      const {u,sgn}=mountAxis(k,FT);
+      if(C[lock]) G[k]=onTube(u, alongOf(u,G[k]), sgn*C[off]);
+      else        C[off]=Math.round(sgn*standoffOf(u,G[k])*10)/10;
     }
     // Vestigial, kept on purpose: a leftover field from the old flex-zone
     // overlay (bending always spans the whole seat stay now, so nothing
@@ -1711,8 +1789,14 @@ function draw(){
      leave no seam across the tube they sit on. */
   function drawFrontTriangle(){
     const FT=frontTriangle(), dtU=FT.dtU;
+    // Each stub grows out of whichever tube its own mount is measured from, so
+    // on the rocker config the link pivot's boss runs off the seat tube. Both
+    // stay inside the single tubes() call below: it paints every outline before
+    // any fill, which is what lets a stub merge seamlessly into its tube --
+    // split into its own call it would draw a visible seam across it.
+    const spU=mountAxis('SP',FT).u;
     const foot=mul(dtU, Math.max(60,alongOf(dtU,G.SG)));   // shock mount brace
-    const boss=mul(dtU, Math.max(50,alongOf(dtU,G.SP)));   // second pivot boss
+    const boss=mul(spU, Math.max(50,alongOf(spU,G.SP)));   // second pivot boss
     tubes([[FT.dt[1],FT.dtTip,FT.dt[3],'butt'],
            [FT.tt[1],FT.ttTip,FT.tt[3],'butt'],
            [FT.st[1],FT.st[2],  FT.st[3],'butt'],
@@ -1784,10 +1868,21 @@ function draw(){
        path actually on screen — tracks the bend correctly at any geometry
        instead of assuming it sits near the curve's own end. Seat-stay mode:
        LP gets the brace (SE is the curve's own end). Linkage mode: the curve
-       ends at LP instead, so SE is the one that needs bracing now. */
+       ends at LP instead, so SE is the one that needs bracing now.
+
+       Painted in the link's own teal rather than the stay's blue: in either
+       mode this member carries a linkage pivot, and in linkage mode it is
+       outright part of the rocker. There it is also anchored at f.LP
+       explicitly rather than at the nearest point on the drawn stay --
+       closestOnPath returns essentially LP anyway, since the curve already
+       ends there, but saying so makes the member honest. LP and SE are BOTH
+       points on the link, so this is the rocker's third side (a triangular
+       bell-crank: SP->LP, SP->SE, LP->SE), not a rigid bar spanning two
+       bodies that rotate relative to each other, which is what deriving it
+       off the stay's curve implied. */
     const braceTarget = C.shockMount ? f.SE : f.LP;
-    const foot=closestOnPath(path.pts,braceTarget);
-    tubes([[foot,braceTarget,22]],'#8fb6cf','#134463');
+    const foot = C.shockMount ? f.LP : closestOnPath(path.pts,braceTarget);
+    tubes([[foot,braceTarget,22]],'#4bb3a6','#0b5a53');
   }
 
   /* ---- shock link and shock ---- */
@@ -2113,6 +2208,9 @@ function initDrag(){
     // that later snap becomes a no-op confirmation rather than a clobber.
     if(lockLen && (dragKey==='SE'||dragKey==='SG')){
       if(C.sgLock){
+        // sgLock only, and SG is a down-tube mount on every config (only the
+        // LINK pivot moves to the seat tube on the rocker), so dtU is still the
+        // right axis here -- no mountAxis() lookup needed.
         const dtU=frontTriangle().dtU;
         if(dragKey==='SG'){
           // dragging the mount can only ever slide it along the tube -- match
@@ -2258,10 +2356,21 @@ function readouts(){
      properly reworking these equations for that case is real, deferred
      mechanics (see CLAUDE.md, "Not done") -- not attempted here. Flag it
      plainly instead of computing and showing a number that would look
-     exactly as authoritative as a correct one. */
+     exactly as authoritative as a correct one.
+
+     The flex ANGLE is the exception and is reported either way. It is a
+     kinematic demand on the tube, not a force result: solve()'s stayAngle is
+     atan2(LP-FP) - phi, body B's orientation in body A's frame, and LP stays
+     on body B whichever body owns the shock eye. So f.flex is exactly as
+     correct in linkage mode as in seat-stay mode, and hiding it behind a gate
+     about forces was hiding the one number here that is still known. */
+  const flPeak=f.map(k=>k.flex).reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a,0);
+  const flexRow=row('Flex pivot rotation', flPeak.toFixed(2)+'°');
   if(C.shockMount){
-    R('out-flex').innerHTML=row('Seat stay stress','not modeled for a linkage-driven shock yet','warn');
-    R('out-flexdetail').innerHTML=row('Workings','not modeled for a linkage-driven shock yet','warn');
+    R('out-flex').innerHTML=flexRow+
+      row('Seat stay stress','not modeled for a linkage-driven shock yet','warn');
+    R('out-flexdetail').innerHTML=flexRow+
+      row('Workings','not modeled for a linkage-driven shock yet','warn');
   } else {
     const fl=f.map(k=>k.flex);
     const peak=fl.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a,0);
@@ -2581,6 +2690,25 @@ function fillPoints(){
   });
   fillPoints();
 }
+/* The parts of the UI a configuration owns. Kept separate from fillCfg()
+   because it hides and relabels controls rather than filling them, and has to
+   run after any wholesale G/C replacement -- preset, import, either reset, and
+   boot -- not only when a field changes.
+
+   Two fields are FORCED rather than merely defaulted on the rocker config. The
+   rocker IS what the shock bolts to there, so "shock connected to" is not a
+   choice to offer; and sgLock has to come off because the control that would
+   turn it back on is hidden, and recompute()'s mount-lock glue would otherwise
+   keep dragging SG onto the down tube with no way to stop it. */
+function applyConfigUI(){
+  const rocker = C.config===1;
+  if(rocker){ C.shockMount=1; C.sgLock=0; }
+  const hide=(id,yes)=>{const e=document.getElementById(id); if(e) e.hidden=yes;};
+  hide('shockMountRow', rocker);
+  hide('sgStandRow',    rocker);
+  const lab=document.getElementById('spStandLabel');
+  if(lab) lab.textContent = rocker ? 'Link pivot off seat tube' : 'Link pivot off down tube';
+}
 /* Write the solved-back side of each two-way pair into its box, but never the box
    being typed in — that would fight the cursor. */
 function updateSagMark(){
@@ -2627,7 +2755,9 @@ function applyChange(k){
    boot), so this only covers the part that's genuinely identical across
    all four, not the whole sequence. */
 function refillAll(){
-  syncGeom(); fillPoints(); fillCfg(); fillTyreWidths();
+  // applyConfigUI first: it forces C.shockMount/C.sgLock on the rocker config,
+  // and fillCfg() below has to paint those already-corrected values.
+  applyConfigUI(); syncGeom(); fillPoints(); fillCfg(); fillTyreWidths();
 }
 function fillCfg(){
   Object.keys(C).forEach(k=>{
@@ -2662,7 +2792,10 @@ function fillCfg(){
   for(const k of ['sgLock','spLock']){
     const btn=document.getElementById(k);
     if(!btn) continue;
-    const titles=['Unlock from the down tube','Lock to the down tube'];
+    // Names the tube this particular mount actually answers to -- the link
+    // pivot's is the seat tube on the rocker config.
+    const tube=(k==='spLock' && C.config===1) ? 'seat tube' : 'down tube';
+    const titles=['Unlock from the '+tube,'Lock to the '+tube];
     paintLock(btn, !!C[k], titles);
     btn.onclick=()=>{
       C[k]=C[k]?0:1;
@@ -2686,8 +2819,8 @@ function fillCfg(){
       const v=parseFloat(inp.value); if(isNaN(v)) return;
       C[off]=v;
       if(!C[lock]){
-        const dtU=frontTriangle().dtU;
-        G[k]=onTube(dtU, alongOf(dtU,G[k]), v);
+        const {u,sgn}=mountAxis(k);
+        G[k]=onTube(u, alongOf(u,G[k]), sgn*v);
       }
       refreshDerived(off); fillPoints();
       recompute(false);
@@ -2780,11 +2913,10 @@ document.getElementById('staticPos').onclick=()=>{
   draw(); syncPos(); charts();
 };
 document.getElementById('datum').onchange=fillPoints;
-document.getElementById('reset').onclick=()=>{
-  G=structuredClone(DEF.geom); C=structuredClone(DEF.cfg);
-  posT=0; holdSag=false;
-  refillAll(); recompute();
-};
+// "Back to square one" means the ACTIVE configuration's own defaults, not the
+// down-tube one -- resetting a rocker design into down-tube geometry would be
+// a config change disguised as a reset. applyPreset(C.config) is exactly that.
+document.getElementById('reset').onclick=()=>applyPreset(C.config);
 // Everything in the Frame geometry panel — reach through the fork — without
 // touching pivots, shock, stay section, drivetrain, rider or the design file.
 // Geometry gets set first and separately, so it gets its own way back to square one.
@@ -2792,7 +2924,11 @@ const GEOM_KEYS=['reach','stack','ha','htl','sa','st','ttDrop','bbh','rc','csl',
   'stemL','stemH','rw','fw','tyreR','tyreF','forkTravel','a2cAuto','a2c','hsLower','offset','fsag',
   'dtOD','stOD','ttOD','htOD','dtWeld','ttWeld','pivotOD'];
 document.getElementById('resetGeom').onclick=()=>{
-  GEOM_KEYS.forEach(k=>C[k]=DEF.cfg[k]);
+  // Sourced from the active config's defaults, like every other reset. Inert
+  // today -- no GEOM_KEYS entry appears in either preset's delta, so this is
+  // still DEF.cfg's value -- and correct the moment one does.
+  const d=presetDesign(C.config).cfg;
+  GEOM_KEYS.forEach(k=>C[k]=d[k]);
   refillAll(); recompute(false);
 };
 // The four-bar's own points: main pivot, link, shock eye/mount — the levers
@@ -2803,7 +2939,8 @@ document.getElementById('resetGeom').onclick=()=>{
 // shipped frame geometry that might not be current.
 const POINT_KEYS=['MP','SP','LP','SE','SG','ID'];
 document.getElementById('resetPoints').onclick=()=>{
-  POINT_KEYS.forEach(k=>G[k]=structuredClone(DEF.geom[k]));
+  const D=presetDesign(C.config);       // the active config's own defaults
+  POINT_KEYS.forEach(k=>G[k]=structuredClone(D.geom[k]));
   G.FP={...G.AX};
   // recompute()'s mount-lock glue re-derives SG/SP from a FIXED standoff every
   // call, so restoring the raw default coordinate alone isn't enough -- the
@@ -2815,12 +2952,18 @@ document.getElementById('resetPoints').onclick=()=>{
   // way the lock ends up: locked, recompute() re-derives the identical point
   // (a no-op); unlocked, its readout branch reads the standoff back off a
   // point already sitting at exactly that distance.
-  C.sgLock=DEF.cfg.sgLock;   C.spLock=DEF.cfg.spLock;
-  C.sgStand=DEF.cfg.sgStand; C.spStand=DEF.cfg.spStand;
+  C.sgLock=D.cfg.sgLock;   C.spLock=D.cfg.spLock;
+  C.sgStand=D.cfg.sgStand; C.spStand=D.cfg.spStand;
+  // applyConfigUI before the re-placement below and before fillCfg: it can
+  // clear sgLock on the rocker config, which the line above just restored from
+  // that config's own defaults. This path doesn't go through refillAll().
+  applyConfigUI();
   syncGeom();
-  const dtU=frontTriangle().dtU;
-  for(const [k,off] of [['SG','sgStand'],['SP','spStand']])
-    G[k]=onTube(dtU, alongOf(dtU,G[k]), C[off]);
+  const FT=frontTriangle();
+  for(const [k,off] of [['SG','sgStand'],['SP','spStand']]){
+    const {u,sgn}=mountAxis(k,FT);
+    G[k]=onTube(u, alongOf(u,G[k]), sgn*C[off]);
+  }
   fillPoints(); fillCfg(); recompute(false);
 };
 
@@ -2875,6 +3018,39 @@ function importJSON(){
 }
 document.getElementById('exportJson').onclick=exportJSON;
 document.getElementById('importJson').onclick=importJSON;
+
+/* ---------- suspension configuration ----------
+   A preset IS a design file that happens to live in the source, so loading one
+   takes importJSON's identical tail: layered over DEF by presetDesign(), back
+   to top-out, refillAll(), recompute(). */
+function applyPreset(i){
+  const d=presetDesign(i);
+  G=d.geom; C=d.cfg;
+  posT=0; holdSag=false;
+  refillAll(); recompute();
+}
+/* The menu is built from PRESETS rather than written out in the markup, so a
+   third configuration later needs a PRESETS entry and nothing else. Rebuilt on
+   each open so the active one can carry aria-pressed -- reusing the blue this
+   UI already means by "the current one" everywhere else, rather than adding a
+   separate name label to the canvas. */
+document.getElementById('configOpen').onclick=()=>{
+  document.getElementById('configList').innerHTML=PRESETS.map((p,i)=>
+    `<div class="cfgopt"><button data-preset="${i}" aria-pressed="${i===C.config}">${p.name}</button>
+     <p class="note">${p.note}</p></div>`).join('');
+  document.getElementById('configMenu').showModal();
+};
+document.getElementById('configClose').onclick=()=>document.getElementById('configMenu').close();
+document.getElementById('configList').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-preset]'); if(!b) return;
+  const i=+b.dataset.preset;
+  // Loading a preset replaces the whole design and there is no autosave, so it
+  // asks first -- including when you pick the config you are already on, since
+  // that is itself "put me back to this preset" and discards just as much.
+  if(!confirm('Load '+PRESETS[i].name+'?\nThis replaces the current design.')) return;
+  document.getElementById('configMenu').close();
+  applyPreset(i);
+});
 let raf=null, dir=1, animSpeed=100;
 document.getElementById('animSpeed').onchange=document.getElementById('animSpeed').oninput=e=>{
   const v=parseFloat(e.target.value); if(isNaN(v)) return;

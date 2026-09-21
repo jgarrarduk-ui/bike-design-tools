@@ -17,7 +17,7 @@ Open `index.html`, or serve the folder. It is deployed to GitHub Pages alongside
 cd test && node flexstay-tests.mjs
 ```
 
-57 checks, no install required. The engine sits between the `// ==ENGINE-START==`
+64 checks, no install required. The engine sits between the `// ==ENGINE-START==`
 and `// ==ENGINE-END==` markers and contains **no DOM references**, so the test
 file extracts that block with `new Function()` and runs it headlessly. Keep it
 that way — if DOM code leaks into the engine block the tests stop working.
@@ -305,8 +305,16 @@ The stay's own tube has no reason to reach `SE` any more — the shock eye now
 belongs to the link, not the stay — so `drawRearAssembly` draws
 `stayPath(f.FP,f.LP)` instead: the tube stops at its own real physical end,
 `LP`, with no boss needed there since it's now the curve's own endpoint. `SE`
-is the one now off the drawn structure, so it gets the brace instead, via the
-exact same `closestOnPath` call with the target swapped. `drawShock` grows a
+is the one now off the drawn structure, so it gets the brace instead —
+anchored at `f.LP` outright rather than through `closestOnPath`. That started
+as the same `closestOnPath` call with the target swapped, which returns
+essentially `LP` anyway since the curve already ends there; but deriving it
+off the *stay's* own curve implied a rigid bar spanning two bodies that rotate
+relative to each other. `LP` and `SE` are **both points on the link**, so
+naming `f.LP` makes the member honest — it is the rocker's third side, closing
+the two arms below into a triangular bell-crank. At the rocker preset it comes
+out 167mm at about 4°, which is the near-horizontal bar that reads as the top
+of the rocker. `drawShock` grows a
 second `tubes()` arm from the fixed `SP` out to `f.SE` (16mm, narrower than
 the 22mm `SP`→`LP` arm, a first-pass judgment call), so the link reads as one
 rigid two-armed rocker rather than the shock floating unattached to anything
@@ -315,6 +323,15 @@ apart (`LP`/`SE` are ~23mm apart at the end of ~130-150mm arms) — checked
 directly against the drawn line endpoints, not just assumed — so they read
 as a narrow, near-parallel bell-crank rather than a wide V; a real design
 with `LP`/`SE` further apart would splay more.
+
+**The mount brace is painted in the link's teal, not the stay's blue, in both
+modes.** In linkage mode it is outright part of the rocker (above); in
+seat-stay mode it is the short boss that carries `LP`, the link's own pivot.
+Either way the member it reads as belonging to is the linkage, so it takes
+`#4bb3a6`/`#0b5a53`. Nothing else about it changed — verified by diffing the
+rendered SVG at the shipped default across top-out, mid-travel and full
+compression, where these two `stroke` attributes are the *only* difference and
+every coordinate is byte-for-byte identical.
 
 **The flex-zone red overlay is gone, along with `polyHead`.** `recompute()`
 sets `C.zone` to the seat stay's own full length on every call — "bending
@@ -793,6 +810,111 @@ all read straight from it, so swapping it is enough — no coordinate elsewhere
 needs hand-updating, and `test/flexstay-tests.mjs` re-extracts `DEF` from the
 source at test time rather than pinning old numbers, so the shipped-defaults
 checks (below) track it automatically.
+
+## Configurations
+
+The tool used to model exactly one frame architecture. It now ships two, picked
+from a `config` button overlaid on the canvas' top-left corner, and the
+mechanism is built to take more — "this will be the first of the set" was the
+brief, so the shape of `PRESETS` matters more than the one preset in it.
+
+| `C.config` | name | what is different |
+|---|---|---|
+| 0 | Flex-stay 4-bar — Downtube mounted | the original; shock and link pivot both bracketed off the down tube |
+| 1 | Flex-stay 4-bar — Rocker | link pivots off the **seat tube** and drives the shock |
+
+**Each preset is a DELTA over `DEF`, not a whole design.** `presetDesign(i)`
+layers it with `Object.assign` onto a clone of `DEF`, exactly the way
+`importJSON` layers a saved file — so a preset carries only what it actually
+changes, and any field added to `DEF` later is inherited by every preset for
+free rather than needing to be copied into each one. `PRESETS[0]`'s deltas are
+therefore empty: it *is* `DEF`. Loading a preset (`applyPreset`) then takes
+`importJSON`'s identical tail (`posT=0; holdSag=false; refillAll();
+recompute();`), because a preset is a design file that happens to live in the
+source.
+
+**`PRESETS` is declared immediately AFTER `const DEF={…};`, and must stay
+there.** `test/flexstay-tests.mjs` extracts `DEF` by splitting the source on
+`const DEF=` and then on the first `};` — anything declared after `DEF`'s own
+closing brace is invisible to that extractor and cannot break it. `PRESETS`
+gets the same treatment in reverse (`split('const PRESETS=')` then `'\n];'`),
+so adding a configuration adds its own regression checks automatically, the
+same way changing `DEF` does.
+
+**`C.config` lives in `C`, not with the runtime `show*` flags,** because it
+changes what `spStand` *means* — that is a property of the design, not of the
+view, and it has to survive an export/import round trip. It needs no wiring:
+`fillCfg()`'s generic loop looks for `document.getElementById('config')`, finds
+nothing, and skips it. A design file saved before this existed has no `config`
+field, so `Object.assign` leaves it at `DEF`'s 0 and the file opens as the
+down-tube config — which is right, since that is the architecture it was drawn
+in.
+
+**`mountAxis(k, FT)` decides which tube a welded-on mount answers to.** The
+shock mount `SG` is a down-tube bracket on every config; only the link pivot
+`SP` moves, and only on the rocker config. This needed no new geometry at all —
+`frontTriangle()` already returned `stU` alongside `dtU` (the main pivot's
+"off seat tube" readout was already using it), and `alongOf`/`standoffOf`/
+`onTube` are all BB-origin, which both tubes share since both centrelines start
+there.
+
+What it does add is a **sign**. `standoffOf`'s positive side is the one the down
+tube's mounts sit on — that is what its own comment means by "positive" — but
+the seat tube's mounts sit on its *negative* side, so an ordinary 26mm
+seat-tube bracket would otherwise report −26 in the box. `mountAxis` returns
+`{u, sgn}` and every caller applies `sgn` to the standoff on the way in and out.
+The locked/unlocked round trip survives it untouched, because
+`alongOf(u, onTube(u,t,off)) === t` for unit `u` whatever `off` is, so `sgn`
+cancels between the locked write and the unlocked read exactly as it did before.
+Four sites went through it: `recompute()`'s mount-lock glue (which now fetches
+`frontTriangle()` once and shares it, rather than re-solving a four-pass mitre
+per mount), `fillCfg()`'s standoff commit, `resetPoints`' re-placement, and
+`drawFrontTriangle()`'s `boss` root so the tan stub grows out of the right tube.
+
+**The drag handler's `lockLen`+`sgLock` joint solve deliberately still hardcodes
+`dtU`.** It is `sgLock`-only and `SG` is a down-tube mount on every config, so
+there is nothing for `mountAxis` to decide there; routing it through anyway
+would add a lookup for a symmetry it does not have.
+
+**Two fields are forced rather than merely defaulted on the rocker config.**
+`applyConfigUI()` sets `C.shockMount=1` (the rocker *is* what the shock bolts
+to — not a choice worth offering, so its `<select>` row is hidden) and
+`C.sgLock=0`. The second is the less obvious one: the control that would turn
+`sgLock` back on is hidden on that config, so leaving it set would let
+`recompute()`'s mount-lock glue keep dragging `SG` onto the down tube with no
+way to stop it. `applyConfigUI()` runs **first** in `refillAll()`, ahead of
+`fillCfg()`, so the values `fillCfg()` paints are the already-corrected ones;
+`refillAll()` being the one function all four wholesale-replacement paths
+(both resets, import, boot) already share means that single line covers every
+one of them. `resetPoints` calls it separately, since it does not go through
+`refillAll()` but can restore `sgLock` from the preset.
+
+**A hidden `<label>` needed a CSS rule to actually hide.** The `hidden`
+attribute is only `display:none` from the UA stylesheet, and this file's own
+`label{display:flex}` beats it on specificity — so `label[hidden]` stayed on
+screen with the attribute correctly set. Caught by looking at a screenshot, not
+by the check that was supposed to catch it: the first version of that check
+tested `element.hidden`, which was `true` the whole time. `label[hidden]
+{display:none}` fixes it, scoped rather than `!important`, matching what
+`.tabpanel[hidden]` already does; the check now reads `getComputedStyle().display`
+and `getClientRects()`.
+
+**Every reset means the ACTIVE configuration's defaults.** Resetting a rocker
+design into down-tube geometry would be a config change disguised as a reset,
+so the whole-tool reset is now literally `applyPreset(C.config)`, and
+`resetGeom`/`resetPoints` source their values from `presetDesign(C.config)`
+rather than `DEF` directly. `resetGeom` is inert under that change today — no
+`GEOM_KEYS` entry appears in either preset's delta, so it still reads `DEF`'s
+value — and correct the moment one does.
+
+**Loading a preset asks first.** It replaces the whole design and there is no
+autosave, so a stray click would otherwise eat unsaved work. It confirms even
+when you pick the config you are already on, since that is itself "put me back
+to this preset" and discards just as much. The menu itself is built from
+`PRESETS` rather than written into the markup, so a third configuration needs a
+`PRESETS` entry and no HTML; it is rebuilt on each open so the active entry can
+carry `aria-pressed`, reusing the blue this UI already means by "the current
+one" rather than adding a separate name label to the canvas.
 
 ## Save / load
 
@@ -1915,3 +2037,16 @@ how far the cage swings, which is what the drawing depends on.
   pivot's reaction), not a parameter change. Both readouts show a "not
   modeled" message in that mode rather than a number that would look exactly
   as authoritative as a correct one.
+
+  **The flex ANGLE is not part of this gap and is reported in both modes.**
+  It was hidden along with the rest of the panel at first, which was wrong.
+  `solve()`'s `stayAngle` is `atan2(LP−FP) − phi` — body B's orientation in
+  body A's frame — and `LP` stays on body B whichever body owns the shock eye,
+  so `f.flex`, and the peak excursion from top-out built off it, is exactly as
+  correct in linkage mode as in seat-stay mode. It is a kinematic demand on the
+  tube, not a force result, so the deferred rederivation has no bearing on it,
+  and gating it behind a note about forces hid the one number in that panel
+  that was still known. `flPeak`/`flexRow` are now computed above the
+  `if(C.shockMount)` and emitted by both branches. The seat-stay branch is
+  otherwise untouched, including its own identical row, so that mode stays a
+  strict regression baseline.

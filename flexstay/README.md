@@ -18,7 +18,18 @@ axial load acting through the offset of the bend. The shock can be mounted
 either straight to the seat stay (stay-driven, the default) or to the small
 link instead (rocker/bell-crank-driven) — the leverage curve and drawing are
 correct in either mode; the pivot-load and stay-stress panels are not yet
-rederived for the linkage-driven case and say so plainly rather than guess.
+rederived for the linkage-driven case and say so plainly rather than guess —
+though the angle the stay has to flex through is reported either way, since
+that is a kinematic demand on the tube rather than a force result.
+
+Two frame architectures ship, picked from the `config` button on the drawing:
+**Downtube mounted**, where the shock and the link pivot are both bracketed off
+the down tube, and **Rocker**, where the link pivots off the seat tube and
+drives the shock. A configuration is more than a set of coordinates — it also
+decides which controls make sense, so the Rocker config measures the link
+pivot's standoff from the seat tube and drops the two settings that only mean
+something on the other one. More are planned; each is a small delta over the
+shipped defaults, so adding one is a data change rather than a code change.
 
 The drawing is a full elevation, not a schematic: wheels, fork, cockpit,
 cranks (both arms, rotating with kickback as the suspension cycles), saddle,
@@ -45,7 +56,7 @@ CLAUDE.md     architecture, traps, and what is not done
 cd test && node flexstay-tests.mjs
 ```
 
-57 checks, nothing to install. The engine has no DOM references so the tests
+64 checks, nothing to install. The engine has no DOM references so the tests
 extract and run it directly.
 
 ## Validated against Linkage X3
