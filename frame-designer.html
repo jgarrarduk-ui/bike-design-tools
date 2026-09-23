@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="green">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -35,22 +35,22 @@
 
   /* ── LIGHT ── */
   [data-theme="light"] {
-    --input-bg:    #fafafa;
-    --input-fg:    #081c15;
-    --bg:          #F0F5FA;
+    --input-bg:    #fafbfc;
+    --input-fg:    #1c2b3a;
+    --bg:          #eef2f7;
     --panel-bg:    #ffffff;
-    --toolbar-bg:  #eef7f1;
-    --hdr-bg:      #d8f3dc;
-    --border:      #b7e4c7;
-    --accent:      #1b4332;
-    --accent-hi:   #2d6a4f;
-    --accent-br:   #40916c;
-    --text-lo:     #95d5b2;
-    --text-mid:    #2d6a4f;
-    --text-hi:     #1b4332;
+    --toolbar-bg:  #eef2f7;
+    --hdr-bg:      #dbe6f0;
+    --border:      #c3d0de;
+    --accent:      #1c3f60;
+    --accent-hi:   #2f6f62;
+    --accent-br:   #3f9c86;
+    --text-lo:     #b9c6d3;
+    --text-mid:    #3f5770;
+    --text-hi:     #1c3f60;
     --text-main:   #1e293b;
-    --lavender:    #1b4332;
-    --lavender-br: #2d6a4f;
+    --lavender:    #1c3f60;
+    --lavender-br: #2f86bf;
   }
 
   /* ── GREEN ── */
@@ -1537,22 +1537,22 @@ const THEMES = {
     errFill:   '#1a0820',
   },
   light: {
-    bg:        '#ffffff',
-    grid:      '#eef7f1',
-    ground:    '#95d5b2',
-    wheel:     '#1b4332',
-    wheelLbl:  '#081c15',
-    tubeFill:  '#d8f3dc',
-    tubeStk:   '#1b4332',
-    lugFill:   '#b7e4c7',
-    lugStk:    '#1b4332',
-    bbBore:    '#ffffff',
-    crDash:    '#95d5b2',
-    forkFill:  '#eef7f1',
-    forkStk:   '#1b4332',
-    forkAnn:   '#2d6a4f',
-    ann:       '#1b4332',
-    ann2:      '#2d6a4f',
+    bg:        '#f4f6f9',
+    grid:      '#e1e6ec',
+    ground:    '#aab3c0',
+    wheel:     '#6b7280',
+    wheelLbl:  '#6b7280',
+    tubeFill:  '#ecd8ab',
+    tubeStk:   '#8a6a35',
+    lugFill:   '#bfe3da',
+    lugStk:    '#1f6f5c',
+    bbBore:    '#f4f6f9',
+    crDash:    '#c9b98a',
+    forkFill:  '#bcdcf4',
+    forkStk:   '#1f6fa8',
+    forkAnn:   '#2f86bf',
+    ann:       '#1c3f60',
+    ann2:      '#c1502b',
     errFill:   '#fee2e2',
   },
   green: {
@@ -1595,7 +1595,7 @@ const THEMES = {
   },
 };
 
-let currentTheme = 'green';
+let currentTheme = 'light';
 
 function setTheme(name) {
   currentTheme = name;
@@ -3653,8 +3653,8 @@ requestAnimationFrame(()=>{
   <div class="dd-label">theme</div>
   <div class="dd-radio-group" id="theme-radios">
     <button class="dd-radio" data-val="dark"   onclick="setTheme('dark');  syncThemeRadios()">dark</button>
-    <button class="dd-radio" data-val="light"  onclick="setTheme('light'); syncThemeRadios()">light</button>
-    <button class="dd-radio active" data-val="green"  onclick="setTheme('green'); syncThemeRadios()">green</button>
+    <button class="dd-radio active" data-val="light"  onclick="setTheme('light'); syncThemeRadios()">light</button>
+    <button class="dd-radio" data-val="green"  onclick="setTheme('green'); syncThemeRadios()">green</button>
     <button class="dd-radio" data-val="orange" onclick="setTheme('orange');syncThemeRadios()">orange</button>
   </div>
 </div>
