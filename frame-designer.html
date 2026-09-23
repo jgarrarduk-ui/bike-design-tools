@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="green">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1540,8 +1540,8 @@ const THEMES = {
     bg:        '#f4f6f9',
     grid:      '#e1e6ec',
     ground:    '#aab3c0',
-    wheel:     '#232a33',
-    wheelLbl:  '#5b6472',
+    wheel:     '#6b7280',
+    wheelLbl:  '#6b7280',
     tubeFill:  '#ecd8ab',
     tubeStk:   '#8a6a35',
     lugFill:   '#bfe3da',
@@ -1595,7 +1595,7 @@ const THEMES = {
   },
 };
 
-let currentTheme = 'green';
+let currentTheme = 'light';
 
 function setTheme(name) {
   currentTheme = name;
@@ -3653,8 +3653,8 @@ requestAnimationFrame(()=>{
   <div class="dd-label">theme</div>
   <div class="dd-radio-group" id="theme-radios">
     <button class="dd-radio" data-val="dark"   onclick="setTheme('dark');  syncThemeRadios()">dark</button>
-    <button class="dd-radio" data-val="light"  onclick="setTheme('light'); syncThemeRadios()">light</button>
-    <button class="dd-radio active" data-val="green"  onclick="setTheme('green'); syncThemeRadios()">green</button>
+    <button class="dd-radio active" data-val="light"  onclick="setTheme('light'); syncThemeRadios()">light</button>
+    <button class="dd-radio" data-val="green"  onclick="setTheme('green'); syncThemeRadios()">green</button>
     <button class="dd-radio" data-val="orange" onclick="setTheme('orange');syncThemeRadios()">orange</button>
   </div>
 </div>
