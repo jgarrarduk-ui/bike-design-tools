@@ -450,13 +450,6 @@
     background: var(--panel-bg);
     flex-shrink: 0;
   }
-  #panel-order {
-    padding: 0 10px 10px;
-    background: var(--panel-bg);
-    flex-shrink: 0;
-  }
-  #panel-order .order-btn { width: 100%; font-size: 12px; padding: 7px 4px; }
-
   .panel-btn {
     flex: 1;
     background: var(--hdr-bg);
@@ -472,123 +465,6 @@
     transition: background 0.1s, color 0.1s;
   }
   .panel-btn:hover { background: var(--accent); color: #fff; }
-  .panel-btn.order-btn {
-    background: var(--accent-hi);
-    color: #fff;
-    border-color: var(--accent-br);
-    letter-spacing: 0.5px;
-  }
-  .panel-btn.order-btn:hover { background: var(--accent-br); color: #000; }
-
-  /* ── Order modal ── */
-  #order-modal-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.65);
-    z-index: 600;
-    align-items: center;
-    justify-content: center;
-  }
-  #order-modal-overlay.open { display: flex; }
-  #order-modal {
-    background: var(--panel-bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    width: min(420px, 92vw);
-    padding: 24px 26px 20px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  #order-modal h2 {
-    font-size: 14px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: var(--lavender);
-    font-weight: 700;
-    margin: 0;
-  }
-  .order-field { display: flex; flex-direction: column; gap: 5px; }
-  .order-field label {
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: var(--text-mid);
-  }
-  .order-field input {
-    background: var(--input-bg);
-    color: var(--input-fg);
-    border: 1px solid var(--accent);
-    border-radius: 3px;
-    font-family: var(--font);
-    font-size: 13px;
-    padding: 8px 10px;
-    outline: none;
-    transition: border-color 0.15s;
-  }
-  .order-field input:focus { border-color: var(--accent-br); }
-  #order-summary {
-    background: var(--hdr-bg);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    padding: 10px 12px;
-    font-size: 13px;
-    color: var(--text-hi);
-    line-height: 1.8;
-  }
-  #order-summary .sum-label { color: var(--text-mid); margin-right: 4px; }
-  #order-includes {
-    font-size: 13px;
-    color: var(--text-mid);
-    line-height: 1.7;
-  }
-  .order-modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
-  .order-modal-btns button {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-mid);
-    font-family: var(--font);
-    font-size: 13px;
-    padding: 8px 18px;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-  .order-modal-btns button:hover { background: var(--hdr-bg); color: var(--text-main); }
-  #order-submit-btn {
-    background: var(--accent-hi) !important;
-    color: #fff !important;
-    border-color: var(--accent-br) !important;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    flex: 1;
-  }
-  #order-submit-btn:hover { background: var(--accent-br) !important; color: #000 !important; }
-  #order-submit-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  #order-error {
-    font-size: 11px;
-    color: var(--err);
-    display: none;
-    padding: 6px 10px;
-    background: rgba(248,113,113,0.08);
-    border: 1px solid rgba(248,113,113,0.3);
-    border-radius: 3px;
-  }
-  #order-error.visible { display: block; }
-  #order-status {
-    font-size: 11px;
-    color: var(--text-mid);
-    display: none;
-    text-align: center;
-    letter-spacing: 0.5px;
-  }
-  #order-status.visible { display: block; }
 
   /* Status bar */
   #statusbar {
@@ -751,7 +627,6 @@
 
     /* Compact panel footer */
     #panel-btns   { padding: 3px 8px; gap: 4px; }
-    #panel-order  { padding: 0 8px 4px; }
     .panel-btn    { font-size: 11px; padding: 4px 4px; }
     .derived-row  { padding: 2px 8px 2px 11px; font-size: 11px; }
   }
@@ -1376,9 +1251,6 @@
       <button class="panel-btn" onclick="resetParams()">Reset</button>
       <button class="panel-btn" onclick="openSave()">Export</button>
       <button class="panel-btn" onclick="importJSON()">Import</button>
-    </div>
-    <div id="panel-order">
-      <button class="panel-btn order-btn" onclick="openOrderModal()">&#x2192; Submit Design</button>
     </div>
   </div>
 
@@ -3724,151 +3596,6 @@ window.addEventListener('error', e=>{
   }
 });
 
-// ═══════════════════════════════════════════════════════
-//  ORDER FLOW
-// ═══════════════════════════════════════════════════════
-
-// The backend URL. When served from the same origin (production) this
-// resolves correctly. Override with window.BACKEND_URL = 'http://...' in
-// a <script> tag above if your frontend and backend are on different origins.
-function backendUrl(path) {
-  const base = (typeof window.BACKEND_URL !== 'undefined' && window.BACKEND_URL)
-    ? window.BACKEND_URL.replace(/\/$/, '')
-    : '';
-  return base + path;
-}
-
-/**
- * Render the current bike frame to a base64-encoded PDF string (data URI).
- * Reuses the existing renderToDataURL + exportJpegAsPdf pipeline.
- */
-async function generateOrderPdfBase64() {
-  const dataURL = renderToDataURL();   // JPEG data URI of frame at print palette
-  const blobUrl = await exportJpegAsPdf(dataURL);  // PDF blob URL
-
-  // Fetch the blob and convert to base64
-  const resp   = await fetch(blobUrl);
-  const buffer = await resp.arrayBuffer();
-  URL.revokeObjectURL(blobUrl);
-
-  // Convert ArrayBuffer → base64 string
-  const bytes  = new Uint8Array(buffer);
-  let binary   = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return 'data:application/pdf;base64,' + btoa(binary);
-}
-
-/**
- * Build a human-readable geometry summary for the order modal.
- */
-function buildOrderSummary() {
-  const p = params;
-  const fmt = (v, unit) => v != null ? `<strong>${v}</strong>${unit}` : '—';
-  return [
-    `<span class="sum-label">Reach</span>${fmt(p.reach,'mm')}`,
-    `<span class="sum-label">CS</span>${fmt(p.chainstay_length,'mm')}`,
-    `<span class="sum-label">HTA</span>${fmt(p.ht_angle,'°')}`,
-    `<span class="sum-label">STA</span>${fmt(p.st_angle,'°')}`,
-    `<span class="sum-label">BB drop</span>${fmt(p.bb_drop,'mm')}`,
-    `<span class="sum-label">Fork ATC</span>${fmt(p.fork_atc,'mm')}`,
-    `<span class="sum-label">Rake</span>${fmt(p.fork_offset,'mm')}`,
-  ].join('&ensp;&middot;&ensp;');
-}
-
-function openOrderModal() {
-  document.getElementById('order-summary').innerHTML = buildOrderSummary();
-  document.getElementById('order-error').classList.remove('visible');
-  document.getElementById('order-status').classList.remove('visible');
-  document.getElementById('order-submit-btn').disabled = false;
-  document.getElementById('order-submit-btn').textContent = 'Proceed to Checkout';
-  document.getElementById('order-modal-overlay').classList.add('open');
-}
-
-function closeOrderModal() {
-  document.getElementById('order-modal-overlay').classList.remove('open');
-}
-
-async function submitOrder() {
-  const nameEl  = document.getElementById('order-name');
-  const emailEl = document.getElementById('order-email');
-  const errEl   = document.getElementById('order-error');
-  const statEl  = document.getElementById('order-status');
-  const submitBtn = document.getElementById('order-submit-btn');
-
-  const name  = nameEl.value.trim();
-  const email = emailEl.value.trim();
-
-  // ── Client-side validation ──────────────────────────────────────────────
-  errEl.classList.remove('visible');
-  if (!name) {
-    errEl.textContent = 'Please enter your name.';
-    errEl.classList.add('visible');
-    nameEl.focus();
-    return;
-  }
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errEl.textContent = 'Please enter a valid email address.';
-    errEl.classList.add('visible');
-    emailEl.focus();
-    return;
-  }
-
-  // ── Lock UI ─────────────────────────────────────────────────────────────
-  submitBtn.disabled   = true;
-  submitBtn.textContent = 'Generating PDF\u2026';
-  statEl.textContent   = 'Rendering frame drawing\u2026';
-  statEl.classList.add('visible');
-
-  // ── Generate PDF client-side ────────────────────────────────────────────
-  let pdfBase64 = null;
-  try {
-    pdfBase64 = await generateOrderPdfBase64();
-  } catch (err) {
-    console.warn('PDF generation failed (will submit without PDF):', err.message);
-  }
-
-  // ── POST to backend ─────────────────────────────────────────────────────
-  submitBtn.textContent = 'Submitting\u2026';
-  statEl.textContent    = 'Saving design & creating checkout\u2026';
-
-  try {
-    const resp = await fetch(backendUrl('/api/designs'), {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customerName:  name,
-        customerEmail: email,
-        params:        Object.assign({}, params),
-        pdfBase64,
-      }),
-    });
-
-    if (!resp.ok) {
-      const data = await resp.json().catch(() => ({}));
-      throw new Error(data.error || `Server error ${resp.status}`);
-    }
-
-    const data = await resp.json();
-
-    // ── Redirect to checkout ──────────────────────────────────────────────
-    statEl.textContent = 'Redirecting to checkout\u2026';
-    submitBtn.textContent = 'Redirecting\u2026';
-
-    setTimeout(() => {
-      window.location.href = data.checkoutUrl;
-    }, 400);
-
-  } catch (err) {
-    errEl.textContent = 'Could not submit order: ' + err.message;
-    errEl.classList.add('visible');
-    statEl.classList.remove('visible');
-    submitBtn.disabled   = false;
-    submitBtn.textContent = 'Proceed to Checkout';
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-
 params.stack = calcStackFromAtc(params);
 try { buildPanel(); } catch(e){ console.error('buildPanel failed:',e); }
 try { buildPresetPanel(); } catch(e){ console.error('buildPresetPanel failed:',e); }
@@ -3952,44 +3679,6 @@ requestAnimationFrame(()=>{
   </div>
 </div>
 
-
-<!-- Order modal -->
-<div id="order-modal-overlay" onclick="if(event.target===this)closeOrderModal()">
-  <div id="order-modal">
-    <h2>&#x2192; Submit Design</h2>
-    <p style="font-size:11px;color:var(--text-lo);margin:0">
-      We'll store your design and send you a download link after checkout.
-    </p>
-
-    <div class="order-field">
-      <label for="order-name">Your name</label>
-      <input type="text" id="order-name" placeholder="Jane Smith" autocomplete="name">
-    </div>
-    <div class="order-field">
-      <label for="order-email">Email address</label>
-      <input type="email" id="order-email" placeholder="jane@example.com" autocomplete="email">
-    </div>
-
-    <div>
-      <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-lo);margin-bottom:6px">Design summary</div>
-      <div id="order-summary"><!-- populated by JS --></div>
-    </div>
-
-    <div id="order-includes">
-      Included in your download:
-      <br>&#x25AA; <strong>design.json</strong> &mdash; full geometry parameter set
-      <br>&#x25AA; <strong>design.pdf</strong> &mdash; 2D annotated frame drawing
-    </div>
-
-    <div id="order-error"></div>
-    <div id="order-status"></div>
-
-    <div class="order-modal-btns">
-      <button onclick="closeOrderModal()">cancel</button>
-      <button id="order-submit-btn" onclick="submitOrder()">Proceed to Checkout</button>
-    </div>
-  </div>
-</div>
 
 <!-- Export result overlay -->
 <div id="export-result-overlay" onclick="if(event.target===this)closeExportResult()">
