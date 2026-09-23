@@ -978,6 +978,22 @@
     transition: background 0.15s, color 0.15s;
   }
   .exp-fmt-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent-br); }
+  .exp-fmt-btn.selected { background: var(--accent-hi); color: #fff; border-color: var(--accent-br); }
+  .exp-download-btn {
+    background: var(--accent-hi);
+    color: #fff;
+    border: 1px solid var(--accent-br);
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 9px 0;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .exp-download-btn:hover:not(:disabled) { background: var(--accent-br); color: #000; }
+  .exp-download-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .exp-modal-btns {
     display: flex;
     justify-content: flex-end;
@@ -1090,29 +1106,13 @@
     padding: 20px;
   }
   #export-result-overlay.open { display: flex; }
-  #export-result-img {
-    max-width: 100%;
-    max-height: 70vh;
-    border: 1px solid #444;
-    display: none;
-  }
   #export-result-msg {
     color: #ccc;
     font-family: var(--font);
-    font-size: 12px;
-    text-align: center;
-    letter-spacing: 0.5px;
-  }
-  #export-result-link {
-    display: none;
-    color: var(--lavender);
-    font-family: var(--font);
     font-size: 13px;
     font-weight: 700;
-    padding: 10px 24px;
-    border: 1px solid var(--accent);
-    border-radius: 4px;
-    text-decoration: none;
+    text-align: center;
+    letter-spacing: 0.5px;
   }
   #export-result-close {
     background: var(--hdr-bg);
@@ -1307,10 +1307,11 @@
                border:1px solid var(--border);border-radius:3px;font-family:var(--font);font-size:11px;box-sizing:border-box;">
     </div>
     <div class="exp-format-row">
-      <button class="exp-fmt-btn" onclick="doExport('pdf')">PDF</button>
-      <button class="exp-fmt-btn" onclick="doExport('jpeg')">JPEG</button>
-      <button class="exp-fmt-btn" onclick="doExport('json')">JSON</button>
+      <button class="exp-fmt-btn" data-fmt="pdf" onclick="selectExportFormat('pdf')">PDF</button>
+      <button class="exp-fmt-btn" data-fmt="jpeg" onclick="selectExportFormat('jpeg')">JPEG</button>
+      <button class="exp-fmt-btn" data-fmt="json" onclick="selectExportFormat('json')">JSON</button>
     </div>
+    <button id="export-download-btn" class="exp-download-btn" disabled onclick="downloadExport()">Download</button>
     <div class="exp-modal-btns">
       <button onclick="closeExportModal()">cancel</button>
     </div>
@@ -2702,7 +2703,15 @@ function vpLoadPreset(){
 }
 
 // ── Export modal ───────────────────────────────────────────
+let selectedExportFormat = null;
+
+function resetExportSelection(){
+  selectedExportFormat = null;
+  document.querySelectorAll('.exp-fmt-btn').forEach(b=>b.classList.remove('selected'));
+  document.getElementById('export-download-btn').disabled = true;
+}
 function openSave(){
+  resetExportSelection();
   document.getElementById('export-modal-overlay').classList.add('open');
 }
 function closeExportModal(){
@@ -2825,54 +2834,55 @@ async function exportJpegAsPdf(dataURL) {
   return URL.createObjectURL(blob);
 }
 
-function showExportResult(dataURL, fmt) {
-  const overlay = document.getElementById('export-result-overlay');
-  const img     = document.getElementById('export-result-img');
-  const msg     = document.getElementById('export-result-msg');
-  const link    = document.getElementById('export-result-link');
-  img.style.display  = 'none';
-  link.style.display = 'none';
-
-  if(fmt === 'jpeg') {
-    img.src = dataURL;
-    img.style.display = 'block';
-    msg.textContent = 'long-press the image to save';
-    // No download link — iOS doesn't support blob anchor download
-  } else if(fmt === 'pdf') {
-    msg.textContent = 'building pdf\u2026';
-    overlay.classList.add('open');
-    exportJpegAsPdf(dataURL).then(blobUrl => {
-      // Navigate current page to blob URL — iOS opens native PDF viewer
-      // with share sheet where user can save/print
-      window.location.href = blobUrl;
-    }).catch(e => {
-      msg.textContent = 'PDF build failed: ' + e.message;
-    });
-    return; // overlay already opened
-  }
-  overlay.classList.add('open');
+function triggerDownload(url, filename, revoke) {
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  if(revoke) setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function showExportResult(fmt) {
+  closeExportModal();
+  document.getElementById('export-result-msg').textContent = fmt.toUpperCase() + ' exported';
+  document.getElementById('export-result-overlay').classList.add('open');
+}
 
 function closeExportResult() {
   document.getElementById('export-result-overlay').classList.remove('open');
 }
 
-function doExport(fmt) {
-  if(fmt === 'json') {
-    const blob = new Blob([JSON.stringify(params,null,2)], {type:'application/json'});
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = 'frame_params.json';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    closeExportModal();
-    return;
-  }
-  closeExportModal();
+function selectExportFormat(fmt) {
+  selectedExportFormat = fmt;
+  document.querySelectorAll('.exp-fmt-btn').forEach(b => {
+    b.classList.toggle('selected', b.dataset.fmt === fmt);
+  });
+  document.getElementById('export-download-btn').disabled = false;
+}
+
+function downloadExport() {
+  const fmt = selectedExportFormat;
+  if(!fmt) return;
   try {
+    if(fmt === 'json') {
+      const blob = new Blob([JSON.stringify(params,null,2)], {type:'application/json'});
+      triggerDownload(URL.createObjectURL(blob), 'frame_params.json', true);
+      showExportResult(fmt);
+      return;
+    }
     const dataURL = renderToDataURL();
-    showExportResult(dataURL, fmt);
+    if(fmt === 'jpeg') {
+      triggerDownload(dataURL, 'frame_design.jpg', false);
+      showExportResult(fmt);
+      return;
+    }
+    if(fmt === 'pdf') {
+      exportJpegAsPdf(dataURL).then(blobUrl => {
+        triggerDownload(blobUrl, 'frame_design.pdf', true);
+        showExportResult(fmt);
+      }).catch(e => {
+        alert('PDF build failed: ' + e.message);
+      });
+    }
   } catch(e) {
     console.error('Export failed:', e);
     alert('Export failed: ' + e.message);
@@ -3682,9 +3692,7 @@ requestAnimationFrame(()=>{
 
 <!-- Export result overlay -->
 <div id="export-result-overlay" onclick="if(event.target===this)closeExportResult()">
-  <img id="export-result-img" alt="export preview">
   <div id="export-result-msg"></div>
-  <a id="export-result-link" target="_blank">tap to open / save</a>
   <button id="export-result-close" onclick="closeExportResult()">close</button>
 </div>
 </body>
