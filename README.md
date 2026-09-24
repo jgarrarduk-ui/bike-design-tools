@@ -18,6 +18,10 @@ Each is a single HTML file: no build step, no dependencies, open it directly
 or serve the folder. `index.html` at the repo root is the landing page that
 links to all four.
 
+`fusion-import/` is a Fusion 360 script that loads a Suspension Designer JSON
+export as User Parameters in an open Fusion design — see
+`fusion-import/README.md`.
+
 Suspension Designer is the most actively developed and the most heavily
 documented — see `flexstay/README.md` for what it does and `flexstay/CLAUDE.md`
 for the architecture, every non-obvious fix and why, and what's deliberately
@@ -34,6 +38,7 @@ frame-designer.html      frame geometry tool
 spoke-calculator.html    spoke length tool
 spring-calculator.html   spring rate tool
 flexstay/                suspension kinematics tool, its docs and tests
+fusion-import/           Fusion 360 script: import a design JSON as parameters
 server/                  backend: design storage, checkout, email delivery
 .nojekyll                required for GitHub Pages — see Deploying below
 ```
