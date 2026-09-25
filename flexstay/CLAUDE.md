@@ -401,6 +401,18 @@ tyre's section is close to square: height = width x 25.4. 2.4in reproduces the
 listed sizes gets its own option appended rather than silently snapping to the
 nearest listed one.
 
+**`C.rw`/`C.fw` are rim bead-seat diameter (the ISO number: 559/584/622/686),
+not a finished wheel size, and reading the exported JSON without knowing that
+reads as wrong** — `622` for a "29 in" wheel looks nothing like 29×25.4mm.
+`wheelODtext(bsd,tyre)`, called from `readouts()` into two new "As drawn" rows
+("Front/Rear wheel diameter, w/ tyre"), reports the number people actually
+mean by wheel size: BSD plus tyre height on both sides of the rim, in mm and
+inches together so ~29in is visible as a sanity check against the raw mm
+figure. Purely a readout — `rw`/`fw`/`tyreR`/`tyreF` stay exactly what they
+were, still four separate inputs fed to `Rr`/`Rf` in `syncGeom()`; nothing
+about the geometry chain or the exported schema changed, only what's shown
+next to it.
+
 Frame geometry has its own reset (`resetGeom`, `GEOM_KEYS`), separate from the
 whole-tool reset in the Design file panel — everything in the Frame geometry
 panel, reach through the fork, without touching pivots, shock, stay section,

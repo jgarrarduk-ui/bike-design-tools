@@ -2288,6 +2288,18 @@ function initDrag(){
 
 /* ---------- readouts ---------- */
 const row=(k,v,cls='')=>`<div class="readout ${cls}"><span>${k}</span><b>${v}</b></div>`;
+/* The "Front/Rear wheel" selects are rim bead-seat diameter (559/584/622/686mm,
+   the ISO number, not a finished wheel size), and tyre width is entered
+   separately in inches -- neither is the number anyone actually means by
+   "29in wheel". This is that number: BSD plus tyre height on both sides,
+   shown next to the inputs that combine to make it so it's never guessed at
+   or confused with the rim size itself. mm first since that's the unit the
+   rest of this tool works in; inches alongside as the sanity check ("does
+   this read as ~29in") most people actually have memorized. */
+const wheelODtext=(bsd,tyre)=>{
+  const od=bsd+2*tyre;
+  return od.toFixed(1)+' mm ('+(od/25.4).toFixed(1)+' in)';
+};
 /* Where the pivots sit relative to the real tubes. Pure frame geometry, so it runs
    before the no-solution bail-out below and keeps reporting even when the linkage
    will not solve — which is exactly when you are moving a pivot about. */
@@ -2346,7 +2358,9 @@ function readouts(){
     row('Stack', C.stack.toFixed(1)+' mm')+
     row('Bottom bracket drop', C.drop.toFixed(1)+' mm')+
     row('Chainstay length', C.csl.toFixed(1)+' mm')+
-    row('Wheelbase', (frame(0).FA.x-first.AX.x).toFixed(0)+' mm');
+    row('Wheelbase', (frame(0).FA.x-first.AX.x).toFixed(0)+' mm')+
+    row('Front wheel diameter, w/ tyre', wheelODtext(C.fw,C.tyreF))+
+    row('Rear wheel diameter, w/ tyre', wheelODtext(C.rw,C.tyreR));
 
   /* The stress model assumes the shock reacts on the seat stay itself --
      both the imposed-rotation stress and the axial force path through it
