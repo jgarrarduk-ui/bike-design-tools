@@ -12,7 +12,11 @@ JSON file via its "Export" button:
 
 `geom` is millimetre coordinates, origin at the bottom bracket, x forward,
 y up (see flexstay/CLAUDE.md, "The model"). `cfg` is the same flat object
-the browser tool itself reads into its config object `C`.
+the browser tool itself reads into its config object `C` — including
+derived, read-only fields the tool computes rather than takes as input
+(`stack`, `drop`, `csl`, `wheelODf`/`wheelODr` — finished wheel diameter,
+rim plus tyre — and others), which import as ordinary mm parameters the
+same as any typed-in field, no special-casing needed.
 
 This script reads that file and creates (or updates) one Fusion 360 User
 Parameter per value, under Fusion's own units, so a Fusion sketch or feature

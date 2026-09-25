@@ -41,6 +41,13 @@ the design. Unit assignment is explicit, not guessed: `ANGLE_FIELDS`,
 `MASS_FIELDS` and `UNITLESS_FIELDS` at the top of the script list every `cfg`
 field that isn't a plain mm length.
 
+Two are worth knowing about by name: **`susp_cfg_wheelODf`/`susp_cfg_wheelODr`**
+are the finished wheel diameter (rim bead-seat diameter plus tyre height on
+both sides — ~743.9mm for a 29in wheel with a 2.4in tyre), not the raw ISO
+rim size (`susp_cfg_fw`/`susp_cfg_rw`, ~622mm for the same wheel). Use the
+`wheelOD*` pair for anything that should track the actual rolling diameter —
+wheel/tyre models, clearance checks, axle-height references.
+
 **Re-running the script updates the same parameters in place** — by name,
 not by deleting and recreating them — so anything in the Fusion model
 already driven by one of these parameters (a sketch dimension set to

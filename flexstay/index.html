@@ -1010,7 +1010,7 @@ const DEF={
         shockMount:0, // 0 = seat stay (default), 1 = linkage
         config:0,     // which PRESETS entry this design is: 0 = downtube mounted, 1 = rocker
         mass:85, bias:58, cogh:1057, sag:30, fsag:20, fax:844.3592543050977,
-        rw:584, fw:622, tyreR:60.96, tyreF:60.96, reach:485, stack:654.5403733659439, ha:63.3, htl:130,
+        rw:584, fw:622, tyreR:60.96, tyreF:60.96, wheelODf:743.92, wheelODr:705.92, reach:485, stack:654.5403733659439, ha:63.3, htl:130,
         sa:76, st:430, ttDrop:90, bbh:334, drop:18.95999999999998, rc:450, csl:450.39924689102224,
         a2c:571, a2cAuto:1, hsLower:13, offset:44, forkTravel:160,
         stemL:10, stemH:65, links:122, cage:62,
@@ -1092,6 +1092,11 @@ function syncGeom(driver){
   if(C.a2cAuto) C.a2c=A2C_REF.a2c+(C.forkTravel-A2C_REF.travel);
   const ha=C.ha*Math.PI/180, s=Math.sin(ha), cs=Math.cos(ha);
   const Rf=C.fw/2+C.tyreF, Rr=C.rw/2+C.tyreR;
+  // Finished wheel diameter -- rim bead-seat diameter (what rw/fw actually
+  // are) plus tyre height on both sides. Exported alongside them so a design
+  // file, or Fusion importing one, carries the number people actually mean
+  // by "29in wheel" without having to add the two halves back up themselves.
+  C.wheelODf=2*Rf; C.wheelODr=2*Rr;
   if(driver==='drop') C.bbh=Rr-C.drop;
   C.drop=Rr-C.bbh;                                   // drop is a consequence of the rear wheel
   const along=Math.sqrt(Math.max(0,C.a2c*C.a2c-C.offset*C.offset));
@@ -2291,15 +2296,12 @@ const row=(k,v,cls='')=>`<div class="readout ${cls}"><span>${k}</span><b>${v}</b
 /* The "Front/Rear wheel" selects are rim bead-seat diameter (559/584/622/686mm,
    the ISO number, not a finished wheel size), and tyre width is entered
    separately in inches -- neither is the number anyone actually means by
-   "29in wheel". This is that number: BSD plus tyre height on both sides,
-   shown next to the inputs that combine to make it so it's never guessed at
-   or confused with the rim size itself. mm first since that's the unit the
+   "29in wheel". C.wheelODf/C.wheelODr (set in syncGeom, alongside Rf/Rr) are
+   that number, so this just formats what the engine already computed rather
+   than a second copy of the same sum. mm first since that's the unit the
    rest of this tool works in; inches alongside as the sanity check ("does
    this read as ~29in") most people actually have memorized. */
-const wheelODtext=(bsd,tyre)=>{
-  const od=bsd+2*tyre;
-  return od.toFixed(1)+' mm ('+(od/25.4).toFixed(1)+' in)';
-};
+const wheelODtext=od=>od.toFixed(1)+' mm ('+(od/25.4).toFixed(1)+' in)';
 /* Where the pivots sit relative to the real tubes. Pure frame geometry, so it runs
    before the no-solution bail-out below and keeps reporting even when the linkage
    will not solve — which is exactly when you are moving a pivot about. */
@@ -2359,8 +2361,8 @@ function readouts(){
     row('Bottom bracket drop', C.drop.toFixed(1)+' mm')+
     row('Chainstay length', C.csl.toFixed(1)+' mm')+
     row('Wheelbase', (frame(0).FA.x-first.AX.x).toFixed(0)+' mm')+
-    row('Front wheel diameter, w/ tyre', wheelODtext(C.fw,C.tyreF))+
-    row('Rear wheel diameter, w/ tyre', wheelODtext(C.rw,C.tyreR));
+    row('Front wheel diameter, w/ tyre', wheelODtext(C.wheelODf))+
+    row('Rear wheel diameter, w/ tyre', wheelODtext(C.wheelODr));
 
   /* The stress model assumes the shock reacts on the seat stay itself --
      both the imposed-rotation stress and the axial force path through it

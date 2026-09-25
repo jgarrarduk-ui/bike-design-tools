@@ -404,14 +404,25 @@ nearest listed one.
 **`C.rw`/`C.fw` are rim bead-seat diameter (the ISO number: 559/584/622/686),
 not a finished wheel size, and reading the exported JSON without knowing that
 reads as wrong** — `622` for a "29 in" wheel looks nothing like 29×25.4mm.
-`wheelODtext(bsd,tyre)`, called from `readouts()` into two new "As drawn" rows
-("Front/Rear wheel diameter, w/ tyre"), reports the number people actually
-mean by wheel size: BSD plus tyre height on both sides of the rim, in mm and
-inches together so ~29in is visible as a sanity check against the raw mm
-figure. Purely a readout — `rw`/`fw`/`tyreR`/`tyreF` stay exactly what they
-were, still four separate inputs fed to `Rr`/`Rf` in `syncGeom()`; nothing
-about the geometry chain or the exported schema changed, only what's shown
-next to it.
+`C.wheelODf`/`C.wheelODr`, set in `syncGeom()` right next to `Rf`/`Rr`
+(`2*Rf`/`2*Rr`), are the number people actually mean by wheel size: BSD plus
+tyre height on both sides of the rim. `rw`/`fw`/`tyreR`/`tyreF` stay exactly
+what they were, still the four separate inputs `Rr`/`Rf` are built from —
+`wheelODf`/`wheelODr` are a fifth and sixth field, derived and read-only
+(recomputed on every `syncGeom()` call, so nothing about them can ever drift
+from the four inputs), the same category `stack`/`drop`/`csl`/`zone` are
+already in. Two consequences of being real `cfg` fields rather than a pure
+UI readout: they round-trip through export/import like everything else in
+`cfg` (an older file without them just gets `DEF`'s stale snapshot until the
+next `syncGeom()` overwrites it, same as any other derived field), and the
+Fusion importer (`fusion-import/`) picks them up for free as ordinary mm
+parameters, `susp_cfg_wheelODf`/`susp_cfg_wheelODr`, with no special-casing
+needed — it already imports every numeric `cfg` field generically.
+`readouts()` shows them under Frame geometry → "As drawn" ("Front/Rear wheel
+diameter, w/ tyre"), formatted in mm and inches together by `wheelODtext(od)`
+so ~29in is visible as a sanity check against the raw mm figure — a plain
+formatter now, since the arithmetic itself lives in `syncGeom()`, the one
+place it needs to.
 
 Frame geometry has its own reset (`resetGeom`, `GEOM_KEYS`), separate from the
 whole-tool reset in the Design file panel — everything in the Frame geometry
