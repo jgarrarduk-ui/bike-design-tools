@@ -2786,7 +2786,13 @@ async function exportJpegAsPdf(dataURL) {
       ih=(jpg[i+5]<<8)|jpg[i+6]; iw=(jpg[i+7]<<8)|jpg[i+8]; break;
     }
   }
-  const PW=841.89, PH=595.28;
+  // A4, oriented to match the image; image scaled to fit with aspect preserved
+  const landscape = iw >= ih;
+  const PW = landscape ? 841.89 : 595.28, PH = landscape ? 595.28 : 841.89;
+  const M = 24;
+  const fit = Math.min((PW-2*M)/iw, (PH-2*M)/ih);
+  const DW = iw*fit, DH = ih*fit;
+  const DX = (PW-DW)/2, DY = (PH-DH)/2;
   const NL='\n';
   const parts=[], offs=[];
   let pos=0;
@@ -2806,7 +2812,7 @@ async function exportJpegAsPdf(dataURL) {
     '   /Contents 4 0 R'+NL+
     '   /Resources << /XObject << /Im1 5 0 R >> >>'+NL+
     '>>'+NL+'endobj'+NL);
-  const cs='q '+PW.toFixed(2)+' 0 0 '+PH.toFixed(2)+' 0 0 cm /Im1 Do Q';
+  const cs='q '+DW.toFixed(2)+' 0 0 '+DH.toFixed(2)+' '+DX.toFixed(2)+' '+DY.toFixed(2)+' cm /Im1 Do Q';
   offs.push(pos);
   ps('4 0 obj'+NL+'<< /Length '+cs.length+' >>'+NL+'stream'+NL+cs+NL+'endstream'+NL+'endobj'+NL);
   offs.push(pos);
