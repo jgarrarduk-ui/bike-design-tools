@@ -20,7 +20,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
 /* Left rail is 18px wider than its content actually needs (292px), and that
    spare 18px is deliberately never usable content width -- see .rail's own
    scrollbar-gutter note below for why. */
-#app{display:grid;grid-template-columns:310px minmax(560px,1fr) 268px;height:100vh}
+#app{display:grid;grid-template-columns:310px minmax(560px,1fr) 268px;grid-template-rows:auto minmax(0,1fr);height:100vh}
 /* scrollbar-gutter:stable reserves a scrollbar-width strip permanently,
    whether or not this rail's current tab is actually tall enough to need
    one. Without it, switching from a short tab (Design file) to a long one
@@ -59,6 +59,13 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
 .cfgopt .note{margin:4px 0 0}
 h1{font-size:14px;margin:0 0 2px;font-weight:650;letter-spacing:.2px}
 .sub{color:var(--ink-soft);font-size:11px;margin:0 0 14px}
+/* Page chrome, above the three columns, so it is the viewport's top-left
+   control rather than a button inside the left rail. */
+#tools-nav{grid-column:1 / -1;display:flex;align-items:center;height:32px;
+  padding:0 8px;background:var(--panel);border-bottom:1px solid var(--rule)}
+a.all-tools{color:var(--ink);text-decoration:none;font:12px var(--sans);
+  letter-spacing:.2px;white-space:nowrap;padding:4px 8px;border-radius:3px}
+a.all-tools:hover{background:#e9eef1}
 h2{font-size:11px;font-weight:650;color:var(--ink-soft);margin:18px 0 7px;
    padding-bottom:4px;border-bottom:1px solid var(--rule);
    display:flex;align-items:baseline;justify-content:space-between;gap:8px}
@@ -201,7 +208,8 @@ svg text{font-family:var(--mono)}
   border-top:1px solid var(--rule);display:none}
 #msg.on{display:block}
 @media (max-width:900px){
-  #app{grid-template-columns:1fr;height:auto;min-height:100vh}
+  #app{grid-template-columns:1fr;grid-template-rows:auto;height:auto;min-height:100vh}
+  #tools-nav{order:-2}
   #stage{order:-1}
   .rail{overflow-y:visible;max-height:none}
   .rail.left{border-right:none;border-top:1px solid var(--rule)}
@@ -221,6 +229,7 @@ svg text{font-family:var(--mono)}
 <body>
 <div id="app">
 
+<div id="tools-nav"><a class="all-tools" href="https://creaturecycles.co.uk/tools/">&#9664; all tools</a></div>
 <div class="rail left">
   <!-- The working set: what you move while watching the graph. Everything else
        is setup, folded away until it is wanted. -->
