@@ -585,8 +585,9 @@
     body { overflow: hidden; height: auto; }
     #main { flex: none; }
 
-    /* Hide desktop elements */
-    #toolbar      { display: none !important; }
+    /* Hide desktop toolbar controls; keep the back link as the top-left control. */
+    #toolbar { display: flex !important; }
+    #toolbar > :not(a.all-tools) { display: none !important; }
     #preset-panel { display: none !important; }
     #zoom-controls { display: none !important; }
     /* Derived-row (Wheelbase) is duplicated in statusbar — hide above buttons */
@@ -1130,6 +1131,8 @@
 
 <!-- Toolbar -->
 <div id="toolbar">
+  <a href="https://creaturecycles.co.uk/tools/" class="tb-btn all-tools" style="text-decoration:none">&#9664; all tools</a>
+  <div class="tb-sep"></div>
   <div id="logo-area">
     <span id="logo-text">CREATURE</span>
     <span id="logo-sub">bike designer</span>
@@ -1154,7 +1157,6 @@
   <div class="tb-sep"></div>
   <button class="tb-btn" onclick="resetView()">reset view</button>
   <div style="flex:1"></div>
-  <a href="https://creaturecycles.co.uk/tools/" class="tb-btn" style="text-decoration:none">&#9664; all tools</a>
 
 </div>
 
