@@ -2,7 +2,7 @@
 
 What this is
 -------------
-The Suspension Designer (`flexstay/index.html`) exports a design as a single
+The Suspension Designer (`suspension-designer/index.html`) exports a design as a single
 JSON file via its "Export" button:
 
     { "_meta": {name, designer, date, version},
@@ -11,7 +11,7 @@ JSON file via its "Export" button:
     }
 
 `geom` is millimetre coordinates, origin at the bottom bracket, x forward,
-y up (see flexstay/CLAUDE.md, "The model"). `cfg` is the same flat object
+y up (see suspension-designer/CLAUDE.md, "The model"). `cfg` is the same flat object
 the browser tool itself reads into its config object `C` — including
 derived, read-only fields the tool computes rather than takes as input
 (`stack`, `drop`, `csl`, `wheelODf`/`wheelODr` — finished wheel diameter,

@@ -5,7 +5,10 @@ the first variant of a planned Suspension Designer family (other linkage
 types are on the roadmap; this folder is the flex-stay one). Single
 self-contained page, no build step, no dependencies.
 
-Live: `jgarrarduk-ui.github.io/bike-design-tools/flexstay/`
+Live: `https://creaturecycles.co.uk/apps/suspension-designer/`
+(GitHub Pages, while both hosts are up:
+`jgarrarduk-ui.github.io/bike-design-tools/suspension-designer/`).
+`flexstay/` in this repo only redirects here.
 
 ## What it does
 

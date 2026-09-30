@@ -1,6 +1,6 @@
 # Fusion 360 import
 
-Loads a Suspension Designer (`flexstay/`) JSON export straight into Autodesk
+Loads a Suspension Designer (`suspension-designer/`) JSON export straight into Autodesk
 Fusion 360 as User Parameters, so a Fusion sketch or feature can reference
 the linkage geometry by name instead of a hand-typed number that drifts out
 of sync with the browser tool.
@@ -12,10 +12,10 @@ outside Fusion.
 
 ## Get a design file
 
-In the Suspension Designer (`flexstay/index.html`), the "Design file" panel
+In the Suspension Designer (`suspension-designer/index.html`), the "Design file" panel
 has an Export button — it downloads a `.json` with the current design's
 pivot points and every config field (`_meta`/`geom`/`cfg`; see
-`flexstay/CLAUDE.md` under "design name / export / import" for the exact
+`suspension-designer/CLAUDE.md` under "design name / export / import" for the exact
 shape).
 
 ## Install the script
