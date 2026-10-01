@@ -55,19 +55,14 @@ body {
   padding: 0 16px;
   flex-shrink: 0;
 }
-.logo-text {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--lavender);
-  letter-spacing: 4px;
-  text-transform: uppercase;
-  font-family: var(--font-mono);
-}
-.logo-sub {
-  font-size: 9px;
-  color: var(--text-lo);
-  letter-spacing: 2px;
-  margin-left: 8px;
+.logo {
+  height: 26px;
+  width: auto;
+  display: block;
+  /* Wordmark is black on an opaque white field. Invert, then screen-blend
+     so the field drops out and the letters read light on the dark toolbar. */
+  filter: invert(1);
+  mix-blend-mode: screen;
 }
 .tb-sep {
   width: 1px;
@@ -219,8 +214,7 @@ body {
 <div id="toolbar">
   <a href="https://creaturecycles.co.uk/" class="tb-btn">&#9664; home</a>
   <div class="tb-sep"></div>
-  <span class="logo-text">CREATURE</span>
-  <span class="logo-sub">bike designer</span>
+  <img class="logo" src="assets/creature-logo.png" alt="Creature Cycles" width="566" height="82">
 </div>
 
 <div id="tools">
