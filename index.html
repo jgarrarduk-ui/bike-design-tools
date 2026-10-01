@@ -70,32 +70,13 @@ body {
   margin-left: 8px;
 }
 
-/* ── Hero ── */
-#hero {
-  padding: 52px 24px 32px;
-  text-align: center;
-}
-.hero-title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 4px;
-  text-transform: uppercase;
-  color: var(--text-lo);
-  margin-bottom: 10px;
-}
-.hero-sub {
-  font-size: 10px;
-  color: var(--text-lo);
-  letter-spacing: 1px;
-}
-
 /* ── Tool grid ── */
 #tools {
   flex: 1;
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
-  padding: 0 24px 48px;
+  padding: 28px 24px 48px;
   justify-content: center;
   align-items: flex-start;
   max-width: 860px;
@@ -207,8 +188,7 @@ body {
 
 @media (max-width: 560px) {
   .tool-card { width: 100%; max-width: 340px; }
-  #tools { padding: 0 12px 32px; }
-  #hero { padding: 32px 16px 20px; }
+  #tools { padding: 20px 12px 32px; }
 }
 </style>
 </head>
@@ -217,11 +197,6 @@ body {
 <div id="toolbar">
   <span class="logo-text">CREATURE</span>
   <span class="logo-sub">bike designer</span>
-</div>
-
-<div id="hero">
-  <div class="hero-title">Tools</div>
-  <div class="hero-sub">select a tool to get started</div>
 </div>
 
 <div id="tools">
@@ -247,19 +222,6 @@ body {
       <div class="card-title">Spoke Length Calculator</div>
       <div class="card-desc">
         Calculate J-bend spoke lengths for any wheel build. Supports 1&times;, 2&times; and 3&times; lacing with rim and hub presets.
-      </div>
-      <span class="card-btn">Open tool</span>
-    </div>
-  </a>
-
-  <!-- Spring Rate Calculator -->
-  <a class="tool-card" href="spring-calculator.html">
-    <div class="card-icon">&#8645;</div>
-    <div class="card-body">
-      <span class="card-tag ready">ready</span>
-      <div class="card-title">Spring Rate Calculator</div>
-      <div class="card-desc">
-        Find the ideal rear coil spring rate from your sag target, rider weight and shock travel.
       </div>
       <span class="card-btn">Open tool</span>
     </div>
