@@ -57,26 +57,28 @@ body {
   padding: 0 10px;
   flex-shrink: 0;
 }
-.logo-text {
+.brand-logo {
+  display: block;
+  height: 16px;
+  width: auto;
+  flex: none;
+  margin-right: 10px;
+  filter: url(#creature-logo-green);
+}
+#toolbar .app-title {
   font-size: 12px;
   font-weight: 700;
-  color: var(--lavender);
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  font-family: var(--font-mono);
+  letter-spacing: 0.2px;
+  line-height: 1;
+  color: var(--text-hi);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
+  margin: 0;
 }
-.logo-sub {
-  font-size: 9px;
-  color: var(--text-lo);
-  letter-spacing: 2px;
-  margin-left: 6px;
-}
-.tb-sep {
-  width: 1px;
-  height: 18px;
-  background: var(--border);
-  margin: 0 8px;
-}
+#toolbar .all-tools { margin-left: auto; flex: none; }
 .tb-btn {
   background: none;
   border: none;
@@ -93,12 +95,6 @@ body {
   white-space: nowrap;
 }
 .tb-btn:hover { background: var(--hdr-bg); color: var(--lavender); }
-.page-title {
-  font-size: 10px;
-  color: var(--text-hi);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-}
 
 /* ── Main layout ── */
 #main {
@@ -374,14 +370,17 @@ select {
 </head>
 <body>
 
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="creature-logo-green" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">
+    <feFlood flood-color="#4ade80" result="flood"/>
+    <feComposite in="flood" in2="SourceAlpha" operator="in"/>
+  </filter>
+</svg>
+
 <div id="toolbar">
-  <a href="https://creaturecycles.co.uk/apps/" class="tb-btn">&#9664; all tools</a>
-  <div class="tb-sep"></div>
-  <span class="logo-text">CREATURE</span>
-  <span class="logo-sub">bike designer</span>
-  <div class="tb-sep"></div>
-  <span class="page-title">spring rate calculator</span>
-  <div style="flex:1"></div>
+  <img class="brand-logo" src="assets/creature-wordmark.png" alt="Creature Cycles">
+  <h1 class="app-title">Spring Rate Calculator</h1>
+  <a href="https://creaturecycles.co.uk/apps/" class="tb-btn all-tools">&#9664; all tools</a>
 </div>
 
 <div id="main">
