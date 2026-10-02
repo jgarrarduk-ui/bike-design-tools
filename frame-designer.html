@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="green">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -78,24 +78,24 @@
     --err: #f87171;
   }
 
-  /* ── DARK ── */
+  /* ── DARK (formerly the green theme) ── */
   [data-theme="dark"] {
-    --input-bg:    #1a101e;
-    --input-fg:    #ddb8e3;
-    --bg:          #0d0910;
-    --panel-bg:    #0a0810;
-    --toolbar-bg:  #130d18;
-    --hdr-bg:      #1e1024;
-    --border:      #2e1a36;
-    --accent:      #6f217a;
-    --accent-hi:   #8c2b9a;
-    --accent-br:   #b540c5;
-    --text-lo:     #3d1f48;
-    --text-mid:    #8a6090;
-    --text-hi:     #b090b8;
-    --text-main:   #f0e8f5;
-    --lavender:    #ddb8e3;
-    --lavender-br: #eacced;
+    --input-bg:    #28272a;
+    --input-fg:    #86efac;
+    --bg:          #28272a;
+    --panel-bg:    #222124;
+    --toolbar-bg:  #2e2d31;
+    --hdr-bg:      #333136;
+    --border:      #1a3d20;
+    --accent:      #166534;
+    --accent-hi:   #16a34a;
+    --accent-br:   #22c55e;
+    --text-lo:     #14532d;
+    --text-mid:    #4ade80;
+    --text-hi:     #86efac;
+    --text-main:   #dcfce7;
+    --lavender:    #4ade80;
+    --lavender-br: #86efac;
   }
 
   /* ── LIGHT ── */
@@ -116,46 +116,6 @@
     --text-main:   #1e293b;
     --lavender:    #1c3f60;
     --lavender-br: #2f86bf;
-  }
-
-  /* ── GREEN ── */
-  [data-theme="green"] {
-    --input-bg:    #28272a;
-    --input-fg:    #86efac;
-    --bg:          #28272a;
-    --panel-bg:    #222124;
-    --toolbar-bg:  #2e2d31;
-    --hdr-bg:      #333136;
-    --border:      #1a3d20;
-    --accent:      #166534;
-    --accent-hi:   #16a34a;
-    --accent-br:   #22c55e;
-    --text-lo:     #14532d;
-    --text-mid:    #4ade80;
-    --text-hi:     #86efac;
-    --text-main:   #dcfce7;
-    --lavender:    #4ade80;
-    --lavender-br: #86efac;
-  }
-
-  /* ── ORANGE ── */
-  [data-theme="orange"] {
-    --input-bg:    #1e1005;
-    --input-fg:    #fde68a;
-    --bg:          #0f0a04;
-    --panel-bg:    #0d0902;
-    --toolbar-bg:  #1a1005;
-    --hdr-bg:      #2a1a08;
-    --border:      #3d2810;
-    --accent:      #92400e;
-    --accent-hi:   #d97706;
-    --accent-br:   #f59e0b;
-    --text-lo:     #78350f;
-    --text-mid:    #d97706;
-    --text-hi:     #fbbf24;
-    --text-main:   #fef3c7;
-    --lavender:    #fbbf24;
-    --lavender-br: #fde68a;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -678,7 +638,6 @@
     #toolbar > :not(a.all-tools):not(#logo-area):not(.app-title):not(.sr-only) { display: none !important; }
     #logo-area { display: flex !important; margin-right: 8px; }
     #preset-panel { display: none !important; }
-    #zoom-controls { display: none !important; }
     /* Derived-row (Wheelbase) is duplicated in statusbar — hide above buttons */
     #panel .derived-row { display: none; }
 
@@ -1102,35 +1061,32 @@
   }
   .exp-modal-btns button:hover { background: var(--hdr-bg); }
 
-  /* ── Zoom controls overlay ── */
+  /* ── Zoom controls overlay — same stacked light buttons as Suspension Designer ── */
   #zoom-controls {
     position: absolute;
-    bottom: 12px;
-    left: 12px;
+    top: 10px;
+    right: 10px;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
     z-index: 20;
   }
   .zoom-btn {
-    width: 28px;
-    height: 28px;
-    background: var(--panel-bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-mid);
-    font-size: 14px;
-    line-height: 1;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    background: #fffc;
+    backdrop-filter: blur(2px);
+    border: 1px solid rgba(22, 32, 42, 0.18);
+    border-radius: 3px;
+    color: #16202a;
+    font: 14px/1 var(--font);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.12s, color 0.12s;
-    font-family: var(--font);
-    opacity: 0.85;
   }
-  .zoom-btn:hover { background: var(--hdr-bg); color: var(--lavender); opacity: 1; }
-  .zoom-btn svg { pointer-events: none; }
+  .zoom-btn:hover { background: #fff; }
 
   /* ── Mobile: compact wordmark, reposition presets under toolbar ── */
   @media (max-width: 600px) {
@@ -1172,12 +1128,6 @@
       margin-top: 0;
       flex: 0 0 auto;
       padding: 5px 14px;
-    }
-
-    #zoom-controls {
-      bottom: auto;
-      top: 56px;
-      left: 8px;
     }
   }
 
@@ -1253,7 +1203,6 @@
   </div>
 
   <div class="tb-sep"></div>
-  <button class="tb-btn" onclick="resetView()">reset view</button>
   <a href="https://creaturecycles.co.uk/apps/" class="tb-btn all-tools" style="text-decoration:none">&#9664; all tools</a>
 
 </div>
@@ -1273,10 +1222,8 @@
       <div>
         <div class="vp-section-title">theme</div>
         <div class="vp-btn-row">
-          <button class="vp-btn" id="vp-theme-dark"   onclick="setTheme('dark');   syncViewPanel()">dark</button>
-          <button class="vp-btn" id="vp-theme-light"  onclick="setTheme('light');  syncViewPanel()">light</button>
-          <button class="vp-btn active" id="vp-theme-green"  onclick="setTheme('green');  syncViewPanel()">green</button>
-          <button class="vp-btn" id="vp-theme-orange" onclick="setTheme('orange'); syncViewPanel()">orange</button>
+          <button class="vp-btn" id="vp-theme-light" onclick="setTheme('light'); syncViewPanel()">light</button>
+          <button class="vp-btn active" id="vp-theme-dark" onclick="setTheme('dark'); syncViewPanel()">dark</button>
         </div>
       </div>
 
@@ -1324,13 +1271,6 @@
         </div>
       </div>
 
-      <hr class="vp-divider">
-
-      <!-- Actions -->
-      <div class="vp-btn-row">
-        <button class="vp-btn" onclick="resetView(); closeViewPanel()">reset view</button>
-      </div>
-
     </div>
   </div>
 
@@ -1362,23 +1302,11 @@
     <!-- Mobile floating options button (absolute within canvas-wrap) -->
     <button id="options-btn" onclick="toggleViewPanel()">options</button>
 
-    <!-- Zoom controls -->
+    <!-- Zoom controls: zoom in, zoom out, fit (same job as the old Reset View) -->
     <div id="zoom-controls">
-      <button class="zoom-btn" onclick="zoomStep(1.25)" title="Zoom in">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="6" cy="6" r="4.5"/>
-          <line x1="9.5" y1="9.5" x2="13" y2="13"/>
-          <line x1="6" y1="4" x2="6" y2="8"/>
-          <line x1="4" y1="6" x2="8" y2="6"/>
-        </svg>
-      </button>
-      <button class="zoom-btn" onclick="zoomStep(0.8)" title="Zoom out">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="6" cy="6" r="4.5"/>
-          <line x1="9.5" y1="9.5" x2="13" y2="13"/>
-          <line x1="4" y1="6" x2="8" y2="6"/>
-        </svg>
-      </button>
+      <button class="zoom-btn" onclick="zoomStep(1.25)" title="Zoom in" aria-label="Zoom in">+</button>
+      <button class="zoom-btn" onclick="zoomStep(0.8)" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <button class="zoom-btn" onclick="resetView()" title="Fit to window" aria-label="Fit to window">&#9974;</button>
     </div>
     <!-- Preset panel -->
     <div id="preset-panel">
@@ -1618,23 +1546,23 @@ const BB_STANDARDS = {
 // ═══════════════════════════════════════════════════════
 const THEMES = {
   dark: {
-    bg:        '#0d0910',
-    grid:      '#2a1535',
-    ground:    '#281535',
-    wheel:     '#888888',
-    wheelLbl:  '#555555',
-    tubeFill:  '#3a1545',
-    tubeStk:   '#ddb8e3',
-    lugFill:   '#281040',
-    lugStk:    '#ddb8e3',
-    bbBore:    '#0d0910',
-    crDash:    '#3a1a48',
-    forkFill:  '#4a1560',
-    forkStk:   '#8c2b9a',
-    forkAnn:   '#c888d0',
-    ann:       '#b540c5',
-    ann2:      '#8c2b9a',
-    errFill:   '#1a0820',
+    bg:        '#28272a',
+    grid:      '#313035',
+    ground:    '#3a3a3d',
+    wheel:     '#4ade80',
+    wheelLbl:  '#166534',
+    tubeFill:  '#0f4a20',
+    tubeStk:   '#4ade80',
+    lugFill:   '#0a3018',
+    lugStk:    '#22c55e',
+    bbBore:    '#28272a',
+    crDash:    '#1a4d28',
+    forkFill:  '#15803d',
+    forkStk:   '#22c55e',
+    forkAnn:   '#86efac',
+    ann:       '#22c55e',
+    ann2:      '#4ade80',
+    errFill:   '#1a0808',
   },
   light: {
     bg:        '#f4f6f9',
@@ -1655,47 +1583,9 @@ const THEMES = {
     ann2:      '#c1502b',
     errFill:   '#fee2e2',
   },
-  green: {
-    bg:        '#28272a',
-    grid:      '#313035',
-    ground:    '#3a3a3d',
-    wheel:     '#4ade80',
-    wheelLbl:  '#166534',
-    tubeFill:  '#0f4a20',
-    tubeStk:   '#4ade80',
-    lugFill:   '#0a3018',
-    lugStk:    '#22c55e',
-    bbBore:    '#28272a',
-    crDash:    '#1a4d28',
-    forkFill:  '#15803d',
-    forkStk:   '#22c55e',
-    forkAnn:   '#86efac',
-    ann:       '#22c55e',
-    ann2:      '#4ade80',
-    errFill:   '#1a0808',
-  },
-  orange: {
-    bg:        '#0f0a04',
-    grid:      '#2a1a08',
-    ground:    '#3d2810',
-    wheel:     '#f59e0b',
-    wheelLbl:  '#78350f',
-    tubeFill:  '#7c2d12',
-    tubeStk:   '#fbbf24',
-    lugFill:   '#4a1a08',
-    lugStk:    '#f59e0b',
-    bbBore:    '#0f0a04',
-    crDash:    '#5c2d0e',
-    forkFill:  '#c2410c',
-    forkStk:   '#f97316',
-    forkAnn:   '#fdba74',
-    ann:       '#f59e0b',
-    ann2:      '#fbbf24',
-    errFill:   '#1a0808',
-  },
 };
 
-let currentTheme = 'green';
+let currentTheme = 'dark';
 
 function setTheme(name) {
   currentTheme = name;
@@ -2805,7 +2695,7 @@ function closeViewPanel(){
 // Sync all toggle button states to current vis/theme
 function syncViewPanel(){
   // Theme buttons
-  ['dark','light','green','orange'].forEach(t=>{
+  ['light','dark'].forEach(t=>{
     const b = document.getElementById('vp-theme-'+t);
     if(b) b.classList.toggle('active', t===currentTheme);
   });
@@ -3798,10 +3688,8 @@ requestAnimationFrame(()=>{
 <div class="tb-dd-menu" id="ddm-appearance">
   <div class="dd-label">theme</div>
   <div class="dd-radio-group" id="theme-radios">
-    <button class="dd-radio" data-val="dark"   onclick="setTheme('dark');  syncThemeRadios()">dark</button>
-    <button class="dd-radio" data-val="light"  onclick="setTheme('light'); syncThemeRadios()">light</button>
-    <button class="dd-radio active" data-val="green"  onclick="setTheme('green'); syncThemeRadios()">green</button>
-    <button class="dd-radio" data-val="orange" onclick="setTheme('orange');syncThemeRadios()">orange</button>
+    <button class="dd-radio" data-val="light" onclick="setTheme('light'); syncThemeRadios()">light</button>
+    <button class="dd-radio active" data-val="dark" onclick="setTheme('dark'); syncThemeRadios()">dark</button>
   </div>
 </div>
 
