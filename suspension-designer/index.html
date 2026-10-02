@@ -3,7 +3,72 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Suspension Designer — Creature Cycles</title>
+<title>Suspension Designer — Flex-Stay Kinematics &amp; Leverage | Creature Cycles</title>
+<meta name="description" content="Four-bar flex-stay suspension kinematics: leverage ratio, anti-squat/rise and stay stress. Drag pivots; validated against Linkage X3.">
+<link rel="canonical" href="https://creaturecycles.co.uk/apps/suspension-designer/">
+<meta property="og:site_name" content="Creature Cycles">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Suspension Designer — Flex-Stay Kinematics &amp; Leverage | Creature Cycles">
+<meta property="og:description" content="Four-bar flex-stay suspension kinematics: leverage ratio, anti-squat/rise and stay stress. Drag pivots; validated against Linkage X3.">
+<meta property="og:url" content="https://creaturecycles.co.uk/apps/suspension-designer/">
+<meta property="og:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
+<meta property="og:image:alt" content="Creature Cycles">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Suspension Designer — Flex-Stay Kinematics &amp; Leverage | Creature Cycles">
+<meta name="twitter:description" content="Four-bar flex-stay suspension kinematics: leverage ratio, anti-squat/rise and stay stress. Drag pivots; validated against Linkage X3.">
+<meta name="twitter:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebApplication",
+      "@id": "https://creaturecycles.co.uk/apps/suspension-designer/#app",
+      "name": "Suspension Designer",
+      "url": "https://creaturecycles.co.uk/apps/suspension-designer/",
+      "description": "Four-bar flex-stay suspension kinematics: leverage ratio, anti-squat/rise and stay stress. Drag pivots; validated against Linkage X3.",
+      "applicationCategory": "DesignApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires a modern browser with JavaScript",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "GBP"
+      },
+      "provider": {
+        "@type": "Organization",
+        "name": "Creature Cycles",
+        "url": "https://creaturecycles.co.uk/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://creaturecycles.co.uk/apps/suspension-designer/#breadcrumb",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Creature Cycles",
+          "item": "https://creaturecycles.co.uk/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Bike Design Tools",
+          "item": "https://creaturecycles.co.uk/apps/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Suspension Designer",
+          "item": "https://creaturecycles.co.uk/apps/suspension-designer/"
+        }
+      ]
+    }
+  ]
+}
+</script>
 <style>
 :root{
   --paper:#eef1f3; --grid:#dbe2e7; --grid2:#cbd6dd;
@@ -61,10 +126,13 @@ h1{font-size:14px;margin:0 0 2px;font-weight:650;letter-spacing:.2px}
 .sub{color:var(--ink-soft);font-size:11px;margin:0 0 14px}
 /* Page chrome, above the three columns, so it is the viewport's top-left
    control rather than a button inside the left rail. */
-#tools-nav{grid-column:1 / -1;display:flex;align-items:center;height:32px;
-  padding:0 8px;background:var(--panel);border-bottom:1px solid var(--rule)}
+#tools-nav{grid-column:1 / -1;display:flex;align-items:baseline;flex-wrap:wrap;
+  gap:1px 10px;min-height:32px;height:auto;padding:5px 10px 6px;
+  background:var(--panel);border-bottom:1px solid var(--rule)}
+#tools-nav h1{margin:0;font-size:13px;font-weight:650;letter-spacing:.2px;white-space:nowrap}
+#tools-nav .seo-lead{flex:1 1 18rem;margin:0;font-size:12px;line-height:1.35;color:var(--ink-soft)}
 a.all-tools{color:var(--ink);text-decoration:none;font:12px var(--sans);
-  letter-spacing:.2px;white-space:nowrap;padding:4px 8px;border-radius:3px}
+  letter-spacing:.2px;white-space:nowrap;padding:4px 8px;border-radius:3px;flex:none}
 a.all-tools:hover{background:#e9eef1}
 h2{font-size:11px;font-weight:650;color:var(--ink-soft);margin:18px 0 7px;
    padding-bottom:4px;border-bottom:1px solid var(--rule);
@@ -229,7 +297,7 @@ svg text{font-family:var(--mono)}
 <body>
 <div id="app">
 
-<div id="tools-nav"><a class="all-tools" href="https://creaturecycles.co.uk/apps/">&#9664; all tools</a></div>
+<div id="tools-nav"><a class="all-tools" href="https://creaturecycles.co.uk/apps/">&#9664; all tools</a><h1>Suspension Designer</h1><p class="seo-lead">Four-bar flex-stay suspension kinematics: leverage ratio, anti-squat/rise and stay stress. Drag pivots; validated against Linkage X3.</p></div>
 <div class="rail left">
   <!-- The working set: what you move while watching the graph. Everything else
        is setup, folded away until it is wanted. -->
