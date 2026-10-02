@@ -126,19 +126,14 @@ body {
   gap: 0;
   flex-shrink: 0;
 }
-.logo-text {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--lavender);
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  font-family: var(--font-mono);
-}
-.logo-sub {
-  font-size: 9px;
-  color: var(--text-lo);
-  letter-spacing: 2px;
-  margin-left: 6px;
+/* Wordmark PNG is black glyphs on an opaque white field. The SVG filter
+   knocks the field out and paints the glyphs in the green UI accent. */
+.brand-logo {
+  display: block;
+  height: 16px;
+  width: auto;
+  flex: none;
+  filter: url(#creature-logo-green);
 }
 .tb-sep {
   width: 1px;
@@ -579,12 +574,19 @@ body {
 </head>
 <body>
 
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="creature-logo-green" color-interpolation-filters="sRGB">
+    <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -1 0 0 0 1" result="alpha"/>
+    <feFlood flood-color="#4ade80" result="flood"/>
+    <feComposite in="flood" in2="alpha" operator="in"/>
+  </filter>
+</svg>
+
 <!-- ── Toolbar ── -->
 <div id="toolbar">
   <a href="https://creaturecycles.co.uk/apps/" class="tb-btn">&#9664; all tools</a>
   <div class="tb-sep"></div>
-  <span class="logo-text">CREATURE</span>
-  <span class="logo-sub">bike designer</span>
+  <img class="brand-logo" src="assets/creature-logo.png" alt="Creature Cycles">
   <div style="flex:1"></div>
 </div>
 
