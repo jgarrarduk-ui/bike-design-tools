@@ -3,7 +3,80 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Creature Cycles — Tools</title>
+<title>Bike Design Tools — Frame, Suspension &amp; Spoke Calculator | Creature Cycles</title>
+<meta name="description" content="Free browser tools from Creature Cycles: parametric frame geometry, flex-stay suspension kinematics, and a J-bend spoke length calculator. No install.">
+<link rel="canonical" href="https://creaturecycles.co.uk/apps/">
+<meta property="og:site_name" content="Creature Cycles">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Bike Design Tools — Frame, Suspension &amp; Spoke Calculator | Creature Cycles">
+<meta property="og:description" content="Free browser tools from Creature Cycles: parametric frame geometry, flex-stay suspension kinematics, and a J-bend spoke length calculator. No install.">
+<meta property="og:url" content="https://creaturecycles.co.uk/apps/">
+<meta property="og:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
+<meta property="og:image:alt" content="Creature Cycles">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Bike Design Tools — Frame, Suspension &amp; Spoke Calculator | Creature Cycles">
+<meta name="twitter:description" content="Free browser tools from Creature Cycles: parametric frame geometry, flex-stay suspension kinematics, and a J-bend spoke length calculator. No install.">
+<meta name="twitter:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "CollectionPage",
+      "@id": "https://creaturecycles.co.uk/apps/#webpage",
+      "url": "https://creaturecycles.co.uk/apps/",
+      "name": "Bike Design Tools",
+      "description": "Free browser tools from Creature Cycles: parametric frame geometry, flex-stay suspension kinematics, and a J-bend spoke length calculator. No install.",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Creature Cycles",
+        "url": "https://creaturecycles.co.uk/"
+      },
+      "mainEntity": {
+        "@type": "ItemList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Bicycle Frame Designer",
+            "url": "https://creaturecycles.co.uk/apps/frame-designer.html"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Suspension Designer",
+            "url": "https://creaturecycles.co.uk/apps/suspension-designer/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "Spoke Length Calculator",
+            "url": "https://creaturecycles.co.uk/apps/spoke-calculator.html"
+          }
+        ]
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://creaturecycles.co.uk/apps/#breadcrumb",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Creature Cycles",
+          "item": "https://creaturecycles.co.uk/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Bike Design Tools",
+          "item": "https://creaturecycles.co.uk/apps/"
+        }
+      ]
+    }
+  ]
+}
+</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap');
 
@@ -93,7 +166,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
-  padding: 28px 24px 48px;
+  padding: 18px 24px 48px;
   justify-content: center;
   align-items: flex-start;
   max-width: 860px;
@@ -203,9 +276,32 @@ body {
   letter-spacing: 1px;
 }
 
+/* ── Intro (crawlable, above the tool cards) ── */
+.hub-intro {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 22px 24px 0;
+  text-align: center;
+}
+.hub-intro h1 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--lavender-br);
+  margin-bottom: 8px;
+}
+.hub-intro p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-mid);
+}
+
 @media (max-width: 560px) {
+  .hub-intro { padding: 16px 12px 0; }
+  .hub-intro h1 { font-size: 16px; }
   .tool-card { width: 100%; max-width: 340px; }
-  #tools { padding: 20px 12px 32px; }
+  #tools { padding: 16px 12px 32px; }
 }
 </style>
 </head>
@@ -216,6 +312,11 @@ body {
   <div class="tb-sep"></div>
   <img class="logo" src="assets/creature-logo.png" alt="Creature Cycles" width="566" height="82">
 </div>
+
+<header class="hub-intro">
+  <h1>Bike Design Tools</h1>
+  <p>Free browser tools from Creature Cycles: parametric frame geometry, flex-stay suspension kinematics, and a J-bend spoke length calculator. No install.</p>
+</header>
 
 <div id="tools">
 
