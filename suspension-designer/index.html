@@ -291,7 +291,7 @@ svg text{font-family:var(--mono)}
   .rail{overflow-y:visible;max-height:none}
   .rail.left{border-right:none;border-top:1px solid var(--rule)}
   .rail.right{border-left:none;border-top:1px solid var(--rule)}
-  /* keep the canvas landscape: a square one crops the wheels off the ends */
+  /* keep the canvas landscape so the fitted bike stays a side view */
   #canvas{height:min(46vh,66vw);min-height:210px;flex:none}
   #charts{grid-template-columns:24px 1fr 24px;height:250px}
   input[type=range]{width:auto;flex:1 1 90px;min-width:90px}
@@ -1504,8 +1504,9 @@ function el(tag,attrs,parent){
   return n;
 }
 /* The view is refitted to the bike on every draw, then nudged by the user's zoom
-   and pan. At zoom 1 the bike fills the canvas height, which crops the wheels a
-   little; the crop is capped so a tall narrow canvas does not slice the frame. */
+   and pan. At zoom 1 the whole bike sits inside the canvas with a margin of
+   empty grid. A wide stage — side panels plus the leverage graph — shows more
+   side grid rather than cropping the tyres and the saddle to fill the width. */
 let VIEW={x0:-880,y0:-395,w:2130,h:1120};   // last fit, read by the grid, ground and hit radius
 let zoomK=1, panX=0, panY=0, lastBox=null, mmPerPx=1;
 /* getBoundingClientRect() answers from live layout, so asking for it forces
@@ -1533,20 +1534,28 @@ let showWheels=true, showDrivetrain=true, showCockpit=true,
 // isn't exported/imported or touched by any reset button, same as showWheels
 // etc. above.
 let ptLocked={};
-const MAXCROP=0.18;                          // never lose more than this fraction of the width
 function fitView(svg,box){
   const r=canvasRectCache||(canvasRectCache=svg.getBoundingClientRect());
-  const aspect=(r.width>4&&r.height>4)?r.width/r.height:1.9;
-  // Fill the canvas, cropping the wheels a little. Always — the overlays do not
-  // get to change the framing.
-  const hCover=Math.min(box.h, box.w/aspect);
-  // A wide canvas can lose a sliver of tyre without anyone minding. A tall narrow
-  // one cannot: there the same fraction takes the wheels off, so taper it away.
-  const crop=Math.max(0,Math.min(MAXCROP,(aspect-1.1)*0.36));
-  const hCap  =box.w*(1-crop)/aspect;                  // never crop most of the width
-  const h=Math.max(hCover,hCap)*1.03/zoomK;            // margin so the ground line clears the edge
-  const w=h*aspect;
-  mmPerPx=r.width>4 ? w/r.width : 1;
+  const W=r.width, H=r.height;
+  // Before layout settles there is no pixel box to pad against. Contain the
+  // bike in a landscape frame; the ResizeObserver refits to the real canvas.
+  if(!(W>4&&H>4)){
+    const aspect=1.9;
+    const h=Math.max(box.h, box.w/aspect)*1.14/zoomK;
+    const w=h*aspect;
+    mmPerPx=1;
+    return {x0:box.cx+panX-w/2, y0:box.cy+panY-h/2, w, h};
+  }
+  // Margin in screen pixels, capped so a very large canvas does not shrink the
+  // bike to a speck. Contain the static box in that padded area — whichever
+  // axis is tighter wins, and the other one keeps the spare as empty grid.
+  const padX=Math.min(96, Math.max(24, W*0.08));
+  const padY=Math.min(72, Math.max(20, H*0.09));
+  const availW=Math.max(40, W-padX*2);
+  const availH=Math.max(40, H-padY*2);
+  const mm=Math.max(box.w/availW, box.h/availH)/zoomK;
+  const w=W*mm, h=H*mm;
+  mmPerPx=mm;
   return {x0:box.cx+panX-w/2, y0:box.cy+panY-h/2, w, h};
 }
 function zoomBy(factor,at){

@@ -164,28 +164,24 @@ uselessly against the page edge.
 visible without scrolling.** `#canvas{flex:1;min-height:230px;max-height:56vh}`
 — the `max-height` is what actually does it: without a cap, `flex:1` lets the
 canvas claim every pixel `#stage` has spare, however tall that leaves the
-carousel. This interacts with `fitView`'s own "crop rather than shrink"
-behaviour (below): making the box shorter effectively widens its aspect ratio,
-which makes the height-driven vertical crop trigger more readily at extreme
-geometries. Checked across `ha` 45–75° and it's clean; **at `ha`≈80° (unrealistic
-for a real bike — nobody runs a head angle that slack) the stem art itself
-starts clipping at the top edge**, confirmed by rendering the identical
-geometry with the `max-height` cap removed, which fixes it — so this is a real,
-known trade-off of asking for a shorter box, not a bug, and not worth chasing
-into geometries no actual bike would use.
+carousel. `fitView` contains the whole bike in that box with a screen-pixel
+margin, so a shorter (wider) canvas adds side grid instead of cropping the
+tyres and saddle. The stem-art clip at `ha`≈80° was a property of the old
+crop-to-fill framing; that head angle is still unrealistic for a real bike.
 
-**Wheels touch the bottom edge on purpose; the top edge is a tuned pad, not
-zero.** `draw()`'s content box (`index.html:1160`, the `ys` array building `lastBox`)
-is `[ground, F0.steerTop.y+62, post.y+80]`. `ground` already needs no pad — the
-wheel sits exactly on it by construction. The stem (`STEMART`) and saddle
-(`SADDLEART`) pads aren't guesses: measured each art's own transformed bounding
-box above its anchor point (`steerTop`/`post`) across a spread of head and seat
-angles (down to unrealistic extremes, 45° head angle, 68-80° seat angle) and
-took the worst case plus a small margin — 62mm and 80mm respectively. The
-previous flat pads (70/90) were already in that neighbourhood; this only
-trimmed what was provably spare. `fitView`'s own uniform margin
-(`index.html:1099`, "so the ground line clears the edge") also came down
-slightly, from ×1.07 to ×1.03, for a matching trim on all four edges together.
+**The content box is tight to the bike; the view pads outside it.** `draw()`'s
+content box (the `ys` array building `lastBox`) is
+`[ground, F0.steerTop.y+62, post.y+80]`. `ground` is the tyre contact — the
+wheel sits exactly on it by construction, so the box itself has no pad below
+the tyres. The stem (`STEMART`) and saddle (`SADDLEART`) pads aren't guesses:
+measured each art's own transformed bounding box above its anchor point
+(`steerTop`/`post`) across a spread of head and seat angles (down to unrealistic
+extremes, 45° head angle, 68-80° seat angle) and took the worst case plus a
+small margin — 62mm and 80mm respectively. `fitView` then insets the canvas by
+about 8% of its width and 9% of its height (capped, in screen pixels) and
+picks the scale that contains that box. Zoom 1 and the fit button both land
+there. A wide desktop canvas is limited by the height, so the spare width is
+empty grid rather than a crop of the tyres and saddle.
 
 One chart at a time, full strip width, paged by the arrows and the dots —
 `#cdots` is hand-written in the HTML with one `<i>` per `CHART_VIEWS` entry, so
@@ -224,10 +220,10 @@ as one ladder, not two) — unlike every other chart here, x and y are the same
 kind of quantity, and stretching them differently would bend a path that is,
 physically, a specific shape.
 
-**The canvas has to stay landscape.** `fitView` crops the width to fill the box,
-which is harmless on a wide canvas and takes the wheels clean off a square one.
-The allowed crop now tapers to zero as the box gets square, and the mobile canvas
-is `min(46vh,66vw)` so it stays roughly 1.6 wide.
+**The canvas stays landscape.** `fitView` contains the bike rather than cropping
+it, so a square box no longer slices the wheels off — it just leaves more
+vertical grid. The mobile canvas is still `min(46vh,66vw)` so the side view
+stays roughly 1.6 wide instead of a tall strip.
 
 ## The model
 
@@ -1363,9 +1359,10 @@ asymmetric glyph could. Independent of `showAS`/`showAR`/`showLines()` — its
 own toggle, drawn whether or not the anti-squat/anti-rise construction is on.
 
 **The framing is fixed.** `fitView` takes its content box from the static geometry
-— `frame(0)` and the top-out axle — so cycling the suspension, holding at sag or
-turning an overlay on cannot make the view breathe. Only the geometry inputs, the
-canvas size and the zoom control move it. That means the anti-squat rays can leave
+— `frame(0)` and the top-out axle — and contains that box with padding, so
+cycling the suspension, holding at sag or turning an overlay on cannot make the
+view breathe. Only the geometry inputs, the canvas size and the zoom control
+move it. That means the anti-squat rays can leave
 the top of the view; their labels are clamped back inside and stacked rather than
 zooming out to chase them. Labels inside the drawing need their own `scale(1,-1)`
 because the group they sit in is y-flipped.
