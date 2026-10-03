@@ -164,6 +164,14 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
    compete with initDrag()'s pointer and wheel handlers on the SVG itself. */
 #canvas-btns{position:absolute;top:10px;left:10px;z-index:9;display:flex;gap:4px;align-items:flex-start}
 #configOpen{background:#fffc;color:#16202a;backdrop-filter:blur(2px)}
+/* Dark only: these three controls were still the light-theme white/grey.
+   Pale green matches the pressed cycle/sag/static buttons and the light text. */
+[data-theme="dark"] #zoomctl button,
+[data-theme="dark"] #configOpen{
+  background:var(--anim);color:var(--on-accent);border-color:var(--shock)}
+[data-theme="dark"] #zoomctl button:hover,
+[data-theme="dark"] #configOpen:hover{
+  background:var(--ink);border-color:var(--ink)}
 #options-btn{background:var(--accent);border:none;color:#fff;
   font-family:var(--sans);font-size:10px;font-weight:700;
   padding:5px 12px;border-radius:11px;letter-spacing:.5px;cursor:pointer;
@@ -320,6 +328,23 @@ button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:
    the pressed-state recolour) rather than getting their own. */
 .iconbtn{width:22px;height:22px;padding:0;font-size:12px;line-height:1;flex:none}
 input[type=range]{width:220px;accent-color:var(--rear)}
+/* Dark travel slider: a pale green track and thumb, same family as the
+   buttons above. The sag tick switches to the dark green text colour so it
+   still shows on that track. Light keeps the native grey slider. */
+[data-theme="dark"] #poswrap input[type=range]{
+  -webkit-appearance:none;appearance:none;height:18px;background:transparent;
+  accent-color:var(--anim)}
+[data-theme="dark"] #poswrap input[type=range]::-webkit-slider-runnable-track{
+  height:6px;background:var(--anim);border:none;border-radius:999px}
+[data-theme="dark"] #poswrap input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;margin-top:-5px;border-radius:50%;
+  background:var(--ink);border:2px solid var(--on-accent)}
+[data-theme="dark"] #poswrap input[type=range]::-moz-range-track{
+  height:6px;background:var(--anim);border:none;border-radius:999px}
+[data-theme="dark"] #poswrap input[type=range]::-moz-range-thumb{
+  width:16px;height:16px;border-radius:50%;background:var(--ink);
+  border:2px solid var(--on-accent)}
+[data-theme="dark"] #sagmark{background:var(--on-accent)}
 /* A thin red tick over the slider's own track, at the sag % of its width —
    not exact against the track's own end-padding (a native range's usable
    track is inset by half the thumb's width at each end, which a plain
@@ -3337,8 +3362,8 @@ function applyArtTheme(){
   SHOCKART.resv.src=src('shock-reservoir.png');
   SHOCKART.spring.src=src('shock-spring.png');
   SHOCKART.body.src=src('shock-body.png');
-  STEMART.src=src('stem.png');
-  WHEELART.src=src('wheel.png');
+  STEMART.src=src('stem.png')+(dark?'?v=2':'');
+  WHEELART.src=src('wheel.png')+(dark?'?v=2':'');
   JOCKEYART.src=src('jockey-wheel.png');
   SADDLEART.src=src('saddle.png');
 }
