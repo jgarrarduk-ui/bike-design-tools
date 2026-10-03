@@ -159,18 +159,28 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
 #zoomctl{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:4px;z-index:6}
 #zoomctl button{width:26px;height:26px;padding:0;font-size:14px;line-height:1;
   background:#fffc;color:#16202a;backdrop-filter:blur(2px)}
-/* Config and the overlay/parts toggles float on the canvas, same translucent
-   treatment as the zoom stack. A sibling of #draw, not a child, so it never
-   competes with initDrag()'s pointer and wheel handlers on the SVG itself.
-   pointer-events:none on the wrap lets a drag start in the gaps; the buttons
-   themselves opt back in. */
-#ov-panel{position:absolute;top:10px;left:10px;right:46px;z-index:5;
-  display:flex;flex-wrap:wrap;gap:4px;align-items:flex-start;pointer-events:none}
-#ov-panel button{pointer-events:auto;background:#fffc;color:#16202a;backdrop-filter:blur(2px)}
+/* Config stays on the canvas. Options sits beside it and opens the overlay
+   and parts toggles. Both are siblings of #draw, not children, so they never
+   compete with initDrag()'s pointer and wheel handlers on the SVG itself. */
+#canvas-btns{position:absolute;top:10px;left:10px;z-index:9;display:flex;gap:4px;align-items:flex-start}
+#configOpen{background:#fffc;color:#16202a;backdrop-filter:blur(2px)}
+#options-btn{background:var(--accent);border:none;color:#fff;
+  font-family:var(--sans);font-size:10px;font-weight:700;
+  padding:5px 12px;border-radius:11px;letter-spacing:.5px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent}
+#options-btn.active{background:var(--accent-hi)}
+#ov-backdrop{display:none;position:absolute;inset:0;z-index:7}
+#ov-backdrop.open{display:block}
+#ov-panel{display:none;position:absolute;top:44px;left:10px;z-index:8;
+  width:max-content;max-width:calc(100% - 56px);max-height:calc(100% - 56px);
+  overflow-y:auto;flex-wrap:wrap;gap:4px;align-items:flex-start;
+  background:var(--panel);border:1px solid var(--rule);
+  border-bottom:2px solid var(--accent);
+  box-shadow:0 8px 32px rgba(0,0,0,.22);padding:10px 12px 12px}
+#ov-panel.open{display:flex}
+#ov-panel button{background:var(--btn);color:var(--ink);backdrop-filter:none}
 #ov-panel button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:var(--on-accent)}
 #ov-panel .partbtn[aria-pressed=true]{background:var(--link);border-color:var(--link);color:var(--on-accent)}
-#options-btn{display:none}
-#ov-backdrop{display:none;position:absolute;inset:0;z-index:7}
 .cfgopt{padding:10px 12px}
 .cfgopt+.cfgopt{border-top:1px solid var(--rule)}
 .cfgopt button{width:100%;text-align:left}
@@ -358,24 +368,8 @@ svg text{font-family:var(--mono)}
      mobile gets its wrap back, each row independently. */
   .barrow{gap:8px 10px;flex-wrap:wrap}
   .pt{grid-template-columns:1fr 72px 72px 24px}
-  /* Same interaction as the frame designer's mobile options sheet: one
-     canvas button, a backdrop tap closes it, and the button shows active. */
-  #options-btn{display:block;position:absolute;top:10px;left:10px;z-index:9;
-    background:var(--accent);border:none;color:#fff;
-    font-family:var(--sans);font-size:10px;font-weight:700;
-    padding:5px 12px;border-radius:11px;letter-spacing:.5px;cursor:pointer;
-    -webkit-tap-highlight-color:transparent}
-  #options-btn.active{background:var(--accent-hi)}
-  #ov-panel{display:none;pointer-events:auto;top:40px;left:8px;right:8px;
-    background:var(--panel);border:1px solid var(--rule);
-    border-bottom:2px solid var(--accent);
-    box-shadow:0 8px 32px rgba(0,0,0,.22);
-    padding:10px 12px 12px;max-height:calc(100% - 52px);overflow-y:auto;z-index:8}
-  #ov-panel.open{display:flex}
-  #ov-backdrop.open{display:block}
-  #ov-panel button{background:var(--btn);color:var(--ink);backdrop-filter:none}
-  #ov-panel button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:var(--on-accent)}
-  #ov-panel .partbtn[aria-pressed=true]{background:var(--link);border-color:var(--link);color:var(--on-accent)}
+  /* Mobile keeps config inside the options sheet, so the sheet spans the canvas. */
+  #ov-panel{left:8px;right:8px;width:auto;top:40px}
 }
 </style>
 </head>
@@ -539,10 +533,12 @@ svg text{font-family:var(--mono)}
   </div>
   <div id="canvas">
     <svg id="draw" preserveAspectRatio="xMidYMid meet"></svg>
-    <button type="button" id="options-btn" aria-expanded="false">options</button>
+    <div id="canvas-btns">
+      <button id="configOpen" title="Suspension configuration">config</button>
+      <button type="button" id="options-btn" aria-expanded="false">options</button>
+    </div>
     <div id="ov-backdrop"></div>
     <div id="ov-panel">
-      <button id="configOpen" title="Suspension configuration">config</button>
       <span class="bargroup" role="group" aria-label="Overlays and parts drawn">
         <button id="showcog" aria-pressed="false">centre of gravity</button>
         <button id="axpath" aria-pressed="true">axle path</button>
@@ -3366,6 +3362,21 @@ document.getElementById('options-btn').onclick=()=>{
   setOptionsOpen(!document.getElementById('ov-panel').classList.contains('open'));
 };
 document.getElementById('ov-backdrop').onclick=()=>setOptionsOpen(false);
+/* Desktop leaves config beside options. Mobile keeps it as the first control
+   inside the sheet, which is where it already lived. */
+function placeConfig(){
+  const config=document.getElementById('configOpen');
+  const mobile=window.matchMedia('(max-width:900px)').matches;
+  const panel=document.getElementById('ov-panel');
+  const btns=document.getElementById('canvas-btns');
+  if(mobile){
+    if(config.parentElement!==panel) panel.insertBefore(config, panel.firstChild);
+  }else if(config.parentElement!==btns){
+    btns.insertBefore(config, document.getElementById('options-btn'));
+  }
+}
+placeConfig();
+window.matchMedia('(max-width:900px)').addEventListener('change', placeConfig);
 
 try{
   applyArtTheme();
