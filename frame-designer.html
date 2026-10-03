@@ -2357,13 +2357,16 @@ function drawCockpit(g){
 //  runs 150mm up the seat-tube axis from the seat cluster,
 //  square where it enters the frame and round at the top
 //  (outline 26 / fill 19, cap radii 13 and 9.5). The saddle is
-//  a flat illustration for this app only (shell one tone, rails
-//  another), set level, with the rail clamp 15% of the saddle
-//  width forward of the post. Light and dark each have a file.
+//  James's illustrated saddle for this app only: black shell,
+//  stipple, and rails on light, and the same drawing in one
+//  light-green family on dark (rails a lighter green). Set
+//  level, with the rail clamp 15% of the saddle width forward
+//  of the post. The suspension designer's saddle files are unused.
 // ═══════════════════════════════════════════════════════
 const SADDLE_ART = {
-  w: 904, h: 278, mount: [550, 245],
-  mmPerPx: 0.3097,
+  w: 1840, h: 560, mount: [1120, 510],
+  // Full-bleed artwork, kept near the previous 280mm nose-to-tail.
+  mmPerPx: 280 / 1840,
 };
 const SEATPOST_LEN = 150;
 const saddleImgs = {
