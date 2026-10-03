@@ -1237,6 +1237,7 @@
           <button class="vp-btn active" data-vis="wheels"  onclick="vpToggle(this,'wheels')">wheels</button>
           <button class="vp-btn active" data-vis="fork"    onclick="vpToggle(this,'fork')">fork</button>
           <button class="vp-btn active" data-vis="cockpit" onclick="vpToggle(this,'cockpit')">cockpit</button>
+          <button class="vp-btn active" data-vis="seatpost" onclick="vpToggle(this,'seatpost')">seat post</button>
         </div>
       </div>
 
@@ -1560,6 +1561,8 @@ const THEMES = {
     forkFill:  '#15803d',
     forkStk:   '#22c55e',
     forkAnn:   '#86efac',
+    postFill:  '#0f4a28',
+    postStk:   '#4ade80',
     ann:       '#22c55e',
     ann2:      '#4ade80',
     errFill:   '#1a0808',
@@ -1579,6 +1582,8 @@ const THEMES = {
     forkFill:  '#bcdcf4',
     forkStk:   '#1f6fa8',
     forkAnn:   '#2f86bf',
+    postFill:  '#b9c0c6',
+    postStk:   '#7b848c',
     ann:       '#1c3f60',
     ann2:      '#c1502b',
     errFill:   '#fee2e2',
@@ -1737,7 +1742,7 @@ let viewPinned = true;        // true = pinGroundY active; released permanently 
 // Every redraw recomputes offset[1] from groundFraction + live geometry
 let drag   = null;
 let vis = {
-  grid:true, wheels:true, fork:true, cockpit:true,
+  grid:true, wheels:true, fork:true, cockpit:true, seatpost:true,
   // Annotations — bike geometry
   ann_reach:true, ann_stack:true, ann_bbdrop:true,
   ann_wheelbase:true, ann_chainstay:true,
@@ -2347,6 +2352,78 @@ function drawCockpit(g){
 }
 
 // ═══════════════════════════════════════════════════════
+//  SEAT POST AND SADDLE
+//  Same construction as the suspension designer: a 26mm post
+//  runs 150mm up the seat-tube axis from the seat cluster,
+//  square where it enters the frame and round at the top
+//  (outline 26 / fill 19, cap radii 13 and 9.5). The saddle
+//  artwork is the suspension designer's, set level, with the
+//  rail clamp 15% of the saddle width forward of the post.
+// ═══════════════════════════════════════════════════════
+const SADDLE_ART = {
+  w: 904, h: 278, mount: [550, 245],
+  mmPerPx: 0.3097,
+};
+const SEATPOST_LEN = 150;
+const saddleImgs = {
+  light: new Image(),
+  dark: new Image(),
+};
+function onSaddleLoad(){ if(cssW) redraw(); }
+saddleImgs.light.onload = onSaddleLoad;
+saddleImgs.dark.onload = onSaddleLoad;
+saddleImgs.light.src = 'suspension-designer/img/saddle.png';
+saddleImgs.dark.src = 'suspension-designer/img/dark/saddle.png';
+
+function seatPostTop(g){
+  const ax = g.st_ax, sc = g.seat_cluster;
+  return [sc[0] + ax[0]*SEATPOST_LEN, sc[1] + ax[1]*SEATPOST_LEN];
+}
+
+function saddlePlacement(post){
+  const SD = SADDLE_ART, sds = SD.mmPerPx;
+  const nudge = 0.15 * SD.w * sds;
+  return {
+    e: post[0] - sds*SD.mount[0] + nudge,
+    f: post[1] + sds*SD.mount[1],
+    sds,
+  };
+}
+
+function drawSeatpost(g){
+  const sc = g.seat_cluster;
+  const post = seatPostTop(g);
+  const fill = T('postFill'), edge = T('postStk');
+  const [x1,y1] = mmToScreen(sc[0], sc[1]);
+  const [x2,y2] = mmToScreen(post[0], post[1]);
+  ctx.save();
+  ctx.lineCap = 'butt';
+  ctx.beginPath();
+  ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+  ctx.strokeStyle = edge; ctx.lineWidth = px(26); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+  ctx.strokeStyle = fill; ctx.lineWidth = px(19); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x2,y2,px(13),0,Math.PI*2);
+  ctx.fillStyle = edge; ctx.fill();
+  ctx.beginPath(); ctx.arc(x2,y2,px(9.5),0,Math.PI*2);
+  ctx.fillStyle = fill; ctx.fill();
+  ctx.restore();
+
+  const img = saddleImgs[currentTheme] || saddleImgs.dark;
+  if(!img.complete || !img.naturalWidth) return;
+  const place = saddlePlacement(post);
+  ctx.save();
+  ctx.transform(
+    place.sds*scale, 0, 0, place.sds*scale,
+    cssW/2 + offset[0] + place.e*scale,
+    cssH/2 + offset[1] - place.f*scale
+  );
+  ctx.drawImage(img, 0, 0, SADDLE_ART.w, SADDLE_ART.h);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════
 //  DRAW ANNOTATIONS
 // ═══════════════════════════════════════════════════════
 function drawAnnotations(g){
@@ -2494,6 +2571,7 @@ function redraw(){
     drawTubes(g);
     if(vis.fork)    drawFork(g);
     if(vis.cockpit) drawCockpit(g);
+    if(vis.seatpost) drawSeatpost(g);
     drawAnnotations(g);
     updateStatus(g);
   } catch(e) {
@@ -2586,6 +2664,21 @@ function viewContentBounds(g) {
   maxX = Math.max(maxX, stemEnd[0] + barR, stemBot[0]);
   minY = Math.min(minY, stemEnd[1] - barR);
   maxY = Math.max(maxY, stemEnd[1] + barR);
+
+  // Seat post and saddle, same extent the drawing uses, so fit keeps them on canvas.
+  const post = seatPostTop(g);
+  const place = saddlePlacement(post);
+  const SD = SADDLE_ART;
+  for (const ix of [0, SD.w]) {
+    for (const iy of [0, SD.h]) {
+      const mx = place.sds*ix + place.e;
+      const my = -place.sds*iy + place.f;
+      minX = Math.min(minX, mx);
+      maxX = Math.max(maxX, mx);
+      minY = Math.min(minY, my);
+      maxY = Math.max(maxY, my);
+    }
+  }
 
   return {minX, maxX, minY, maxY};
 }
@@ -2761,6 +2854,7 @@ const PRINT_PALETTE = {
   lugFill:'#cccccc',  lugStk:'#111111',
   ann:'#111111', ann2:'#444444',
   forkFill:'#e8e8e8', forkStk:'#111111', forkAnn:'#555555',
+  postFill:'#d4d4d4', postStk:'#333333',
   bbBore:'#ffffff', crDash:'#bbbbbb',
   cockFill:'#e0e0e0', cockStk:'#111111',
   stemFill:'#cccccc', stemStk:'#111111',
@@ -2786,6 +2880,7 @@ function renderToDataURL() {
     drawTubes(g);
     if(vis.fork)    drawFork(g);
     if(vis.cockpit) drawCockpit(g);
+    if(vis.seatpost) drawSeatpost(g);
     drawAnnotations(g);
   } catch(err){ console.error('Export draw:', err); }
 
@@ -3698,6 +3793,7 @@ requestAnimationFrame(()=>{
   <label class="dd-toggle-row"><input type="checkbox" checked onchange="setVis('wheels',this.checked)"><span>wheels</span></label>
   <label class="dd-toggle-row"><input type="checkbox" checked onchange="setVis('fork',this.checked)"><span>fork diagram</span></label>
   <label class="dd-toggle-row"><input type="checkbox" checked onchange="setVis('cockpit',this.checked)"><span>cockpit</span></label>
+  <label class="dd-toggle-row"><input type="checkbox" checked onchange="setVis('seatpost',this.checked)"><span>seat post</span></label>
 </div>
 
 <div class="tb-dd-menu" id="ddm-annotations">
