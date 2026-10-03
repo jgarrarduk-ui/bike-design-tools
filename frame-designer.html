@@ -2356,9 +2356,10 @@ function drawCockpit(g){
 //  Same construction as the suspension designer: a 26mm post
 //  runs 150mm up the seat-tube axis from the seat cluster,
 //  square where it enters the frame and round at the top
-//  (outline 26 / fill 19, cap radii 13 and 9.5). The saddle
-//  artwork is the suspension designer's, set level, with the
-//  rail clamp 15% of the saddle width forward of the post.
+//  (outline 26 / fill 19, cap radii 13 and 9.5). The saddle is
+//  a flat illustration for this app only (shell one tone, rails
+//  another), set level, with the rail clamp 15% of the saddle
+//  width forward of the post. Light and dark each have a file.
 // ═══════════════════════════════════════════════════════
 const SADDLE_ART = {
   w: 904, h: 278, mount: [550, 245],
@@ -2372,8 +2373,8 @@ const saddleImgs = {
 function onSaddleLoad(){ if(cssW) redraw(); }
 saddleImgs.light.onload = onSaddleLoad;
 saddleImgs.dark.onload = onSaddleLoad;
-saddleImgs.light.src = 'suspension-designer/img/saddle.png';
-saddleImgs.dark.src = 'suspension-designer/img/dark/saddle.png';
+saddleImgs.light.src = 'assets/saddle-light.png';
+saddleImgs.dark.src = 'assets/saddle-dark.png';
 
 function seatPostTop(g){
   const ax = g.st_ax, sc = g.seat_cluster;
