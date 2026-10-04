@@ -3351,19 +3351,20 @@ if(window.ResizeObserver){
 }
 
 /* Dark theme swaps in the green artwork. CSS variables cover the drawn
-   strokes; the PNGs have to be real recolored files. */
+   strokes; the PNGs have to be real recolored files. The query strings reload
+   PNGs whose black-background fringe was recoloured; the draw path is unchanged. */
 function applyArtTheme(){
   const dark=document.documentElement.getAttribute('data-theme')==='dark';
   const src=name=>(dark?'img/dark/':'img/')+name;
-  FORKART.src=src('fork-lowers.png');
+  FORKART.src=src('fork-lowers.png')+'?v=1';
   SHOCKART.tail.src=src('shock-tail.png');
   SHOCKART.resv.src=src('shock-reservoir.png');
   SHOCKART.spring.src=src('shock-spring.png');
   SHOCKART.body.src=src('shock-body.png');
-  STEMART.src=src('stem.png')+(dark?'?v=3':'');
-  WHEELART.src=src('wheel.png')+(dark?'?v=2':'');
+  STEMART.src=src('stem.png')+(dark?'?v=4':'?v=1');
+  WHEELART.src=src('wheel.png')+(dark?'?v=4':'?v=1');
   JOCKEYART.src=src('jockey-wheel.png');
-  SADDLEART.src=src('saddle.png');
+  SADDLEART.src=src('saddle.png')+'?v=1';
 }
 function setUiTheme(name){
   document.documentElement.setAttribute('data-theme', name);
