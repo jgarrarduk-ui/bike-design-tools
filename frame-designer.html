@@ -1087,6 +1087,18 @@
     justify-content: center;
   }
   .zoom-btn:hover { background: #fff; }
+  /* Dark only. Same pale green as the suspension designer's zoom stack
+     (--anim #bbf7d0, --on-accent #052e16, --shock #86efac, hover --ink #dcfce7).
+     Light theme keeps the translucent white buttons above. */
+  [data-theme="dark"] .zoom-btn {
+    background: #bbf7d0;
+    color: #052e16;
+    border-color: #86efac;
+  }
+  [data-theme="dark"] .zoom-btn:hover {
+    background: #dcfce7;
+    border-color: #dcfce7;
+  }
 
   /* ── Mobile: compact wordmark, reposition presets under toolbar ── */
   @media (max-width: 600px) {
@@ -2112,6 +2124,30 @@ function drawWheels(g){
   if(rwStr) label(rsx, rsy - px(g.rwd) - 6, rwStr, T('wheelLbl'), 'center', 'bottom', 8);
 }
 
+// Straight brake-side chainstay: rear axle to the BB, no drop angle.
+// The wheel art is hairline circles plus a translucent tyre, so paint order
+// alone does not cover a tube. When the wheel is drawn, clip this pass to
+// the outside of the tyre so the stay is hidden wherever the wheel overlaps it.
+function drawStraightChainstay(g, behindWheel){
+  const fill=T('tubeFill'), stroke=T('tubeStk');
+  const paint=()=>tubePoly(g.rear_axle, g.bs_end, params.cs_OD, fill, stroke, false, false);
+  if(!behindWheel){ paint(); return; }
+  const [sx,sy]=mmToScreen(g.rear_axle[0], g.rear_axle[1]);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, cssW, cssH);
+  ctx.arc(sx, sy, px(g.rwd), 0, Math.PI*2);
+  ctx.clip('evenodd');
+  paint();
+  ctx.restore();
+}
+
+// Drive-side chainstay: rotated by the drop angle. Drawn after the wheels
+// so it is the top chainstay and stays visible across the rear wheel.
+function drawDroppedChainstay(g){
+  tubePoly(g.rear_axle, g.ds_end, params.cs_OD, T('tubeFill'), T('tubeStk'), false, false);
+}
+
 // ═══════════════════════════════════════════════════════
 //  DRAW TUBES
 // ═══════════════════════════════════════════════════════
@@ -2121,11 +2157,6 @@ function drawTubes(g){
   const ra=g.rear_axle, sc=g.seat_cluster;
   const ht_t=g.ht_top, ht_b=g.ht_bot, bb=[0,0];
   const tt_od=p.tt_OD, ss_od=p.ss_OD, st_od=p.st_OD;
-
-  // BS chainstay
-  tubePoly(ra, g.bs_end, p.cs_OD, TFILL, TSTK, false, false);
-  // DS chainstay
-  tubePoly(ra, g.ds_end, p.cs_OD, TFILL, TSTK, false, false);
 
   // ── HT junction ──
   const ht_od=p.ht_OD, fa_x=g.fork_axis;
@@ -2572,7 +2603,9 @@ function redraw(){
   ctx.fillRect(0,0,cssW,cssH);
   try {
     if(vis.grid)    drawGrid(g);
+    drawStraightChainstay(g, vis.wheels);
     if(vis.wheels)  drawWheels(g);
+    drawDroppedChainstay(g);
     drawTubes(g);
     if(vis.fork)    drawFork(g);
     if(vis.cockpit) drawCockpit(g);
@@ -2881,7 +2914,9 @@ function renderToDataURL() {
   ctx.fillRect(0, 0, cssW, cssH);
   try {
     drawGrid(g);
+    drawStraightChainstay(g, true);
     drawWheels(g);
+    drawDroppedChainstay(g);
     drawTubes(g);
     if(vis.fork)    drawFork(g);
     if(vis.cockpit) drawCockpit(g);

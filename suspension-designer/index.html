@@ -120,7 +120,7 @@
   --art-mech-fill:#1a3d28; --art-mech-stroke:#3d7a52;
   --art-cage-fill:#123222; --art-cage-stroke:#2d5a40;
   --art-path-halo:#052e16; --art-path:#ecfdf5;
-  --art-crank:#1a3326; --art-axle:#86efac;
+  --art-crank:#166534; --art-axle:#86efac;
   --art-const-dash:#6a9a78; --art-const:#4ade80;
   --art-const-faint:#2f5c40; --art-const-dot:#86efac;
   --art-cog-fill:#222124; --art-cog-ink:#dcfce7;
@@ -1200,7 +1200,7 @@ function stayLoads(deg, path, od, wall, axial, bendA, dropZ, yokeZ, leanEnd, lea
 }
 // ==ENGINE-END==
 
-const CRANK_COL = 'var(--art-crank)'; // darker than the shared drivetrain metal -- cranks only
+const CRANK_COL = 'var(--art-crank)'; // dark theme: accent green (#166534), lighter than the old near-black; light theme stays grey
 
 /* ---------- state ---------- */
 const DEF={
@@ -1872,12 +1872,11 @@ function draw(){
      the lower headset block instead of floating clear of it. */
   const crown=add(add(F.raceSeat, mul(fp, C.offset+jog)), mul(fu,21));
 
-  // Paint order, in one place: each step below is named for what it draws and
-  // called in exactly the sequence it always ran in inline. Reordering these
-  // calls reorders the drawing.
+  // Paint order is this call sequence. The back crank is before the wheels
+  // and the front crank is after them, so the wheel sits between the two arms.
   drawGround();
-  drawWheels();
   drawHiddenCrank();
+  drawWheels();
   drawDrivetrainRings();
   drawFork();
   drawHeadsetTubes();
@@ -1909,11 +1908,10 @@ function draw(){
     if(showWheels){ wheelArt(f.AX,F.Rr); wheelArt(F.FA,F.Rf); }
   }
 
-  /* ---- hidden (far-side) crank arm ----
-     Drawn before the chainring and the frame tubes so both paint over it, the
-     same way a real photo's far-side arm is occluded by them -- the chainring
-     first, then the frame tubes and BB shell further down. 180 degrees from
-     the visible arm near the end of this function, same spindle, same kick. */
+  /* ---- back crank (points left at rest) ----
+     First of the two crank passes, before the wheels. The wheel, chainring
+     and frame tubes all paint over it. 180 degrees from the front arm, which
+     is drawn after the wheel so the wheel sits between the two arms. */
   function drawHiddenCrank(){
     if(showCranks){
       const pedal=crankPedal(-1);
@@ -2180,9 +2178,9 @@ function draw(){
     }
   }
 
-  /* ---- visible (drive-side) crank arm ----
-     Drawn last, after the saddle, so it sits on top of everything -- same
-     precedent the saddle itself is drawn on. */
+  /* ---- front crank (points right at rest) ----
+     Second crank pass, after the wheel and the saddle, so this arm is the
+     top layer and draws over the wheel. */
   function drawVisibleCrank(){
     if(showCranks){
       const pedal=crankPedal(1);
