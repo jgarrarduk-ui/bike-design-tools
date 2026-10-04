@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 const src=fs.readFileSync(new URL('../frame-designer.html',import.meta.url),'utf8');
 const eng=src.split('// ==NOTCH-START==')[1].split('// ==NOTCH-END==')[0];
-const m=new Function(eng+'\nreturn {v3,notchCut,notchTemplate,notchClosedForm,PdfPage,buildPdf,PT};')();
+const m=new Function(eng+'\nreturn {v3,notchCut,notchTemplate,notchClosedForm,PdfPage,buildPdf,PT,layoutNotchPages,notchHeaderMetrics};')();
 
 let fails=0;
 const ok=(name,cond,info='')=>{console.log((cond?'  pass  ':'  FAIL  ')+name+(info?'   '+info:''));if(!cond)fails++};
@@ -105,6 +105,39 @@ ok('3D solver matches closed form (angles 25-140, offsets)', worst<1e-9, 'max er
   ok('two pages', /\/Count 2/.test(txt));
   ok('100 mm is 283.46 pt', /28\.35 813\.54 m 311\.81 813\.54 l/.test(txt));
   ok('Ø, × and ° are WinAnsi escapes', /\\330\d\d \\327 0\.8 \\\(test\\\) 68\\260/.test(txt) || /\(\\33032 \\327 0\.8 \\\(test\\\) 68\\260\)/.test(txt));
+}
+
+// 6. notch header: logo top-right, scale bars still exactly 50 mm and below it
+{
+  const logo={w:566, h:82, rgb:new Uint8Array(566*82*3)};
+  logo.rgb[0]=10; logo.rgb[1]=20; logo.rgb[2]=30;
+  const pages=m.layoutNotchPages([], {title:'Notch templates', sub:'HT 68°', foot:['foot'], logo});
+  const bytes=m.buildPdf(pages);
+  const txt=new TextDecoder('latin1').decode(bytes);
+  ok('logo xobject on the page', /\/Subtype \/Image \/Width 566 \/Height 82/.test(txt));
+  ok('every page draws the logo', pages.every(pg=>pg.ops.some(op=>op.includes('/Logo Do'))));
+  const bar=50*m.PT;
+  const horiz=pages.map(pg=>{
+    const hit=pg.ops.find(op=>/ m /.test(op)&&/ l$/.test(op)&&op.split(' l').length===2);
+    // the 50 mm horizontal bar is the first line whose endpoints differ by 50 mm in x
+    const lines=pg.ops.filter(op=>/ m /.test(op)&&/ l$/.test(op));
+    const parsed=lines.map(op=>{
+      const n=op.match(/[\d.]+/g).map(Number);
+      return {x1:n[0], y1:n[1], x2:n[2], y2:n[3]};
+    });
+    const h=parsed.find(p=>Math.abs((p.x2-p.x1)-bar)<0.02 && Math.abs(p.y1-p.y2)<0.02);
+    const v=parsed.find(p=>Math.abs(p.x1-p.x2)<0.02 && Math.abs((p.y1-p.y2)-bar)<0.02);
+    const img=pg.ops.find(op=>op.includes('/Logo Do'));
+    const im=img.match(/[\d.]+/g).map(Number); // w 0 0 h x y
+    return {h, v, imgTop:im[5]+im[3], imgBottom:im[5], pageH:pg.h*m.PT};
+  });
+  ok('horizontal bar is 50 mm on every page', horiz.every(p=>p.h));
+  ok('vertical bar is 50 mm on every page', horiz.every(p=>p.v));
+  ok('scale bars sit below the logo', horiz.every(p=>p.h.y1 < p.imgBottom-0.5));
+  ok('logo is in the top-right corner', horiz.every(p=>{
+    const pg=pages[0];
+    return p.imgTop > pg.h*m.PT-20*m.PT;
+  }));
 }
 
 console.log(fails?`\n${fails} failed`:'\nall passed');
