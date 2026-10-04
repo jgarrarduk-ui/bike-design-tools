@@ -22,7 +22,8 @@ links to all four.
 
 Frame Designer's export screen also writes **notch templates**: a 1:1 A4 PDF
 of wrap-around cope templates for the front-triangle joints (TT and DT at the
-head tube, TT at the seat tube, DT and ST at the BB shell). Seat and chain
+head tube, TT at the seat tube, DT and ST at the BB shell), cut so the full
+wall thickness clears the receiving tube. Seat and chain
 stay joints are left out because they are compound angles. The maths and the
 PDF writer sit between `// ==NOTCH-START==` and `// ==NOTCH-END==` in
 `frame-designer.html`, free of frame-designer globals, so they can be lifted

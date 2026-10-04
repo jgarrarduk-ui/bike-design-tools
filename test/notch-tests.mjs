@@ -24,12 +24,12 @@ ok('3D solver matches closed form (angles 25-140, offsets)', worst<1e-9, 'max er
 {
   const T=m.notchTemplate({b:B,u:U,a:recv(90),branchOD:50,branchWT:0,recvOD:50});
   ok('equal tubes at 90°: depth is the radius', Math.abs(T.depth-25)<1e-9, T.depth.toFixed(4));
-  const T2=m.notchTemplate({b:B,u:U,a:recv(90),branchOD:38.1,branchWT:1,recvOD:50});
+  const T2=m.notchTemplate({b:B,u:U,a:recv(90),branchOD:38.1,branchWT:1,recvOD:50,cutTo:'id'});
   const r=38.1/2-1, want=25-Math.sqrt(25*25-r*r);
   ok('smaller tube at 90°: depth R - sqrt(R²-r²)', Math.abs(T2.depth-want)<1e-9, T2.depth.toFixed(3)+' vs '+want.toFixed(3));
   ok('wrap uses outside circumference', Math.abs(T2.wrap-Math.PI*38.1)<1e-9, T2.wrap.toFixed(2));
   const T3=m.notchTemplate({b:B,u:U,a:recv(90),branchOD:38.1,branchWT:1,recvOD:50,cutTo:'od'});
-  ok('cut to OD is deeper than cut to ID', T3.depth>T2.depth, T3.depth.toFixed(2)+' > '+T2.depth.toFixed(2));
+  ok('cut to OD is deeper than cut to ID at 90°', T3.depth>T2.depth, T3.depth.toFixed(2)+' > '+T2.depth.toFixed(2));
   const T4=m.notchTemplate({b:B,u:U,a:recv(60),branchOD:32,branchWT:0.8,recvOD:46.5});
   ok('reports the acute angle between axes', Math.abs(T4.angle-60)<1e-9);
   const T5=m.notchTemplate({b:B,u:U,a:recv(120),branchOD:32,branchWT:0.8,recvOD:46.5});
@@ -57,7 +57,38 @@ ok('3D solver matches closed form (angles 25-140, offsets)', worst<1e-9, 'max er
   ok('tube body beyond the cut never enters the receiving tube', clear);
 }
 
-// 4. PDF is structurally sound and drawn at 1:1
+// 4. full-wall cut: no point across the wall thickness enters the receiving tube
+{
+  const wall={b:B,u:U,branchOD:38.1,branchWT:1,recvOD:46.5};
+  const interferes=(T,th)=>{
+    const a=m.v3.unit(recv(th)), v=m.v3.cross(U,B); let worst=0;
+    for(let i=0;i<T.n;i+=2){
+      const ph=2*Math.PI*i/T.n;
+      const d=m.v3.add(m.v3.mul(U,Math.cos(ph)),m.v3.mul(v,Math.sin(ph)));
+      for(let k=0;k<=200;k++){
+        const r=18.05+k/200, P=m.v3.add(m.v3.mul(d,r),m.v3.mul(B,T.t[i]));
+        const q=m.v3.sub(P,m.v3.mul(a,m.v3.dot(P,a)));
+        worst=Math.max(worst, T.R-Math.hypot(...q));   // >0: inside the receiving tube
+      }
+    }
+    return worst;
+  };
+  const W=m.notchTemplate({...wall,a:recv(64.8)});
+  const I=m.notchTemplate({...wall,a:recv(64.8),cutTo:'id'});
+  const O=m.notchTemplate({...wall,a:recv(64.8),cutTo:'od'});
+  ok('full wall is the default', W.t.every((t,i)=>t===m.notchTemplate({...wall,a:recv(64.8),cutTo:'wall'}).t[i]));
+  ok('full wall never cuts less than ID or OD', W.t.every((t,i)=>t>=I.t[i]-1e-12&&t>=O.t[i]-1e-12));
+  ok('full wall clears the receiving tube at 64.8°', interferes(W,64.8)<1e-4, interferes(W,64.8).toExponential(1)+' mm');
+  ok('ID-only interferes at the heel at 64.8°', interferes(I,64.8)>0.3, interferes(I,64.8).toFixed(2)+' mm');
+  ok('OD-only interferes at the sides at 64.8°', interferes(O,64.8)>0.3, interferes(O,64.8).toFixed(2)+' mm');
+  ok('heel follows the outer edge', Math.abs(W.t[0]-O.t[0])<1e-9 && W.t[0]-I.t[0]>0.4,
+     W.t[0].toFixed(2)+' vs ID '+I.t[0].toFixed(2));
+  const W90=m.notchTemplate({...wall,a:recv(90)}), I90=m.notchTemplate({...wall,a:recv(90),cutTo:'id'});
+  ok('at 90° full wall equals ID', W90.t.every((t,i)=>Math.abs(t-I90.t[i])<1e-9));
+  ok('full wall clears at 90° and 30°', interferes(W90,90)<1e-4 && interferes(m.notchTemplate({...wall,a:recv(30)}),30)<1e-4);
+}
+
+// 5. PDF is structurally sound and drawn at 1:1
 {
   const pg=new m.PdfPage(210,297); pg.stroke(0.3,0).rect(10,10,100,50).S().text(10,8,'Ø32 × 0.8 (test) 68°',8);
   const bytes=m.buildPdf([pg,pg]);

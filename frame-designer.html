@@ -1372,8 +1372,8 @@
       <p>1:1 printable PDF of the front-triangle notch templates: top tube and down tube at the head tube, top tube at the seat tube, down tube and seat tube at the BB shell. Stays are not included.</p>
       <label for="notch-cut">cut line</label>
       <select id="notch-cut">
-        <option value="id" selected>inside of tube wall (tight fit)</option>
-        <option value="od">outside of tube wall</option>
+        <option value="wall" selected>full wall (tight fit, weld gap outside)</option>
+        <option value="od">outside of tube wall (file to fit)</option>
       </select>
     </div>
     <button id="export-download-btn" class="exp-download-btn" disabled onclick="downloadExport()">Download</button>
@@ -3177,14 +3177,35 @@ function notchCut({b, u, a, c=[0,0,0], rho, R, n=360}) {
   return t;
 }
 
-// Template for one joint. branchOD/WT and recvOD in mm; cutTo 'id' traces the
-// inside of the branch wall (the fit-up line for a tight joint), 'od' the
-// outside. The template is always wrapped on the outside, so its width is the
-// outside circumference.
-function notchTemplate({b, u, a, c, branchOD, branchWT, recvOD, cutTo='id', n=720}) {
-  const rho = cutTo==='od' ? branchOD/2 : branchOD/2 - branchWT;
-  const R = recvOD/2;
-  const t = notchCut({b, u, a, c, rho, R, n});
+// Template for one joint. branchOD/WT and recvOD in mm. The cut is square
+// through the wall, so every point across the wall's thickness has to clear
+// the receiving tube:
+//   cutTo 'wall'  at each point round the tube, cut back to whichever radius
+//                 through the wall reaches furthest. Inner edge governs on
+//                 most of the joint, outer edge at the obtuse heel. Tight fit
+//                 with no interference, weld gap on the outside only.
+//   cutTo 'od'    outside edge only; the inside edge interferes at the sides
+//                 and needs filing. Matches a plain outside-diameter notch.
+//   cutTo 'id'    inside edge only (not offered in the UI; kept for checks).
+// The template is always wrapped on the outside, so its width is the outside
+// circumference.
+const NOTCH_WALL_STEPS = 24;     // radii sampled through the wall for 'wall'
+function notchTemplate({b, u, a, c, branchOD, branchWT, recvOD, cutTo='wall', n=720}) {
+  const ro = branchOD/2, ri = branchOD/2 - branchWT, R = recvOD/2;
+  let t, rho;
+  if(cutTo==='wall'){
+    // t is concave in the radius, so its maximum can fall inside the wall:
+    // sample right through rather than taking the two edges.
+    rho = ri;
+    t = notchCut({b, u, a, c, rho:ri, R, n});
+    for(let k=1;k<=NOTCH_WALL_STEPS;k++){
+      const tk = notchCut({b, u, a, c, rho:ri+(ro-ri)*k/NOTCH_WALL_STEPS, R, n});
+      for(let i=0;i<=n;i++) t[i] = Math.max(t[i], tk[i]);   // NaN propagates: flagged below
+    }
+  } else {
+    rho = cutTo==='od' ? ro : ri;
+    t = notchCut({b, u, a, c, rho, R, n});
+  }
   const ok = t.every(Number.isFinite);
   const finite = t.filter(Number.isFinite);
   const tMin = Math.min(...finite), tMax = Math.max(...finite);
@@ -3439,7 +3460,7 @@ function frameNotchJoints(g, p, cutTo){
     const quarters=[u, v, v3.mul(u,-1), v3.mul(v,-1)].map(name);
     joints.push({...d, tpl, quarters,
       spec:'Ø'+f1(d.od)+' × '+fw(W[d.tube])+' onto Ø'+f1(d.recvOD)+' '+d.recv+
-           '  ·  '+f1(tpl.angle)+'°  ·  cut to '+(cutTo==='od'?'OD':'ID')+
+           '  ·  '+f1(tpl.angle)+'°  ·  cut to '+(cutTo==='od'?'OD':'full wall')+
            '  ·  wrap '+f1(tpl.wrap)+'  ·  depth '+f1(tpl.depth)+' mm'});
   }
   // Tip-to-tip lengths: axis length less the cut at each end, on the same
