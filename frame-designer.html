@@ -3169,7 +3169,9 @@ function notchCut({b, u, a, c=[0,0,0], rho, R, n=360}) {
     const d=v3.add(v3.mul(u,Math.cos(phi)), v3.mul(v,Math.sin(phi)));
     const w=perp(v3.sub(v3.mul(d,rho), c));
     const B=2*v3.dot(w,bp), C=v3.dot(w,w)-R*R;
-    const disc=B*B-4*A*C;
+    let disc=B*B-4*A*C;
+    // Equal diameters graze the receiving tube at the sides: allow rounding.
+    if(disc<0 && disc>-1e-9*Math.max(1,B*B,Math.abs(4*A*C))) disc=0;
     // Larger root: the wall line leaves the receiving tube there, and the
     // branch body lies beyond it.
     t[i]=(A>1e-12 && disc>=0) ? (-B+Math.sqrt(disc))/(2*A) : NaN;
@@ -3376,8 +3378,53 @@ function drawNotchBlock(pg, j, x0, y0){
 
 // Pack blocks onto as few A4 pages as possible (portrait or landscape,
 // whichever needs fewer), shelf by shelf.
+// Greedy word wrap to a width in mm.
+function pdfWrap(text, widthMM, sizePt, bold){
+  const lines=[]; let cur='';
+  for(const w of String(text).split(' ')){
+    const next=cur?cur+' '+w:w;
+    if(cur && pdfTextWidth(next,sizePt,bold)>widthMM){ lines.push(cur); cur=w; } else cur=next;
+  }
+  if(cur) lines.push(cur);
+  return lines;
+}
+
+// Printing instructions, text only. Width varies so the box can fill
+// whatever space the templates leave.
+const PRINT_BOX_WIDTHS = [80, 100, 130, 160, 190, 277];   // last two: full width, portrait / landscape
+const PRINT_STEPS = [
+  'Open the PDF in Adobe Acrobat Reader or a similar PDF viewer. Browser print often defaults to fit-to-page.',
+  'Set the scale to 100% / "Actual size". Turn off "Fit", "Shrink oversized pages" and "Fit to printable area".',
+  'Use A4 paper, not US Letter.',
+  'Turn borderless printing OFF: it enlarges the page by 1-3%. Normal margins are fine.',
+  'Measure both 50 mm bars (top right) with a steel rule. Within 0.5 mm is fine.',
+  'If a bar is out, fix the print setting first. Only if every print is out by the same amount, set the scale to 50 / measured x 100%.',
+  'Wrap check: round the tube, the template ends should meet exactly at the OVERLAP line.',
+];
+function printBoxLayout(w){
+  const pad=3, size=6.2, lh=2.75;
+  const items=PRINT_STEPS.map(t=>pdfWrap(t, w-2*pad-4, size, false));
+  const h=7.5+items.reduce((s,l)=>s+l.length*lh+1.1,0)+1;
+  return {pad, size, lh, items, w, h};
+}
+function drawPrintBox(pg, x0, y0, w){
+  const L=printBoxLayout(w);
+  pg.stroke(0.3,0).rect(x0, y0, L.w, L.h).S();
+  let y=y0+5;
+  pg.text(x0+L.pad, y, 'PRINTING AT TRUE SCALE', 8, {bold:true});
+  y+=4.4;
+  L.items.forEach((lines,i)=>{
+    pg.text(x0+L.pad, y, (i+1)+'', L.size, {bold:true});
+    lines.forEach(l=>{ pg.text(x0+L.pad+4, y, l, L.size, {gray:0.15}); y+=L.lh; });
+    y+=1.1;
+  });
+}
+
+// Pack template blocks shelf by shelf onto as few A4 pages as possible
+// (portrait or landscape, whichever needs fewer), then fit the printing box
+// against the right margin in the first free spot.
 function layoutNotchPages(joints, header){
-  const M=10, HEADER=22, GAP=6;
+  const M=10, HEADER=22, GAP=6, FOOT=8;
   const tryLayout=(PW,PH)=>{
     const pages=[]; let cur=null, x=0, y=0, shelfH=0;
     const newPage=()=>{ cur=[]; pages.push(cur); x=M; y=M+HEADER; shelfH=0; };
@@ -3385,9 +3432,23 @@ function layoutNotchPages(joints, header){
     for(const j of joints){
       const s=notchBlockSize(j);
       if(x+s.w>PW-M && x>M){ x=M; y+=shelfH+GAP; shelfH=0; }
-      if(y+s.h>PH-M-8 && y>M+HEADER){ newPage(); }
-      cur.push({j, x, y}); x+=s.w+GAP; shelfH=Math.max(shelfH,s.h);
+      if(y+s.h>PH-M-FOOT && y>M+HEADER){ newPage(); }
+      cur.push({j, x, y, w:s.w, h:s.h}); x+=s.w+GAP; shelfH=Math.max(shelfH,s.h);
     }
+    // Printing box: first spot against the right margin, trying narrow first.
+    let placed=false;
+    for(const items of pages){
+      for(const bw of PRINT_BOX_WIDTHS.filter(w=>w<=PW-2*M)){
+        const box=printBoxLayout(bw), bx=PW-M-bw;
+        const free=by=>by+box.h<=PH-M-FOOT && items.every(it=>
+          bx>=it.x+it.w+GAP || bx+bw+GAP<=it.x || by>=it.y+it.h+GAP || by+box.h+GAP<=it.y);
+        const ys=[M+HEADER, ...items.map(it=>it.y), ...items.map(it=>it.y+it.h+GAP)].sort((a,b)=>a-b);
+        const by=ys.find(free);
+        if(by!==undefined){ items.push({box:true, x:bx, y:by, w:bw, h:box.h}); placed=true; break; }
+      }
+      if(placed) break;
+    }
+    if(!placed){ const bw=PRINT_BOX_WIDTHS[0]; pages.push([{box:true, x:PW-M-bw, y:M+HEADER, w:bw, h:printBoxLayout(bw).h}]); }
     return {PW,PH,pages};
   };
   const port=tryLayout(210,297), land=tryLayout(297,210);
@@ -3396,18 +3457,26 @@ function layoutNotchPages(joints, header){
     const pg=new PdfPage(L.PW, L.PH);
     pg.text(M, M+4, header.title, 11, {bold:true});
     pg.text(M, M+9, header.sub, 7, {gray:0.25});
-    pg.text(M, M+13.2, 'Print at 100% / actual size. Check the scale bar before cutting.', 7, {bold:true});
+    pg.text(M, M+13.2, 'Print at 100% / actual size. Check the scale bars before cutting.', 7, {bold:true});
     pg.text(M, M+17, 'Cut out, wrap round the tube end with the bottom edge square to the tube and tape at the overlap. '+
       'TOP on both ends of a tube sits on one straight line along it.', 5.6, {gray:0.3});
     pg.text(M, M+19.8, 'Figures under each template: height of the cut above the bottom edge, mm.', 5.6, {gray:0.3});
-    // 50 mm scale bar, top right
-    const sx=L.PW-M-50, sy=M+6;
+    // 50 mm scale bar, top right, on every page
+    const sx=L.PW-M-50, sy=M+3;
     pg.stroke(0.3,0).line(sx,sy,sx+50,sy).S();
-    for(let k=0;k<=5;k++) pg.stroke(0.25,0).line(sx+10*k, sy-(k%5?1.2:2.2), sx+10*k, sy).S();
-    pg.text(sx+25, sy+3.6, '50 mm', 7, {align:'c'});
+    for(let k=0;k<=5;k++) pg.stroke(0.25,0).line(sx+10*k, sy+(k%5?1.2:2.2), sx+10*k, sy).S();
+    pg.text(sx+25, sy+5.2, '50 mm', 7, {align:'c'});
+    // and a vertical one in the right margin: printers can stretch the paper
+    // feed direction only, and notch heights run that way on the page
+    const vx=L.PW-M+4;
+    pg.stroke(0.3,0).line(vx,sy,vx,sy+50).S();
+    for(let k=0;k<=5;k++) pg.stroke(0.25,0).line(vx, sy+10*k, vx-(k%5?1.2:2.2), sy+10*k).S();
+    pg.text(vx+2.6, sy+25, '50 mm', 7, {align:'c', rot:90});
+    pg.text(L.PW-M, sy+12, 'CHECK THE SCALE', 13, {bold:true, align:'r'});
+    pg.text(L.PW-M, sy+15.6, 'bars must measure exactly 50 mm', 6.5, {align:'r', gray:0.25});
     pg.text(L.PW-M, L.PH-5, 'page '+(pi+1)+' of '+L.pages.length, 6.5, {align:'r', gray:0.4});
     (header.foot||[]).forEach((f,k,all)=>pg.text(M, L.PH-5-3*(all.length-1-k), f, 6, {gray:0.4}));
-    for(const it of items) drawNotchBlock(pg, it.j, it.x, it.y);
+    for(const it of items) it.box ? drawPrintBox(pg, it.x, it.y, it.w) : drawNotchBlock(pg, it.j, it.x, it.y);
     return pg;
   });
 }

@@ -37,6 +37,10 @@ ok('3D solver matches closed form (angles 25-140, offsets)', worst<1e-9, 'max er
      T5.t.every((t,i)=>Math.abs(t-T4.t[(i+T4.n/2)%T4.n])<1e-9));
   const T6=m.notchTemplate({b:B,u:U,a:recv(90),branchOD:60,branchWT:1,recvOD:50});
   ok('branch wider than receiver is flagged', T6.ok===false);
+  for(const th of [90,86,64.8,45]){
+    const Te=m.notchTemplate({b:B,u:U,a:recv(th),branchOD:38.1,branchWT:0.9,recvOD:38.1});
+    ok('equal diameters at '+th+'° give a full template', Te.ok && Te.t.every(Number.isFinite), 'depth '+Te.depth.toFixed(2));
+  }
 }
 
 // 3. every cut point sits on the receiving tube's surface, and just past it is clear
