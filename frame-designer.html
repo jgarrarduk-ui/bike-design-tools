@@ -2125,18 +2125,22 @@ function drawWheels(g){
 }
 
 // Straight brake-side chainstay: rear axle to the BB, no drop angle.
-// The wheel art is hairline circles plus a translucent tyre, so paint order
-// alone does not cover a tube. When the wheel is drawn, clip this pass to
-// the outside of the tyre so the stay is hidden wherever the wheel overlaps it.
+// Drawn before the wheel so it is the layer behind it. The spoke centre is
+// left open — the tyre ring is the only part that covers this stay. The ring
+// is a translucent fill plus hairline circles, so the stay is omitted inside
+// that annulus; it stays visible through the centre and outside the tyre.
 function drawStraightChainstay(g, behindWheel){
   const fill=T('tubeFill'), stroke=T('tubeStk');
   const paint=()=>tubePoly(g.rear_axle, g.bs_end, params.cs_OD, fill, stroke, false, false);
   if(!behindWheel){ paint(); return; }
   const [sx,sy]=mmToScreen(g.rear_axle[0], g.rear_axle[1]);
+  const rOuter=px(g.rwd);
+  const rInner=px(params.rear_wheel_dia/2); // bead seat: inside this is the open centre
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, cssW, cssH);
-  ctx.arc(sx, sy, px(g.rwd), 0, Math.PI*2);
+  ctx.arc(sx, sy, rOuter, 0, Math.PI*2);
+  ctx.arc(sx, sy, rInner, 0, Math.PI*2);
   ctx.clip('evenodd');
   paint();
   ctx.restore();
