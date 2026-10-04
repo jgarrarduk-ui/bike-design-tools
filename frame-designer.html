@@ -530,6 +530,7 @@
   /* ── Canvas area ── */
   #canvas-wrap {
     flex: 1;
+    min-height: 0;
     position: relative;
     overflow: hidden;
   }
@@ -601,21 +602,52 @@
   }
   #resizer:hover { background: var(--accent-hi); }
 
-  /* theme selector */
-  #theme-sel {
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    color: var(--text-mid);
-    font-family: var(--font);
-    font-size: 11px;
-    padding: 4px 6px;
-    cursor: pointer;
-    outline: none;
-    transition: border-color 0.15s, color 0.15s;
+  /* Canvas column: theme bar above the drawing, same place as Suspension Designer. */
+  #view-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
   }
-  #theme-sel:hover { border-color: var(--accent-br); color: var(--lavender); }
-  #theme-sel option { background: var(--toolbar-bg); color: var(--text-main); }
+  #canvas-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: none;
+    padding: 6px 10px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+  }
+  #theme-switch { display: flex; gap: 6px; }
+  /* Same light/dark button treatment as Suspension Designer's theme switch:
+     white/blue when light, charcoal/pale-green when dark. */
+  #theme-switch button {
+    font: 11.5px/1.2 var(--font);
+    padding: 4px 6px;
+    border: 1px solid #c3ccd3;
+    border-radius: 3px;
+    background: #fff;
+    color: #16202a;
+    cursor: pointer;
+  }
+  #theme-switch button:hover { background: #e9eef1; }
+  #theme-switch button[aria-pressed="true"] {
+    background: #1f5f8b;
+    border-color: #1f5f8b;
+    color: #fff;
+  }
+  [data-theme="dark"] #theme-switch button {
+    background: #2e2d31;
+    color: #dcfce7;
+    border-color: #1a3d20;
+  }
+  [data-theme="dark"] #theme-switch button:hover { background: #3a393e; }
+  [data-theme="dark"] #theme-switch button[aria-pressed="true"] {
+    background: #4ade80;
+    border-color: #4ade80;
+    color: #052e16;
+  }
 
   /* ════════════════════════════════════════════════
      MOBILE / TABLET RESPONSIVE
@@ -1208,11 +1240,6 @@
   <p class="sr-only">Design bicycle frame geometry in the browser. Adjust angles, lengths, stack and reach, and visualise the frame in real time.</p>
   <div class="tb-sep"></div>
 
-  <!-- Appearance dropdown — button only, menu lives in <body> -->
-  <div class="tb-dropdown" id="dd-appearance">
-    <button class="tb-btn tb-dd-btn" onclick="toggleDd('appearance')">▾ view</button>
-  </div>
-
   <!-- Elements dropdown — button only -->
   <div class="tb-dropdown" id="dd-elements">
     <button class="tb-btn tb-dd-btn" onclick="toggleDd('elements')">▾ elements</button>
@@ -1318,7 +1345,14 @@
 
   <div id="resizer"></div>
 
-  <!-- Canvas -->
+  <!-- Canvas column. Theme sits in the bar above the drawing, as in Suspension Designer. -->
+  <div id="view-col">
+  <div id="canvas-bar">
+    <div id="theme-switch" role="group" aria-label="Theme">
+      <button type="button" id="theme-light" aria-pressed="false" onclick="setTheme('light')">light</button>
+      <button type="button" id="theme-dark" aria-pressed="true" onclick="setTheme('dark')">dark</button>
+    </div>
+  </div>
   <div id="canvas-wrap">
     <canvas id="canvas"></canvas>
     <!-- Mobile floating options button (absolute within canvas-wrap) -->
@@ -1342,6 +1376,7 @@
         <button id="preset-load" onclick="loadPreset()">load preset</button>
       </div>
     </div>
+  </div>
   </div>
 </div>
 
@@ -1391,8 +1426,7 @@
 //  MATHS HELPERS
 // ═══════════════════════════════════════════════════════
 const DEG = Math.PI / 180;
-const TUBE_LW = 0.5;   // frame tube stroke weight
-const WHEEL_LW = 0.5;  // wheel stroke weight
+const WHEEL_LW = 0.5;  // hairline: dotted wheel detail, and every solid outline on mobile
 const r2d = a => a / DEG;
 const d2r = a => a * DEG;
 const add = (a,b) => [a[0]+b[0], a[1]+b[1]];
@@ -1498,64 +1532,9 @@ const PARAM_RANGES = {
   crank_q_factor:           [120, 200, 2],
 };
 
-// ── GEOMETRY section ─────────────────────────────────────────
-const GEOM_FIELDS = [
-  ['reach',            'Reach (mm)'],
-  ['stack',            'Stack (mm)'],
-  ['chainstay_length', 'CS Length (mm)'],
-  ['ht_angle',         'HT Angle (°)'],
-  ['st_angle',         'ST Angle (°)'],
-  ['bb_drop',          'BB Drop (mm)'],
-];
-
-// ── FORK section ──────────────────────────────────────────────
-const FORK_FIELDS = [
-  ['fork_atc',             'Fork ATC (mm)'],
-  ['fork_offset',          'Fork Rake (mm)'],
-  ['lower_headset_height', 'Lower Headset (mm)'],
-];
-
-// ── TUBE PARAMETERS groups ────────────────────────────────────
-const GROUPS = [
-  {name:'Head Tube', fields:[
-    ['ht_length',         'HT Length (mm)'],
-    ['ht_OD',             'HT OD (mm)'],
-    ['dt_weld_clearance', 'DT Weld Clearance (mm)'],
-    ['tt_weld_clearance', 'TT Weld Clearance (mm)'],
-  ]},
-  {name:'Seat Tube', fields:[
-    ['st_length',      'ST Length (mm)'],
-    ['st_OD',          'ST OD (mm)'],
-    ['st_WT',          'ST Wall (mm)'],
-    ['st_tt_clearance','Top of ST → TT (mm)'],
-  ]},
-  {name:'Top Tube', fields:[
-    ['tt_OD', 'TT Side Width (mm)'],
-    ['tt_WT', 'TT Wall (mm)'],
-  ]},
-  {name:'Down Tube', fields:[
-    ['dt_OD', 'DT OD (mm)'],
-    ['dt_WT', 'DT Wall (mm)'],
-  ]},
-  {name:'Chainstays', fields:[
-    ['cs_ds_drop_angle', 'DS Drop Angle (°)'],
-    ['max_chainring',    'Max Chainring (teeth)'],
-    ['cs_OD',            'CS OD (mm)'],
-    ['cs_WT',            'CS Wall (mm)'],
-  ]},
-  {name:'Seat Stays', fields:[
-    ['ss_OD', 'SS OD (mm)'],
-    ['ss_WT', 'SS Wall (mm)'],
-  ]},
-  {name:'Bottom Bracket', fields:[
-  ]},
-  {name:'Cockpit', fields:[
-    ['stem_length',    'Stem Length (mm)'],
-    ['stem_angle',     'Stem Angle (°)'],
-    ['bar_diameter',   'Bar Diameter (mm)'],
-    ['steerer_height', 'Steerer Above HT (mm)'],
-  ]},
-];
+// Parameter groups live in MOBILE_PAGES (below the panel helpers). Desktop
+// and mobile both render that list, so the categories, order and labels stay
+// the same. Desktop keeps the BB standard <select>; mobile uses buttons.
 
 // WHEEL_SIZES stores ISO Bead Seat Diameter (BSD) for each wheel label.
 // The actual outer tyre diameter = BSD/2 + tyre_width (radius).
@@ -1654,6 +1633,10 @@ function setTheme(name) {
   currentTheme = name;
   document.documentElement.setAttribute('data-theme', name);
   syncThemeRadios();
+  const vpL=document.getElementById('vp-theme-light');
+  const vpD=document.getElementById('vp-theme-dark');
+  if(vpL) vpL.classList.toggle('active', name==='light');
+  if(vpD) vpD.classList.toggle('active', name==='dark');
   redraw();
 }
 
@@ -1823,6 +1806,13 @@ function mmToScreen(x,y) {
   return [cx+x*scale, cy-y*scale];
 }
 function px(mm){ return Math.max(0.5, mm*scale); }
+// Desktop solid outlines match the seat-post edge: a 26 mm stroke over a 19 mm
+// fill, so the visible outline is 3.5 mm. Mobile keeps the hairline. The two
+// used to share one constant with the hairline, which is why this is split.
+function solidOutlineLW(){
+  if(window.innerWidth<=600) return WHEEL_LW;
+  return Math.max(WHEEL_LW, (px(26)-px(19))/2);
+}
 
 // ── Resize ──
 function resizeCanvas(){
@@ -1995,7 +1985,7 @@ function tubeCorners(pt1, pt2, od) {
 function tubePolyClipped(pt1, pt2, od, fill, stroke, clipNormal, clipPoint) {
   let poly = tubeCorners(pt1, pt2, od);
   poly = clipHalfPlane(poly, clipNormal, clipPoint);
-  if (poly.length >= 3) drawPoly(poly, fill, stroke, 1);
+  if (poly.length >= 3) drawPoly(poly, fill, stroke, solidOutlineLW());
 }
 
 function drawPoly(mmPts, fill, stroke, lw=1) {
@@ -2024,15 +2014,15 @@ function tubePoly(pt1,pt2,od,fill,stroke,cap1=true,cap2=true,cap1_inset=0,cap2_i
   const c1b=add(pt1,mul(p_,-hw));
   const c2a=add(pt2,mul(p_, hw));
   const c2b=add(pt2,mul(p_,-hw));
-  drawPoly([c1a,c2a,c2b,c1b],fill,stroke,TUBE_LW);
+  drawPoly([c1a,c2a,c2b,c1b],fill,stroke,solidOutlineLW());
 
   if(cap1){
     const cp1=add(pt1,mul(ax, cap1_inset));
-    drawPoly(semicap(cp1,[-ax[0],-ax[1]],hw,false,8),fill,stroke,TUBE_LW);
+    drawPoly(semicap(cp1,[-ax[0],-ax[1]],hw,false,8),fill,stroke,solidOutlineLW());
   }
   if(cap2){
     const cp2=add(pt2,mul(ax,-cap2_inset));
-    drawPoly(semicap(cp2,ax,hw,true,8),fill,stroke,TUBE_LW);
+    drawPoly(semicap(cp2,ax,hw,true,8),fill,stroke,solidOutlineLW());
   }
 }
 
@@ -2148,13 +2138,13 @@ function drawWheels(g){
 
     // Outer tyre wall
     ctx.beginPath(); ctx.arc(sx, sy, rOuter, 0, Math.PI*2);
-    ctx.strokeStyle = WCOL; ctx.lineWidth = WHEEL_LW; ctx.stroke();
+    ctx.strokeStyle = WCOL; ctx.lineWidth = solidOutlineLW(); ctx.stroke();
 
     // Bead seat / rim outer circle (where tyre meets rim)
     ctx.beginPath(); ctx.arc(sx, sy, rBSD, 0, Math.PI*2);
-    ctx.strokeStyle = RSTK; ctx.lineWidth = WHEEL_LW; ctx.stroke();
+    ctx.strokeStyle = RSTK; ctx.lineWidth = solidOutlineLW(); ctx.stroke();
 
-    // Inner rim flange (dashed)
+    // Inner rim flange (dashed — stays a hairline)
     ctx.beginPath(); ctx.arc(sx, sy, rRimIn, 0, Math.PI*2);
     ctx.strokeStyle = RSTK; ctx.lineWidth = WHEEL_LW;
     ctx.setLineDash([3, 5]); ctx.stroke();
@@ -2284,10 +2274,10 @@ function drawTubes(g){
     let dtPoly = tubeCorners(dt_ht_ext, bb, p.dt_OD);
     dtPoly = clipHalfPlane(dtPoly, mul(ht_dt_side,-1), ht_face_pt);
     if (dtPoly.length >= 3) {
-      drawPoly(dtPoly, TFILL, TSTK, TUBE_LW);
+      drawPoly(dtPoly, TFILL, TSTK, solidOutlineLW());
       // BB-end semicap
       const dt_bb_cap = semicap(bb, mul(dt_ax,-1), p.dt_OD/2, true, 8);
-      drawPoly(dt_bb_cap, TFILL, TSTK, TUBE_LW);
+      drawPoly(dt_bb_cap, TFILL, TSTK, solidOutlineLW());
     }
   }
 
@@ -2297,7 +2287,7 @@ function drawTubes(g){
   {
     let ttPoly = tubeCorners(tt_sc_ext, tt_ht_ext, tt_od);
     ttPoly = clipHalfPlane(ttPoly, mul(ht_dt_side,-1), ht_face_pt);
-    if (ttPoly.length >= 3) drawPoly(ttPoly, TFILL, TSTK, TUBE_LW);
+    if (ttPoly.length >= 3) drawPoly(ttPoly, TFILL, TSTK, solidOutlineLW());
   }
 
   tubePoly(bb, sc, st_od, TFILL, TSTK, false, false);
@@ -2305,7 +2295,7 @@ function drawTubes(g){
   // BB yoke
   try {
     const yoke=bbYokeDsMM(g,p);
-    if(yoke.length>=3) drawPoly(yoke,LFILL,LSTK,1);
+    if(yoke.length>=3) drawPoly(yoke,LFILL,LSTK,solidOutlineLW());
   } catch(e){}
 
   // HT drawn last — clean, no masking needed now tubes are clipped
@@ -2317,10 +2307,10 @@ function drawTubes(g){
   const bore_r = px((p.bb_bore || 33.9) / 2);    // bore ID
   ctx.beginPath(); ctx.arc(bsx,bsy,bb_r,0,Math.PI*2);
   ctx.fillStyle=LFILL; ctx.fill();
-  ctx.strokeStyle=LSTK; ctx.lineWidth=TUBE_LW; ctx.stroke();
+  ctx.strokeStyle=LSTK; ctx.lineWidth=solidOutlineLW(); ctx.stroke();
   ctx.beginPath(); ctx.arc(bsx,bsy,bore_r,0,Math.PI*2);
   ctx.fillStyle=T('bbBore'); ctx.fill();
-  ctx.strokeStyle=LSTK; ctx.lineWidth=TUBE_LW; ctx.stroke();
+  ctx.strokeStyle=LSTK; ctx.lineWidth=solidOutlineLW(); ctx.stroke();
 
   // Chainring dashed
   const cr_r=px(chainringRadius(p.max_chainring)+15);
@@ -2333,10 +2323,10 @@ function drawTubes(g){
   const do_r=px((p.cs_OD+p.ss_OD)*0.55);
   ctx.beginPath(); ctx.arc(rax,ray,do_r,0,Math.PI*2);
   ctx.fillStyle=LFILL; ctx.fill();
-  ctx.strokeStyle=LSTK; ctx.lineWidth=TUBE_LW; ctx.stroke();
+  ctx.strokeStyle=LSTK; ctx.lineWidth=solidOutlineLW(); ctx.stroke();
   ctx.beginPath(); ctx.arc(rax,ray,px(5),0,Math.PI*2);
   ctx.fillStyle='#0d0d16'; ctx.fill();
-  ctx.strokeStyle=LSTK; ctx.lineWidth=TUBE_LW; ctx.stroke();
+  ctx.strokeStyle=LSTK; ctx.lineWidth=solidOutlineLW(); ctx.stroke();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2434,7 +2424,7 @@ function drawCockpit(g){
   // Stem line
   const [smx1,smy1]=mmToScreen(stem_bot[0],stem_bot[1]);
   const [smx2,smy2]=mmToScreen(stem_end[0],stem_end[1]);
-  ctx.beginPath(); ctx.strokeStyle=WCOL; ctx.lineWidth=WHEEL_LW*2;
+  ctx.beginPath(); ctx.strokeStyle=WCOL; ctx.lineWidth=solidOutlineLW();
   ctx.lineCap='round'; ctx.moveTo(smx1,smy1); ctx.lineTo(smx2,smy2); ctx.stroke();
   ctx.lineCap='butt';
 
@@ -2442,7 +2432,7 @@ function drawCockpit(g){
   const [bx,by]=mmToScreen(stem_end[0],stem_end[1]);
   const br=px(bar_r);
   ctx.beginPath(); ctx.arc(bx,by,br,0,Math.PI*2);
-  ctx.strokeStyle=WCOL; ctx.lineWidth=WHEEL_LW; ctx.stroke();
+  ctx.strokeStyle=WCOL; ctx.lineWidth=solidOutlineLW(); ctx.stroke();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2860,9 +2850,10 @@ function closeAllDd(){
   if(bd) bd.classList.remove('open');
 }
 function syncThemeRadios(){
-  document.querySelectorAll('#theme-radios .dd-radio').forEach(b=>{
-    b.classList.toggle('active', b.dataset.val===currentTheme);
-  });
+  const light=document.getElementById('theme-light');
+  const dark=document.getElementById('theme-dark');
+  if(light) light.setAttribute('aria-pressed', currentTheme==='light');
+  if(dark) dark.setAttribute('aria-pressed', currentTheme==='dark');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3122,11 +3113,15 @@ function downloadExport() {
       return;
     }
     if(fmt === 'notch') {
-      const {pdf, problems} = buildNotchPdf(document.getElementById('notch-cut').value);
-      const blob = new Blob([pdf], {type:'application/pdf'});
-      triggerDownload(URL.createObjectURL(blob), exportFilename('pdf').replace(/^frame_designer/, 'notch_templates'), true);
-      showExportResult('notch templates');
-      if(problems.length) alert('Some joints were left out:\n' + problems.join('\n'));
+      loadNotchLogo().then(logo=>{
+        const {pdf, problems} = buildNotchPdf(document.getElementById('notch-cut').value, logo);
+        const blob = new Blob([pdf], {type:'application/pdf'});
+        triggerDownload(URL.createObjectURL(blob), exportFilename('pdf').replace(/^frame_designer/, 'notch_templates'), true);
+        showExportResult('notch templates');
+        if(problems.length) alert('Some joints were left out:\n' + problems.join('\n'));
+      }).catch(e=>{
+        alert('Notch PDF failed: ' + e.message);
+      });
       return;
     }
     const dataURL = renderToDataURL();
@@ -3315,25 +3310,45 @@ class PdfPage {
     this.ops.push(gray.toFixed(2)+' g BT '+f+' '+sizePt+' Tf '+m+' Tm ('+pdfLatin(s)+') Tj ET');
     return this;
   }
+  // x,y is the top-left corner in mm. Draws the shared /Logo image.
+  image(x, y, w, h){
+    const a=(w*PT).toFixed(2), d=(h*PT).toFixed(2);
+    const e=(x*PT).toFixed(2), f=((this.h-(y+h))*PT).toFixed(2);
+    this.ops.push('q '+a+' 0 0 '+d+' '+e+' '+f+' cm /Logo Do Q');
+    return this;
+  }
 }
 function buildPdf(pages) {
   const NL='\n', te=new TextEncoder();
   const parts=[], offs=[]; let pos=0;
   const ps=s=>{const b=te.encode(s); parts.push(b); pos+=b.length;};
+  const raw=b=>{parts.push(b); pos+=b.length;};
   const obj=(id,body)=>{offs[id]=pos; ps(id+' 0 obj'+NL+body+NL+'endobj'+NL);};
   ps('%PDF-1.4'+NL);
-  // 1 catalog, 2 pages, 3 F1, 4 F2, then page+content pairs
-  const kids=pages.map((_,i)=>(5+2*i)+' 0 R').join(' ');
+  // 1 catalog, 2 pages, 3 F1, 4 F2, optional 5 logo, then page+content pairs.
+  // No logo keeps the original object numbers.
+  const logo=pages.logo||null;
+  const page0=logo?6:5;
+  const kids=pages.map((_,i)=>(page0+2*i)+' 0 R').join(' ');
   obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
   obj(2,'<< /Type /Pages /Kids ['+kids+'] /Count '+pages.length+' >>');
   obj(3,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
   obj(4,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  if(logo){
+    const rgb=logo.rgb;
+    offs[5]=pos;
+    ps('5 0 obj'+NL+'<< /Type /XObject /Subtype /Image /Width '+logo.w+' /Height '+logo.h+
+      ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length '+rgb.length+' >>'+NL+'stream'+NL);
+    raw(rgb);
+    ps(NL+'endstream'+NL+'endobj'+NL);
+  }
+  const xobj=logo?' /XObject << /Logo 5 0 R >>':'';
   pages.forEach((pg,i)=>{
-    const id=5+2*i;
+    const id=page0+2*i;
     // Content is ASCII only (non-ASCII is octal-escaped), so length = chars.
     const cs=pg.ops.join(NL);
     obj(id,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+(pg.w*PT).toFixed(2)+' '+(pg.h*PT).toFixed(2)+']'+
-      ' /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+(id+1)+' 0 R >>');
+      ' /Resources << /Font << /F1 3 0 R /F2 4 0 R >>'+xobj+' >> /Contents '+(id+1)+' 0 R >>');
     obj(id+1,'<< /Length '+cs.length+' >>'+NL+'stream'+NL+cs+NL+'endstream');
   });
   const n=offs.length;
@@ -3442,19 +3457,84 @@ function drawPrintBox(pg, x0, y0, w){
   });
 }
 
+// Header shared by every notch page. The black logo (assets/creature-logo.png)
+// takes the top-right corner the horizontal scale bar used to occupy. Both
+// 50 mm bars move down together, still exactly 50 mm, and templates start
+// below that block. Left-hand lines wrap short of the logo column.
+const NOTCH_LOGO_W = 56;
+const NOTCH_HEADER_ROWS = [
+  ['Print at 100% / actual size. Check the scale bars before cutting.', 7, true],
+  ['Cut out, wrap round the tube end with the bottom edge square to the tube and tape at the overlap. TOP on both ends of a tube sits on one straight line along it.', 5.6, false],
+  ['Figures under each template: height of the cut above the bottom edge, mm.', 5.6, false],
+];
+function notchHeaderMetrics(PW, header){
+  const M=10, logo=header&&header.logo;
+  const logoH=logo ? NOTCH_LOGO_W*logo.h/logo.w : 0;
+  const logoX=PW-M-NOTCH_LOGO_W, logoY=7;
+  const sy=logo ? logoY+logoH+3.5 : M+3;
+  const scaleBottom=sy+15.6+2.8;
+  const textW=Math.max(40, PW-M-(logo?NOTCH_LOGO_W:62)-M-6);
+  const rows=[
+    [header.title||'', 11, true],
+    [header.sub||'', 7, false],
+    ...NOTCH_HEADER_ROWS,
+  ];
+  let y=M+4;
+  rows.forEach(([text,size,bold])=>{
+    if(!text) return;
+    const n=pdfWrap(text, textW, size, bold).length||1;
+    y+=n*(size*0.42+0.7)+0.6;
+  });
+  return {M, logoW:NOTCH_LOGO_W, logoH, logoX, logoY, sy, textW, contentTop:Math.max(y+1.5, scaleBottom+2.5)};
+}
+function drawNotchHeader(pg, header, PW, pageNo, pageCount){
+  const c=notchHeaderMetrics(PW, header);
+  if(header.logo) pg.image(c.logoX, c.logoY, c.logoW, c.logoH);
+  const rows=[
+    [header.title||'', 11, {bold:true}],
+    [header.sub||'', 7, {gray:0.25}],
+    [NOTCH_HEADER_ROWS[0][0], 7, {bold:true}],
+    [NOTCH_HEADER_ROWS[1][0], 5.6, {gray:0.3}],
+    [NOTCH_HEADER_ROWS[2][0], 5.6, {gray:0.3}],
+  ];
+  let y=c.M+4;
+  rows.forEach(([text,size,opt])=>{
+    if(!text) return;
+    const lh=size*0.42+0.7;
+    pdfWrap(text, c.textW, size, !!opt.bold).forEach(l=>{ pg.text(c.M, y, l, size, opt); y+=lh; });
+    y+=0.6;
+  });
+  // 50 mm scale bars, under the logo, on every page. Length is 50 mm exactly.
+  const sx=PW-c.M-50, sy=c.sy;
+  pg.stroke(0.3,0).line(sx,sy,sx+50,sy).S();
+  for(let k=0;k<=5;k++) pg.stroke(0.25,0).line(sx+10*k, sy+(k%5?1.2:2.2), sx+10*k, sy).S();
+  pg.text(sx+25, sy+5.2, '50 mm', 7, {align:'c'});
+  // Vertical bar in the right margin: printers can stretch the paper-feed
+  // direction only, and notch heights run that way on the page.
+  const vx=PW-c.M+4;
+  pg.stroke(0.3,0).line(vx,sy,vx,sy+50).S();
+  for(let k=0;k<=5;k++) pg.stroke(0.25,0).line(vx, sy+10*k, vx-(k%5?1.2:2.2), sy+10*k).S();
+  pg.text(vx+2.6, sy+25, '50 mm', 7, {align:'c', rot:90});
+  pg.text(PW-c.M, sy+12, 'CHECK THE SCALE', 13, {bold:true, align:'r'});
+  pg.text(PW-c.M, sy+15.6, 'bars must measure exactly 50 mm', 6.5, {align:'r', gray:0.25});
+  pg.text(PW-c.M, pg.h-5, 'page '+pageNo+' of '+pageCount, 6.5, {align:'r', gray:0.4});
+  return c;
+}
+
 // Pack template blocks shelf by shelf onto as few A4 pages as possible
 // (portrait or landscape, whichever needs fewer), then fit the printing box
 // against the right margin in the first free spot.
 function layoutNotchPages(joints, header){
-  const M=10, HEADER=22, GAP=6, FOOT=8;
+  const GAP=6, FOOT=8;
   const tryLayout=(PW,PH)=>{
+    const top0=notchHeaderMetrics(PW, header).contentTop, M=10;
     const pages=[]; let cur=null, x=0, y=0, shelfH=0;
-    const newPage=()=>{ cur=[]; pages.push(cur); x=M; y=M+HEADER; shelfH=0; };
+    const newPage=()=>{ cur=[]; pages.push(cur); x=M; y=top0; shelfH=0; };
     newPage();
     for(const j of joints){
       const s=notchBlockSize(j);
       if(x+s.w>PW-M && x>M){ x=M; y+=shelfH+GAP; shelfH=0; }
-      if(y+s.h>PH-M-FOOT && y>M+HEADER){ newPage(); }
+      if(y+s.h>PH-M-FOOT && y>top0){ newPage(); }
       cur.push({j, x, y, w:s.w, h:s.h}); x+=s.w+GAP; shelfH=Math.max(shelfH,s.h);
     }
     // Printing box: first spot against the right margin, trying narrow first.
@@ -3464,43 +3544,26 @@ function layoutNotchPages(joints, header){
         const box=printBoxLayout(bw), bx=PW-M-bw;
         const free=by=>by+box.h<=PH-M-FOOT && items.every(it=>
           bx>=it.x+it.w+GAP || bx+bw+GAP<=it.x || by>=it.y+it.h+GAP || by+box.h+GAP<=it.y);
-        const ys=[M+HEADER, ...items.map(it=>it.y), ...items.map(it=>it.y+it.h+GAP)].sort((a,b)=>a-b);
+        const ys=[top0, ...items.map(it=>it.y), ...items.map(it=>it.y+it.h+GAP)].sort((a,b)=>a-b);
         const by=ys.find(free);
         if(by!==undefined){ items.push({box:true, x:bx, y:by, w:bw, h:box.h}); placed=true; break; }
       }
       if(placed) break;
     }
-    if(!placed){ const bw=PRINT_BOX_WIDTHS[0]; pages.push([{box:true, x:PW-M-bw, y:M+HEADER, w:bw, h:printBoxLayout(bw).h}]); }
+    if(!placed){ const bw=PRINT_BOX_WIDTHS[0]; pages.push([{box:true, x:PW-M-bw, y:top0, w:bw, h:printBoxLayout(bw).h}]); }
     return {PW,PH,pages};
   };
   const port=tryLayout(210,297), land=tryLayout(297,210);
   const L = land.pages.length < port.pages.length ? land : port;
-  return L.pages.map((items,pi)=>{
+  const out=L.pages.map((items,pi)=>{
     const pg=new PdfPage(L.PW, L.PH);
-    pg.text(M, M+4, header.title, 11, {bold:true});
-    pg.text(M, M+9, header.sub, 7, {gray:0.25});
-    pg.text(M, M+13.2, 'Print at 100% / actual size. Check the scale bars before cutting.', 7, {bold:true});
-    pg.text(M, M+17, 'Cut out, wrap round the tube end with the bottom edge square to the tube and tape at the overlap. '+
-      'TOP on both ends of a tube sits on one straight line along it.', 5.6, {gray:0.3});
-    pg.text(M, M+19.8, 'Figures under each template: height of the cut above the bottom edge, mm.', 5.6, {gray:0.3});
-    // 50 mm scale bar, top right, on every page
-    const sx=L.PW-M-50, sy=M+3;
-    pg.stroke(0.3,0).line(sx,sy,sx+50,sy).S();
-    for(let k=0;k<=5;k++) pg.stroke(0.25,0).line(sx+10*k, sy+(k%5?1.2:2.2), sx+10*k, sy).S();
-    pg.text(sx+25, sy+5.2, '50 mm', 7, {align:'c'});
-    // and a vertical one in the right margin: printers can stretch the paper
-    // feed direction only, and notch heights run that way on the page
-    const vx=L.PW-M+4;
-    pg.stroke(0.3,0).line(vx,sy,vx,sy+50).S();
-    for(let k=0;k<=5;k++) pg.stroke(0.25,0).line(vx, sy+10*k, vx-(k%5?1.2:2.2), sy+10*k).S();
-    pg.text(vx+2.6, sy+25, '50 mm', 7, {align:'c', rot:90});
-    pg.text(L.PW-M, sy+12, 'CHECK THE SCALE', 13, {bold:true, align:'r'});
-    pg.text(L.PW-M, sy+15.6, 'bars must measure exactly 50 mm', 6.5, {align:'r', gray:0.25});
-    pg.text(L.PW-M, L.PH-5, 'page '+(pi+1)+' of '+L.pages.length, 6.5, {align:'r', gray:0.4});
-    (header.foot||[]).forEach((f,k,all)=>pg.text(M, L.PH-5-3*(all.length-1-k), f, 6, {gray:0.4}));
+    drawNotchHeader(pg, header, L.PW, pi+1, L.pages.length);
+    (header.foot||[]).forEach((f,k,all)=>pg.text(10, L.PH-5-3*(all.length-1-k), f, 6, {gray:0.4}));
     for(const it of items) it.box ? drawPrintBox(pg, it.x, it.y, it.w) : drawNotchBlock(pg, it.j, it.x, it.y);
     return pg;
   });
+  out.logo=header.logo||null;
+  return out;
 }
 // ==NOTCH-END==
 
@@ -3571,7 +3634,31 @@ function frameNotchJoints(g, p, cutTo){
   return {joints, problems, lengths};
 }
 
-function buildNotchPdf(cutTo){
+// assets/creature-logo.png, the black Creature Cycles mark, flattened onto
+// white so the PDF page stays plain paper around the ink.
+function loadNotchLogo(){
+  if(loadNotchLogo.p) return loadNotchLogo.p;
+  loadNotchLogo.p=new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas');
+      c.width=img.naturalWidth; c.height=img.naturalHeight;
+      const g=c.getContext('2d',{willReadFrequently:true});
+      g.fillStyle='#ffffff';
+      g.fillRect(0,0,c.width,c.height);
+      g.drawImage(img,0,0);
+      const d=g.getImageData(0,0,c.width,c.height).data;
+      const rgb=new Uint8Array(c.width*c.height*3);
+      for(let i=0,j=0;i<d.length;i+=4,j+=3){ rgb[j]=d[i]; rgb[j+1]=d[i+1]; rgb[j+2]=d[i+2]; }
+      resolve({w:c.width, h:c.height, rgb});
+    };
+    img.onerror=()=>reject(new Error('Could not load assets/creature-logo.png'));
+    img.src='assets/creature-logo.png';
+  });
+  return loadNotchLogo.p;
+}
+
+function buildNotchPdf(cutTo, logo){
   const g=computeGeometry(params);
   const {joints, problems, lengths}=frameNotchJoints(g, params, cutTo);
   if(!joints.length) throw new Error(problems.join('; ')||'no joints to template');
@@ -3583,7 +3670,7 @@ function buildNotchPdf(cutTo){
   const foot = [
     lengths.length ? 'Tip-to-tip lengths as drawn, mm (cut long and check): '+lengths.join('  ·  ') : '',
     'Where the DT and ST overlap at the BB shell, fit them to each other by hand.'].filter(Boolean);
-  const pages=layoutNotchPages(joints, {title, sub:subLine, foot});
+  const pages=layoutNotchPages(joints, {title, sub:subLine, foot, logo});
   return {pdf: buildPdf(pages), problems};
 }
 
@@ -3906,6 +3993,69 @@ function buildMobileBBRow(container){
     ()=>params.bb_width, v=>params.bb_width=v, '_bbWidthSync', container);
 }
 
+// Desktop keeps the standard picker as a select (it shows a custom "Other"
+// diameter). The label matches the mobile row. Width stays a 68/73/83 toggle.
+function buildDesktopBB(container){
+  const bbOpts=[...Object.entries(BB_STANDARDS).map(([k,s])=>[k,s.label]), [BB_OTHER,'Other']];
+  const bbSel=makeSelectRow('BB Standard', bbOpts, bbStdKey(params),
+    v=>{ if(applyBBStd(v)) redraw(); bbSelSync(); }, container);
+  const bbSelSync=()=>{
+    const k=bbStdKey(params);
+    bbSel.querySelector('option[value="'+BB_OTHER+'"]').textContent =
+      k===BB_OTHER ? 'Other ('+params.bb_diameter+'mm OD)' : 'Other';
+    bbSel.value=k;
+  };
+  paramInputs._bbStdSelSync=bbSelSync;
+  bbSelSync();
+
+  const BB_WIDTHS=[68,73,83];
+  const wrow=document.createElement('div'); wrow.className='param-row';
+  const wlbl=document.createElement('span'); wlbl.className='param-label';
+  wlbl.textContent='BB Width (mm)';
+  wrow.appendChild(wlbl);
+  const trow=document.createElement('div');
+  trow.style.cssText='display:flex;gap:4px;width:100%;margin-top:2px;';
+  function sync(){
+    BB_WIDTHS.forEach((ww,i)=>{
+      trow.children[i].style.background = params.bb_width===ww ? 'var(--accent)' : 'var(--hdr-bg)';
+      trow.children[i].style.color      = params.bb_width===ww ? '#fff'          : 'var(--text-mid)';
+      trow.children[i].style.borderColor= params.bb_width===ww ? 'var(--accent-br)':'var(--border)';
+    });
+  }
+  BB_WIDTHS.forEach(w=>{
+    const btn=document.createElement('button');
+    btn.textContent=w;
+    btn.style.cssText='flex:1;padding:4px 2px;font-family:var(--font);font-size:11px;font-weight:700;'+
+      'background:var(--hdr-bg);color:var(--text-mid);border:1px solid var(--border);'+
+      'border-radius:2px;cursor:pointer;transition:background 0.1s,color 0.1s;';
+    btn.onclick=()=>{ params.bb_width=w; sync(); redraw(); };
+    trow.appendChild(btn);
+  });
+  wrow.appendChild(trow);
+  container.appendChild(wrow);
+  paramInputs._bbWidthSync=sync;
+  sync();
+}
+
+// One control list for both layouts. desktop selects the BB picker.
+function addGroupedControl(item, container, desktop){
+  if(item.type==='slider') makeParamRow(item.key, item.label, container);
+  else if(item.type==='wheel') buildMobileWheelRow(item, container);
+  else if(item.type==='bb_std') desktop ? buildDesktopBB(container) : buildMobileBBRow(container);
+  else if(item.type==='chainline_btns')
+    makeMobileButtonRow('Chainline (mm)',[47.5,49,52,56],null,
+      ()=>params.chainline,v=>{params.chainline=v;},'_chainlineSync',container);
+  else if(item.type==='hub_spacing_btns')
+    makeMobileButtonRow('Rear Hub Spacing (mm)',[142,148,157],null,
+      ()=>params.rear_hub_spacing,v=>{params.rear_hub_spacing=v;},'_hubSpacingSync',container);
+  else if(item.type==='frame_material_btns')
+    makeMobileButtonRow('Frame Material',['stainless','titanium'],['Stainless','Titanium'],
+      ()=>params.frame_material,v=>{params.frame_material=v;},'_frameMaterialSync',container);
+  else if(item.type==='cable_guides_btns')
+    makeMobileButtonRow('Integrated Cable Guides',[true,false],['Yes','No'],
+      ()=>params.cable_guides,v=>{params.cable_guides=v;},'_cableGuidesSync',container);
+}
+
 function buildMobileWheelRow(item, container){
   const row=document.createElement('div'); row.className='param-row';
   const lbl=document.createElement('span'); lbl.className='param-label';
@@ -3969,23 +4119,7 @@ function buildMobilePanel(){
 
   MOBILE_PAGES.forEach((pageData)=>{
     const page=document.createElement('div'); page.className='mob-page';
-    pageData.items.forEach(item=>{
-      if     (item.type==='slider')             makeParamRow(item.key, item.label, page);
-      else if(item.type==='wheel')              buildMobileWheelRow(item, page);
-      else if(item.type==='bb_std')             buildMobileBBRow(page);
-      else if(item.type==='chainline_btns')
-        makeMobileButtonRow('Chainline (mm)',[47.5,49,52,56],null,
-          ()=>params.chainline,v=>{params.chainline=v;},'_chainlineSync',page);
-      else if(item.type==='hub_spacing_btns')
-        makeMobileButtonRow('Rear Hub Spacing (mm)',[142,148,157],null,
-          ()=>params.rear_hub_spacing,v=>{params.rear_hub_spacing=v;},'_hubSpacingSync',page);
-      else if(item.type==='frame_material_btns')
-        makeMobileButtonRow('Frame Material',['stainless','titanium'],['Stainless','Titanium'],
-          ()=>params.frame_material,v=>{params.frame_material=v;},'_frameMaterialSync',page);
-      else if(item.type==='cable_guides_btns')
-        makeMobileButtonRow('Integrated Cable Guides',[true,false],['Yes','No'],
-          ()=>params.cable_guides,v=>{params.cable_guides=v;},'_cableGuidesSync',page);
-    });
+    pageData.items.forEach(item=>addGroupedControl(item, page, false));
     track.appendChild(page);
   });
   scroll.appendChild(track);
@@ -4013,135 +4147,13 @@ function buildPanel(){
   scroll.innerHTML='';
   scroll.classList.remove('mobile-pager');
 
-  // ── 1. GEOMETRY section ───────────────────────────────
-  makeGroup(scroll, 'Geometry', body=>{
-    GEOM_FIELDS.forEach(([key,lbl])=>makeParamRow(key,lbl,body));
-    // Wheel sizes — arrow toggles tracking by key label (not BSD value)
-    function makeWheelRow(labelTxt, keyParam, diaParam, onSet, storeKey) {
-      const row = document.createElement('div'); row.className = 'param-row';
-      const lbl = document.createElement('span'); lbl.className = 'param-label';
-      lbl.textContent = labelTxt;
-      row.appendChild(lbl);
-
-      const trow = document.createElement('div'); trow.className = 'wheel-toggle-row';
-      const btnL = document.createElement('button'); btnL.className = 'arrow-btn'; btnL.textContent = '‹';
-      const valSpan = document.createElement('span'); valSpan.className = 'wheel-val';
-      const btnR = document.createElement('button'); btnR.className = 'arrow-btn'; btnR.textContent = '›';
-
-      function getKey() { return params[keyParam] || WHEEL_KEYS[4]; }  // default '700c'
-      function setKey(k) {
-        params[keyParam] = k;
-        params[diaParam] = WHEEL_SIZES[k];
-        valSpan.textContent = k;
-        if (onSet) onSet(WHEEL_SIZES[k]);
-        syncStackAtc('wheel');
-        redraw();
-      }
-      function step(dir) {
-        const idx = WHEEL_KEYS.indexOf(getKey());
-        setKey(WHEEL_KEYS[(idx + dir + WHEEL_KEYS.length) % WHEEL_KEYS.length]);
-      }
-      valSpan.textContent = getKey();
-      btnL.onclick = () => step(-1);
-      btnR.onclick = () => step(1);
-
-      // syncDisplay called from setParams when loading a preset
-      paramInputs[storeKey] = { syncDisplay: () => { valSpan.textContent = getKey(); } };
-
-      trow.appendChild(btnL); trow.appendChild(valSpan); trow.appendChild(btnR);
-      row.appendChild(trow);
-      body.appendChild(row);
-    }
-
-    makeWheelRow('Front Wheel', 'front_wheel_key', 'front_wheel_dia', v=>{
-      // ATC minimum = outer wheel radius + 60mm crown clearance
-      const minATC = v/2 + (params.tyre_width||57) + 60;
-      if (params.fork_atc < minATC) {
-        params.fork_atc = Math.round(minATC);
-        if (paramInputs['fork_atc'])     paramInputs['fork_atc'].value = params.fork_atc;
-        if (paramInputs['fork_atc_sld']) paramInputs['fork_atc_sld'].value = params.fork_atc;
-      }
-    }, '_frontWheel');
-    makeWheelRow('Rear Wheel', 'rear_wheel_key', 'rear_wheel_dia', null, '_rearWheel');
-    makeParamRow('tyre_width', 'Tyre Width (mm)', body);
-  }, true);
-
-  // ── 2. FORK section ──────────────────────────────────
-  makeGroup(scroll, 'Fork', body=>{
-    FORK_FIELDS.forEach(([key,lbl])=>makeParamRow(key,lbl,body));
-  }, true);
-
-  // ── 3. TUBE PARAMETERS label (non-collapsible divider) ──
-  const divider=document.createElement('div');
-  divider.style.cssText='padding:8px 11px 3px;font-size:9px;letter-spacing:2px;color:var(--text-lo);text-transform:uppercase;font-family:Courier New,monospace;border-top:1px solid var(--border);margin-top:4px;';
-  divider.textContent='tube parameters';
-  scroll.appendChild(divider);
-
-  // ── 4. Bottom Bracket (standard + width toggle) ──────────
-  makeGroup(scroll, 'Bottom Bracket', body=>{
-    // Standard select
-    const bbOpts=[...Object.entries(BB_STANDARDS).map(([k,s])=>[k,s.label]), [BB_OTHER,'Other']];
-    const bbSel=makeSelectRow('Standard', bbOpts, bbStdKey(params),
-      v=>{ if(applyBBStd(v)) redraw(); bbSelSync(); }, body);
-    // Show the custom diameter in the "Other" entry, and re-sync after reset/import
-    const bbSelSync=()=>{
-      const k=bbStdKey(params);
-      bbSel.querySelector('option[value="'+BB_OTHER+'"]').textContent =
-        k===BB_OTHER ? 'Other ('+params.bb_diameter+'mm OD)' : 'Other';
-      bbSel.value=k;
-    };
-    paramInputs._bbStdSelSync=bbSelSync;
-    bbSelSync();
-
-    // Width 3-way toggle: 68 / 73 / 83
-    const BB_WIDTHS = [68, 73, 83];
-    const wrow = document.createElement('div'); wrow.className='param-row';
-    const wlbl = document.createElement('span'); wlbl.className='param-label';
-    wlbl.textContent='Width (mm)';
-    wrow.appendChild(wlbl);
-
-    const trow = document.createElement('div');
-    trow.style.cssText='display:flex;gap:4px;width:100%;margin-top:2px;';
-
-    BB_WIDTHS.forEach(w=>{
-      const btn=document.createElement('button');
-      btn.textContent=w;
-      btn.style.cssText='flex:1;padding:4px 2px;font-family:var(--font);font-size:11px;font-weight:700;'+
-        'background:var(--hdr-bg);color:var(--text-mid);border:1px solid var(--border);'+
-        'border-radius:2px;cursor:pointer;transition:background 0.1s,color 0.1s;';
-      function sync(){
-        BB_WIDTHS.forEach((ww,i)=>{
-          trow.children[i].style.background = params.bb_width===ww ? 'var(--accent)' : 'var(--hdr-bg)';
-          trow.children[i].style.color      = params.bb_width===ww ? '#fff'          : 'var(--text-mid)';
-          trow.children[i].style.borderColor= params.bb_width===ww ? 'var(--accent-br)':'var(--border)';
-        });
-      }
-      btn.onclick=()=>{ params.bb_width=w; sync(); redraw(); };
-      trow.appendChild(btn);
-    });
-
-    wrow.appendChild(trow);
-    body.appendChild(wrow);
-
-    // Store sync ref so setParams can update display
-    paramInputs._bbWidthSync = ()=>{
-      BB_WIDTHS.forEach((ww,i)=>{
-        trow.children[i].style.background = params.bb_width===ww ? 'var(--accent)' : 'var(--hdr-bg)';
-        trow.children[i].style.color      = params.bb_width===ww ? '#fff'          : 'var(--text-mid)';
-        trow.children[i].style.borderColor= params.bb_width===ww ? 'var(--accent-br)':'var(--border)';
-      });
-    };
-    // Initial highlight
-    paramInputs._bbWidthSync();
-  }, true);
-
-  // ── 5. Tube groups ────────────────────────────────────
-  GROUPS.forEach(({name,fields})=>{
-    // Bottom Bracket already done above — skip it here
-    if(name==='Bottom Bracket') return;
-    makeGroup(scroll, name, body=>{
-      fields.forEach(([key,lbl])=>makeParamRow(key,lbl,body));
-    }, false);  // start collapsed to save space
+  // Same groups and labels as the mobile pager. Fit, fork and options start
+  // open (geometry, fork and the BB picker used to); the rest stay collapsed.
+  const open=new Set(['Fit','Fork & Wheels','Options']);
+  MOBILE_PAGES.forEach(page=>{
+    makeGroup(scroll, page.title, body=>{
+      page.items.forEach(item=>addGroupedControl(item, body, true));
+    }, open.has(page.title));
   });
 }
 
@@ -4358,14 +4370,6 @@ requestAnimationFrame(()=>{
 </script>
 
 <!-- Toolbar dropdown menus — direct body children so z-index is never trapped -->
-<div class="tb-dd-menu" id="ddm-appearance">
-  <div class="dd-label">theme</div>
-  <div class="dd-radio-group" id="theme-radios">
-    <button class="dd-radio" data-val="light" onclick="setTheme('light'); syncThemeRadios()">light</button>
-    <button class="dd-radio active" data-val="dark" onclick="setTheme('dark'); syncThemeRadios()">dark</button>
-  </div>
-</div>
-
 <div class="tb-dd-menu" id="ddm-elements">
   <label class="dd-toggle-row"><input type="checkbox" checked onchange="setVis('grid',this.checked)"><span>grid</span></label>
   <label class="dd-toggle-row"><input type="checkbox" checked onchange="setVis('wheels',this.checked)"><span>wheels</span></label>
