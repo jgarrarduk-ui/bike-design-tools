@@ -20,6 +20,14 @@ Each is a single HTML file: no build step, no dependencies, open it directly
 or serve the folder. `index.html` at the repo root is the landing page that
 links to all four.
 
+Frame Designer's export screen also writes **notch templates**: a 1:1 A4 PDF
+of wrap-around cope templates for the front-triangle joints (TT and DT at the
+head tube, TT at the seat tube, DT and ST at the BB shell). Seat and chain
+stay joints are left out because they are compound angles. The maths and the
+PDF writer sit between `// ==NOTCH-START==` and `// ==NOTCH-END==` in
+`frame-designer.html`, free of frame-designer globals, so they can be lifted
+into a standalone tool. Checks: `node test/notch-tests.mjs`.
+
 `fusion-import/` has two Fusion 360 scripts that load a Suspension Designer
 or Frame Designer JSON export as User Parameters in an open Fusion design —
 see `fusion-import/README.md`.
@@ -27,8 +35,8 @@ see `fusion-import/README.md`.
 Suspension Designer is the most actively developed and the most heavily
 documented — see `suspension-designer/README.md` for what it does and
 `suspension-designer/CLAUDE.md` for the architecture, every non-obvious fix
-and why, and what's deliberately not done. It also has the only test suite
-in the repo (`suspension-designer/test/`). The public path is
+and why, and what's deliberately not done. It also has the main test suite
+(`suspension-designer/test/`). The public path is
 `/suspension-designer/`. `flexstay/` is only a redirect to that path, so
 older `/flexstay/` bookmarks (including GitHub Pages) still open the tool.
 
@@ -41,6 +49,7 @@ spoke-calculator.html    spoke length tool
 spring-calculator.html   spring rate tool
 suspension-designer/     suspension kinematics tool, its docs and tests
 flexstay/                redirect to suspension-designer/ (old URL)
+test/                    frame-designer notch template checks (node)
 fusion-import/           Fusion 360 scripts: import a design JSON as parameters
 server/                  backend: design storage, checkout, email delivery
 .nojekyll                required for GitHub Pages — see Deploying below

@@ -1028,6 +1028,15 @@
   }
   .exp-fmt-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent-br); }
   .exp-fmt-btn.selected { background: var(--accent-hi); color: #fff; border-color: var(--accent-br); }
+  #notch-opts { display: none; flex-direction: column; gap: 6px; }
+  #notch-opts.open { display: flex; }
+  #notch-opts p { font-size: 11px; color: var(--text-lo); margin: 0; line-height: 1.45; }
+  #notch-opts label { font-size: 11px; color: var(--text-hi); }
+  #notch-opts select {
+    background: var(--input-bg); color: var(--input-fg);
+    border: 1px solid var(--border); border-radius: 3px;
+    font-family: var(--font); font-size: 11px; padding: 4px 6px;
+  }
   .exp-download-btn {
     background: var(--accent-hi);
     color: #fff;
@@ -1357,6 +1366,15 @@
       <button class="exp-fmt-btn" data-fmt="pdf" onclick="selectExportFormat('pdf')">PDF</button>
       <button class="exp-fmt-btn" data-fmt="jpeg" onclick="selectExportFormat('jpeg')">JPEG</button>
       <button class="exp-fmt-btn" data-fmt="json" onclick="selectExportFormat('json')">JSON</button>
+      <button class="exp-fmt-btn" data-fmt="notch" onclick="selectExportFormat('notch')" title="Printable 1:1 notch templates for the front triangle joints">NOTCH</button>
+    </div>
+    <div id="notch-opts">
+      <p>1:1 printable PDF of the front-triangle notch templates: top tube and down tube at the head tube, top tube at the seat tube, down tube and seat tube at the BB shell. Stays are not included.</p>
+      <label for="notch-cut">cut line</label>
+      <select id="notch-cut">
+        <option value="id" selected>inside of tube wall (tight fit)</option>
+        <option value="od">outside of tube wall</option>
+      </select>
     </div>
     <button id="export-download-btn" class="exp-download-btn" disabled onclick="downloadExport()">Download</button>
     <div class="exp-modal-btns">
@@ -2161,13 +2179,12 @@ function drawDroppedChainstay(g){
 // ═══════════════════════════════════════════════════════
 //  DRAW TUBES
 // ═══════════════════════════════════════════════════════
-function drawTubes(g){
-  const p=params;
-  const TFILL=T('tubeFill'), TSTK=T('tubeStk'), LFILL=T('lugFill'), LSTK=T('lugStk');
+// Tube end points for the front triangle and seat stays, shared by the
+// drawing and the notch-template export so both use the same tube axes.
+function tubeJunctions(g,p){
   const ra=g.rear_axle, sc=g.seat_cluster;
   const ht_t=g.ht_top, ht_b=g.ht_bot, bb=[0,0];
   const tt_od=p.tt_OD, ss_od=p.ss_OD, st_od=p.st_OD;
-
   // ── HT junction ──
   const ht_od=p.ht_OD, fa_x=g.fork_axis;
   const ht_perp_cw=perp_cw(fa_x);
@@ -2224,6 +2241,20 @@ function drawTubes(g){
   // clipNormal = ht_dt_side (pointing INTO the HT body = inward normal)
   // clipPoint  = the HT face point on that side
   const ht_face_pt = add(ht_b, mul(ht_dt_side, ht_od / 2));  // point on HT face
+
+  return {ht_dt_side, ht_face_pt, dt_ht, dt_ht_ext, tt_ht, tt_ht_ext,
+          tt_sc, tt_sc_ext, ss_sc, ss_sc_ext};
+}
+
+function drawTubes(g){
+  const p=params;
+  const TFILL=T('tubeFill'), TSTK=T('tubeStk'), LFILL=T('lugFill'), LSTK=T('lugStk');
+  const ra=g.rear_axle, sc=g.seat_cluster;
+  const ht_t=g.ht_top, ht_b=g.ht_bot, bb=[0,0];
+  const tt_od=p.tt_OD, ss_od=p.ss_OD, st_od=p.st_OD;
+
+  const ht_od=p.ht_OD, dt_ax=g.dt_ax;
+  const {ht_dt_side, ht_face_pt, dt_ht_ext, tt_ht_ext, tt_sc_ext, ss_sc_ext}=tubeJunctions(g,p);
 
   // ── Draw order: back → front ──
   // DT: clipped at HT face, capped at BB end only
@@ -2879,6 +2910,7 @@ let selectedExportFormat = null;
 function resetExportSelection(){
   selectedExportFormat = null;
   document.querySelectorAll('.exp-fmt-btn').forEach(b=>b.classList.remove('selected'));
+  document.getElementById('notch-opts').classList.remove('open');
   document.getElementById('export-download-btn').disabled = true;
 }
 function openSave(){
@@ -3037,6 +3069,7 @@ function selectExportFormat(fmt) {
   document.querySelectorAll('.exp-fmt-btn').forEach(b => {
     b.classList.toggle('selected', b.dataset.fmt === fmt);
   });
+  document.getElementById('notch-opts').classList.toggle('open', fmt === 'notch');
   document.getElementById('export-download-btn').disabled = false;
 }
 
@@ -3066,6 +3099,14 @@ function downloadExport() {
       showExportResult(fmt);
       return;
     }
+    if(fmt === 'notch') {
+      const {pdf, problems} = buildNotchPdf(document.getElementById('notch-cut').value);
+      const blob = new Blob([pdf], {type:'application/pdf'});
+      triggerDownload(URL.createObjectURL(blob), exportFilename('pdf').replace(/^frame_designer/, 'notch_templates'), true);
+      showExportResult('notch templates');
+      if(problems.length) alert('Some joints were left out:\n' + problems.join('\n'));
+      return;
+    }
     const dataURL = renderToDataURL();
     if(fmt === 'jpeg') {
       triggerDownload(dataURL, exportFilename('jpg'), false);
@@ -3084,6 +3125,354 @@ function downloadExport() {
     console.error('Export failed:', e);
     alert('Export failed: ' + e.message);
   }
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  NOTCH TEMPLATES
+// ═══════════════════════════════════════════════════════
+// ==NOTCH-START==
+// Pure maths and PDF writing for tube notch (cope) templates. No DOM and no
+// frame-designer globals, so it can be tested in Node and lifted into a
+// standalone tool. Units are mm and degrees unless stated.
+
+const v3 = {
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  mul:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  unit:a=>{const d=Math.hypot(a[0],a[1],a[2]); return d>0?[a[0]/d,a[1]/d,a[2]/d]:a;},
+};
+
+// Where a branch tube's wall meets a receiving tube's outer surface.
+//   b    branch axis direction, pointing from the joint into the tube body
+//   u    reference direction square to b: the 0° line of the template
+//   a    receiving tube axis direction (sign does not matter)
+//   c    a point on the receiving axis, relative to the point where the branch
+//        axis is measured from (zero when the axes cross)
+//   rho  radius of the branch wall line being cut (inside or outside of wall)
+//   R    receiving tube outside radius
+// The 90° line is u × b, so with the paper printed side out and the tube end
+// at the top, the template reads left to right around the tube.
+// Returns t[i]: distance along b from the axis crossing to the cut, for
+// phi = 360·i/n. t is NaN where that wall line misses the receiving tube.
+function notchCut({b, u, a, c=[0,0,0], rho, R, n=360}) {
+  b=v3.unit(b); a=v3.unit(a);
+  u=v3.unit(v3.sub(u, v3.mul(b, v3.dot(u,b))));
+  const v=v3.cross(u,b);
+  const perp=x=>v3.sub(x, v3.mul(a, v3.dot(x,a)));
+  const bp=perp(b), A=v3.dot(bp,bp);
+  const t=new Array(n+1);
+  for(let i=0;i<=n;i++){
+    const phi=2*Math.PI*i/n;
+    const d=v3.add(v3.mul(u,Math.cos(phi)), v3.mul(v,Math.sin(phi)));
+    const w=perp(v3.sub(v3.mul(d,rho), c));
+    const B=2*v3.dot(w,bp), C=v3.dot(w,w)-R*R;
+    const disc=B*B-4*A*C;
+    // Larger root: the wall line leaves the receiving tube there, and the
+    // branch body lies beyond it.
+    t[i]=(A>1e-12 && disc>=0) ? (-B+Math.sqrt(disc))/(2*A) : NaN;
+  }
+  return t;
+}
+
+// Template for one joint. branchOD/WT and recvOD in mm; cutTo 'id' traces the
+// inside of the branch wall (the fit-up line for a tight joint), 'od' the
+// outside. The template is always wrapped on the outside, so its width is the
+// outside circumference.
+function notchTemplate({b, u, a, c, branchOD, branchWT, recvOD, cutTo='id', n=720}) {
+  const rho = cutTo==='od' ? branchOD/2 : branchOD/2 - branchWT;
+  const R = recvOD/2;
+  const t = notchCut({b, u, a, c, rho, R, n});
+  const ok = t.every(Number.isFinite);
+  const finite = t.filter(Number.isFinite);
+  const tMin = Math.min(...finite), tMax = Math.max(...finite);
+  const bu=v3.unit(b), au=v3.unit(a);
+  const cosA = Math.abs(v3.dot(bu,au));
+  return {
+    t, n, rho, R, ok,
+    tMin, tMax, depth: tMax - tMin,
+    wrap: Math.PI * branchOD,
+    // Acute angle between the axes, as a notch calculator asks for it.
+    angle: Math.acos(Math.min(1,cosA)) * 180/Math.PI,
+  };
+}
+
+// Closed form for crossing axes in one plane, used to check notchCut.
+// theta is the angle between axes measured from b towards u.
+function notchClosedForm(rho, R, thetaDeg, phiDeg, offset=0) {
+  const th=thetaDeg*Math.PI/180, ph=phiDeg*Math.PI/180;
+  const y=rho*Math.sin(ph)+offset;
+  return (rho*Math.cos(ph)*Math.cos(th) + Math.sqrt(R*R-y*y)) / Math.sin(th);
+}
+
+// ── Minimal vector PDF writer (A4, Helvetica, mm coordinates from top-left) ──
+// Built by hand like the image PDF export: no library, nothing to load.
+// Prints at exact size as long as the print dialog is set to 100% / actual size.
+const PT = 72/25.4;
+const HELV_W = (()=>{ // Helvetica widths /1000 em, ASCII 32..126
+  const w=[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,
+    556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,
+    667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,
+    278,278,278,469,556,333,
+    556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,
+    334,260,334,584];
+  return w;
+})();
+function pdfTextWidth(s, sizePt, bold) {
+  let w=0;
+  for(const ch of String(s)){
+    const k=ch.charCodeAt(0);
+    w += (k>=32&&k<=126) ? HELV_W[k-32] : 556;
+  }
+  return w/1000*sizePt*(bold?1.05:1)/PT;  // mm
+}
+// WinAnsi bytes for the characters we use; anything else becomes '?'.
+function pdfLatin(s) {
+  let out='';
+  for(const ch of String(s)){
+    const k=ch.charCodeAt(0);
+    if(k>=32&&k<=126) out += (ch==='('||ch===')'||ch==='\\') ? '\\'+ch : ch;
+    else if(k===0xB0||k===0xD8||k===0xD7||k===0xB7||k===0xF8) out += '\\'+k.toString(8).padStart(3,'0');
+    else if(ch==='→') out += '->';
+    else if(ch==='–'||ch==='—') out += '\\226';
+    else out += '?';
+  }
+  return out;
+}
+class PdfPage {
+  constructor(wMM, hMM){ this.w=wMM; this.h=hMM; this.ops=[]; }
+  X(x){ return (x*PT).toFixed(2); }
+  Y(y){ return ((this.h-y)*PT).toFixed(2); }
+  stroke(widthMM, gray=0, dash=null){
+    this.ops.push((widthMM*PT).toFixed(2)+' w '+gray.toFixed(2)+' G '+
+      (dash ? '['+dash.map(d=>(d*PT).toFixed(2)).join(' ')+'] 0 d' : '[] 0 d'));
+    return this;
+  }
+  fill(gray){ this.ops.push(gray.toFixed(2)+' g'); return this; }
+  path(pts, close=false){
+    this.ops.push(pts.map((p,i)=>this.X(p[0])+' '+this.Y(p[1])+(i?' l':' m')).join(' ')+(close?' h':''));
+    return this;
+  }
+  line(x1,y1,x2,y2){ return this.path([[x1,y1],[x2,y2]]); }
+  rect(x,y,w,h){ return this.path([[x,y],[x+w,y],[x+w,y+h],[x,y+h]], true); }
+  S(){ this.ops.push('S'); return this; }
+  F(){ this.ops.push('f'); return this; }
+  // align: 'l' | 'c' | 'r'. y is the text baseline.
+  text(x, y, s, sizePt=8, {bold=false, align='l', gray=0, rot=0}={}){
+    let dx = align==='c' ? -pdfTextWidth(s,sizePt,bold)/2 : align==='r' ? -pdfTextWidth(s,sizePt,bold) : 0;
+    const f=bold?'/F2':'/F1';
+    let m;
+    if(rot){ // 90° anticlockwise, anchored at x,y
+      m='0 1 -1 0 '+this.X(x)+' '+this.Y(y-dx);
+    } else m='1 0 0 1 '+this.X(x+dx)+' '+this.Y(y);
+    this.ops.push(gray.toFixed(2)+' g BT '+f+' '+sizePt+' Tf '+m+' Tm ('+pdfLatin(s)+') Tj ET');
+    return this;
+  }
+}
+function buildPdf(pages) {
+  const NL='\n', te=new TextEncoder();
+  const parts=[], offs=[]; let pos=0;
+  const ps=s=>{const b=te.encode(s); parts.push(b); pos+=b.length;};
+  const obj=(id,body)=>{offs[id]=pos; ps(id+' 0 obj'+NL+body+NL+'endobj'+NL);};
+  ps('%PDF-1.4'+NL);
+  // 1 catalog, 2 pages, 3 F1, 4 F2, then page+content pairs
+  const kids=pages.map((_,i)=>(5+2*i)+' 0 R').join(' ');
+  obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2,'<< /Type /Pages /Kids ['+kids+'] /Count '+pages.length+' >>');
+  obj(3,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  obj(4,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  pages.forEach((pg,i)=>{
+    const id=5+2*i;
+    // Content is ASCII only (non-ASCII is octal-escaped), so length = chars.
+    const cs=pg.ops.join(NL);
+    obj(id,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+(pg.w*PT).toFixed(2)+' '+(pg.h*PT).toFixed(2)+']'+
+      ' /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+(id+1)+' 0 R >>');
+    obj(id+1,'<< /Length '+cs.length+' >>'+NL+'stream'+NL+cs+NL+'endstream');
+  });
+  const n=offs.length;
+  const xref=pos;
+  ps('xref'+NL+'0 '+n+NL+'0000000000 65535 f '+NL);
+  for(let i=1;i<n;i++) ps(String(offs[i]).padStart(10,'0')+' 00000 n '+NL);
+  ps('trailer'+NL+'<< /Size '+n+' /Root 1 0 R >>'+NL+'startxref'+NL+xref+NL+'%%EOF'+NL);
+  const out=new Uint8Array(pos); let wp=0;
+  for(const b of parts){ out.set(b,wp); wp+=b.length; }
+  return out;
+}
+
+// ── Template layout ──
+const NOTCH_DIVS = 16;           // ordinate lines around the tube (n must be a multiple)
+const NOTCH_BASE = 10;           // mm of tube below the deepest point of the cut
+const NOTCH_TAB  = 8;            // overlap tab to tape the wrap closed
+const NOTCH_HEAD = 9;            // title + spec lines above the template
+const NOTCH_FOOT = 10;           // ordinate values + quarter labels below
+
+function notchBlockSize(j){
+  return { w: j.tpl.wrap + NOTCH_TAB + 2, h: NOTCH_HEAD + j.tpl.depth + NOTCH_BASE + 6 + NOTCH_FOOT };
+}
+
+// Draw one joint's template with its top-left corner at (x0,y0).
+function drawNotchBlock(pg, j, x0, y0){
+  const tpl=j.tpl, W=tpl.wrap, n=tpl.n;
+  pg.text(x0, y0+3.6, j.title, 9, {bold:true});
+  pg.text(x0, y0+7.4, j.spec, 6.5, {gray:0.25});
+  const top=y0+NOTCH_HEAD+3;                 // top of paper: 3 mm above the long points
+  const base=top+3+tpl.depth+NOTCH_BASE;     // square reference line (paper bottom)
+  const yAt=t=>base-NOTCH_BASE-(tpl.tMax-t); // long points sit highest
+  const xAt=i=>x0+W*i/n;
+  const curve=tpl.t.map((t,i)=>[xAt(i), yAt(t)]);
+
+  // waste shading above the cut, then the overlap tab
+  pg.fill(0.88).path([[x0,top], ...curve, [x0+W,top]], true).F();
+  pg.stroke(0.2, 0.45, [1.2,1]).rect(x0+W, top, NOTCH_TAB, base-top).S();
+  pg.text(x0+W+NOTCH_TAB/2+1.2, (top+base)/2, 'OVERLAP', 5.5, {align:'c', gray:0.45, rot:90});
+
+  // ordinate lines from the square line up to the cut, quarters heavier
+  for(let k=0;k<=NOTCH_DIVS;k++){
+    const i=n*k/NOTCH_DIVS, x=xAt(i), q=k%(NOTCH_DIVS/4)===0;
+    pg.stroke(q?0.25:0.12, q?0.2:0.55, q?null:[0.8,0.8]).line(x, yAt(tpl.t[i]), x, base).S();
+  }
+  // paper outline and the square line
+  pg.stroke(0.25, 0).rect(x0, top, W, base-top).S();
+  pg.stroke(0.15, 0.3, [2,1]).line(x0, base-NOTCH_BASE, x0+W, base-NOTCH_BASE).S();
+  // the cut line
+  pg.stroke(0.45, 0).path(curve).S();
+  pg.text(x0+1.2, top+2.6, 'WASTE', 5.5, {gray:0.4});
+
+  // ordinate values (height of the cut above the square line) and quarter labels
+  for(let k=0;k<NOTCH_DIVS;k++){
+    const i=n*k/NOTCH_DIVS, x=xAt(i);
+    const hgt=base-yAt(tpl.t[i]);
+    pg.text(x+0.6, base+3, hgt.toFixed(1), 4.6, {gray:0.2, rot:0});
+  }
+  for(let q=0;q<4;q++){
+    const x=xAt(n*q/4);
+    pg.text(x+0.6, base+7.2, j.quarters[q], 5.8, {bold:true});
+  }
+  pg.text(x0+W, base+7.2, j.quarters[0], 5.8, {bold:true, align:'r', gray:0.5});
+}
+
+// Pack blocks onto as few A4 pages as possible (portrait or landscape,
+// whichever needs fewer), shelf by shelf.
+function layoutNotchPages(joints, header){
+  const M=10, HEADER=22, GAP=6;
+  const tryLayout=(PW,PH)=>{
+    const pages=[]; let cur=null, x=0, y=0, shelfH=0;
+    const newPage=()=>{ cur=[]; pages.push(cur); x=M; y=M+HEADER; shelfH=0; };
+    newPage();
+    for(const j of joints){
+      const s=notchBlockSize(j);
+      if(x+s.w>PW-M && x>M){ x=M; y+=shelfH+GAP; shelfH=0; }
+      if(y+s.h>PH-M-8 && y>M+HEADER){ newPage(); }
+      cur.push({j, x, y}); x+=s.w+GAP; shelfH=Math.max(shelfH,s.h);
+    }
+    return {PW,PH,pages};
+  };
+  const port=tryLayout(210,297), land=tryLayout(297,210);
+  const L = land.pages.length < port.pages.length ? land : port;
+  return L.pages.map((items,pi)=>{
+    const pg=new PdfPage(L.PW, L.PH);
+    pg.text(M, M+4, header.title, 11, {bold:true});
+    pg.text(M, M+9, header.sub, 7, {gray:0.25});
+    pg.text(M, M+13.2, 'Print at 100% / actual size. Check the scale bar before cutting.', 7, {bold:true});
+    pg.text(M, M+17, 'Cut out, wrap round the tube end with the bottom edge square to the tube and tape at the overlap. '+
+      'TOP on both ends of a tube sits on one straight line along it.', 5.6, {gray:0.3});
+    pg.text(M, M+19.8, 'Figures under each template: height of the cut above the bottom edge, mm.', 5.6, {gray:0.3});
+    // 50 mm scale bar, top right
+    const sx=L.PW-M-50, sy=M+6;
+    pg.stroke(0.3,0).line(sx,sy,sx+50,sy).S();
+    for(let k=0;k<=5;k++) pg.stroke(0.25,0).line(sx+10*k, sy-(k%5?1.2:2.2), sx+10*k, sy).S();
+    pg.text(sx+25, sy+3.6, '50 mm', 7, {align:'c'});
+    pg.text(L.PW-M, L.PH-5, 'page '+(pi+1)+' of '+L.pages.length, 6.5, {align:'r', gray:0.4});
+    (header.foot||[]).forEach((f,k,all)=>pg.text(M, L.PH-5-3*(all.length-1-k), f, 6, {gray:0.4}));
+    for(const it of items) drawNotchBlock(pg, it.j, it.x, it.y);
+    return pg;
+  });
+}
+// ==NOTCH-END==
+
+// Front-triangle joints for the current design, in frame coordinates
+// (x forward, y up, z towards the drive side). Seat and chain stays are left
+// out: their joints are compound angles.
+function lineCross(p1, d1, p2, d2){
+  const den = d1[0]*d2[1]-d1[1]*d2[0];
+  if(Math.abs(den)<1e-9) return null;
+  const s = ((p2[0]-p1[0])*d2[1]-(p2[1]-p1[1])*d2[0])/den;
+  return [p1[0]+d1[0]*s, p1[1]+d1[1]*s];
+}
+function frameNotchJoints(g, p, cutTo){
+  const J=tubeJunctions(g,p), bb=[0,0], sc=g.seat_cluster;
+  const to3=v=>[v[0],v[1],0], LAT=[0,0,1];
+  const ttDir=norm(sub(J.tt_ht_ext, J.tt_sc_ext));   // ST end → HT end
+  const dtDir=norm(sub(J.dt_ht_ext, bb));            // BB → HT
+  const stDir=norm(sub(sc, bb));                     // BB → top
+  const htDir=g.fork_axis;
+  const up=d=>{ const q=perp_ccw(d); return q[1]>=0?q:mul(q,-1); };
+  const fwd=d=>{ const q=perp_ccw(d); return q[0]>=0?q:mul(q,-1); };
+  const ttTop=up(ttDir), dtTop=up(dtDir), stFront=fwd(stDir);
+  const X_ttht=lineCross(J.tt_sc_ext, ttDir, g.ht_top, htDir);
+  const X_dtht=lineCross(bb, dtDir, g.ht_top, htDir);
+  const X_ttst=lineCross(J.tt_sc_ext, ttDir, bb, stDir);
+  const f1=x=>x.toFixed(1);
+  const W={tt:p.tt_WT, dt:p.dt_WT, st:p.st_WT};
+  const fw=x=>Number(x).toFixed(Math.round(x*100)%10?2:1);
+  const defs=[
+    {key:'tt_ht', title:'Top tube  -  head tube end', tube:'tt', od:p.tt_OD, recv:'head tube', recvOD:p.ht_OD,
+     b:mul(ttDir,-1), a:to3(htDir), u:ttTop, inPlane:['TOP','BOTTOM']},
+    {key:'tt_st', title:'Top tube  -  seat tube end', tube:'tt', od:p.tt_OD, recv:'seat tube', recvOD:p.st_OD,
+     b:ttDir, a:to3(stDir), u:ttTop, inPlane:['TOP','BOTTOM']},
+    {key:'dt_ht', title:'Down tube  -  head tube end', tube:'dt', od:p.dt_OD, recv:'head tube', recvOD:p.ht_OD,
+     b:mul(dtDir,-1), a:to3(htDir), u:dtTop, inPlane:['TOP','BOTTOM']},
+    {key:'dt_bb', title:'Down tube  -  BB shell end', tube:'dt', od:p.dt_OD, recv:'BB shell', recvOD:p.bb_diameter,
+     b:dtDir, a:LAT, u:dtTop, inPlane:['TOP','BOTTOM']},
+    {key:'st_bb', title:'Seat tube  -  BB shell end', tube:'st', od:p.st_OD, recv:'BB shell', recvOD:p.bb_diameter,
+     b:stDir, a:LAT, u:stFront, inPlane:['FRONT','REAR']},
+  ];
+  const joints=[], problems=[];
+  for(const d of defs){
+    const b=to3(d.b), u=to3(d.u);
+    const tpl=notchTemplate({b, u, a:d.a, branchOD:d.od, branchWT:W[d.tube], recvOD:d.recvOD, cutTo});
+    if(!tpl.ok){ problems.push(d.title.replace(/\s+-\s+/,' at ')+': tube is wider than the '+d.recv); continue; }
+    const v=v3.cross(v3.unit(u), v3.unit(b));
+    const name=dir=>Math.abs(dir[2])>0.7 ? (dir[2]>0?'DRIVE':'NON-DRIVE') : (v3.dot(dir,u)>0?d.inPlane[0]:d.inPlane[1]);
+    const quarters=[u, v, v3.mul(u,-1), v3.mul(v,-1)].map(name);
+    joints.push({...d, tpl, quarters,
+      spec:'Ø'+f1(d.od)+' × '+fw(W[d.tube])+' onto Ø'+f1(d.recvOD)+' '+d.recv+
+           '  ·  '+f1(tpl.angle)+'°  ·  cut to '+(cutTo==='od'?'OD':'ID')+
+           '  ·  wrap '+f1(tpl.wrap)+'  ·  depth '+f1(tpl.depth)+' mm'});
+  }
+  // Tip-to-tip lengths: axis length less the cut at each end, on the same
+  // line along the tube. The far end's template runs the other way round,
+  // so its index i matches this end's n-i.
+  const by=k=>joints.find(j=>j.key===k);
+  const tipToTip=(A,B,L)=>{
+    if(!A||!B||!L) return null;
+    const n=A.tpl.n; let mx=-Infinity;
+    for(let i=0;i<=n;i++) mx=Math.max(mx, L-A.tpl.t[i]-B.tpl.t[(n-i)%n]);
+    return mx;
+  };
+  const lengths=[];
+  if(X_ttht&&X_ttst){ const l=tipToTip(by('tt_ht'),by('tt_st'),Math.hypot(...sub(X_ttht,X_ttst))); if(l) lengths.push('TT '+f1(l)); }
+  if(X_dtht){ const l=tipToTip(by('dt_ht'),by('dt_bb'),Math.hypot(...X_dtht)); if(l) lengths.push('DT '+f1(l)); }
+  const st=by('st_bb'); if(st) lengths.push('ST '+f1(Math.hypot(...sc)-st.tpl.tMin)+' (BB to seat cluster)');
+  return {joints, problems, lengths};
+}
+
+function buildNotchPdf(cutTo){
+  const g=computeGeometry(params);
+  const {joints, problems, lengths}=frameNotchJoints(g, params, cutTo);
+  if(!joints.length) throw new Error(problems.join('; ')||'no joints to template');
+  const name=(document.getElementById('export-name').value||'').trim();
+  const designer=(document.getElementById('export-author').value||'').trim();
+  const title='Notch templates'+(name?'  ·  '+name:'');
+  const subLine=[designer?'designer '+designer:'', 'HT '+params.ht_angle+'°', 'ST '+params.st_angle+'°',
+             'front triangle only (no stays)', new Date().toISOString().slice(0,10)].filter(Boolean).join('  ·  ');
+  const foot = [
+    lengths.length ? 'Tip-to-tip lengths as drawn, mm (cut long and check): '+lengths.join('  ·  ') : '',
+    'Where the DT and ST overlap at the BB shell, fit them to each other by hand.'].filter(Boolean);
+  const pages=layoutNotchPages(joints, {title, sub:subLine, foot});
+  return {pdf: buildPdf(pages), problems};
 }
 
 
