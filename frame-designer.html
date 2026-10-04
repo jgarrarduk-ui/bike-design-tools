@@ -1342,8 +1342,14 @@
     <h2>export</h2>
     <p style="font-size:11px;color:var(--text-lo);margin:0">choose format — the current canvas view will be exported with all visible annotations.</p>
     <div style="margin:10px 0 6px">
-      <label style="font-size:11px;color:var(--text-hi);display:block;margin-bottom:4px">Author / Designer</label>
-      <input id="export-author" type="text" placeholder="your name"
+      <label for="export-name" style="font-size:11px;color:var(--text-hi);display:block;margin-bottom:4px">name</label>
+      <input id="export-name" type="text" placeholder="frame name" autocomplete="off"
+        style="width:100%;padding:4px 6px;background:var(--input-bg);color:var(--input-fg);
+               border:1px solid var(--border);border-radius:3px;font-family:var(--font);font-size:11px;box-sizing:border-box;">
+    </div>
+    <div style="margin:0 0 6px">
+      <label for="export-author" style="font-size:11px;color:var(--text-hi);display:block;margin-bottom:4px">designer</label>
+      <input id="export-author" type="text" placeholder="your name" autocomplete="off"
         style="width:100%;padding:4px 6px;background:var(--input-bg);color:var(--input-fg);
                border:1px solid var(--border);border-radius:3px;font-family:var(--font);font-size:11px;box-sizing:border-box;">
     </div>
@@ -3034,25 +3040,41 @@ function selectExportFormat(fmt) {
   document.getElementById('export-download-btn').disabled = false;
 }
 
+// frame_designer_(name)_(designer).ext — drop an empty field instead of
+// writing (). Characters that cannot appear in a file name are removed;
+// the typed text is otherwise kept.
+function exportFilename(ext) {
+  const part = raw => {
+    const text = String(raw || '')
+      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '')
+      .trim()
+      .replace(/[. ]+$/g, '');
+    return text ? '(' + text + ')' : '';
+  };
+  const name = part(document.getElementById('export-name').value);
+  const designer = part(document.getElementById('export-author').value);
+  return ['frame_designer', name, designer].filter(Boolean).join('_') + '.' + ext;
+}
+
 function downloadExport() {
   const fmt = selectedExportFormat;
   if(!fmt) return;
   try {
     if(fmt === 'json') {
       const blob = new Blob([JSON.stringify(params,null,2)], {type:'application/json'});
-      triggerDownload(URL.createObjectURL(blob), 'frame_params.json', true);
+      triggerDownload(URL.createObjectURL(blob), exportFilename('json'), true);
       showExportResult(fmt);
       return;
     }
     const dataURL = renderToDataURL();
     if(fmt === 'jpeg') {
-      triggerDownload(dataURL, 'frame_design.jpg', false);
+      triggerDownload(dataURL, exportFilename('jpg'), false);
       showExportResult(fmt);
       return;
     }
     if(fmt === 'pdf') {
       exportJpegAsPdf(dataURL).then(blobUrl => {
-        triggerDownload(blobUrl, 'frame_design.pdf', true);
+        triggerDownload(blobUrl, exportFilename('pdf'), true);
         showExportResult(fmt);
       }).catch(e => {
         alert('PDF build failed: ' + e.message);
@@ -3642,14 +3664,15 @@ function setParams(p){
 function resetParams(){ setParams({...DEFAULTS}); }
 
 function exportJSON(){
-  const author=(document.getElementById('export-author')||{}).value||'';
+  const designer=(document.getElementById('export-author')||{}).value||'';
+  const name=(document.getElementById('export-name')||{}).value||'';
   const out={
-    _meta:{ author, date:new Date().toISOString(), version:'1.0' },
+    _meta:{ author:designer, name, designer, date:new Date().toISOString(), version:'1.0' },
     ...params
   };
   const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download='frame_geometry.json'; a.click();
+  a.href=URL.createObjectURL(blob); a.download=exportFilename('json'); a.click();
 }
 
 function importJSON(){
