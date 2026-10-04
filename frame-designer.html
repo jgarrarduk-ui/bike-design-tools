@@ -1433,7 +1433,7 @@ const DEFAULTS = {
   cs_OD:20, cs_WT:0.8,
   ss_OD:14, ss_WT:0.8,
   st_tt_clearance:45,
-  bb_diameter:50.0, bb_bore:33.9, bb_width:73,
+  bb_diameter:38.1, bb_bore:33.9, bb_width:73,
   front_wheel_dia:622, rear_wheel_dia:622, tyre_width:57,
   front_wheel_key:'29"', rear_wheel_key:'29"',
   stem_length:90, stem_angle:6, bar_diameter:31.8, steerer_height:40,
@@ -1553,11 +1553,33 @@ const WHEEL_SIZES = {
 };
 // Ordered keys for the toggle (preserves insertion order)
 const WHEEL_KEYS = Object.keys(WHEEL_SIZES);
-// Each BB standard: [shell_OD mm, bore_ID mm]
+// Each BB standard: shell OD and bore ID in mm, plus the text shown in the picker
 const BB_STANDARDS = {
-  'BSA': { shell: 50.0, bore: 33.9 },   // BSA: 1.37" threaded, ~50mm shell OD
-  'T47': { shell: 56.0, bore: 41.0 },   // T47: 47mm threaded, 56mm shell OD
+  'BSA': { shell: 38.1, bore: 33.9, label: 'BSA 38.1mm OD' },   // BSA: 1.37" threaded
+  'T47': { shell: 51.0, bore: 41.0, label: 'T47 51mm OD' },     // T47: 47mm threaded
 };
+const BB_OTHER = 'other';
+// Which picker entry the current shell diameter corresponds to. Derived from
+// bb_diameter rather than stored, so reset, import and presets stay in step.
+function bbStdKey(p){
+  for(const [k,s] of Object.entries(BB_STANDARDS)) if(Math.abs(p.bb_diameter-s.shell)<1e-6) return k;
+  return BB_OTHER;
+}
+// Apply a picker choice to params. Returns false if the user backed out of
+// the custom-diameter prompt (or typed nonsense), so the caller can revert the UI.
+function applyBBStd(key){
+  if(key!==BB_OTHER){
+    const s=BB_STANDARDS[key]; params.bb_diameter=s.shell; params.bb_bore=s.bore; return true;
+  }
+  const v=window.prompt('Enter BB shell outer diameter in mm', params.bb_diameter);
+  if(v===null) return false;
+  const n=parseFloat(v);
+  if(!(n>params.bb_bore && n<=100)){
+    alert('Enter a diameter in mm, larger than the BB bore ('+params.bb_bore+'mm) and up to 100mm.');
+    return false;
+  }
+  params.bb_diameter=n; return true;
+}
 
 
 // ═══════════════════════════════════════════════════════
@@ -3396,9 +3418,10 @@ function makeMobileButtonRow(label, options, labels, getVal, setVal, syncKey, co
 }
 
 function buildMobileBBRow(container){
-  makeMobileButtonRow('BB Standard', Object.keys(BB_STANDARDS), null,
-    ()=>params._bbStd||'BSA',
-    v=>{ params._bbStd=v; const std=BB_STANDARDS[v]; params.bb_diameter=std.shell; params.bb_bore=std.bore; },
+  makeMobileButtonRow('BB Standard', [...Object.keys(BB_STANDARDS), BB_OTHER],
+    [...Object.values(BB_STANDARDS).map(s=>s.label.replace('mm OD','')), 'Other'],
+    ()=>bbStdKey(params),
+    v=>{ applyBBStd(v); },
     '_bbStdSync', container);
   makeMobileButtonRow('BB Width (mm)', [68,73,83], null,
     ()=>params.bb_width, v=>params.bb_width=v, '_bbWidthSync', container);
@@ -3578,9 +3601,18 @@ function buildPanel(){
   // ── 4. Bottom Bracket (standard + width toggle) ──────────
   makeGroup(scroll, 'Bottom Bracket', body=>{
     // Standard select
-    const bbOpts=Object.keys(BB_STANDARDS).map(k=>[k,k]);
-    makeSelectRow('Standard', bbOpts, 'BSA',
-      v=>{ const std=BB_STANDARDS[v]; params.bb_diameter=std.shell; params.bb_bore=std.bore; redraw(); }, body);
+    const bbOpts=[...Object.entries(BB_STANDARDS).map(([k,s])=>[k,s.label]), [BB_OTHER,'Other']];
+    const bbSel=makeSelectRow('Standard', bbOpts, bbStdKey(params),
+      v=>{ if(applyBBStd(v)) redraw(); bbSelSync(); }, body);
+    // Show the custom diameter in the "Other" entry, and re-sync after reset/import
+    const bbSelSync=()=>{
+      const k=bbStdKey(params);
+      bbSel.querySelector('option[value="'+BB_OTHER+'"]').textContent =
+        k===BB_OTHER ? 'Other ('+params.bb_diameter+'mm OD)' : 'Other';
+      bbSel.value=k;
+    };
+    paramInputs._bbStdSelSync=bbSelSync;
+    bbSelSync();
 
     // Width 3-way toggle: 68 / 73 / 83
     const BB_WIDTHS = [68, 73, 83];
