@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 const src=fs.readFileSync(new URL('../frame-designer.html',import.meta.url),'utf8');
 const eng=src.split('// ==NOTCH-START==')[1].split('// ==NOTCH-END==')[0];
-const m=new Function(eng+'\nreturn {v3,notchCut,notchTemplate,notchClosedForm,PdfPage,buildPdf,PT,layoutNotchPages,notchHeaderMetrics};')();
+const m=new Function(eng+'\nreturn {v3,notchCut,notchTemplate,notchClosedForm,PdfPage,buildPdf,PT,layoutNotchPages,notchHeaderMetrics,svgWordmarkVector,NOTCH_LOGO_PX,NOTCH_LOGO_W};')();
 
 let fails=0;
 const ok=(name,cond,info='')=>{console.log((cond?'  pass  ':'  FAIL  ')+name+(info?'   '+info:''));if(!cond)fails++};
@@ -107,15 +107,42 @@ ok('3D solver matches closed form (angles 25-140, offsets)', worst<1e-9, 'max er
   ok('Ø, × and ° are WinAnsi escapes', /\\330\d\d \\327 0\.8 \\\(test\\\) 68\\260/.test(txt) || /\(\\33032 \\327 0\.8 \\\(test\\\) 68\\260\)/.test(txt));
 }
 
-// 6. notch header: logo top-right, scale bars still exactly 50 mm and below it
+// 6. notch header: vector logo top-right, scale bars still exactly 50 mm and below it
 {
-  const logo={w:566, h:82, rgb:new Uint8Array(566*82*3)};
-  logo.rgb[0]=10; logo.rgb[1]=20; logo.rgb[2]=30;
+  const svg=fs.readFileSync(new URL('../assets/creature-logo.svg',import.meta.url),'utf8');
+  const pathOf=s=>{ const hit=s.match(/<path\b[^>]*\sd="([^"]*)"/); return hit&&hit[1]; };
+  const embedded=src.split('id="creature-logo-svg">')[1].split('</script>')[0];
+  ok('inlined wordmark matches assets/creature-logo.svg', pathOf(embedded)===pathOf(svg) && !!pathOf(svg));
+  const vector=m.svgWordmarkVector(svg);
+  const curves=(vector.match(/ c\n/g)||[]).length;
+  ok('wordmark is filled cubic paths', curves>100 && vector.endsWith('\nf') && vector.startsWith('0.15686 0.15686 0.16078 rg'));
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity, ctrlOut=0;
+  for(const line of vector.split('\n')){
+    const p=line.split(' '); const op=p[p.length-1];
+    if(op!=='m'&&op!=='l'&&op!=='c') continue;
+    const n=p.slice(0,-1).map(Number);
+    for(let i=0;i<n.length;i+=2){
+      minx=Math.min(minx,n[i]); maxx=Math.max(maxx,n[i]);
+      miny=Math.min(miny,n[i+1]); maxy=Math.max(maxy,n[i+1]);
+      if(n[i]<-0.02||n[i]>1.02||n[i+1]<-0.02||n[i+1]>1.02) ctrlOut++;
+    }
+  }
+  const box=m.NOTCH_LOGO_PX;
+  ok('wordmark spans the old png ink', maxx-minx>box.inkW/box.w-0.01 && maxy-miny>box.inkH/box.h-0.02,
+     (maxx-minx).toFixed(3)+' × '+(maxy-miny).toFixed(3));
+  ok('path stays in the logo square', ctrlOut===0, 'outside '+ctrlOut);
+  const logo={w:box.w, h:box.h, vector};
   const pages=m.layoutNotchPages([], {title:'Notch templates', sub:'HT 68°', foot:['foot'], logo});
   const bytes=m.buildPdf(pages);
   const txt=new TextDecoder('latin1').decode(bytes);
-  ok('logo xobject on the page', /\/Subtype \/Image \/Width 566 \/Height 82/.test(txt));
-  ok('every page draws the logo', pages.every(pg=>pg.ops.some(op=>op.includes('/Logo Do'))));
+  ok('logo is a form xobject, not a bitmap', /\/Subtype \/Form \/BBox \[0 0 1 1\]/.test(txt) && !/\/Subtype \/Image/.test(txt) && !/\/DCTDecode/.test(txt));
+  ok('form holds the vector path', txt.includes(' c\n') && txt.includes('0.15686 0.15686 0.16078 rg'));
+  const met=m.notchHeaderMetrics(pages[0].w, {logo});
+  const wantH=m.NOTCH_LOGO_W*box.h/box.w;
+  ok('logo box matches the png placement', met.logoW===m.NOTCH_LOGO_W && Math.abs(met.logoH-wantH)<1e-9 && met.logoY===7 && met.logoX===pages[0].w-10-m.NOTCH_LOGO_W);
+  ok('scale bars still start just under that box', Math.abs(met.sy-(met.logoY+met.logoH+3.5))<1e-9);
+  const paint=`q ${(met.logoW*m.PT).toFixed(2)} 0 0 ${(met.logoH*m.PT).toFixed(2)} ${(met.logoX*m.PT).toFixed(2)} ${((pages[0].h-(met.logoY+met.logoH))*m.PT).toFixed(2)} cm /Logo Do Q`;
+  ok('every page paints the logo in that rectangle', pages.every(pg=>pg.ops.includes(paint)));
   const bar=50*m.PT;
   const horiz=pages.map(pg=>{
     const hit=pg.ops.find(op=>/ m /.test(op)&&/ l$/.test(op)&&op.split(' l').length===2);
