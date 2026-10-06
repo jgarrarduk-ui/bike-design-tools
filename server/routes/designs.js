@@ -12,6 +12,8 @@
  *   customerEmail: string,
  *   params: object,       // bike geometry
  *   pdfBase64: string,    // PDF generated client-side, base64-encoded
+ *   productIds?: number[] // catalogue selection (subset of WC_PRODUCT_IDS).
+ *                         // Omit to order WC_PRODUCT_ID, as before.
  * }
  *
  * Response: {
@@ -30,7 +32,7 @@ const email        = require('../services/email');
 const router = express.Router();
 
 router.post('/', async (req, res) => {
-  const { customerName, customerEmail, params, pdfBase64 } = req.body || {};
+  const { customerName, customerEmail, params, pdfBase64, productIds } = req.body || {};
 
   // ── Validation ──────────────────────────────────────────────────────────────
   if (!customerName || typeof customerName !== 'string' || !customerName.trim()) {
@@ -41,6 +43,21 @@ router.post('/', async (req, res) => {
   }
   if (!params || typeof params !== 'object') {
     return res.status(400).json({ error: 'params (bike geometry object) is required.' });
+  }
+
+  // Resolve the cart before writing a design row. Unknown ids are a client
+  // error; a missing catalogue is a server misconfiguration.
+  let selectedProductIds;
+  if (woocommerce.isConfigured()) {
+    try {
+      selectedProductIds = woocommerce.resolveProductIds(productIds);
+    } catch (err) {
+      const status = err.status || 500;
+      if (status >= 500) console.error('[designs] product selection error:', err.message);
+      return res.status(status).json({
+        error: status === 400 ? err.message : 'Failed to resolve products.',
+      });
+    }
   }
 
   const designId = uuidv4();
@@ -73,6 +90,7 @@ router.post('/', async (req, res) => {
         customerName: customerName.trim(),
         customerEmail: customerEmail.toLowerCase().trim(),
         params,
+        productIds: selectedProductIds,
       });
       checkoutUrl = result.checkoutUrl;
       wcOrderId   = result.wcOrderId;
@@ -83,6 +101,10 @@ router.post('/', async (req, res) => {
         WHERE id = ?
       `).run(wcOrderId, checkoutUrl, designId);
     } catch (err) {
+      if (err.status === 400) {
+        db.prepare('DELETE FROM designs WHERE id = ?').run(designId);
+        return res.status(400).json({ error: err.message });
+      }
       console.error('[designs] WooCommerce error:', err.message);
       // Don't fail the request — log and fall through to placeholder
       checkoutUrl = null;
@@ -93,7 +115,10 @@ router.post('/', async (req, res) => {
   if (!checkoutUrl) {
     const base = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
     checkoutUrl = `${base}/order-confirmation?design=${designId}&status=pending`;
-    console.warn('[designs] WooCommerce not configured — using placeholder checkout URL:', checkoutUrl);
+    const reason = woocommerce.isConfigured()
+      ? 'WooCommerce order was not created'
+      : 'WooCommerce not configured';
+    console.warn(`[designs] ${reason} — using placeholder checkout URL:`, checkoutUrl);
   }
 
   // ── Send confirmation email ──────────────────────────────────────────────────

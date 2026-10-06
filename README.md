@@ -77,6 +77,16 @@ every variable and what it's for. This talks to real payment and email
 infrastructure, so treat `.env` as a secret and keep it out of version
 control (it already is, via `server/.gitignore`).
 
+`POST /api/designs` takes an optional `productIds` array so one design can be
+several WooCommerce line items. The same `design_id` and geometry summary are
+written to the order and to each line. Allowed ids come from `WC_PRODUCT_IDS`.
+If the body omits `productIds`, the order is the single `WC_PRODUCT_ID`, as
+before. A paid order (`processing` or `completed`) still marks that one design
+paid. In WordPress, add a webhook with topic Order updated and delivery URL
+`{BASE_URL}/api/webhooks/woocommerce/order-updated`. Set the webhook secret to
+`WC_WEBHOOK_SECRET`. Catalogue products are only referenced by id; this server
+does not publish them.
+
 ## Deploying
 
 The frontend tools are static files. On Creature Cycles they are served

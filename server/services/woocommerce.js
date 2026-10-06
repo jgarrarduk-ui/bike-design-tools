@@ -3,30 +3,46 @@
 /**
  * WooCommerce REST API v3
  *
- * Creates a pending order for the bespoke design files product.
- * The design ID is stored in order meta_data so the webhook handler
- * can look it up after payment.
+ * Creates a pending order for one design. The design may be several catalogue
+ * products (one line item each). design_id and geometry_summary are stored on
+ * the order and on every line item so a paid order.updated webhook can find
+ * the design, and so each line still identifies the design on its own.
+ *
+ * This module only creates and reads orders. It does not publish or update
+ * products, so catalogue entries can stay draft.
  *
  * Requires environment variables:
  *   WC_URL, WC_CONSUMER_KEY, WC_CONSUMER_SECRET,
- *   WC_PRODUCT_ID, WC_PRODUCT_PRICE
+ *   and WC_PRODUCT_IDS and/or WC_PRODUCT_ID.
+ *   WC_PRODUCT_PRICE is optional and applies only to a single-line order.
+ *
+ * WordPress webhook (topic: Order updated):
+ *   {BASE_URL}/api/webhooks/woocommerce/order-updated
  */
 
-const WC_URL            = process.env.WC_URL;
-const WC_CONSUMER_KEY   = process.env.WC_CONSUMER_KEY;
-const WC_CONSUMER_SECRET = process.env.WC_CONSUMER_SECRET;
-const WC_API_VERSION    = process.env.WC_API_VERSION || 'v3';
+const WC_API_VERSION = process.env.WC_API_VERSION || 'v3';
+
+function env(name) {
+  const value = process.env[name];
+  return typeof value === 'string' ? value.trim() : '';
+}
 
 function isConfigured() {
-  return !!(WC_URL && WC_CONSUMER_KEY && WC_CONSUMER_SECRET && process.env.WC_PRODUCT_ID);
+  if (!(env('WC_URL') && env('WC_CONSUMER_KEY') && env('WC_CONSUMER_SECRET'))) return false;
+  const { ids, error } = productConfig();
+  if (error) {
+    console.error('[woocommerce]', error.message);
+    return false;
+  }
+  return ids.length > 0;
 }
 
 function apiUrl(path) {
-  return `${WC_URL}/wp-json/wc/${WC_API_VERSION}${path}`;
+  return `${env('WC_URL').replace(/\/$/, '')}/wp-json/wc/${WC_API_VERSION}${path}`;
 }
 
 function authHeader() {
-  const credentials = Buffer.from(`${WC_CONSUMER_KEY}:${WC_CONSUMER_SECRET}`).toString('base64');
+  const credentials = Buffer.from(`${env('WC_CONSUMER_KEY')}:${env('WC_CONSUMER_SECRET')}`).toString('base64');
   return `Basic ${credentials}`;
 }
 
@@ -48,46 +64,171 @@ async function wcFetch(path, method = 'GET', body = null) {
   return data;
 }
 
+function clientError(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
 /**
- * Create a WooCommerce order for a single bespoke design product.
- *
- * @param {object} opts
- * @param {string} opts.designId        - Our internal design UUID
- * @param {string} opts.customerName
- * @param {string} opts.customerEmail
- * @param {object} opts.params          - Bike geometry params
- * @returns {{ checkoutUrl: string, wcOrderId: string }}
+ * Parse a comma-separated product id list. Empty tokens are ignored.
+ * @param {string} raw
+ * @param {string} label  env var name, used in errors
+ * @returns {number[]}
  */
-async function createOrder({ designId, customerName, customerEmail, params }) {
-  if (!isConfigured()) {
-    throw new Error('WooCommerce is not configured. Check WC_* environment variables.');
+function parseProductIdList(raw, label) {
+  if (!raw) return [];
+  const ids = [];
+  const seen = new Set();
+  for (const part of String(raw).split(',')) {
+    const token = part.trim();
+    if (!token) continue;
+    const n = Number(token);
+    if (!Number.isSafeInteger(n) || n <= 0) {
+      throw new Error(`Invalid product id "${token}" in ${label}.`);
+    }
+    if (!seen.has(n)) {
+      seen.add(n);
+      ids.push(n);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Catalogue allow-list. WC_PRODUCT_IDS is the multi-product list.
+ * WC_PRODUCT_ID is included too so the historical single-product env still works.
+ * @returns {number[]}
+ */
+function configuredProductIds() {
+  const ids = parseProductIdList(env('WC_PRODUCT_IDS'), 'WC_PRODUCT_IDS');
+  const single = env('WC_PRODUCT_ID');
+  if (single) {
+    const n = Number(single);
+    if (!Number.isSafeInteger(n) || n <= 0) {
+      throw new Error('WC_PRODUCT_ID must be a positive integer.');
+    }
+    if (!ids.includes(n)) ids.push(n);
+  }
+  return ids;
+}
+
+function productConfig() {
+  try {
+    return { ids: configuredProductIds(), error: null };
+  } catch (err) {
+    return { ids: [], error: err };
+  }
+}
+
+/**
+ * Line items for this order.
+ * - productIds, when sent, must be a non-empty subset of the configured catalogue.
+ * - when omitted, WC_PRODUCT_ID is the order (single-product / smoke path).
+ * - when WC_PRODUCT_ID is unset and exactly one catalogue id is configured, that id is used.
+ *
+ * @param {number[]|string[]|undefined|null} requested
+ * @returns {number[]}
+ */
+function resolveProductIds(requested) {
+  const { ids: allowed, error } = productConfig();
+  if (error) throw error;
+  if (!allowed.length) {
+    throw new Error('WooCommerce is not configured. Set WC_PRODUCT_IDS or WC_PRODUCT_ID.');
+  }
+  const allow = new Set(allowed);
+
+  if (requested == null) {
+    const single = env('WC_PRODUCT_ID');
+    if (single) {
+      const n = Number(single);
+      if (!allow.has(n)) {
+        throw clientError(`WC_PRODUCT_ID ${n} is not in the configured product list.`);
+      }
+      return [n];
+    }
+    if (allowed.length === 1) return allowed.slice();
+    throw clientError('productIds is required when more than one WooCommerce product is configured.');
   }
 
-  const productId = process.env.WC_PRODUCT_ID;
-  const price     = process.env.WC_PRODUCT_PRICE;
+  if (!Array.isArray(requested) || requested.length === 0) {
+    throw clientError('productIds must be a non-empty array of WooCommerce product IDs.');
+  }
 
-  const geometrySummary = [
-    params.reach            && `Reach: ${params.reach}mm`,
-    params.chainstay_length && `CS: ${params.chainstay_length}mm`,
-    params.ht_angle         && `HTA: ${params.ht_angle}°`,
-    params.st_angle         && `STA: ${params.st_angle}°`,
-    params.bb_drop          && `BB Drop: ${params.bb_drop}mm`,
+  const ids = [];
+  const seen = new Set();
+  for (const raw of requested) {
+    if (typeof raw !== 'number' && typeof raw !== 'string') {
+      throw clientError('productIds must contain positive integer product IDs.');
+    }
+    const token = typeof raw === 'string' ? raw.trim() : raw;
+    const n = Number(token);
+    if (!Number.isSafeInteger(n) || n <= 0) {
+      throw clientError('productIds must contain positive integer product IDs.');
+    }
+    if (!allow.has(n)) {
+      throw clientError(`Product ${n} is not available. Allowed product IDs: ${allowed.join(', ')}.`);
+    }
+    if (!seen.has(n)) {
+      seen.add(n);
+      ids.push(n);
+    }
+  }
+  return ids;
+}
+
+function geometrySummaryFrom(params) {
+  const p = params || {};
+  return [
+    p.reach            && `Reach: ${p.reach}mm`,
+    p.chainstay_length && `CS: ${p.chainstay_length}mm`,
+    p.ht_angle         && `HTA: ${p.ht_angle}°`,
+    p.st_angle         && `STA: ${p.st_angle}°`,
+    p.bb_drop          && `BB Drop: ${p.bb_drop}mm`,
   ].filter(Boolean).join(', ');
+}
 
-  const nameParts = customerName.trim().split(' ');
+function designMeta(designId, geometrySummary) {
+  return [
+    { key: 'design_id',        value: String(designId) },
+    { key: 'geometry_summary', value: geometrySummary },
+  ];
+}
+
+/**
+ * Build the WooCommerce order create body. Exported for tests.
+ *
+ * @param {object} opts
+ * @param {string} opts.designId
+ * @param {string} opts.customerName
+ * @param {string} opts.customerEmail
+ * @param {object} opts.params
+ * @param {number[]|string[]|undefined} [opts.productIds]
+ */
+function buildOrderPayload({ designId, customerName, customerEmail, params, productIds }) {
+  const ids = resolveProductIds(productIds);
+  const geometrySummary = geometrySummaryFrom(params);
+  const meta = designMeta(designId, geometrySummary);
+  const singlePrice = ids.length === 1 ? env('WC_PRODUCT_PRICE') : '';
+
+  const lineItems = ids.map(productId => {
+    const lineItem = {
+      product_id: productId,
+      quantity: 1,
+      meta_data: designMeta(designId, geometrySummary),
+    };
+    if (singlePrice) {
+      lineItem.subtotal = singlePrice;
+      lineItem.total    = singlePrice;
+    }
+    return lineItem;
+  });
+
+  const nameParts = String(customerName || '').trim().split(' ');
   const firstName = nameParts[0] || customerName;
   const lastName  = nameParts.slice(1).join(' ') || '';
 
-  const lineItem = {
-    product_id: Number(productId),
-    quantity: 1,
-  };
-  if (price) {
-    lineItem.subtotal = price;
-    lineItem.total    = price;
-  }
-
-  const payload = {
+  return {
     payment_method:       'bacs',
     payment_method_title: 'Bank Transfer',
     set_paid:             false,
@@ -96,19 +237,34 @@ async function createOrder({ designId, customerName, customerEmail, params }) {
       last_name:  lastName,
       email:      customerEmail,
     },
-    line_items: [lineItem],
-    meta_data: [
-      { key: 'design_id',        value: designId },
-      { key: 'geometry_summary', value: geometrySummary },
-    ],
+    line_items: lineItems,
+    meta_data: meta,
     customer_note: `Bespoke bike design — ID: ${designId}`,
   };
+}
 
+/**
+ * Create a WooCommerce order for a bespoke design.
+ * One design_id, one or more catalogue line items.
+ *
+ * @param {object} opts
+ * @param {string} opts.designId        - Our internal design UUID
+ * @param {string} opts.customerName
+ * @param {string} opts.customerEmail
+ * @param {object} opts.params          - Bike geometry params
+ * @param {number[]|string[]|undefined} [opts.productIds]
+ * @returns {{ checkoutUrl: string, wcOrderId: string }}
+ */
+async function createOrder({ designId, customerName, customerEmail, params, productIds }) {
+  if (!(env('WC_URL') && env('WC_CONSUMER_KEY') && env('WC_CONSUMER_SECRET'))) {
+    throw new Error('WooCommerce is not configured. Check WC_* environment variables.');
+  }
+
+  const payload = buildOrderPayload({ designId, customerName, customerEmail, params, productIds });
   const order = await wcFetch('/orders', 'POST', payload);
 
-  // WooCommerce returns payment_url in REST API responses
   const checkoutUrl = order.payment_url ||
-    `${WC_URL}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${order.order_key}`;
+    `${env('WC_URL').replace(/\/$/, '')}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${order.order_key}`;
 
   return {
     wcOrderId: String(order.id),
@@ -116,23 +272,52 @@ async function createOrder({ designId, customerName, customerEmail, params }) {
   };
 }
 
+function metaValue(meta, key) {
+  const entry = (meta || []).find(m => m && m.key === key && m.value != null && m.value !== '');
+  return entry ? String(entry.value) : null;
+}
+
+/**
+ * design_id from an order payload: order meta first, then each line item.
+ * Multi-line orders store the same id in both places.
+ *
+ * @param {object|null|undefined} order
+ * @returns {string|null}
+ */
+function designIdFromOrder(order) {
+  if (!order) return null;
+  const fromOrder = metaValue(order.meta_data, 'design_id');
+  if (fromOrder) return fromOrder;
+  for (const item of order.line_items || []) {
+    const fromLine = metaValue(item && item.meta_data, 'design_id');
+    if (fromLine) return fromLine;
+  }
+  return null;
+}
+
 /**
  * Given a WooCommerce order ID, return the design_id stored in meta_data.
  *
  * @param {string|number} wcOrderId
- * @returns {string|null} designId
+ * @returns {Promise<string|null>} designId
  */
 async function getDesignIdFromOrder(wcOrderId) {
   if (!isConfigured()) return null;
   try {
     const order = await wcFetch(`/orders/${wcOrderId}`);
-    const meta  = order.meta_data || [];
-    const entry = meta.find(m => m.key === 'design_id');
-    return entry ? entry.value : null;
+    return designIdFromOrder(order);
   } catch (err) {
     console.error('woocommerce.getDesignIdFromOrder error:', err.message);
     return null;
   }
 }
 
-module.exports = { isConfigured, createOrder, getDesignIdFromOrder };
+module.exports = {
+  isConfigured,
+  createOrder,
+  getDesignIdFromOrder,
+  resolveProductIds,
+  buildOrderPayload,
+  designIdFromOrder,
+  configuredProductIds,
+};

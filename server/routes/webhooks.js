@@ -7,13 +7,17 @@
  * On receipt: validates HMAC signature, checks order status is paid,
  * finds matching design, generates download token, sends email with download link.
  *
- * WooCommerce setup:
+ * WooCommerce setup (WordPress admin):
  *   WooCommerce → Settings → Advanced → Webhooks → Add webhook
  *   Name:   Order paid
  *   Status: Active
  *   Topic:  Order updated
- *   URL:    https://your-domain.com/api/webhooks/woocommerce/order-updated
- *   Secret: set as WC_WEBHOOK_SECRET env var
+ *   URL:    {BASE_URL}/api/webhooks/woocommerce/order-updated
+ *   Secret: WC_WEBHOOK_SECRET
+ *
+ * An order can contain several line items for one design. Payment status is
+ * on the order, so one paid event covers every line. The design is found by
+ * wc_order_id, then by design_id on the order meta, then on each line item.
  */
 
 const express  = require('express');
@@ -89,9 +93,11 @@ router.post(
     // ── Find design by WooCommerce order ID ──────────────────────────────────
     let design = db.prepare('SELECT * FROM designs WHERE wc_order_id = ?').get(wcOrderId);
 
-    // Fallback: look up design_id from order meta_data via WooCommerce API
+    // Fallback: design_id on the order, then on any line item. The webhook
+    // payload is enough; the API read covers a payload that omitted meta.
     if (!design) {
-      const designId = await woocommerce.getDesignIdFromOrder(wcOrderId);
+      const designId = woocommerce.designIdFromOrder(order)
+        || await woocommerce.getDesignIdFromOrder(wcOrderId);
       if (designId) {
         design = db.prepare('SELECT * FROM designs WHERE id = ?').get(designId);
       }
