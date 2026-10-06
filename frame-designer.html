@@ -1486,6 +1486,18 @@ function bez(p0,p1,p2,p3,n=16) {
   return pts;
 }
 
+// Outer diameter (mm) of a round chainring by tooth count. Matches the Wolf
+// Tooth "Chainring Diameter by Tooth Count" table to within 0.1mm for 24-52T
+// (12.7mm pitch circle + 6.7mm tooth tip allowance); extrapolates beyond it.
+function chainringDiameter(teeth) {
+  return Math.round((teeth*12.7/Math.PI + 6.7)*10)/10;
+}
+
+// Params plus derived values that Fusion needs but the UI doesn't edit.
+function exportParams() {
+  return {...params, chainring_dia: chainringDiameter(params.max_chainring)};
+}
+
 function chainringRadius(teeth) {
   return (teeth*12.7)/(2*Math.PI) + 4.0;
 }
@@ -3129,7 +3141,7 @@ function downloadExport() {
   if(!fmt) return;
   try {
     if(fmt === 'json') {
-      const blob = new Blob([JSON.stringify(params,null,2)], {type:'application/json'});
+      const blob = new Blob([JSON.stringify(exportParams(),null,2)], {type:'application/json'});
       triggerDownload(URL.createObjectURL(blob), exportFilename('json'), true);
       showExportResult(fmt);
       return;
@@ -4305,7 +4317,7 @@ function exportJSON(){
   const name=(document.getElementById('export-name')||{}).value||'';
   const out={
     _meta:{ author:designer, name, designer, date:new Date().toISOString(), version:'1.0' },
-    ...params
+    ...exportParams()
   };
   const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
   const a=document.createElement('a');
@@ -4318,7 +4330,7 @@ function importJSON(){
     const r=new FileReader();
     r.onload=ev=>{
       try{
-        const {_meta,...frameParams}=JSON.parse(ev.target.result);
+        const {_meta,chainring_dia,...frameParams}=JSON.parse(ev.target.result);
         setParams(frameParams);
       }catch(err){ alert('Invalid JSON'); }
     };
