@@ -42,5 +42,5 @@ ENV NODE_ENV=production \
 
 EXPOSE 3001
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "index.js"]
