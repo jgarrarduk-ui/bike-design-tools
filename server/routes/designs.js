@@ -47,9 +47,12 @@ router.post('/', async (req, res) => {
 
   // Resolve the cart before writing a design row. Unknown ids are a client
   // error; a missing catalogue is a server misconfiguration.
+  // implicitDefault is the only path that may apply WC_PRODUCT_PRICE.
   let selectedProductIds;
+  let implicitDefault = false;
   if (woocommerce.isConfigured()) {
     try {
+      implicitDefault = productIds == null;
       selectedProductIds = woocommerce.resolveProductIds(productIds);
     } catch (err) {
       const status = err.status || 500;
@@ -90,7 +93,8 @@ router.post('/', async (req, res) => {
         customerName: customerName.trim(),
         customerEmail: customerEmail.toLowerCase().trim(),
         params,
-        productIds: selectedProductIds,
+        resolvedIds: selectedProductIds,
+        implicitDefault,
       });
       checkoutUrl = result.checkoutUrl;
       wcOrderId   = result.wcOrderId;
@@ -101,10 +105,6 @@ router.post('/', async (req, res) => {
         WHERE id = ?
       `).run(wcOrderId, checkoutUrl, designId);
     } catch (err) {
-      if (err.status === 400) {
-        db.prepare('DELETE FROM designs WHERE id = ?').run(designId);
-        return res.status(400).json({ error: err.message });
-      }
       console.error('[designs] WooCommerce error:', err.message);
       // Don't fail the request — log and fall through to placeholder
       checkoutUrl = null;

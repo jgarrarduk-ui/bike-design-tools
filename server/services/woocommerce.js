@@ -14,13 +14,16 @@
  * Requires environment variables:
  *   WC_URL, WC_CONSUMER_KEY, WC_CONSUMER_SECRET,
  *   and WC_PRODUCT_IDS and/or WC_PRODUCT_ID.
- *   WC_PRODUCT_PRICE is optional and applies only to a single-line order.
+ *   WC_PRODUCT_PRICE is optional. It applies only when the request omits
+ *   productIds and the order falls through to WC_PRODUCT_ID. An explicit
+ *   productIds array, including a single id, uses each product's own price.
  *
  * WordPress webhook (topic: Order updated):
  *   {BASE_URL}/api/webhooks/woocommerce/order-updated
  */
 
 const WC_API_VERSION = process.env.WC_API_VERSION || 'v3';
+let loggedConfigError = '';
 
 function env(name) {
   const value = process.env[name];
@@ -31,9 +34,13 @@ function isConfigured() {
   if (!(env('WC_URL') && env('WC_CONSUMER_KEY') && env('WC_CONSUMER_SECRET'))) return false;
   const { ids, error } = productConfig();
   if (error) {
-    console.error('[woocommerce]', error.message);
+    if (loggedConfigError !== error.message) {
+      loggedConfigError = error.message;
+      console.error('[woocommerce]', error.message);
+    }
     return false;
   }
+  loggedConfigError = '';
   return ids.length > 0;
 }
 
@@ -167,7 +174,8 @@ function resolveProductIds(requested) {
       throw clientError('productIds must contain positive integer product IDs.');
     }
     if (!allow.has(n)) {
-      throw clientError(`Product ${n} is not available. Allowed product IDs: ${allowed.join(', ')}.`);
+      console.info(`[woocommerce] rejected product ${n}; configured ids: ${allowed.join(', ')}`);
+      throw clientError(`Product ${n} is not available.`);
     }
     if (!seen.has(n)) {
       seen.add(n);
@@ -204,12 +212,22 @@ function designMeta(designId, geometrySummary) {
  * @param {string} opts.customerEmail
  * @param {object} opts.params
  * @param {number[]|string[]|undefined} [opts.productIds]
+ *        Omitted means the legacy WC_PRODUCT_ID default. That is the only
+ *        path that may apply WC_PRODUCT_PRICE.
+ * @param {number[]|undefined} [opts.resolvedIds]
+ *        Already validated by resolveProductIds. Skips a second catalogue check.
+ * @param {boolean|undefined} [opts.implicitDefault]
+ *        Required with resolvedIds. True only when the client omitted productIds.
  */
-function buildOrderPayload({ designId, customerName, customerEmail, params, productIds }) {
-  const ids = resolveProductIds(productIds);
+function buildOrderPayload({
+  designId, customerName, customerEmail, params,
+  productIds, resolvedIds, implicitDefault,
+}) {
+  const ids = resolvedIds != null ? resolvedIds : resolveProductIds(productIds);
+  const implicit = resolvedIds != null ? implicitDefault === true : productIds == null;
   const geometrySummary = geometrySummaryFrom(params);
   const meta = designMeta(designId, geometrySummary);
-  const singlePrice = ids.length === 1 ? env('WC_PRODUCT_PRICE') : '';
+  const singlePrice = implicit && ids.length === 1 ? env('WC_PRODUCT_PRICE') : '';
 
   const lineItems = ids.map(productId => {
     const lineItem = {
@@ -253,14 +271,22 @@ function buildOrderPayload({ designId, customerName, customerEmail, params, prod
  * @param {string} opts.customerEmail
  * @param {object} opts.params          - Bike geometry params
  * @param {number[]|string[]|undefined} [opts.productIds]
+ * @param {number[]|undefined} [opts.resolvedIds]
+ * @param {boolean|undefined} [opts.implicitDefault]
  * @returns {{ checkoutUrl: string, wcOrderId: string }}
  */
-async function createOrder({ designId, customerName, customerEmail, params, productIds }) {
+async function createOrder({
+  designId, customerName, customerEmail, params,
+  productIds, resolvedIds, implicitDefault,
+}) {
   if (!(env('WC_URL') && env('WC_CONSUMER_KEY') && env('WC_CONSUMER_SECRET'))) {
     throw new Error('WooCommerce is not configured. Check WC_* environment variables.');
   }
 
-  const payload = buildOrderPayload({ designId, customerName, customerEmail, params, productIds });
+  const payload = buildOrderPayload({
+    designId, customerName, customerEmail, params,
+    productIds, resolvedIds, implicitDefault,
+  });
   const order = await wcFetch('/orders', 'POST', payload);
 
   const checkoutUrl = order.payment_url ||

@@ -14,6 +14,7 @@
  *   Topic:  Order updated
  *   URL:    {BASE_URL}/api/webhooks/woocommerce/order-updated
  *   Secret: WC_WEBHOOK_SECRET
+ *   With NODE_ENV=production, a missing secret rejects the webhook.
  *
  * An order can contain several line items for one design. Payment status is
  * on the order, so one paid event covers every line. The design is found by
@@ -35,7 +36,12 @@ const PAID_STATUSES = new Set(['processing', 'completed']);
 function verifyWooCommerceSignature(req, res, next) {
   const secret = process.env.WC_WEBHOOK_SECRET;
   if (!secret) {
-    // Webhook secret not configured — allow through in dev, warn loudly
+    // Dev can run without a secret. Production must fail closed: an unsigned
+    // order.updated would mark a design paid.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[webhook] WC_WEBHOOK_SECRET not set — rejecting request');
+      return res.status(401).json({ error: 'Webhook secret is not configured' });
+    }
     console.warn('[webhook] WC_WEBHOOK_SECRET not set — skipping signature check (dev mode only)');
     return next();
   }

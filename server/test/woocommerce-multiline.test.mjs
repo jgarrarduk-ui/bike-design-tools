@@ -186,7 +186,9 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
     return withEnv(CATALOGUE, () => {
       assert.throws(
         () => woocommerce.resolveProductIds([8634, 9999]),
-        (err) => err.status === 400 && /9999/.test(err.message) && /8634/.test(err.message),
+        (err) => err.status === 400
+          && err.message === 'Product 9999 is not available.'
+          && !/8634|8635|8636|8637/.test(err.message),
       );
       assert.throws(
         () => woocommerce.resolveProductIds([]),
@@ -230,7 +232,7 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
     });
   });
 
-  test('WC_PRODUCT_PRICE overrides only a single-line order', () => {
+  test('WC_PRODUCT_PRICE applies only when productIds is omitted', () => {
     return withEnv({ ...CATALOGUE, WC_PRODUCT_PRICE: '49.00' }, () => {
       const one = woocommerce.buildOrderPayload({
         designId: 'design-1',
@@ -242,6 +244,29 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
       assert.equal(one.line_items[0].product_id, 8634);
       assert.equal(one.line_items[0].total, '49.00');
       assert.equal(one.line_items[0].subtotal, '49.00');
+
+      const explicitDefault = woocommerce.buildOrderPayload({
+        designId: 'design-1',
+        customerName: 'Ada',
+        customerEmail: 'ada@example.com',
+        params: PARAMS,
+        productIds: [8634],
+      });
+      assert.equal(explicitDefault.line_items[0].product_id, 8634);
+      assert.equal(explicitDefault.line_items[0].total, undefined);
+      assert.equal(explicitDefault.line_items[0].subtotal, undefined);
+
+      const other = woocommerce.buildOrderPayload({
+        designId: 'design-price-leak',
+        customerName: 'Test',
+        customerEmail: 'test@example.com',
+        params: PARAMS,
+        productIds: [8636],
+      });
+      assert.equal(other.line_items.length, 1);
+      assert.equal(other.line_items[0].product_id, 8636);
+      assert.equal(other.line_items[0].total, undefined);
+      assert.equal(other.line_items[0].subtotal, undefined);
 
       const many = woocommerce.buildOrderPayload({
         designId: 'design-1',
@@ -347,7 +372,8 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
         productIds: [8634, 9999],
       });
       assert.equal(res.status, 400);
-      assert.match(res.body.error, /9999/);
+      assert.equal(res.body.error, 'Product 9999 is not available.');
+      assert.equal(/8634|8635|8636|8637/.test(res.body.error), false);
       assert.equal(db.prepare('SELECT COUNT(*) AS n FROM designs').get().n, before);
     });
   });
@@ -382,6 +408,55 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
           assert.equal(line.meta_data.find((m) => m.key === 'design_id').value, res.body.designId);
           assert.equal(line.meta_data.find((m) => m.key === 'geometry_summary').value, SUMMARY);
         }
+      } finally {
+        global.fetch = original;
+      }
+    });
+  });
+
+  test('POST /api/designs applies WC_PRODUCT_PRICE only when productIds is omitted', async () => {
+    await withEnv({ ...CATALOGUE, WC_PRODUCT_PRICE: '49.00' }, async () => {
+      const original = global.fetch;
+      const bodies = [];
+      global.fetch = async (_url, opts) => {
+        bodies.push(JSON.parse(opts.body));
+        const id = 6100 + bodies.length;
+        return new Response(JSON.stringify({
+          id,
+          order_key: `k${id}`,
+          payment_url: `https://shop.example/checkout/order-pay/${id}/?key=k${id}`,
+        }), { status: 201, headers: { 'content-type': 'application/json' } });
+      };
+      try {
+        const omitted = await post(server, '/api/designs', {
+          customerName: 'Smoke Test',
+          customerEmail: 'price-omitted@example.com',
+          params: PARAMS,
+        });
+        assert.equal(omitted.status, 200);
+        assert.equal(bodies[0].line_items[0].product_id, 8634);
+        assert.equal(bodies[0].line_items[0].total, '49.00');
+
+        const other = await post(server, '/api/designs', {
+          customerName: 'Smoke Test',
+          customerEmail: 'price-other@example.com',
+          params: PARAMS,
+          productIds: [8636],
+        });
+        assert.equal(other.status, 200);
+        assert.equal(bodies[1].line_items[0].product_id, 8636);
+        assert.equal(bodies[1].line_items[0].total, undefined);
+        assert.equal(bodies[1].line_items[0].subtotal, undefined);
+
+        const explicitDefault = await post(server, '/api/designs', {
+          customerName: 'Smoke Test',
+          customerEmail: 'price-explicit-default@example.com',
+          params: PARAMS,
+          productIds: [8634],
+        });
+        assert.equal(explicitDefault.status, 200);
+        assert.equal(bodies[2].line_items[0].product_id, 8634);
+        assert.equal(bodies[2].line_items[0].total, undefined);
       } finally {
         global.fetch = original;
       }
@@ -500,5 +575,30 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
       assert.equal(ok.status, 200);
     });
     assert.equal((await waitForStatus(id, 'paid')).status, 'paid');
+  });
+
+  test('production rejects an unsigned webhook when the secret is unset', async () => {
+    const id = 'design-prod-hmac';
+    insertDesign({ id, wcOrderId: '9005' });
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    delete process.env.WC_WEBHOOK_SECRET;
+    try {
+      const res = await post(server, '/api/webhooks/woocommerce/order-updated', {
+        id: 9005,
+        status: 'processing',
+        meta_data: [{ key: 'design_id', value: id }],
+        line_items: [
+          { product_id: 8634, meta_data: [{ key: 'design_id', value: id }] },
+          { product_id: 8636, meta_data: [{ key: 'design_id', value: id }] },
+        ],
+      });
+      assert.equal(res.status, 401);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(designStatus(id).status, 'checkout_created');
+    } finally {
+      if (prev === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prev;
+    }
   });
 });
