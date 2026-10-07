@@ -5,10 +5,26 @@
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.FrameShop = api;
+  if (api && typeof api.paintShopLeadTime === 'function') api.paintShopLeadTime();
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
   const SESSION_KEY = 'creature.frameDesign';
+
+  // Same phrase as the WordPress creature_fd_lead_time filter and FD_LEAD_TIME.
+  // This file cannot read either of those. Keep the three copies in step.
+  const FD_LEAD_TIME = '5 working days';
+
+  function designFileDeliverySentence() {
+    return 'Design files are delivered within ' + FD_LEAD_TIME + ' of payment.';
+  }
+
+  function paintShopLeadTime(doc) {
+    const root = doc || (typeof document !== 'undefined' ? document : null);
+    if (!root || typeof root.getElementById !== 'function') return;
+    const el = root.getElementById('shop-lead-time');
+    if (el) el.textContent = designFileDeliverySentence();
+  }
 
   // Design-file list prices locked 7 Oct 2026.
   // Dropouts stay on the picker but are not sold. The full-set total is hidden
@@ -313,5 +329,8 @@
     sessionFromHydrate,
     fetchHydratedDesign,
     postDesign,
+    FD_LEAD_TIME,
+    designFileDeliverySentence,
+    paintShopLeadTime,
   };
 });

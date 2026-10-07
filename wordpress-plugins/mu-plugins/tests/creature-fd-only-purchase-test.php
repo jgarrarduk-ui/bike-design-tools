@@ -401,6 +401,28 @@ creature_fd_expect( false === strpos( (string) $bb_html, 'ajax_add_to_cart' ), '
 creature_fd_expect( false === strpos( (string) $bb_html, 'data-product_id' ), 'no ajax product id attr' );
 creature_fd_expect( false === strpos( (string) $bb_html, 'add-to-cart' ), 'no add-to-cart url' );
 creature_fd_expect( false === strpos( (string) $bb_html, 'quantity' ), 'no quantity box' );
+$bb_button = strpos( (string) $bb_html, 'Design yours in Frame Designer' );
+$bb_lead   = strpos( (string) $bb_html, 'Design files are delivered within 5 working days of payment.' );
+creature_fd_expect( false !== $bb_button && false !== $bb_lead && $bb_button < $bb_lead, 'lead time sits under the FD button' );
+creature_fd_expect( false !== strpos( (string) $bb_html, 'creature-fd-lead-time' ), 'lead time paragraph class' );
+
+function creature_fd_only_test_lead() {
+	return '2 working days';
+}
+add_filter( 'creature_fd_lead_time', 'creature_fd_only_test_lead' );
+$bb_over = Creature_Fd_Only_Purchase::purchase_markup( $bb, true );
+creature_fd_expect(
+	false !== strpos( (string) $bb_over, 'Design files are delivered within 2 working days of payment.' ),
+	'product lead time follows creature_fd_lead_time'
+);
+remove_filter( 'creature_fd_lead_time', 'creature_fd_only_test_lead' );
+
+$bb_bare = Creature_Fd_Only_Purchase::purchase_markup( $bb, false );
+creature_fd_expect( false === strpos( (string) $bb_bare, 'creature-fd-lead-time' ), 'loop link has no lead time paragraph' );
+
+$soon_wrap = Creature_Fd_Only_Purchase::purchase_markup( $drop, true );
+creature_fd_expect( false === strpos( (string) $soon_wrap, 'creature-fd-lead-time' ), 'coming soon page skips the lead time' );
+creature_fd_expect( false === strpos( (string) $soon_wrap, 'working days' ), 'coming soon page has no lead time sentence' );
 
 $soon_html = Creature_Fd_Only_Purchase::purchase_markup( $drop, false );
 creature_fd_expect( false !== strpos( (string) $soon_html, '>Coming soon<' ), 'dropouts button is Coming soon' );

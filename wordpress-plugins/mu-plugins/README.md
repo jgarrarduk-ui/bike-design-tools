@@ -50,6 +50,8 @@ Clear `creature_fd_only_coming_soon_ids` when dropouts go on sale. They then get
 
 `frame-designer.html` only reads `?design=` and `?resume=`. It has no part parameter, so the button does not add one.
 
+8634 and 8635 product pages also print “Design files are delivered within 5 working days of payment.” under the Frame Designer button. 8636 Coming soon does not. That sentence comes from `creature-fd-order-experience.php` when it is installed. Filter `creature_fd_lead_time` to change it.
+
 Checks in the repo, without a shop:
 
 ```bash
@@ -64,6 +66,25 @@ On the shop, after the file is in place:
 4. Visit `?add-to-cart=8634`. The basket does not gain a line. The notice reads **Design your part in Frame Designer first** and links to Frame Designer. Repeat for 8635 and 8636.
 5. Add 8634 from the block basket or Store API (`POST /wp-json/wc/store/v1/cart/add-item`). The add is refused. A basket that already held 8634, 8635, or 8636 with no `design_id` loses that line on the next cart or checkout view, with the same notice.
 6. Save a design in Frame Designer and continue to checkout. The browser lands on order-pay for a tools-api order. That order still has `design_id` on the lines, and payment is unchanged. The rear-end discount still applies when 8634, 8635, and 8636 share a `design_id`.
+7. On the BB yoke and SS yoke product pages, the lead-time line sits under **Design yours in Frame Designer**. Dropouts do not show it.
+
+## Frame Designer order experience
+
+`creature-fd-order-experience.php` is display copy for orders that already exist. Copy it into `wp-content/mu-plugins/` the same way, and replace `creature-fd-only-purchase.php` with the copy from this repo (1.2.0) so the product page can print the same lead time. WooCommerce must already be active. It loads on the next request. Under **Plugins → Must-Use** it is listed as “Creature Cycles Frame Designer Order Experience”.
+
+It does not hook the basket, fees, or order totals. Prices and the tools-api order create stay as they are.
+
+What customers see:
+
+- On order-pay, a Frame Designer order (an 8634, 8635, or 8636 line that has `design_id`) no longer shows Woo’s red guest-order error. That page shows an info notice: **Your Frame Designer order. Design files are delivered within 5 working days of payment.** Any other guest order still gets Woo’s error. Email verification and the pay-for-order check are unchanged.
+- `design_id` and `creature_design_id` are hidden on order-pay, the thank-you page, My Account, and customer emails. They stay visible in wp-admin and on emails sent to the shop. `geometry_summary` stays visible and is labelled **Geometry** for customers.
+- The thank-you page, and the customer processing, on-hold, and completed emails, say **Design files are delivered within 5 working days of payment.** for those orders.
+
+Filter `creature_fd_lead_time` to change the phrase (default `5 working days`). The tools-api uses `FD_LEAD_TIME` for the save-design email and the payment email. It cannot read the WordPress filter, so the two have to be kept in step. If Railway still has `REVIEW_LEAD_TIME_DAYS=7` and `FD_LEAD_TIME` is unset, those emails say “7 working days”. Delete `REVIEW_LEAD_TIME_DAYS`, or set it to `5`. When both are set, `FD_LEAD_TIME` wins.
+
+```bash
+php wordpress-plugins/mu-plugins/tests/creature-fd-order-experience-test.php
+```
 
 ## Smoke test
 

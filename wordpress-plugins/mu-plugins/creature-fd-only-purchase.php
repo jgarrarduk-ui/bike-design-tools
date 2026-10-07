@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles Frame Designer Only Purchase
  * Description: Frame Designer is the only way to buy the BB yoke (8634), SS yoke (8635), and dropouts (8636). Hides the catalogue add-to-cart control and rejects basket lines with no design_id. Must-use plugin. Does not touch REST-created orders or order-pay.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  *
@@ -40,6 +40,12 @@
  * woocommerce_template_single_add_to_cart() from its own structure, which
  * fires woocommerce_{type}_add_to_cart. The swap lives on that action, and
  * only for the guarded ids, so every other product keeps Woo's handler.
+ *
+ * 8634 and 8635 product pages print the delivery lead time under the Frame
+ * Designer button. The sentence comes from Creature_Fd_Order_Experience when
+ * that plugin is loaded, otherwise the creature_fd_lead_time filter (default
+ * "5 working days"). 8636 Coming soon does not get the line. The price, the
+ * basket guard, and order totals are unchanged.
  */
 
 if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
@@ -332,7 +338,40 @@ final class Creature_Fd_Only_Purchase {
 		}
 		$url   = self::escape_url( self::designer_url() );
 		$inner = '<a href="' . $url . '" class="button creature-fd-only-link">Design yours in Frame Designer</a>';
+		// Product summary only. Loop and card controls stay a single link.
+		if ( $wrap ) {
+			$inner .= self::lead_time_markup();
+		}
 		return $wrap ? '<div class="creature-fd-only">' . $inner . '</div>' : $inner;
+	}
+
+	/**
+	 * Delivery line under the product-page button. Display only.
+	 *
+	 * @return string
+	 */
+	public static function lead_time_markup() {
+		return '<p class="creature-fd-lead-time">' . self::escape_html( self::lead_time_sentence() ) . '</p>';
+	}
+
+	/**
+	 * Same sentence as the order-experience plugin when that file is loaded.
+	 *
+	 * @return string
+	 */
+	public static function lead_time_sentence() {
+		if ( class_exists( 'Creature_Fd_Order_Experience' ) ) {
+			return Creature_Fd_Order_Experience::delivery_sentence();
+		}
+		$lead = apply_filters( 'creature_fd_lead_time', '5 working days' );
+		if ( ! is_string( $lead ) ) {
+			$lead = '5 working days';
+		}
+		$lead = trim( (string) preg_replace( '/\s+/', ' ', $lead ) );
+		if ( '' === $lead || strlen( $lead ) > 80 ) {
+			$lead = '5 working days';
+		}
+		return 'Design files are delivered within ' . $lead . ' of payment.';
 	}
 
 	/**
