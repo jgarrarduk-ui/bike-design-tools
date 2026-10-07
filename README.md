@@ -163,6 +163,16 @@ Copy `wordpress-plugins/mu-plugins/creature-fd-only-purchase.php` into the
 same folder so the BB yoke, SS yoke, and dropouts cannot be added from the
 catalogue without a `design_id`. Frame Designer checkout is still the
 tools-api order and the order-pay link; that path is not a basket add.
+Copy `creature-fd-order-experience.php` as well: it replaces the order-pay
+guest warning on those orders, hides `design_id` from customers, and prints
+the delivery lead time. On those order-pay pages it also requires the
+straight-away cancellation checkbox before payment, and the customer
+processing email confirms that consent. Filter `creature_fd_lead_time` (default
+`5 working days`). Filter `creature_fd_cancellation_waiver_text` to follow
+the final T&Cs. The save-design email and the payment email use
+`FD_LEAD_TIME` with the same default. If `REVIEW_LEAD_TIME_DAYS` is still
+`7` on Railway and `FD_LEAD_TIME` is unset, those emails say “7 working
+days”; delete the old variable or set it to `5`.
 
 The save email is Cadence's draft, which James approved: subject "Your Creature Cycles design is
 saved", buttons "Edit design" and "Take me to checkout", dropouts still

@@ -13,7 +13,7 @@
  *
  * Emails in the order lifecycle:
  *   1. sendOrderConfirmation   — immediately after design saved (pre-payment): edit + checkout links
- *   2. sendPaymentConfirmation — after payment, tells customer design is under review (~1 week)
+ *   2. sendPaymentConfirmation — after payment. Lead time is designFileDeliverySentence()
  *   3. sendDesignReview        — admin-triggered: sends review files + Accept button to customer
  *   4. sendDesignAccepted      — auto-triggered when customer accepts: sends final download link
  */
@@ -76,7 +76,40 @@ async function postResend({ to, subject, text, html }) {
 
 const FROM    = () => process.env.EMAIL_FROM     || '"Creature Cycles" <info@creaturecycles.co.uk>';
 const REPLY   = () => process.env.EMAIL_REPLY_TO || 'info@creaturecycles.co.uk';
-const LEAD    = () => process.env.REVIEW_LEAD_TIME_DAYS || '7';
+
+// One phrase for the save-design email and the payment email.
+// WordPress has the same words on filter creature_fd_lead_time. This process
+// cannot read that constant, so Layout keeps FD_LEAD_TIME in step by hand.
+// REVIEW_LEAD_TIME_DAYS is the old day count ("7"). It is used only when
+// FD_LEAD_TIME is unset, and it is always spoken as working days.
+const DEFAULT_FD_LEAD_TIME = '5 working days';
+
+function cleanLeadPhrase(value) {
+  const cleaned = String(value || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned || cleaned.length > 80) return '';
+  return cleaned;
+}
+
+function phraseFromLegacyDays(raw) {
+  const value = cleanLeadPhrase(raw);
+  if (!value) return '';
+  if (/working\s+days$/i.test(value)) return value;
+  const count = value.replace(/\s+days?$/i, '').trim();
+  if (/^\d+$/.test(count)) return `${count} working days`;
+  return value;
+}
+
+function designFileLeadTime() {
+  const configured = cleanLeadPhrase(trimmedEnv('FD_LEAD_TIME'));
+  if (configured) return configured;
+  const legacy = phraseFromLegacyDays(trimmedEnv('REVIEW_LEAD_TIME_DAYS'));
+  if (legacy) return legacy;
+  return DEFAULT_FD_LEAD_TIME;
+}
+
+function designFileDeliverySentence() {
+  return `Design files are delivered within ${designFileLeadTime()} of payment.`;
+}
 
 // Absolute URL: email clients do not load relative images.
 // Source art is 480×80; 220×37 keeps that ratio.
@@ -149,6 +182,8 @@ function designSavedMessage({ customerName, designName, editUrl, checkoutUrl }) 
     : escapeHtml(savedLine);
   const safeEdit = escapeHtml(editUrl || '');
   const safeCheckout = escapeHtml(checkoutUrl || '');
+  const deliveryLine = designFileDeliverySentence();
+  const safeDelivery = escapeHtml(deliveryLine);
 
   const text = `${greeting}
 
@@ -161,6 +196,8 @@ ${editUrl}
 
 Ready to order design files? Continue to checkout for the parts that are live on the shop (chainstay\u2013BB yoke and seatstay yoke today). Dropouts are coming soon.
 ${checkoutUrl}
+
+${deliveryLine}
 
 Questions? Reply to this email or use the contact form on creaturecycles.co.uk \u2014 we\u2019re in Corris, Mid Wales.
 
@@ -207,6 +244,7 @@ info@creaturecycles.co.uk`;
           Take me to checkout
         </a>
       </div>
+      <p style="font-size:15px;color:#222;line-height:1.6;">${safeDelivery}</p>
       <p style="font-size:13px;color:#666;line-height:1.6;">
         If a button doesn\u2019t work, copy this link into your browser:<br>
         Edit: <a href="${safeEdit}" style="color:#333;">${safeEdit}</a><br>
@@ -255,7 +293,8 @@ async function sendPaymentConfirmation({ to, customerName, designId }) {
   }
 
   const firstName  = customerName.split(' ')[0] || 'there';
-  const leadDays   = LEAD();
+  const deliveryLine = designFileDeliverySentence();
+  const safeDelivery = escapeHtml(deliveryLine);
   const shortId    = designId.slice(0, 8).toUpperCase();
 
   const html = wrapHtml(`
@@ -269,8 +308,7 @@ async function sendPaymentConfirmation({ to, customerName, designId }) {
         <strong>Design ID:</strong> ${shortId}<br>
         <strong>What happens next:</strong> Our designer will review your specification
         and produce your design files.<br>
-        <strong>Lead time:</strong> You can expect your design review within
-        <strong>${leadDays} days</strong>.
+        <strong>Lead time:</strong> ${safeDelivery}
       </p>
     </div>
     <p style="font-size:14px;color:#555;line-height:1.6;">
@@ -291,7 +329,7 @@ Design ID: ${shortId}
 
 What happens next:
   Our designer will review your specification and produce your design files.
-  Lead time: expect your design review within ${leadDays} days.
+  Lead time: ${deliveryLine}
 
 Once your design is ready you'll receive an email with the files to review.
 You'll have the opportunity to request changes before we finalise everything.
@@ -449,6 +487,8 @@ Thank you for choosing Creature Cycles!
 
 module.exports = {
   isConfigured,
+  designFileLeadTime,
+  designFileDeliverySentence,
   designSavedMessage,
   sendOrderConfirmation,
   sendPaymentConfirmation,

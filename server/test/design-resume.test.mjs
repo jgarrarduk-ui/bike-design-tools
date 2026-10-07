@@ -22,6 +22,8 @@ delete process.env.RESEND_API_KEY;
 delete process.env.EMAIL_FROM;
 delete process.env.EMAIL_REPLY_TO;
 delete process.env.FRAME_DESIGNER_URL;
+delete process.env.FD_LEAD_TIME;
+delete process.env.REVIEW_LEAD_TIME_DAYS;
 
 const require = createRequire(import.meta.url);
 const db = require('../db');
@@ -50,6 +52,7 @@ const ENV_KEYS = [
   'WC_PRODUCT_ID', 'WC_PRODUCT_IDS', 'WC_PRODUCT_PRICE',
   'BASE_URL', 'SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'RESEND_API_KEY',
   'EMAIL_FROM', 'EMAIL_REPLY_TO', 'FRAME_DESIGNER_URL',
+  'FD_LEAD_TIME', 'REVIEW_LEAD_TIME_DAYS',
 ];
 
 async function withEnv(vars, fn) {
@@ -161,6 +164,8 @@ describe('design resume links', { concurrency: false }, () => {
     assert.equal(/<h1[\s>]/i.test(message.html), false);
     assert.match(message.text, /Thanks,\nCreature Cycles\ninfo@creaturecycles\.co\.uk$/);
     assert.match(message.html, /they\u2019ll join the same flow when they\u2019re ready/);
+    assert.match(message.text, /Design files are delivered within 5 working days of payment\./);
+    assert.match(message.html, /Design files are delivered within 5 working days of payment\./);
     assert.equal(/£\s*\d/.test(message.text + message.html), false);
     const unnamed = email.designSavedMessage({
       customerName: '',
@@ -250,12 +255,46 @@ describe('design resume links', { concurrency: false }, () => {
       assert.match(sent[2].body.html, /alt="Creature Cycles"/);
       assert.equal(/<h1[\s>]/i.test(sent[2].body.html), false);
       assert.match(sent[2].body.text, /– Creature Cycles/);
+      assert.match(sent[2].body.text, /Lead time: Design files are delivered within 5 working days of payment\./);
+      assert.match(sent[2].body.html, /Lead time:<\/strong> Design files are delivered within 5 working days of payment\./);
+      assert.equal(/design review/i.test(sent[2].body.text + sent[2].body.html), false);
+      assert.equal(/within \d+ days\b/i.test(sent[2].body.text + sent[2].body.html), false);
+
+      process.env.REVIEW_LEAD_TIME_DAYS = '7';
+      assert.equal(email.designFileLeadTime(), '7 working days');
+      const legacySaved = email.designSavedMessage({
+        customerName: 'Ada Lovelace',
+        designName: 'Night Train',
+        editUrl,
+        checkoutUrl,
+      });
+      assert.match(legacySaved.text, /Design files are delivered within 7 working days of payment\./);
+      assert.match(legacySaved.html, /Design files are delivered within 7 working days of payment\./);
+      await email.sendPaymentConfirmation({
+        to: 'ada@example.com',
+        customerName: 'Ada Lovelace',
+        designId: 'abcdef12-rest',
+      });
+      assert.match(sent[3].body.text, /Lead time: Design files are delivered within 7 working days of payment\./);
+      assert.match(sent[3].body.html, /within 7 working days of payment\./);
+      assert.equal(/design review/i.test(sent[3].body.text + sent[3].body.html), false);
+
+      process.env.FD_LEAD_TIME = '5 working days';
+      assert.equal(email.designFileLeadTime(), '5 working days');
+      assert.equal(
+        email.designFileDeliverySentence(),
+        'Design files are delivered within 5 working days of payment.',
+      );
+      delete process.env.FD_LEAD_TIME;
+      delete process.env.REVIEW_LEAD_TIME_DAYS;
     } finally {
       delete process.env.SMTP_HOST;
       delete process.env.SMTP_PORT;
       delete process.env.SMTP_USER;
       delete process.env.SMTP_PASS;
       delete process.env.RESEND_API_KEY;
+      delete process.env.FD_LEAD_TIME;
+      delete process.env.REVIEW_LEAD_TIME_DAYS;
       global.fetch = originalFetch;
     }
   });
@@ -314,6 +353,8 @@ describe('design resume links', { concurrency: false }, () => {
         assert.ok(sent[0].text.includes(`Dropouts are coming soon.\n${checkout}`));
         assert.match(sent[0].html, />\s*Edit design\s*</);
         assert.match(sent[0].html, />\s*Take me to checkout\s*</);
+        assert.match(sent[0].text, /Design files are delivered within 5 working days of payment\./);
+        assert.match(sent[0].html, /Design files are delivered within 5 working days of payment\./);
         assert.ok(sent[0].html.includes(edit.replaceAll('&', '&amp;')));
         assert.ok(sent[0].html.includes(checkout.replaceAll('&', '&amp;')));
         assert.equal(JSON.stringify(res.body).includes(row.resume_token), false);

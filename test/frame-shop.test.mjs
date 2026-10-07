@@ -288,7 +288,23 @@ test('Save design keeps its label, downloads JSON, and hydrates only with resume
   assert.equal(/id="shop-save"[\s>]/.test(html), false);
   assert.equal((html.match(/id="shop-save-btn"/g) || []).length, 1);
   assert.equal((html.match(/id="shop-save-hint"/g) || []).length, 1);
-  assert.match(html, /src="frame-shop\.js\?v=\d+"/);
+  assert.match(html, /src="frame-shop\.js\?v=20261008"/);
+  assert.match(html, /id="shop-lead-time">Design files are delivered within 5 working days of payment\.</);
+  const leadAt = html.indexOf('id="shop-lead-time"');
+  const continueAt = html.indexOf('id="shop-continue"');
+  assert.ok(leadAt > 0 && continueAt > leadAt);
+  assert.equal(FrameShop.FD_LEAD_TIME, '5 working days');
+  assert.equal(
+    FrameShop.designFileDeliverySentence(),
+    'Design files are delivered within 5 working days of payment.',
+  );
+  const leadEl = { textContent: '' };
+  FrameShop.paintShopLeadTime({
+    getElementById(id) {
+      return id === 'shop-lead-time' ? leadEl : null;
+    },
+  });
+  assert.equal(leadEl.textContent, 'Design files are delivered within 5 working days of payment.');
   assert.equal(/src="frame-shop\.js"/.test(html), false);
   const saveFn = html.slice(
     html.indexOf('async function saveDesignFromModal'),
