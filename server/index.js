@@ -11,6 +11,7 @@ const webhooksRouter  = require('./routes/webhooks');
 const downloadRouter  = require('./routes/download');
 const reviewRouter    = require('./routes/review');
 const adminRouter     = require('./routes/admin');
+const { scheduleUnpaidCleanup } = require('./services/unpaid-cleanup');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -52,7 +53,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     status:      'ok',
     woocommerce: !!(process.env.WC_URL && process.env.WC_CONSUMER_KEY),
-    email:       !!(process.env.SMTP_HOST && process.env.SMTP_USER),
+    email:       !!(process.env.SMTP_PASS && String(process.env.SMTP_PASS).trim()),
     ts:          new Date().toISOString(),
   });
 });
@@ -83,6 +84,7 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`Creature Cycles backend listening on port ${PORT}`);
   console.log(`  WooCommerce : ${process.env.WC_URL   || '(not configured)'}`);
-  console.log(`  Email       : ${process.env.SMTP_HOST || '(not configured)'}`);
+  console.log(`  Email       : ${process.env.SMTP_PASS ? (process.env.SMTP_HOST || '(SMTP_PASS set, host unset)') : '(SMTP_PASS not set)'}`);
   console.log(`  DB          : ${process.env.DB_PATH   || './data/designs.db'}`);
+  scheduleUnpaidCleanup();
 });

@@ -3,10 +3,11 @@
 /**
  * Email service — all transactional emails sent by Creature Cycles.
  *
- * Uses nodemailer with any SMTP provider. Configure via SMTP_* env vars.
+ * Uses nodemailer. Save-design mail is Resend over SMTP (not the Resend SDK).
+ * Mail is skipped until SMTP_PASS is set. That value is the Resend API key.
  *
  * Emails in the order lifecycle:
- *   1. sendOrderConfirmation   — immediately after design submitted (pre-payment)
+ *   1. sendOrderConfirmation   — immediately after design saved (pre-payment): edit + checkout links
  *   2. sendPaymentConfirmation — after payment, tells customer design is under review (~1 week)
  *   3. sendDesignReview        — admin-triggered: sends review files + Accept button to customer
  *   4. sendDesignAccepted      — auto-triggered when customer accepts: sends final download link
@@ -27,11 +28,14 @@ function createTransport() {
 }
 
 function isConfigured() {
-  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  // Host and user may be set before the secret exists. Do not send until
+  // SMTP_PASS is present. For Resend that value is the API key.
+  const pass = process.env.SMTP_PASS;
+  return typeof pass === 'string' && pass.trim() !== '';
 }
 
-const FROM    = () => process.env.EMAIL_FROM     || '"Creature Cycles" <hello@creature-cycles.com>';
-const REPLY   = () => process.env.EMAIL_REPLY_TO || 'hello@creature-cycles.com';
+const FROM    = () => process.env.EMAIL_FROM     || '"Creature Cycles" <info@creaturecycles.co.uk>';
+const REPLY   = () => process.env.EMAIL_REPLY_TO || 'info@creaturecycles.co.uk';
 const LEAD    = () => process.env.REVIEW_LEAD_TIME_DAYS || '7';
 
 // ── Shared HTML wrapper ───────────────────────────────────────────────────────
@@ -57,20 +61,145 @@ function wrapHtml(bodyContent) {
 </html>`;
 }
 
-// ── 1. Order confirmation (pre-payment) ───────────────────────────────────────
-async function sendOrderConfirmation({ to, customerName, designId }) {
-  if (!isConfigured()) return;
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
 
-  const firstName = customerName.split(' ')[0] || 'there';
+const SAVED_SUBJECT = 'Your Creature Cycles design is saved';
+const SAVED_PREHEADER = 'Open it again to edit, or continue to checkout when you\u2019re ready.';
+
+function firstNameFrom(customerName) {
+  const first = String(customerName || '').trim().split(/\s+/)[0] || '';
+  return first;
+}
+
+function savedDesignSentence(designName) {
+  const name = String(designName || '').trim();
+  if (!name) return 'Your frame design is saved with Creature Cycles.';
+  return `Your frame design ${name} is saved with Creature Cycles.`;
+}
+
+/**
+ * Save-design email. Prose is Cadence's draft, approved by James.
+ * editUrl reopens Frame Designer. checkoutUrl is the tools-api redirect.
+ * No prices. Dropouts stay "coming soon" until 8636 is buyable.
+ * An empty first name is "Hi," with no space before the comma.
+ */
+function designSavedMessage({ customerName, designName, editUrl, checkoutUrl }) {
+  const firstName = firstNameFrom(customerName);
+  const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
+  const savedLine = savedDesignSentence(designName);
+  const safeGreeting = escapeHtml(greeting);
+  const safeSaved = String(designName || '').trim()
+    ? `Your frame design <strong>${escapeHtml(String(designName).trim())}</strong> is saved with Creature Cycles.`
+    : escapeHtml(savedLine);
+  const safeEdit = escapeHtml(editUrl || '');
+  const safeCheckout = escapeHtml(checkoutUrl || '');
+
+  const text = `${greeting}
+
+${savedLine}
+
+You can come back to it whenever you like \u2014 the geometry, parts selection and drawings stay with this design. No rush.
+
+Edit or revisit your design:
+${editUrl}
+
+Ready to order design files? Continue to checkout for the parts that are live on the shop (chainstay\u2013BB yoke and seatstay yoke today). Dropouts are coming soon.
+${checkoutUrl}
+
+Questions? Reply to this email or use the contact form on creaturecycles.co.uk \u2014 we\u2019re in Corris, Mid Wales.
+
+Thanks,
+Creature Cycles
+info@creaturecycles.co.uk`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>${escapeHtml(SAVED_SUBJECT)}</title></head>
+<body style="font-family:monospace;background:#f4f4f4;padding:40px 0;margin:0;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${escapeHtml(SAVED_PREHEADER)}</div>
+  <table width="600" align="center" style="background:#fff;border-radius:8px;padding:40px;border:1px solid #ddd;">
+    <tr><td>
+      <h1 style="font-family:monospace;color:#111;font-size:22px;margin-bottom:4px;">Creature Cycles</h1>
+      <p style="color:#666;font-size:13px;margin-top:0;">Bespoke Frame Design Files</p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+      <p style="font-size:15px;color:#222;">${safeGreeting}</p>
+      <p style="font-size:15px;color:#222;line-height:1.6;">${safeSaved}</p>
+      <p style="font-size:15px;color:#222;line-height:1.6;">
+        You can come back to it whenever you like \u2014 the geometry, parts selection and drawings stay with this design. No rush.
+      </p>
+      <p style="font-size:15px;color:#222;line-height:1.6;">
+        <strong>Edit or revisit your design</strong><br>
+        Open the Frame Designer with this design loaded and keep refining angles, lengths or which parts you want.
+      </p>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${safeEdit}"
+           style="display:inline-block;background:#fff;color:#111;text-decoration:none;
+                  padding:12px 28px;border-radius:4px;font-family:monospace;font-size:14px;
+                  font-weight:bold;border:2px solid #111;">
+          Edit design
+        </a>
+      </div>
+      <p style="font-size:15px;color:#222;line-height:1.6;">
+        <strong>Ready to order design files?</strong><br>
+        Continue to checkout for the parts that are live on the shop (chainstay\u2013BB yoke and seatstay yoke today). Dropouts are coming soon \u2014 they\u2019ll join the same flow when they\u2019re ready.
+      </p>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${safeCheckout}"
+           style="display:inline-block;background:#111;color:#fff;text-decoration:none;
+                  padding:14px 32px;border-radius:4px;font-family:monospace;font-size:15px;
+                  font-weight:bold;">
+          Take me to checkout
+        </a>
+      </div>
+      <p style="font-size:13px;color:#666;line-height:1.6;">
+        If a button doesn\u2019t work, copy this link into your browser:<br>
+        Edit: <a href="${safeEdit}" style="color:#333;">${safeEdit}</a><br>
+        Checkout: <a href="${safeCheckout}" style="color:#333;">${safeCheckout}</a>
+      </p>
+      <p style="font-size:14px;color:#555;line-height:1.6;">
+        Questions? Reply to this email or use the contact form on creaturecycles.co.uk \u2014 we\u2019re in Corris, Mid Wales.
+      </p>
+      <p style="font-size:14px;color:#222;line-height:1.6;">
+        Thanks,<br>
+        Creature Cycles<br>
+        <a href="mailto:info@creaturecycles.co.uk" style="color:#333;">info@creaturecycles.co.uk</a>
+      </p>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  return { subject: SAVED_SUBJECT, preheader: SAVED_PREHEADER, text, html };
+}
+
+// ── 1. Design saved (pre-payment) — edit link and checkout link ──────────────
+async function sendOrderConfirmation({ to, customerName, designName, designId, editUrl, checkoutUrl }) {
+  if (!isConfigured()) {
+    console.warn('[email] SMTP_PASS not set — skipping design saved email to', to);
+    return;
+  }
+
   const transport = createTransport();
+  const message = designSavedMessage({ customerName, designName, designId, editUrl, checkoutUrl });
 
   await transport.sendMail({
     from:    FROM(),
     replyTo: REPLY(),
     to,
-    subject: `Creature Cycles — Design #${designId.slice(0, 8).toUpperCase()} received`,
-    text: `Hi ${firstName},\n\nWe've received your bespoke bike design (ID: ${designId}).\n\nComplete your purchase at the checkout link we sent you and your design will go into our review queue.\n\n– Creature Cycles`,
+    subject: message.subject,
+    text:    message.text,
+    html:    message.html,
   });
+
+  console.log(`[email] Sent design saved email to ${to} for design ${designId}`);
 }
 
 // ── 2. Payment confirmation (post-payment, design under review) ───────────────
@@ -284,6 +413,7 @@ Thank you for choosing Creature Cycles!
 
 module.exports = {
   isConfigured,
+  designSavedMessage,
   sendOrderConfirmation,
   sendPaymentConfirmation,
   sendDesignReview,

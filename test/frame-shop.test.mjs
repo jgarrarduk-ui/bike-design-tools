@@ -79,6 +79,20 @@ test('design payload is the Phase 2 tools-api body', () => {
     params: PARAMS,
     productIds: [8635, 8634],
   });
+  assert.equal(FrameShop.buildDesignPayload({
+    customerName: 'Ada',
+    customerEmail: 'ada@example.com',
+    params: PARAMS,
+    productIds: [8634],
+    designName: '  Night Train ',
+  }).designName, 'Night Train');
+  assert.equal('designName' in FrameShop.buildDesignPayload({
+    customerName: 'Ada',
+    customerEmail: 'ada@example.com',
+    params: PARAMS,
+    productIds: [8634],
+    designName: '   ',
+  }), false);
   assert.deepEqual(FrameShop.buildDesignPayload({
     customerName: 'Ada',
     customerEmail: 'ada@example.com',
@@ -160,6 +174,103 @@ test('session design id must match ?design= when the URL carries one', () => {
   assert.equal(FrameShop.readSession(sessionStorage, 'design-1').designId, 'design-1');
   assert.equal(FrameShop.readSession(sessionStorage, 'other'), null);
   assert.equal(storage.get(FrameShop.SESSION_KEY).includes('design-1'), true);
+});
+
+test('resume hydrate keeps the order and never selects dropouts', () => {
+  const url = new URL(FrameShop.hydrateUrl(
+    'https://creature-tools-api-production.up.railway.app/',
+    'design-1',
+    'resume-token',
+  ));
+  assert.equal(
+    url.origin + url.pathname,
+    'https://creature-tools-api-production.up.railway.app/api/designs/design-1',
+  );
+  assert.equal(url.searchParams.get('resume'), 'resume-token');
+
+  const session = FrameShop.sessionFromHydrate({
+    designId: 'design-1',
+    params: PARAMS,
+    productIds: [8636, 8634, 8635, 8636],
+    customerName: 'Ada Lovelace',
+    customerEmail: 'Ada@Example.com',
+    checkoutUrl: 'https://creaturecycles.co.uk/checkout/order-pay/10/?key=k',
+  });
+  assert.deepEqual(session.productIds, [8634, 8635]);
+  assert.equal(session.designId, 'design-1');
+  const plan = FrameShop.checkoutPlan({
+    saved: session,
+    snapshot: FrameShop.selectionSnapshot(PARAMS, [8634, 8635], 'ada@example.com'),
+    productIds: [8634, 8635],
+  });
+  assert.equal(plan.action, 'redirect');
+  assert.equal(plan.checkoutUrl, session.checkoutUrl);
+
+  const changed = FrameShop.checkoutPlan({
+    saved: session,
+    snapshot: FrameShop.selectionSnapshot({ ...PARAMS, reach: 460 }, [8634, 8635], 'ada@example.com'),
+    productIds: [8634, 8635],
+  });
+  assert.equal(changed.action, 'post');
+});
+
+test('fetchHydratedDesign requires a matching design id', async () => {
+  const seen = [];
+  const data = await FrameShop.fetchHydratedDesign(
+    'https://creature-tools-api-production.up.railway.app',
+    'design-1',
+    'tok',
+    async (url, opts) => {
+      seen.push({ url, opts });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          designId: 'design-1',
+          params: PARAMS,
+          productIds: [8634],
+          customerName: 'Ada',
+          customerEmail: 'ada@example.com',
+          checkoutUrl: 'https://creaturecycles.co.uk/checkout/order-pay/1/',
+        }),
+      };
+    },
+  );
+  assert.equal(data.designId, 'design-1');
+  assert.equal(seen[0].opts.method, 'GET');
+  assert.equal(new URL(seen[0].url).searchParams.get('resume'), 'tok');
+
+  await assert.rejects(
+    () => FrameShop.fetchHydratedDesign('https://example.test', 'design-1', 'tok', async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'Design not found.' }),
+    })),
+    /not valid/,
+  );
+  await assert.rejects(
+    () => FrameShop.fetchHydratedDesign('https://example.test', 'design-1', 'tok', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ designId: 'other', params: {} }),
+    })),
+    /not valid/,
+  );
+});
+
+test('Save design keeps its label, downloads JSON, and hydrates only with resume', () => {
+  const html = readFileSync(new URL('../frame-designer.html', import.meta.url), 'utf8');
+  assert.match(html, /id="shop-save" onclick="saveDesignFromModal\(\)">Save design</);
+  assert.match(html, /id="shop-continue" onclick="continueToShop\(\)">Continue to shop</);
+  const saveFn = html.slice(
+    html.indexOf('async function saveDesignFromModal'),
+    html.indexOf('async function continueToShop'),
+  );
+  assert.match(saveFn, /downloadDesignJson\(\)/);
+  assert.match(html, /if\(urlId && resume\)/);
+  assert.match(html, /FrameShop\.fetchHydratedDesign\(toolsApiBase\(\), urlId, resume\)/);
+  assert.match(html, /Coming soon/);
+  assert.equal(/8637/.test(html.slice(html.indexOf('function renderShopParts'), html.indexOf('function onShopPartChange'))), false);
 });
 
 test('POST /api/designs uses the configured origin and surfaces API errors', async () => {

@@ -197,9 +197,11 @@ function geometrySummaryFrom(params) {
 }
 
 function designMeta(designId, geometrySummary) {
+  const id = String(designId);
   return [
-    { key: 'design_id',        value: String(designId) },
-    { key: 'geometry_summary', value: geometrySummary },
+    { key: 'design_id',           value: id },
+    { key: 'creature_design_id',  value: id },
+    { key: 'geometry_summary',    value: geometrySummary },
   ];
 }
 
@@ -310,12 +312,16 @@ function metaValue(meta, key) {
  * @param {object|null|undefined} order
  * @returns {string|null}
  */
+function designIdFromMeta(meta) {
+  return metaValue(meta, 'design_id') || metaValue(meta, 'creature_design_id');
+}
+
 function designIdFromOrder(order) {
   if (!order) return null;
-  const fromOrder = metaValue(order.meta_data, 'design_id');
+  const fromOrder = designIdFromMeta(order.meta_data);
   if (fromOrder) return fromOrder;
   for (const item of order.line_items || []) {
-    const fromLine = metaValue(item && item.meta_data, 'design_id');
+    const fromLine = designIdFromMeta(item && item.meta_data);
     if (fromLine) return fromLine;
   }
   return null;
@@ -338,6 +344,39 @@ async function getDesignIdFromOrder(wcOrderId) {
   }
 }
 
+/**
+ * Read one Woo order. null when Woo has no such order (404).
+ * Other failures throw so the caller can keep a stored checkout URL.
+ *
+ * @param {string|number} wcOrderId
+ * @returns {Promise<object|null>}
+ */
+async function getOrder(wcOrderId) {
+  if (!wcOrderId) return null;
+  try {
+    return await wcFetch(`/orders/${encodeURIComponent(String(wcOrderId))}`);
+  } catch (err) {
+    if (/→ 404:/.test(err.message)) return null;
+    throw err;
+  }
+}
+
+/**
+ * Cancel a Woo order only while it is still pending. Paid and on-hold orders
+ * are left alone. Missing orders are reported, not thrown.
+ *
+ * @param {string|number} wcOrderId
+ * @returns {Promise<{cancelled?: boolean, skipped?: string}>}
+ */
+async function cancelPendingOrder(wcOrderId) {
+  const order = await getOrder(wcOrderId);
+  if (!order) return { skipped: 'missing' };
+  const status = String(order.status || '').toLowerCase();
+  if (status !== 'pending') return { skipped: status };
+  await wcFetch(`/orders/${encodeURIComponent(String(wcOrderId))}`, 'PUT', { status: 'cancelled' });
+  return { cancelled: true };
+}
+
 module.exports = {
   isConfigured,
   createOrder,
@@ -346,4 +385,6 @@ module.exports = {
   buildOrderPayload,
   designIdFromOrder,
   configuredProductIds,
+  getOrder,
+  cancelPendingOrder,
 };

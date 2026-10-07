@@ -86,7 +86,7 @@
     return 'Selected design files ' + total;
   }
 
-  function buildDesignPayload({ customerName, customerEmail, params, productIds }) {
+  function buildDesignPayload({ customerName, customerEmail, params, productIds, designName }) {
     const ids = productIdsFromSelection(productIds);
     if (!ids.length) {
       const err = new Error('Choose at least one design file.');
@@ -98,12 +98,15 @@
       err.status = 400;
       throw err;
     }
-    return {
+    const payload = {
       customerName: String(customerName || '').trim(),
       customerEmail: String(customerEmail || '').trim(),
       params,
       productIds: ids,
     };
+    const name = String(designName || '').trim();
+    if (name) payload.designName = name;
+    return payload;
   }
 
   function selectionSnapshot(params, productIds, email) {
@@ -137,6 +140,8 @@
   }
 
   // Reuse a saved order when the geometry, email, and parts have not changed.
+  // A change posts a new design, which creates a new pending order. The previous
+  // unpaid order is left for the 90-day cleanup.
   function checkoutPlan({ saved, snapshot, productIds }) {
     const ids = productIdsFromSelection(productIds);
     if (!ids.length) return { action: 'error', message: 'Choose at least one design file.' };
@@ -177,6 +182,63 @@
       throw err;
     }
     return base + '/api/designs';
+  }
+
+  function hydrateUrl(apiBase, designId, resumeToken) {
+    const url = new URL(apiUrl(apiBase) + '/' + encodeURIComponent(String(designId || '').trim()));
+    url.searchParams.set('resume', String(resumeToken || ''));
+    return url.toString();
+  }
+
+  // Session record from a resume hydrate. Dropouts stay unsellable here too.
+  function sessionFromHydrate(data) {
+    if (!data || typeof data !== 'object') {
+      const err = new Error('This design link has expired or is not valid.');
+      err.status = 404;
+      throw err;
+    }
+    const designId = typeof data.designId === 'string' ? data.designId.trim() : '';
+    if (!designId) {
+      const err = new Error('This design link has expired or is not valid.');
+      err.status = 404;
+      throw err;
+    }
+    const params = data.params && typeof data.params === 'object' ? data.params : {};
+    const productIds = productIdsFromSelection(data.productIds);
+    const customerEmail = String(data.customerEmail || '').trim();
+    const customerName = String(data.customerName || '').trim();
+    const checkoutUrl = typeof data.checkoutUrl === 'string' ? data.checkoutUrl : '';
+    return {
+      designId,
+      checkoutUrl,
+      snapshot: selectionSnapshot(params, productIds, customerEmail),
+      customerName,
+      customerEmail,
+      productIds,
+      params,
+    };
+  }
+
+  async function fetchHydratedDesign(apiBase, designId, resumeToken, fetchImpl) {
+    const url = hydrateUrl(apiBase, designId, resumeToken);
+    const doFetch = fetchImpl || fetch;
+    let res;
+    try {
+      res = await doFetch(url, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+      });
+    } catch {
+      throw new Error('Could not reach the tools API.');
+    }
+    let data = {};
+    try { data = await res.json(); } catch { data = {}; }
+    if (!res.ok || !data || data.designId !== String(designId || '').trim()) {
+      const err = new Error('This design link has expired or is not valid.');
+      err.status = res.status;
+      throw err;
+    }
+    return data;
   }
 
   async function postDesign(apiBase, payload, fetchImpl) {
@@ -228,6 +290,9 @@
     writeSession,
     readSession,
     apiUrl,
+    hydrateUrl,
+    sessionFromHydrate,
+    fetchHydratedDesign,
     postDesign,
   };
 });

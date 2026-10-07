@@ -218,6 +218,7 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
       );
       assert.deepEqual(payload.meta_data, [
         { key: 'design_id', value: 'design-1' },
+        { key: 'creature_design_id', value: 'design-1' },
         { key: 'geometry_summary', value: SUMMARY },
       ]);
       for (const line of payload.line_items) {

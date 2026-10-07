@@ -121,6 +121,56 @@ Deploy `frame-designer.html`, `frame-shop.js`, and `config.js` together under
 already accepts `productIds` (Phase 2) and prices those lines from WooCommerce.
 This page only sends the buyable design files.
 
+Save design still posts `POST /api/designs` and leaves Continue to shop on the
+modal. On success the page also downloads the same JSON as Download JSON.
+The optional frame name on that form is sent as `designName` and used in the
+save email. The API emails the customer (server-side only) with two links:
+
+- Edit design → `https://creaturecycles.co.uk/apps/frame-designer.html?design={designId}&resume={resume_token}`
+- Take me to checkout → `{BASE_URL}/api/designs/{designId}/checkout?resume={resume_token}`
+
+That checkout URL is a 302 to the stored Woo order-pay link. If the pending
+order is missing or cancelled, the API creates a new one and redirects to that.
+`GET /api/designs/{designId}?resume={resume_token}` returns
+`designId`, `params`, `productIds`, `customerName`, `customerEmail`, and
+`checkoutUrl` only when the token matches an unpaid design (`pending` or
+`checkout_created`) and the token is under 90 days old
+(`RESUME_TOKEN_TTL_DAYS`). Anything else is 404, including a bare `?design=`
+with no `resume`, a paid design, or a token past that window. The page still
+restores a bare `?design=` from `sessionStorage` and does not ask the API for it.
+
+Coming back and changing geometry, email, or parts posts a new design and a
+new pending order. The previous unpaid order is left for cleanup.
+
+`resume_token` is minted on create and is not returned in the POST body.
+`product_ids` is the JSON array from `resolveProductIds`, stored so a later
+visit can tick the same parts. Dropouts stay Coming soon: 8636 is never one
+of those ids. Orders also store `creature_design_id` next to `design_id`.
+
+Cleanup of those scrapped pending orders is two hooks, both defaulting to 90
+days. Set `UNPAID_CLEANUP_INTERVAL_HOURS` (for example `24`) and the tools-api
+expires the resume token, sets the design to `expired` with `deleted_at` (the
+row stays), and cancels the Woo order when it is still pending.
+`POST /api/admin/cleanup-unpaid` runs the same job. On the shop, copy
+`wordpress-plugins/mu-plugins/creature-unpaid-design-orders.php` into
+`wp-content/mu-plugins/` so WP-Cron cancels the same pending orders if the
+API timer is off. Layout installs that file. Paid orders are not cancelled.
+
+The save email is Cadence's draft, which James approved: subject "Your Creature Cycles design is
+saved", buttons "Edit design" and "Take me to checkout", dropouts still
+coming soon, no prices. An empty first name is "Hi,".
+
+Mail goes out through nodemailer to Resend's SMTP. There is no Resend SDK.
+Set `SMTP_HOST=smtp.resend.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`,
+`SMTP_USER=resend`, and `SMTP_PASS` to the Resend API key.
+`EMAIL_FROM` is `Creature Cycles <info@creaturecycles.co.uk>` and
+`EMAIL_REPLY_TO` is `info@creaturecycles.co.uk`. Until `SMTP_PASS` is set the
+send is skipped and the save still succeeds. Verifying the domain in Resend
+is separate from this code. A live send waits on that secret and DNS.
+`FRAME_DESIGNER_URL` overrides the edit link if the page is not on
+`/apps/frame-designer.html`. `FRONTEND_URL` must allow the Frame Designer
+origin so the hydrate `GET` is not blocked by CORS.
+
 ## Deploying
 
 The frontend tools are static files. On Creature Cycles they are served

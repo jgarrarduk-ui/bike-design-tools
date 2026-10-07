@@ -1577,7 +1577,7 @@
 <div id="shop-modal-overlay" onclick="handleShopOverlayClick(event)">
   <div id="shop-modal" role="dialog" aria-labelledby="shop-title" aria-modal="true">
     <h2 id="shop-title">Save design</h2>
-    <p>Save this frame, then continue to checkout for the design files. Download JSON stays on this computer.</p>
+    <p>Save this frame, then continue to checkout for the design files. Saving also downloads JSON on this computer. A link to edit later, and a link to checkout, are emailed to you.</p>
     <div class="shop-field">
       <label for="shop-customer-name">your name</label>
       <input id="shop-customer-name" type="text" autocomplete="name" placeholder="name for the order">
@@ -4736,6 +4736,7 @@ async function submitShop(andCheckout){
     const payload = FrameShop.buildDesignPayload({
       customerName: customer.customerName,
       customerEmail: customer.customerEmail,
+      designName: (document.getElementById('shop-name') || {}).value,
       params,
       productIds: plan.productIds,
     });
@@ -4766,7 +4767,13 @@ async function submitShop(andCheckout){
 }
 
 async function saveDesignFromModal(){
-  await submitShop(false);
+  const record = await submitShop(false);
+  if(!record) return;
+  downloadDesignJson();
+  const el = document.getElementById('shop-status');
+  if(el && !el.classList.contains('is-error') && el.textContent){
+    el.textContent = el.textContent.replace(/\.$/, '') + '. JSON downloaded.';
+  }
 }
 
 async function continueToShop(){
@@ -4774,19 +4781,7 @@ async function continueToShop(){
   if(record && record.checkoutUrl) location.assign(record.checkoutUrl);
 }
 
-function restoreShopSession(){
-  if(!window.FrameShop) return;
-  renderShopParts();
-  let urlId = '';
-  try { urlId = new URL(location.href).searchParams.get('design') || ''; }
-  catch { urlId = ''; }
-  const saved = FrameShop.readSession(sessionStorage, urlId);
-  const bar = document.getElementById('statusbar');
-  if(urlId && !saved){
-    if(bar) bar.textContent = 'design ' + urlId.slice(0, 8) + ' is not in this session — save again to continue';
-    return;
-  }
-  if(!saved) return;
+function applyShopRecord(saved){
   if(saved.params && typeof saved.params === 'object'){
     const frameParams = { ...saved.params };
     delete frameParams.chainring_dia;
@@ -4798,7 +4793,53 @@ function restoreShopSession(){
   if(email) email.value = saved.customerEmail || '';
   if(Array.isArray(saved.productIds) && saved.productIds.length) setShopChecks(saved.productIds);
   showDesignId(saved.designId);
+}
+
+function restoreShopFromSession(urlId){
+  const saved = FrameShop.readSession(sessionStorage, urlId);
+  const bar = document.getElementById('statusbar');
+  if(urlId && !saved){
+    if(bar) bar.textContent = 'design ' + urlId.slice(0, 8) + ' is not in this session — save again to continue';
+    return false;
+  }
+  if(!saved) return false;
+  applyShopRecord(saved);
   if(bar && !saved.params) bar.textContent = 'Design ' + saved.designId.slice(0, 8) + ' saved';
+  return true;
+}
+
+// ?design= alone stays sessionStorage-only. design + resume hydrates from the API.
+async function restoreShopSession(){
+  if(!window.FrameShop) return;
+  renderShopParts();
+  let urlId = '';
+  let resume = '';
+  try {
+    const q = new URL(location.href).searchParams;
+    urlId = (q.get('design') || '').trim();
+    resume = (q.get('resume') || '').trim();
+  } catch {
+    urlId = '';
+    resume = '';
+  }
+  if(urlId && resume){
+    const bar = document.getElementById('statusbar');
+    try {
+      const data = await FrameShop.fetchHydratedDesign(toolsApiBase(), urlId, resume);
+      const record = FrameShop.sessionFromHydrate(data);
+      applyShopRecord(record);
+      FrameShop.writeSession(sessionStorage, record);
+      if(bar) bar.textContent = 'Design ' + record.designId.slice(0, 8) + ' reopened';
+      return;
+    } catch(err){
+      console.warn('design resume failed:', err && err.message);
+      if(!restoreShopFromSession(urlId) && bar){
+        bar.textContent = 'design ' + urlId.slice(0, 8) + ' could not be reopened — save again to continue';
+      }
+      return;
+    }
+  }
+  restoreShopFromSession(urlId);
 }
 
 function exportJSON(){
