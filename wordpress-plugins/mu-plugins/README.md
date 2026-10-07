@@ -32,7 +32,9 @@ Default window is 90 days, matching the resume token. Filter `creature_unpaid_de
 
 `creature-fd-only-purchase.php` is the catalogue guard. Copy it into `wp-content/mu-plugins/` the same way. WooCommerce must already be active. It loads on the next request, with no activate step. Under **Plugins → Must-Use** it is listed as “Creature Cycles Frame Designer Only Purchase”.
 
-The BB yoke (8634), SS yoke (8635), and dropouts (8636) cannot be bought from the product page, the shop loop, `?add-to-cart=`, or the Store API basket unless the line carries `design_id`. The price stays. 8634 and 8635 show **Design yours in Frame Designer**, linking to `/apps/frame-designer.html`. 8636 keeps a disabled **Coming soon** button; the product’s own Coming soon copy is not rewritten.
+The BB yoke (8634), SS yoke (8635), and dropouts (8636) cannot be bought from the product page, the shop loop, `?add-to-cart=`, or the Store API basket unless the line carries `design_id`. The price stays. Astra calls `woocommerce_template_single_add_to_cart()` itself, so the swap is on `woocommerce_simple_add_to_cart` (priority 5, and the other product-type actions). 8634 and 8635 show **Design yours in Frame Designer**, linking to `/apps/frame-designer.html`, in place of the quantity box and Add to basket. 8636 keeps a disabled **Coming soon** button; the product’s own Coming soon copy is not rewritten. Other products are not touched, so they still render one buy form.
+
+Astra’s on-card button (`ast-on-card-button`) is replaced the same way. WooPayments express checkout (card, Google Pay, Apple Pay, and WooPay) and PayPal smart buttons are turned off on these product pages only.
 
 Frame Designer itself does not use this basket. Save and Continue to shop create the pending order through the tools-api (`POST /wp-json/wc/v3/orders`) and send the customer to order-pay. This file does not hook order creation, order totals, or order-pay, so that payment and the whole-rear-end discount on the order stay as they are. A basket line that does have `design_id` is kept, and checkout copies that id onto the order line so the cart fee can follow it.
 
@@ -56,9 +58,9 @@ php wordpress-plugins/mu-plugins/tests/creature-fd-only-purchase-test.php
 
 On the shop, after the file is in place:
 
-1. Open the BB yoke and SS yoke products. The price is still there. The quantity box and Add to basket control are gone, replaced by **Design yours in Frame Designer**. The button opens `/apps/frame-designer.html`.
+1. Open the BB yoke and SS yoke products. The price is still there. The quantity box and Add to basket control are gone, replaced in that same spot by **Design yours in Frame Designer**. The button opens `/apps/frame-designer.html`. Card, Google Pay, Apple Pay, and PayPal buttons are not on the page. A normal product still has one buy form, not two.
 2. Open dropouts. The button reads **Coming soon** and does not add the product. Existing Coming soon text on the product is unchanged.
-3. In the shop grid, those three products use the same control, not an ajax add-to-cart.
+3. In the shop grid, those three products use the Frame Designer link or Coming soon, including Astra’s on-card button. It is not an ajax add-to-cart.
 4. Visit `?add-to-cart=8634`. The basket does not gain a line. The notice reads **Design your part in Frame Designer first** and links to Frame Designer. Repeat for 8635 and 8636.
 5. Add 8634 from the block basket or Store API (`POST /wp-json/wc/store/v1/cart/add-item`). The add is refused. A basket that already held 8634, 8635, or 8636 with no `design_id` loses that line on the next cart or checkout view, with the same notice.
 6. Save a design in Frame Designer and continue to checkout. The browser lands on order-pay for a tools-api order. That order still has `design_id` on the lines, and payment is unchanged. The rear-end discount still applies when 8634, 8635, and 8636 share a `design_id`.

@@ -55,8 +55,69 @@ if ( ! function_exists( 'remove_filter' ) ) {
 				$kept[] = $row;
 			}
 		}
-		$GLOBALS['creature_fd_filters'][ $hook ][ (int) $priority ] = $kept;
+		if ( ! $kept ) {
+			unset( $GLOBALS['creature_fd_filters'][ $hook ][ (int) $priority ] );
+		} else {
+			$GLOBALS['creature_fd_filters'][ $hook ][ (int) $priority ] = $kept;
+		}
 		return true;
+	}
+}
+
+if ( ! function_exists( 'do_action' ) ) {
+	function do_action( $hook, ...$args ) {
+		if ( empty( $GLOBALS['creature_fd_filters'][ $hook ] ) ) {
+			return;
+		}
+		if ( ! isset( $GLOBALS['creature_fd_current_filter'] ) ) {
+			$GLOBALS['creature_fd_current_filter'] = array();
+		}
+		$GLOBALS['creature_fd_current_filter'][] = $hook;
+		$priorities = array_keys( $GLOBALS['creature_fd_filters'][ $hook ] );
+		sort( $priorities, SORT_NUMERIC );
+		foreach ( $priorities as $priority ) {
+			if ( ! isset( $GLOBALS['creature_fd_filters'][ $hook ][ $priority ] ) || ! $GLOBALS['creature_fd_filters'][ $hook ][ $priority ] ) {
+				continue;
+			}
+			$rows = $GLOBALS['creature_fd_filters'][ $hook ][ $priority ];
+			foreach ( $rows as $row ) {
+				$params = $args;
+				if ( $row[1] > 0 && count( $params ) > $row[1] ) {
+					$params = array_slice( $params, 0, $row[1] );
+				}
+				call_user_func_array( $row[0], $params );
+			}
+		}
+		array_pop( $GLOBALS['creature_fd_current_filter'] );
+	}
+}
+
+if ( ! function_exists( 'current_filter' ) ) {
+	function current_filter() {
+		if ( empty( $GLOBALS['creature_fd_current_filter'] ) ) {
+			return '';
+		}
+		$stack = $GLOBALS['creature_fd_current_filter'];
+		return (string) $stack[ count( $stack ) - 1 ];
+	}
+}
+
+if ( ! function_exists( 'has_action' ) ) {
+	function has_action( $hook, $callback = false ) {
+		if ( empty( $GLOBALS['creature_fd_filters'][ $hook ] ) ) {
+			return false;
+		}
+		if ( false === $callback ) {
+			return true;
+		}
+		foreach ( $GLOBALS['creature_fd_filters'][ $hook ] as $priority => $rows ) {
+			foreach ( $rows as $row ) {
+				if ( $row[0] === $callback ) {
+					return (int) $priority;
+				}
+			}
+		}
+		return false;
 	}
 }
 
@@ -121,6 +182,10 @@ class Creature_Fd_Only_Test_Product {
 
 	public function is_type( $type ) {
 		return 'variation' === $type && $this->parent > 0;
+	}
+
+	public function get_type() {
+		return $this->parent > 0 ? 'variation' : 'simple';
 	}
 }
 
@@ -196,34 +261,49 @@ if ( ! class_exists( 'WooCommerce' ) ) {
 	class WooCommerce {}
 }
 
-if ( ! function_exists( 'woocommerce_template_single_add_to_cart' ) ) {
-	function woocommerce_template_single_add_to_cart() {
-		$GLOBALS['creature_fd_template_calls'] = isset( $GLOBALS['creature_fd_template_calls'] )
-			? $GLOBALS['creature_fd_template_calls'] + 1
-			: 1;
+if ( ! function_exists( 'woocommerce_simple_add_to_cart' ) ) {
+	function woocommerce_simple_add_to_cart() {
 		echo 'WOO_ADD_TO_CART_FORM';
 	}
 }
 
-add_action( 'woocommerce_single_product_summary', 'woocommerce_template_single_add_to_cart', 30 );
+if ( ! function_exists( 'woocommerce_template_single_add_to_cart' ) ) {
+	function woocommerce_template_single_add_to_cart() {
+		$product = isset( $GLOBALS['product'] ) ? $GLOBALS['product'] : null;
+		$type    = ( is_object( $product ) && method_exists( $product, 'get_type' ) ) ? $product->get_type() : 'simple';
+		do_action( 'woocommerce_' . $type . '_add_to_cart' );
+	}
+}
+
+add_action( 'woocommerce_simple_add_to_cart', 'woocommerce_simple_add_to_cart', 30 );
 Creature_Fd_Only_Purchase::boot();
 
 $hooks = creature_fd_hooks_for( 'Creature_Fd_Only_Purchase' );
 
 foreach (
 	array(
-		'woocommerce_single_product_summary',
+		'woocommerce_simple_add_to_cart',
 		'woocommerce_loop_add_to_cart_link',
+		'astra_addon_shop_cards_buttons_html',
 		'render_block',
 		'woocommerce_add_to_cart_validation',
 		'woocommerce_add_cart_item_data',
 		'woocommerce_store_api_validate_add_to_cart',
 		'woocommerce_check_cart_items',
 		'woocommerce_checkout_create_order_line_item',
+		'wcpay_payment_request_is_product_supported',
+		'wcpay_woopay_button_is_product_supported',
+		'woocommerce_paypal_payments_product_supports_payment_request_button',
+		'woocommerce_paypal_payments_product_buttons_disabled',
 	) as $required
 ) {
 	creature_fd_expect( in_array( $required, $hooks, true ), "missing hook {$required}" );
 }
+
+creature_fd_expect(
+	! in_array( 'woocommerce_single_product_summary', $hooks, true ),
+	'summary hook must stay untouched'
+);
 
 foreach (
 	array(
@@ -246,13 +326,10 @@ foreach ( $GLOBALS['creature_fd_hooks'] as $row ) {
 }
 creature_fd_expect( 6 === $validation_args, 'validation filter must accept 6 args so Store API cart item data arrives' );
 
-$template_still_hooked = false;
-foreach ( $GLOBALS['creature_fd_filters']['woocommerce_single_product_summary'][30] as $row ) {
-	if ( 'woocommerce_template_single_add_to_cart' === $row[0] ) {
-		$template_still_hooked = true;
-	}
-}
-creature_fd_expect( ! $template_still_hooked, 'default single add-to-cart template should be unhooked' );
+creature_fd_expect(
+	30 === has_action( 'woocommerce_simple_add_to_cart', 'woocommerce_simple_add_to_cart' ),
+	'Woo simple handler stays registered until a guarded product renders'
+);
 
 creature_fd_expect(
 	Creature_Fd_Only_Purchase::product_ids() === array( 8634, 8635, 8636 ),
@@ -344,20 +421,125 @@ creature_fd_expect( false !== strpos( $loop, 'href="/apps/frame-designer.html"' 
 $loop_other = Creature_Fd_Only_Purchase::on_loop_link( '<a href="/?add-to-cart=100">Add</a>', $other );
 creature_fd_expect( '<a href="/?add-to-cart=100">Add</a>' === $loop_other, 'other loop buttons stay' );
 
+/**
+ * One pass of Woo's simple add-to-cart action, the path Astra calls.
+ *
+ * @return string
+ */
+function creature_fd_render_simple() {
+	ob_start();
+	do_action( 'woocommerce_simple_add_to_cart' );
+	return (string) ob_get_clean();
+}
+
+$GLOBALS['product'] = $other;
+$plain = creature_fd_render_simple();
+creature_fd_expect( 1 === substr_count( $plain, 'WOO_ADD_TO_CART_FORM' ), 'a normal product renders exactly one Woo buy form' );
+creature_fd_expect( false === strpos( $plain, 'Design yours in Frame Designer' ), 'a normal product does not get the FD button' );
+creature_fd_expect( false === strpos( $plain, 'Coming soon' ), 'a normal product does not get Coming soon' );
+
+$plain_again = creature_fd_render_simple();
+creature_fd_expect( 1 === substr_count( $plain_again, 'WOO_ADD_TO_CART_FORM' ), 'a second view of a normal product is still one form' );
+
 $GLOBALS['product'] = $bb;
-$GLOBALS['creature_fd_template_calls'] = 0;
-ob_start();
-Creature_Fd_Only_Purchase::on_single_add_to_cart();
-$single = ob_get_clean();
-creature_fd_expect( false !== strpos( $single, 'Design yours in Frame Designer' ), 'single swaps the form' );
-creature_fd_expect( false === strpos( $single, 'WOO_ADD_TO_CART_FORM' ), 'single does not render the Woo form' );
-creature_fd_expect( 0 === $GLOBALS['creature_fd_template_calls'], 'template not called for a gated product' );
+$yoke = creature_fd_render_simple();
+creature_fd_expect( 0 === substr_count( $yoke, 'WOO_ADD_TO_CART_FORM' ), '8634 renders zero Woo buy forms' );
+creature_fd_expect( 1 === substr_count( $yoke, 'Design yours in Frame Designer' ), '8634 renders one FD button' );
+creature_fd_expect( false === strpos( $yoke, 'quantity' ), '8634 form has no quantity box' );
+creature_fd_expect( false === strpos( $yoke, 'add-to-cart' ), '8634 form is not an add-to-cart' );
+
+$GLOBALS['product'] = $other;
+$after_yoke = creature_fd_render_simple();
+creature_fd_expect( 1 === substr_count( $after_yoke, 'WOO_ADD_TO_CART_FORM' ), 'the Woo handler is restored after a guarded product' );
+creature_fd_expect( false === strpos( $after_yoke, 'creature-fd-only' ), 'the restored product does not keep the FD control' );
+
+$GLOBALS['product'] = $drop;
+$soon = creature_fd_render_simple();
+creature_fd_expect( 0 === substr_count( $soon, 'WOO_ADD_TO_CART_FORM' ), '8636 renders zero Woo buy forms' );
+creature_fd_expect( 1 === substr_count( $soon, '>Coming soon<' ), '8636 renders one Coming soon control' );
+creature_fd_expect( false === strpos( $soon, 'href=' ), '8636 Coming soon is not a link' );
+creature_fd_expect( false === strpos( $soon, 'Design yours in Frame Designer' ), '8636 does not get the FD link' );
+
+add_action(
+	'woocommerce_single_product_summary',
+	static function () {
+		echo 'ASTRA_STRUCTURE_START';
+		woocommerce_template_single_add_to_cart();
+		echo 'ASTRA_STRUCTURE_END';
+	},
+	10
+);
 
 $GLOBALS['product'] = $other;
 ob_start();
-Creature_Fd_Only_Purchase::on_single_add_to_cart();
-$single_other = ob_get_clean();
-creature_fd_expect( false !== strpos( $single_other, 'WOO_ADD_TO_CART_FORM' ), 'other single products still use the Woo form' );
+do_action( 'woocommerce_single_product_summary' );
+$astra_plain = (string) ob_get_clean();
+creature_fd_expect( 1 === substr_count( $astra_plain, 'ASTRA_STRUCTURE_START' ), 'Astra structure runs once' );
+creature_fd_expect( 1 === substr_count( $astra_plain, 'WOO_ADD_TO_CART_FORM' ), 'Astra normal product still has one buy form' );
+creature_fd_expect( false === strpos( $astra_plain, 'Design yours in Frame Designer' ), 'Astra normal product has no extra FD button' );
+
+$GLOBALS['product'] = $bb;
+ob_start();
+do_action( 'woocommerce_single_product_summary' );
+$astra_yoke = (string) ob_get_clean();
+creature_fd_expect( 1 === substr_count( $astra_yoke, 'ASTRA_STRUCTURE_START' ), 'Astra yoke page structure runs once' );
+creature_fd_expect( 0 === substr_count( $astra_yoke, 'WOO_ADD_TO_CART_FORM' ), 'Astra yoke page does not keep the Woo form' );
+creature_fd_expect( 1 === substr_count( $astra_yoke, 'Design yours in Frame Designer' ), 'Astra yoke page shows one FD button inside the form slot' );
+$fd_at = strpos( $astra_yoke, 'Design yours in Frame Designer' );
+$end_at = strpos( $astra_yoke, 'ASTRA_STRUCTURE_END' );
+creature_fd_expect( false !== $fd_at && false !== $end_at && $fd_at < $end_at, 'FD button is inside Astra structure, not after it' );
+
+$card_html = '<span class="onsale">Sale</span><a href="/?add-to-cart=8634" data-quantity="1" class="ast-on-card-button ast-select-options-trigger product_type_simple add_to_cart_button ajax_add_to_cart" data-product_id="8634" rel="nofollow"><span class="ast-card-action-tooltip">Add to basket</span></a>';
+$card = Creature_Fd_Only_Purchase::on_astra_card_buttons( $card_html, $bb );
+creature_fd_expect( false !== strpos( $card, 'Sale' ), 'card sale badge stays' );
+creature_fd_expect( false === strpos( $card, 'ajax_add_to_cart' ), 'card button is not ajax' );
+creature_fd_expect( false === strpos( $card, 'add_to_cart_button' ), 'card button drops the add-to-cart class' );
+creature_fd_expect( false === strpos( $card, 'data-product_id' ), 'card button drops the product id' );
+creature_fd_expect( false === strpos( $card, 'add-to-cart' ), 'card button is not an add-to-cart url' );
+creature_fd_expect( false !== strpos( $card, 'ast-on-card-button' ), 'card button keeps Astra placement class' );
+creature_fd_expect( false !== strpos( $card, 'href="/apps/frame-designer.html"' ), 'card button links to Frame Designer' );
+
+$card_soon_html = '<a href="/?add-to-cart=8636" class="ast-on-card-button ajax_add_to_cart" data-product_id="8636">Add</a>';
+$card_soon = Creature_Fd_Only_Purchase::on_astra_card_buttons( $card_soon_html, $drop );
+creature_fd_expect( false !== strpos( $card_soon, '>Coming soon<' ), 'dropouts card is Coming soon' );
+creature_fd_expect( false === strpos( $card_soon, 'ajax_add_to_cart' ), 'dropouts card is not ajax' );
+creature_fd_expect( false === strpos( $card_soon, 'href=' ), 'dropouts card is not a link' );
+
+$card_other = Creature_Fd_Only_Purchase::on_astra_card_buttons( $card_html, $other );
+creature_fd_expect( $card_html === $card_other, 'other product cards keep Astra ajax button' );
+
+creature_fd_expect(
+	false === apply_filters( 'wcpay_payment_request_is_product_supported', true, $bb ),
+	'WooPayments express checkout is off for 8634'
+);
+creature_fd_expect(
+	false === apply_filters( 'wcpay_woopay_button_is_product_supported', true, $drop ),
+	'WooPay express button is off for 8636'
+);
+creature_fd_expect(
+	false === apply_filters( 'woocommerce_paypal_payments_product_supports_payment_request_button', true, $bb ),
+	'PayPal smart buttons are off for 8634'
+);
+creature_fd_expect(
+	true === apply_filters( 'woocommerce_paypal_payments_product_buttons_disabled', false, array( 'product' => $bb ) ),
+	'PayPal product-page disable flag is set for 8634'
+);
+creature_fd_expect(
+	true === apply_filters( 'wcpay_payment_request_is_product_supported', true, $other ),
+	'WooPayments express checkout stays on for a normal product'
+);
+creature_fd_expect(
+	true === apply_filters( 'woocommerce_paypal_payments_product_supports_payment_request_button', true, $other ),
+	'PayPal smart buttons stay on for a normal product'
+);
+creature_fd_expect(
+	false === apply_filters( 'woocommerce_paypal_payments_product_buttons_disabled', false, array( 'product' => $other ) ),
+	'PayPal disable flag stays off for a normal product'
+);
+creature_fd_expect(
+	true === apply_filters( 'wcpay_payment_request_is_product_supported', true, null ),
+	'express filter does not hide buttons when no product is passed'
+);
 
 $block = Creature_Fd_Only_Purchase::on_render_block(
 	'<form class="cart"><button class="ajax_add_to_cart">Add</button></form>',

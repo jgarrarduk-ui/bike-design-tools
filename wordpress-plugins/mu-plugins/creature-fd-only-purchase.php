@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles Frame Designer Only Purchase
  * Description: Frame Designer is the only way to buy the BB yoke (8634), SS yoke (8635), and dropouts (8636). Hides the catalogue add-to-cart control and rejects basket lines with no design_id. Must-use plugin. Does not touch REST-created orders or order-pay.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  *
@@ -35,6 +35,11 @@
  * left as written. Filter creature_fd_only_coming_soon_ids to hand 8636 the
  * Frame Designer button without opening a bare catalogue add. Filter
  * creature_fd_only_product_ids to change which products are guarded.
+ *
+ * Astra does not use the summary hook for the buy form. It calls
+ * woocommerce_template_single_add_to_cart() from its own structure, which
+ * fires woocommerce_{type}_add_to_cart. The swap lives on that action, and
+ * only for the guarded ids, so every other product keeps Woo's handler.
  */
 
 if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
@@ -62,19 +67,37 @@ final class Creature_Fd_Only_Purchase {
 	 */
 	private static $previewing = false;
 
+	/**
+	 * Type hooks whose Woo handler was removed for this request and must be
+	 * put back after priority 30, so the next product still gets its form.
+	 *
+	 * @var array<string, bool>
+	 */
+	private static $restore_add_to_cart = array();
+
 	public static function boot() {
 		if ( self::$booted || ! class_exists( 'WooCommerce' ) ) {
 			return;
 		}
 		self::$booted = true;
 
-		// Price stays on woocommerce_template_single_price (priority 10).
-		// This only replaces the form, which is where the quantity box lives.
-		remove_action( 'woocommerce_single_product_summary', 'woocommerce_template_single_add_to_cart', 30 );
-		add_action( 'woocommerce_single_product_summary', array( __CLASS__, 'on_single_add_to_cart' ), 30 );
+		// Astra calls woocommerce_template_single_add_to_cart() itself. That
+		// fires woocommerce_{type}_add_to_cart. Do not touch the summary hook:
+		// a second callback there printed a duplicate form on every other product.
+		foreach ( self::type_add_to_cart_hooks() as $hook ) {
+			add_action( $hook, array( __CLASS__, 'on_typed_add_to_cart' ), 5 );
+			add_action( $hook, array( __CLASS__, 'restore_typed_add_to_cart' ), 31 );
+		}
 
 		add_filter( 'woocommerce_loop_add_to_cart_link', array( __CLASS__, 'on_loop_link' ), 99, 2 );
+		add_filter( 'astra_addon_shop_cards_buttons_html', array( __CLASS__, 'on_astra_card_buttons' ), 10, 2 );
 		add_filter( 'render_block', array( __CLASS__, 'on_render_block' ), 10, 3 );
+
+		// Product page only. Cart, checkout, and order-pay do not consult these.
+		add_filter( 'wcpay_payment_request_is_product_supported', array( __CLASS__, 'filter_express_product_supported' ), 10, 2 );
+		add_filter( 'wcpay_woopay_button_is_product_supported', array( __CLASS__, 'filter_express_product_supported' ), 10, 2 );
+		add_filter( 'woocommerce_paypal_payments_product_supports_payment_request_button', array( __CLASS__, 'filter_express_product_supported' ), 10, 2 );
+		add_filter( 'woocommerce_paypal_payments_product_buttons_disabled', array( __CLASS__, 'filter_paypal_product_buttons_disabled' ), 10, 2 );
 
 		// Accepted args must be 6. The Store API passes cart item data in the
 		// sixth argument; the classic form handler and ?add-to-cart= do not.
@@ -330,15 +353,136 @@ final class Creature_Fd_Only_Purchase {
 		return self::NOTICE . ' ' . self::designer_url();
 	}
 
-	public static function on_single_add_to_cart() {
-		$markup = self::purchase_markup( isset( $GLOBALS['product'] ) ? $GLOBALS['product'] : null, true );
+	/**
+	 * Woo's per-type add-to-cart actions. The handler function name matches
+	 * the hook, and core registers it at priority 30.
+	 *
+	 * @return string[]
+	 */
+	public static function type_add_to_cart_hooks() {
+		return array(
+			'woocommerce_simple_add_to_cart',
+			'woocommerce_variable_add_to_cart',
+			'woocommerce_grouped_add_to_cart',
+			'woocommerce_external_add_to_cart',
+		);
+	}
+
+	/**
+	 * Runs at priority 5, before Woo's template at 30. Non-listed products
+	 * return without removing anything. Listed products drop Woo's handler
+	 * for this pass and print the Frame Designer control instead.
+	 *
+	 * The handler is not put back here. WordPress has already listed priority
+	 * 30 for this do_action; adding the callback again before that priority
+	 * runs would print the Woo form as well.
+	 */
+	public static function on_typed_add_to_cart() {
+		$product = isset( $GLOBALS['product'] ) ? $GLOBALS['product'] : null;
+		$markup  = self::purchase_markup( $product, true );
 		if ( null === $markup ) {
-			if ( function_exists( 'woocommerce_template_single_add_to_cart' ) ) {
-				woocommerce_template_single_add_to_cart();
-			}
 			return;
 		}
-		echo $markup; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped URL and fixed strings.
+		$hook = function_exists( 'current_filter' ) ? current_filter() : '';
+		if ( ! is_string( $hook ) || '' === $hook ) {
+			return;
+		}
+		remove_action( $hook, $hook, 30 );
+		echo $markup; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped URL and fixed strings.
+		self::$restore_add_to_cart[ $hook ] = true;
+	}
+
+	/**
+	 * Priority 31: Woo's slot has been skipped. Put the handler back so the
+	 * next product on this request still gets one buy form.
+	 */
+	public static function restore_typed_add_to_cart() {
+		$hook = function_exists( 'current_filter' ) ? current_filter() : '';
+		if ( ! is_string( $hook ) || empty( self::$restore_add_to_cart[ $hook ] ) ) {
+			return;
+		}
+		self::$restore_add_to_cart[ $hook ] = false;
+		if ( function_exists( $hook ) && function_exists( 'has_action' ) && false === has_action( $hook, $hook ) ) {
+			add_action( $hook, $hook, 30 );
+		}
+	}
+
+	/**
+	 * Astra's modern shop card prints its own ast-on-card-button anchor and
+	 * does not use woocommerce_loop_add_to_cart_link. Swap that anchor only.
+	 *
+	 * @param string $html
+	 * @param mixed  $product
+	 * @return string
+	 */
+	public static function on_astra_card_buttons( $html, $product ) {
+		$replacement = self::card_button_markup( $product );
+		if ( null === $replacement || ! is_string( $html ) ) {
+			return $html;
+		}
+		$updated = preg_replace(
+			'/<a\b[^>]*\bast-on-card-button\b[^>]*>.*?<\/a>/s',
+			$replacement,
+			$html,
+			1
+		);
+		return is_string( $updated ) ? $updated : $html;
+	}
+
+	/**
+	 * Card control with Astra's overlay class, and without ajax add-to-cart.
+	 *
+	 * @param mixed $product
+	 * @return string|null
+	 */
+	public static function card_button_markup( $product ) {
+		if ( null === self::purchase_markup( $product, false ) ) {
+			return null;
+		}
+		foreach ( self::ids_for_product( $product ) as $id ) {
+			if ( self::is_coming_soon_id( $id ) ) {
+				return '<span class="ast-on-card-button button disabled creature-fd-only-soon" aria-disabled="true"><span class="ast-card-action-tooltip">Coming soon</span></span>';
+			}
+		}
+		$url = self::escape_url( self::designer_url() );
+		return '<a href="' . $url . '" class="ast-on-card-button button creature-fd-only-link"><span class="ast-card-action-tooltip">Design yours in Frame Designer</span></a>';
+	}
+
+	/**
+	 * WooPayments express checkout and PayPal smart buttons on the product
+	 * page. False means the product cannot show the button. Other products,
+	 * the cart, checkout, and order-pay are left as the gateway decided.
+	 *
+	 * @param mixed $supported
+	 * @param mixed $product
+	 * @return mixed
+	 */
+	public static function filter_express_product_supported( $supported, $product = null ) {
+		if ( null !== self::purchase_markup( $product, false ) ) {
+			return false;
+		}
+		return $supported;
+	}
+
+	/**
+	 * PayPal's product-page disable flag. True hides the buttons. Only set
+	 * when the context names one of our products.
+	 *
+	 * @param mixed $disabled
+	 * @param mixed $context_data
+	 * @return mixed
+	 */
+	public static function filter_paypal_product_buttons_disabled( $disabled, $context_data = array() ) {
+		if ( $disabled ) {
+			return $disabled;
+		}
+		if ( ! is_array( $context_data ) || ! isset( $context_data['product'] ) ) {
+			return $disabled;
+		}
+		if ( null !== self::purchase_markup( $context_data['product'], false ) ) {
+			return true;
+		}
+		return $disabled;
 	}
 
 	/**
