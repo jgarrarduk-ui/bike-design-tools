@@ -153,6 +153,27 @@ if ( ! function_exists( 'wc_locate_template' ) ) {
 		return $path;
 	}
 }
+if ( ! function_exists( 'wc_add_notice' ) ) {
+	function wc_add_notice( $message, $notice_type = 'success' ) {
+		if ( ! isset( $GLOBALS['creature_fd_exp_notices'] ) || ! is_array( $GLOBALS['creature_fd_exp_notices'] ) ) {
+			$GLOBALS['creature_fd_exp_notices'] = array();
+		}
+		$GLOBALS['creature_fd_exp_notices'][] = array( (string) $message, (string) $notice_type );
+	}
+}
+if ( ! class_exists( 'WP_Error' ) ) {
+	class WP_Error {
+		public $errors = array();
+
+		public function add( $code, $message ) {
+			$this->errors[ (string) $code ] = (string) $message;
+		}
+
+		public function has_errors() {
+			return ! empty( $this->errors );
+		}
+	}
+}
 if ( ! function_exists( 'wc_print_notice' ) ) {
 	function wc_print_notice( $message, $notice_type = 'success', $data = array(), $return = false ) {
 		unset( $data );
@@ -204,6 +225,8 @@ class Creature_Fd_Exp_Order {
 	public $key;
 	public $items;
 	public $meta;
+	public $total = '136.00';
+	public $notes = array();
 
 	public function __construct( $id, $key, $items, $meta = array() ) {
 		$this->id    = (int) $id;
@@ -227,6 +250,22 @@ class Creature_Fd_Exp_Order {
 	public function get_meta( $key, $single = true ) {
 		unset( $single );
 		return isset( $this->meta[ $key ] ) ? $this->meta[ $key ] : '';
+	}
+
+	public function update_meta_data( $key, $value ) {
+		$this->meta[ $key ] = $value;
+	}
+
+	public function save() {
+		return $this->id;
+	}
+
+	public function get_total() {
+		return $this->total;
+	}
+
+	public function add_order_note( $note ) {
+		$this->notes[] = (string) $note;
 	}
 }
 
@@ -517,6 +556,7 @@ foreach ( array( $processing, $on_hold, $completed ) as $mail ) {
 		$mail->id . ' plain text includes the lead time'
 	);
 	creature_fd_exp_expect( false === strpos( $text, '<p' ), $mail->id . ' plain text has no html paragraph' );
+	creature_fd_exp_expect( false === strpos( $html, '14-day right to cancel ends' ), $mail->id . ' email has no waiver line before consent' );
 }
 ob_start();
 do_action( 'woocommerce_email_before_order_table', $fd, true, false, $processing );
@@ -556,6 +596,138 @@ creature_fd_exp_expect(
 	'product page uses the experience plugin lead time'
 );
 remove_filter( 'creature_fd_lead_time', 'creature_fd_exp_lead_override' );
+
+$waiver = 'I want my design files made and supplied straight away, and I understand I lose my 14-day right to cancel once work starts.';
+$waiver_email = 'You asked us to start straight away and acknowledged that the 14-day right to cancel ends once work starts.';
+$waiver_error = 'Please tick the box to confirm you want your design files made and supplied straight away. Payment has not been taken.';
+
+creature_fd_exp_arm_pay( $other );
+ob_start();
+Creature_Fd_Order_Experience::on_pay_order_before_submit();
+$other_box = ob_get_clean();
+creature_fd_exp_expect( '' === $other_box, 'non-FD order-pay has no cancellation checkbox' );
+ob_start();
+Creature_Fd_Order_Experience::on_before_pay_form_express( $other );
+creature_fd_exp_expect( '' === ob_get_clean(), 'non-FD order-pay does not hide express buttons' );
+
+creature_fd_exp_arm_pay( $fd );
+ob_start();
+Creature_Fd_Order_Experience::on_pay_order_before_submit();
+$fd_box = ob_get_clean();
+creature_fd_exp_expect( false !== strpos( $fd_box, 'name="creature_fd_cancellation_waiver"' ), 'FD order-pay renders the waiver checkbox' );
+creature_fd_exp_expect( false !== strpos( $fd_box, 'required="required"' ), 'waiver checkbox is required' );
+creature_fd_exp_expect( false !== strpos( $fd_box, $waiver ), 'waiver checkbox uses the T&amp;C wording' );
+creature_fd_exp_expect( false === strpos( $fd_box, 'name="terms"' ), 'waiver checkbox is not the Woo terms box' );
+ob_start();
+Creature_Fd_Order_Experience::on_before_pay_form_express( $fd );
+$express_hide = ob_get_clean();
+creature_fd_exp_expect( false !== strpos( $express_hide, '.wcpay-express-checkout-wrapper' ), 'FD order-pay hides WooPayments express buttons' );
+
+function creature_fd_exp_waiver_wording() {
+	return 'Custom waiver wording for the final terms.';
+}
+add_filter( 'creature_fd_cancellation_waiver_text', 'creature_fd_exp_waiver_wording' );
+ob_start();
+Creature_Fd_Order_Experience::on_pay_order_before_submit();
+$custom_box = ob_get_clean();
+creature_fd_exp_expect( false !== strpos( $custom_box, 'Custom waiver wording for the final terms.' ), 'waiver wording follows its filter' );
+remove_filter( 'creature_fd_cancellation_waiver_text', 'creature_fd_exp_waiver_wording' );
+
+$GLOBALS['creature_fd_exp_notices'] = array();
+unset( $_POST['creature_fd_cancellation_waiver'] );
+$fd->total = '136.00';
+Creature_Fd_Order_Experience::on_before_pay_action( $fd );
+creature_fd_exp_expect(
+	isset( $GLOBALS['creature_fd_exp_notices'][0] ) && 'error' === $GLOBALS['creature_fd_exp_notices'][0][1] && $waiver_error === $GLOBALS['creature_fd_exp_notices'][0][0],
+	'missing waiver rejects pay_action with an error'
+);
+creature_fd_exp_expect( ! Creature_Fd_Order_Experience::order_has_waiver( $fd ), 'rejected pay_action does not store consent' );
+creature_fd_exp_expect( '136.00' === $fd->get_total(), 'rejected pay_action leaves the total unchanged' );
+$GLOBALS['creature_fd_exp_notices'] = array();
+Creature_Fd_Order_Experience::on_before_pay_action( $other );
+creature_fd_exp_expect( array() === $GLOBALS['creature_fd_exp_notices'], 'non-FD pay_action does not ask for the waiver' );
+
+$_POST['creature_fd_cancellation_waiver'] = '1';
+Creature_Fd_Order_Experience::on_before_pay_action( $fd );
+creature_fd_exp_expect( '1' === (string) $fd->get_meta( '_creature_fd_cancellation_waiver' ), 'consent is stored as order meta' );
+creature_fd_exp_expect( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', (string) $fd->get_meta( '_creature_fd_cancellation_waiver_at' ) ), 'consent timestamp is UTC' );
+creature_fd_exp_expect( $waiver === (string) $fd->get_meta( '_creature_fd_cancellation_waiver_text' ), 'consent stores the wording shown' );
+creature_fd_exp_expect( '1' === (string) $fd->get_meta( '_creature_fd_cancellation_waiver_version' ), 'consent stores the wording version' );
+creature_fd_exp_expect( '136.00' === $fd->get_total(), 'recording consent leaves the total unchanged' );
+creature_fd_exp_expect( 1 === count( $fd->notes ) && false !== strpos( $fd->notes[0], $waiver ), 'wp-admin order note records the waiver' );
+Creature_Fd_Order_Experience::on_before_pay_action( $fd );
+creature_fd_exp_expect( 1 === count( $fd->notes ), 'a second pay attempt does not add another note' );
+unset( $_POST['creature_fd_cancellation_waiver'] );
+
+ob_start();
+Creature_Fd_Order_Experience::on_admin_order_waiver( $fd );
+$admin_waiver = ob_get_clean();
+creature_fd_exp_expect( false !== strpos( $admin_waiver, 'Cancellation waiver:' ) && false !== strpos( $admin_waiver, $waiver ), 'order screen shows the waiver' );
+
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $fd, false, false, $processing );
+$paid_mail = ob_get_clean();
+creature_fd_exp_expect( false !== strpos( $paid_mail, $waiver_email ), 'processing email confirms the waiver for an FD order' );
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $fd, false, true, $processing );
+$paid_text = ob_get_clean();
+creature_fd_exp_expect( false !== strpos( $paid_text, $waiver_email ), 'processing plain text confirms the waiver' );
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $fd, false, false, $on_hold );
+$hold_mail = ob_get_clean();
+creature_fd_exp_expect( false === strpos( $hold_mail, $waiver_email ), 'on-hold email does not add the waiver line' );
+$other->update_meta_data( '_creature_fd_cancellation_waiver', '1' );
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $other, false, false, $processing );
+$other_paid = ob_get_clean();
+creature_fd_exp_expect( false === strpos( $other_paid, $waiver_email ), 'a non-FD order does not get the waiver line' );
+
+if ( ! isset( $GLOBALS['wp'] ) || ! is_object( $GLOBALS['wp'] ) ) {
+	$GLOBALS['wp'] = new stdClass();
+}
+$GLOBALS['wp']->query_vars = array( 'rest_route' => '/wc/store/v1/checkout/10' );
+$store_errors = new WP_Error();
+Creature_Fd_Order_Experience::on_validate_before_payment( $fd, $store_errors );
+creature_fd_exp_expect( $store_errors->has_errors(), 'Store API order-pay rejects an FD order without the waiver' );
+$cart_errors = new WP_Error();
+$GLOBALS['wp']->query_vars = array( 'rest_route' => '/wc/store/v1/checkout' );
+Creature_Fd_Order_Experience::on_validate_before_payment( $fd, $cart_errors );
+creature_fd_exp_expect( ! $cart_errors->has_errors(), 'regular Store API checkout is not asked for the waiver' );
+$GLOBALS['wp']->query_vars = array( 'rest_route' => '/wc/store/v1/checkout/14' );
+$plain_errors = new WP_Error();
+Creature_Fd_Order_Experience::on_validate_before_payment( $other, $plain_errors );
+creature_fd_exp_expect( ! $plain_errors->has_errors(), 'Store API order-pay ignores a non-FD order' );
+
+$paypal_fd = creature_fd_exp_order( 15, array( new Creature_Fd_Exp_Item( 8634, array( 'design_id' => 'design-15' ) ) ) );
+$threw = false;
+try {
+	Creature_Fd_Order_Experience::on_paypal_create_order( array( 'context' => 'pay-now', 'order_id' => 15, 'form' => array() ) );
+} catch ( RuntimeException $e ) {
+	$threw = $waiver_error === $e->getMessage();
+}
+creature_fd_exp_expect( $threw, 'PayPal pay-now rejects an FD order without the waiver' );
+$threw = false;
+try {
+	Creature_Fd_Order_Experience::on_paypal_create_order(
+		array(
+			'context'  => 'pay-now',
+			'order_id' => 15,
+			'form'     => array( array( 'name' => 'creature_fd_cancellation_waiver', 'value' => '1' ) ),
+		)
+	);
+} catch ( RuntimeException $e ) {
+	$threw = true;
+}
+creature_fd_exp_expect( ! $threw && Creature_Fd_Order_Experience::order_has_waiver( $paypal_fd ), 'PayPal pay-now with the box ticked stores consent' );
+creature_fd_exp_expect( '136.00' === $paypal_fd->get_total(), 'PayPal consent does not change the total' );
+$threw = false;
+try {
+	Creature_Fd_Order_Experience::on_paypal_create_order( array( 'context' => 'pay-now', 'order_id' => 14, 'form' => array() ) );
+} catch ( RuntimeException $e ) {
+	$threw = true;
+}
+creature_fd_exp_expect( ! $threw, 'PayPal pay-now leaves a non-FD order alone' );
+do_action( 'after_woocommerce_pay' );
 
 echo "\n{$GLOBALS['creature_fd_exp_passed']} passed, {$GLOBALS['creature_fd_exp_failed']} failed\n";
 exit( $GLOBALS['creature_fd_exp_failed'] > 0 ? 1 : 0 );

@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Creature Cycles Frame Designer Order Experience
- * Description: Customer-facing copy for Frame Designer orders. Replaces the order-pay guest warning on those orders, hides internal line meta from customers, and prints the delivery lead time. Does not change prices, totals, or order creation.
- * Version: 1.0.0
+ * Description: Customer-facing copy for Frame Designer orders. Replaces the order-pay guest warning on those orders, hides internal line meta from customers, prints the delivery lead time, and requires the straight-away cancellation waiver before payment. Does not change prices, totals, or order creation.
+ * Version: 1.1.0
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  *
@@ -37,6 +37,17 @@
  * design_id_from_order() from the customer email hook already used here.
  * That flow is not built: it still needs a short-lived resume-style token
  * and a revision saved against the same Woo order.
+ *
+ * Cancellation waiver
+ * ------------------
+ * On order-pay, a Frame Designer order shows a separate required checkbox.
+ * Filter creature_fd_cancellation_waiver_text to follow the final T&Cs.
+ * Woo's own terms checkbox is left as it is. Payment is refused until the
+ * box is ticked: the classic pay form (WooPayments card, and a normal Pay
+ * for order submit), PayPal's pay-now create-order call, and the Store API
+ * checkout used by WooPayments express buttons. Express buttons on that
+ * page do not post the checkbox, so they are hidden and the Store API
+ * rejects them. Totals are not recalculated.
  */
 
 if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
@@ -44,13 +55,31 @@ if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
 }
 
 /**
- * Display-only polish for Frame Designer orders.
+ * Customer-facing copy and the order-pay cancellation waiver.
  */
 final class Creature_Fd_Order_Experience {
 
 	const LEAD_TIME = '5 working days';
 
 	const GUEST_NOTICE_NEEDLE = 'paying for a guest order';
+
+	const WAIVER_TEXT = 'I want my design files made and supplied straight away, and I understand I lose my 14-day right to cancel once work starts.';
+
+	const WAIVER_VERSION = '1';
+
+	const WAIVER_EMAIL = 'You asked us to start straight away and acknowledged that the 14-day right to cancel ends once work starts.';
+
+	const WAIVER_ERROR = 'Please tick the box to confirm you want your design files made and supplied straight away. Payment has not been taken.';
+
+	const WAIVER_FIELD = 'creature_fd_cancellation_waiver';
+
+	const WAIVER_META = '_creature_fd_cancellation_waiver';
+
+	const WAIVER_AT_META = '_creature_fd_cancellation_waiver_at';
+
+	const WAIVER_TEXT_META = '_creature_fd_cancellation_waiver_text';
+
+	const WAIVER_VERSION_META = '_creature_fd_cancellation_waiver_version';
 
 	/** @var bool */
 	private static $booted = false;
@@ -85,6 +114,13 @@ final class Creature_Fd_Order_Experience {
 
 		add_action( 'woocommerce_thankyou', array( __CLASS__, 'on_thankyou' ), 5, 1 );
 		add_action( 'woocommerce_email_before_order_table', array( __CLASS__, 'on_email_before_order_table' ), 10, 4 );
+
+		add_action( 'before_woocommerce_pay_form', array( __CLASS__, 'on_before_pay_form_express' ), 2, 1 );
+		add_action( 'woocommerce_pay_order_before_submit', array( __CLASS__, 'on_pay_order_before_submit' ) );
+		add_action( 'woocommerce_before_pay_action', array( __CLASS__, 'on_before_pay_action' ), 5, 1 );
+		add_action( 'woocommerce_checkout_validate_order_before_payment', array( __CLASS__, 'on_validate_before_payment' ), 10, 2 );
+		add_action( 'woocommerce_paypal_payments_create_order_request_started', array( __CLASS__, 'on_paypal_create_order' ), 10, 1 );
+		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'on_admin_order_waiver' ), 10, 1 );
 	}
 
 	/**
@@ -331,12 +367,275 @@ final class Creature_Fd_Order_Experience {
 		if ( ! in_array( $id, self::customer_lead_email_ids(), true ) ) {
 			return;
 		}
-		$sentence = self::delivery_sentence();
+		$lines = array( self::delivery_sentence() );
+		if ( 'customer_processing_order' === $id && self::order_has_waiver( $order ) ) {
+			$lines[] = self::waiver_email_line();
+		}
 		if ( $plain_text ) {
-			echo "\n" . $sentence . "\n\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain text, no markup.
+			echo "\n" . implode( "\n", $lines ) . "\n\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain text, no markup.
 			return;
 		}
-		echo '<p class="creature-fd-lead-time">' . self::esc( $sentence ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
+		echo '<p class="creature-fd-lead-time">' . self::esc( $lines[0] ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
+		if ( isset( $lines[1] ) ) {
+			echo '<p class="creature-fd-cancellation-waiver">' . self::esc( $lines[1] ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
+		}
+	}
+
+	/**
+	 * Wording from James's draft T&Cs (page 8735). Filter to follow a later draft.
+	 *
+	 * @return string
+	 */
+	public static function waiver_text() {
+		$value = apply_filters( 'creature_fd_cancellation_waiver_text', self::WAIVER_TEXT );
+		if ( ! is_string( $value ) ) {
+			return self::WAIVER_TEXT;
+		}
+		$value = trim( (string) preg_replace( '/\s+/', ' ', $value ) );
+		if ( '' === $value || strlen( $value ) > 400 ) {
+			return self::WAIVER_TEXT;
+		}
+		return $value;
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function waiver_version() {
+		$value = apply_filters( 'creature_fd_cancellation_waiver_version', self::WAIVER_VERSION );
+		if ( ! is_string( $value ) && ! is_numeric( $value ) ) {
+			return self::WAIVER_VERSION;
+		}
+		$value = trim( (string) $value );
+		if ( '' === $value || strlen( $value ) > 40 ) {
+			return self::WAIVER_VERSION;
+		}
+		return $value;
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function waiver_email_line() {
+		$value = apply_filters( 'creature_fd_cancellation_waiver_email_line', self::WAIVER_EMAIL );
+		if ( ! is_string( $value ) ) {
+			return self::WAIVER_EMAIL;
+		}
+		$value = trim( (string) preg_replace( '/\s+/', ' ', $value ) );
+		if ( '' === $value || strlen( $value ) > 400 ) {
+			return self::WAIVER_EMAIL;
+		}
+		return $value;
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function waiver_error() {
+		return self::WAIVER_ERROR;
+	}
+
+	/**
+	 * Hide wallet buttons that pay through the Store API and never post this checkbox.
+	 * The PayPal payment method stays; its create-order call is checked separately.
+	 *
+	 * @param mixed $order
+	 */
+	public static function on_before_pay_form_express( $order ) {
+		if ( ! self::is_fd_order( $order ) ) {
+			return;
+		}
+		echo '<style>.wcpay-express-checkout-wrapper,#wcpay-express-checkout-button-separator{display:none!important}</style>';
+		echo '<script>(function(){function hide(){var nodes=document.querySelectorAll(".wcpay-express-checkout-wrapper,#wcpay-express-checkout-button-separator");for(var i=0;i<nodes.length;i++){nodes[i].remove();}}hide();document.body&&document.body.addEventListener("updated_checkout",hide);})();</script>';
+	}
+
+	/**
+	 * Checkbox inside the pay form, separate from Woo's terms box.
+	 */
+	public static function on_pay_order_before_submit() {
+		$order = self::order_from_pay_request();
+		if ( ! self::is_fd_order( $order ) ) {
+			return;
+		}
+		$text = self::waiver_text();
+		echo '<p class="form-row creature-fd-cancellation-waiver">';
+		echo '<label for="creature-fd-cancellation-waiver">';
+		echo '<input type="checkbox" name="' . self::esc( self::WAIVER_FIELD ) . '" id="creature-fd-cancellation-waiver" value="1" required="required" aria-required="true" /> ';
+		echo '<span>' . self::esc( $text ) . '</span>';
+		echo '</label></p>';
+	}
+
+	/**
+	 * Classic order-pay submit, including WooPayments card fields that post the form.
+	 * An error notice here stops WC_Form_Handler::pay_action before process_payment.
+	 *
+	 * @param mixed $order
+	 */
+	public static function on_before_pay_action( $order ) {
+		if ( ! self::is_fd_order( $order ) ) {
+			return;
+		}
+		if ( ! self::posted_waiver() ) {
+			if ( function_exists( 'wc_add_notice' ) ) {
+				wc_add_notice( self::waiver_error(), 'error' );
+			}
+			return;
+		}
+		self::record_waiver( $order );
+	}
+
+	/**
+	 * Store API checkout of an existing order (WooPayments Apple Pay / Google Pay on order-pay).
+	 * Regular cart checkout uses the same hook and is left alone.
+	 *
+	 * @param mixed $order
+	 * @param mixed $errors
+	 */
+	public static function on_validate_before_payment( $order, $errors ) {
+		if ( ! self::is_store_api_existing_order_payment() || ! self::is_fd_order( $order ) ) {
+			return;
+		}
+		if ( self::posted_waiver() ) {
+			self::record_waiver( $order );
+			return;
+		}
+		if ( is_object( $errors ) && method_exists( $errors, 'add' ) ) {
+			$errors->add( 'creature_fd_cancellation_waiver', self::waiver_error() );
+		}
+	}
+
+	/**
+	 * PayPal pay-now creates the PayPal order, then captures it, without pay_action.
+	 * The button sends the pay form fields. Missing consent throws before that order exists.
+	 *
+	 * @param mixed $data
+	 * @throws RuntimeException When a Frame Designer pay-now request has no waiver.
+	 */
+	public static function on_paypal_create_order( $data ) {
+		if ( ! is_array( $data ) || ! isset( $data['context'] ) || 'pay-now' !== $data['context'] ) {
+			return;
+		}
+		$order_id = isset( $data['order_id'] ) ? $data['order_id'] : 0;
+		$order    = function_exists( 'wc_get_order' ) ? wc_get_order( $order_id ) : null;
+		if ( ! self::is_fd_order( $order ) ) {
+			return;
+		}
+		if ( self::form_has_waiver( isset( $data['form'] ) ? $data['form'] : null ) ) {
+			self::record_waiver( $order );
+			return;
+		}
+		throw new RuntimeException( self::waiver_error() );
+	}
+
+	/**
+	 * @param mixed $order
+	 */
+	public static function on_admin_order_waiver( $order ) {
+		if ( ! self::order_has_waiver( $order ) || ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+			return;
+		}
+		$text = (string) $order->get_meta( self::WAIVER_TEXT_META, true );
+		$at   = (string) $order->get_meta( self::WAIVER_AT_META, true );
+		echo '<p class="creature-fd-cancellation-waiver-admin"><strong>Cancellation waiver:</strong> ';
+		echo self::esc( $text ) . ' <span class="creature-fd-cancellation-waiver-at">' . self::esc( $at ) . '</span></p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
+	}
+
+	/**
+	 * @param mixed $order
+	 */
+	public static function record_waiver( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'update_meta_data' ) ) {
+			return;
+		}
+		$already = self::order_has_waiver( $order );
+		$text    = self::waiver_text();
+		$at      = gmdate( 'Y-m-d\TH:i:s\Z' );
+		$order->update_meta_data( self::WAIVER_META, '1' );
+		$order->update_meta_data( self::WAIVER_AT_META, $at );
+		$order->update_meta_data( self::WAIVER_TEXT_META, $text );
+		$order->update_meta_data( self::WAIVER_VERSION_META, self::waiver_version() );
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
+		if ( ! $already && method_exists( $order, 'add_order_note' ) ) {
+			$order->add_order_note( 'Customer agreed to start straight away: ' . $text . ' (' . $at . ').' );
+		}
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return bool
+	 */
+	public static function order_has_waiver( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+			return false;
+		}
+		return '1' === (string) $order->get_meta( self::WAIVER_META, true );
+	}
+
+	/**
+	 * @return bool
+	 */
+	public static function posted_waiver() {
+		if ( ! isset( $_POST[ self::WAIVER_FIELD ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			return false;
+		}
+		$value = $_POST[ self::WAIVER_FIELD ]; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( function_exists( 'wp_unslash' ) ) {
+			$value = wp_unslash( $value );
+		}
+		return self::waiver_value_is_yes( $value );
+	}
+
+	/**
+	 * @param mixed $form
+	 * @return bool
+	 */
+	public static function form_has_waiver( $form ) {
+		if ( is_string( $form ) ) {
+			parse_str( $form, $parsed );
+			$form = $parsed;
+		}
+		if ( ! is_array( $form ) ) {
+			return false;
+		}
+		if ( array_key_exists( self::WAIVER_FIELD, $form ) ) {
+			return self::waiver_value_is_yes( $form[ self::WAIVER_FIELD ] );
+		}
+		foreach ( $form as $row ) {
+			if ( ! is_array( $row ) || ! isset( $row['name'] ) ) {
+				continue;
+			}
+			if ( self::WAIVER_FIELD === (string) $row['name'] && isset( $row['value'] ) && self::waiver_value_is_yes( $row['value'] ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @param mixed $value
+	 * @return bool
+	 */
+	private static function waiver_value_is_yes( $value ) {
+		if ( is_array( $value ) ) {
+			return false;
+		}
+		$flag = strtolower( trim( (string) $value ) );
+		return in_array( $flag, array( '1', 'on', 'yes', 'true' ), true );
+	}
+
+	/**
+	 * /wc/store/v1/checkout/123 is pay-for-order. /wc/store/v1/checkout is the cart.
+	 *
+	 * @return bool
+	 */
+	private static function is_store_api_existing_order_payment() {
+		$route = '';
+		if ( isset( $GLOBALS['wp'] ) && is_object( $GLOBALS['wp'] ) && isset( $GLOBALS['wp']->query_vars['rest_route'] ) ) {
+			$route = (string) $GLOBALS['wp']->query_vars['rest_route'];
+		}
+		return (bool) preg_match( '#/wc/store(?:/v\d+)?/checkout/\d+#', $route );
 	}
 
 	/**
