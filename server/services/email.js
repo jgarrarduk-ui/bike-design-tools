@@ -3,8 +3,13 @@
 /**
  * Email service — all transactional emails sent by Creature Cycles.
  *
- * Uses nodemailer. Save-design mail is Resend over SMTP (not the Resend SDK).
- * Mail is skipped until SMTP_PASS is set. That value is the Resend API key.
+ * Sends with the Resend HTTPS API (POST https://api.resend.com/emails).
+ * There is no SMTP client: Railway blocks outbound SMTP.
+ *
+ * The Bearer token is SMTP_PASS when that is set (the existing Railway
+ * secret — it already holds the Resend API key). RESEND_API_KEY is used
+ * only when SMTP_PASS is empty. SMTP_HOST, SMTP_PORT, SMTP_USER, and
+ * SMTP_SECURE are not read. Mail is skipped until a key is present.
  *
  * Emails in the order lifecycle:
  *   1. sendOrderConfirmation   — immediately after design saved (pre-payment): edit + checkout links
@@ -13,25 +18,60 @@
  *   4. sendDesignAccepted      — auto-triggered when customer accepts: sends final download link
  */
 
-const nodemailer = require('nodemailer');
+const RESEND_EMAILS_URL = 'https://api.resend.com/emails';
+const RESEND_TIMEOUT_MS = 8000;
 
-function createTransport() {
-  return nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,
-    port:   Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+function trimmedEnv(name) {
+  const value = process.env[name];
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
+function resendApiKey() {
+  // SMTP_PASS wins so the Railway secret Layout already set stays the key.
+  return trimmedEnv('SMTP_PASS') || trimmedEnv('RESEND_API_KEY');
 }
 
 function isConfigured() {
-  // Host and user may be set before the secret exists. Do not send until
-  // SMTP_PASS is present. For Resend that value is the API key.
-  const pass = process.env.SMTP_PASS;
-  return typeof pass === 'string' && pass.trim() !== '';
+  return resendApiKey() !== '';
+}
+
+async function postResend({ to, subject, text, html }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
+  // The HTTP server keeps the process alive in production, so this still
+  // fires. unref means a background send cannot hold the process open in tests.
+  if (typeof timer.unref === 'function') timer.unref();
+
+  try {
+    const res = await fetch(RESEND_EMAILS_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendApiKey()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: FROM(),
+        to: [to],
+        subject,
+        text,
+        html,
+        reply_to: REPLY(),
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      let detail = '';
+      try { detail = await res.text(); } catch { /* ignore a closed body */ }
+      const snippet = detail.replace(/\s+/g, ' ').trim().slice(0, 300);
+      throw new Error(`Resend API ${res.status}${snippet ? `: ${snippet}` : ''}`);
+    }
+
+    await res.arrayBuffer().catch(() => {});
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const FROM    = () => process.env.EMAIL_FROM     || '"Creature Cycles" <info@creaturecycles.co.uk>';
@@ -183,16 +223,13 @@ info@creaturecycles.co.uk`;
 // ── 1. Design saved (pre-payment) — edit link and checkout link ──────────────
 async function sendOrderConfirmation({ to, customerName, designName, designId, editUrl, checkoutUrl }) {
   if (!isConfigured()) {
-    console.warn('[email] SMTP_PASS not set — skipping design saved email to', to);
+    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping design saved email to', to);
     return;
   }
 
-  const transport = createTransport();
   const message = designSavedMessage({ customerName, designName, designId, editUrl, checkoutUrl });
 
-  await transport.sendMail({
-    from:    FROM(),
-    replyTo: REPLY(),
+  await postResend({
     to,
     subject: message.subject,
     text:    message.text,
@@ -205,13 +242,12 @@ async function sendOrderConfirmation({ to, customerName, designName, designId, e
 // ── 2. Payment confirmation (post-payment, design under review) ───────────────
 async function sendPaymentConfirmation({ to, customerName, designId }) {
   if (!isConfigured()) {
-    console.warn('[email] SMTP not configured — skipping payment confirmation to', to);
+    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping payment confirmation to', to);
     return;
   }
 
   const firstName  = customerName.split(' ')[0] || 'there';
   const leadDays   = LEAD();
-  const transport  = createTransport();
   const shortId    = designId.slice(0, 8).toUpperCase();
 
   const html = wrapHtml(`
@@ -256,9 +292,7 @@ Questions? Just reply to this email.
 
 – Creature Cycles`;
 
-  await transport.sendMail({
-    from:    FROM(),
-    replyTo: REPLY(),
+  await postResend({
     to,
     subject: `Creature Cycles — Design #${shortId} is under review`,
     text,
@@ -271,13 +305,12 @@ Questions? Just reply to this email.
 // ── 3. Design review (admin-triggered, customer reviews + can accept) ─────────
 async function sendDesignReview({ to, customerName, designId, previewUrl, acceptUrl }) {
   if (!isConfigured()) {
-    console.warn('[email] SMTP not configured — skipping review email to', to);
+    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping review email to', to);
     console.info('[email] Accept URL would have been:', acceptUrl);
     return;
   }
 
   const firstName = customerName.split(' ')[0] || 'there';
-  const transport = createTransport();
   const shortId   = designId.slice(0, 8).toUpperCase();
 
   const html = wrapHtml(`
@@ -331,9 +364,7 @@ Design ID: ${shortId}
 
 – Creature Cycles`;
 
-  await transport.sendMail({
-    from:    FROM(),
-    replyTo: REPLY(),
+  await postResend({
     to,
     subject: `Creature Cycles — Your design is ready to review (#${shortId})`,
     text,
@@ -346,13 +377,12 @@ Design ID: ${shortId}
 // ── 4. Design accepted — final download email ─────────────────────────────────
 async function sendDesignAccepted({ to, customerName, designId, downloadUrl, expiresAt }) {
   if (!isConfigured()) {
-    console.warn('[email] SMTP not configured — skipping accepted email to', to);
+    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping accepted email to', to);
     console.info('[email] Download URL would have been:', downloadUrl);
     return;
   }
 
   const firstName = customerName.split(' ')[0] || 'there';
-  const transport = createTransport();
   const shortId   = designId.slice(0, 8).toUpperCase();
 
   const html = wrapHtml(`
@@ -399,9 +429,7 @@ Thank you for choosing Creature Cycles!
 
 – Creature Cycles`;
 
-  await transport.sendMail({
-    from:    FROM(),
-    replyTo: REPLY(),
+  await postResend({
     to,
     subject: `Creature Cycles — Your final design files (#${shortId})`,
     text,
