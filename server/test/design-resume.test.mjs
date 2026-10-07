@@ -155,6 +155,11 @@ describe('design resume links', { concurrency: false }, () => {
     assert.equal(message.text.includes('Edit design:'), false);
     assert.match(message.html, />\s*Edit design\s*</);
     assert.match(message.html, />\s*Take me to checkout\s*</);
+    assert.match(message.html, /src="https:\/\/creaturecycles\.co\.uk\/wp-content\/uploads\/2026\/10\/creature-logo-email-1\.png"/);
+    assert.match(message.html, /alt="Creature Cycles"/);
+    assert.match(message.html, /width="220"/);
+    assert.equal(/<h1[\s>]/i.test(message.html), false);
+    assert.match(message.text, /Thanks,\nCreature Cycles\ninfo@creaturecycles\.co\.uk$/);
     assert.match(message.html, /they\u2019ll join the same flow when they\u2019re ready/);
     assert.equal(/£\s*\d/.test(message.text + message.html), false);
     const unnamed = email.designSavedMessage({
@@ -231,6 +236,20 @@ describe('design resume links', { concurrency: false }, () => {
       assert.equal(sent[1].body.reply_to, 'info@creaturecycles.co.uk');
       assert.deepEqual(sent[1].body.to, ['ada@example.com']);
       assert.equal(sent[1].body.subject, 'Your Creature Cycles design is saved');
+      assert.match(sent[1].body.html, /src="https:\/\/creaturecycles\.co\.uk\/wp-content\/uploads\/2026\/10\/creature-logo-email-1\.png"/);
+      assert.equal(/<h1[\s>]/i.test(sent[1].body.html), false);
+      assert.match(sent[1].body.text, /Thanks,\nCreature Cycles\n/);
+
+      await email.sendPaymentConfirmation({
+        to: 'ada@example.com',
+        customerName: 'Ada Lovelace',
+        designId: 'abcdef12-rest',
+      });
+      assert.equal(sent.length, 3);
+      assert.match(sent[2].body.html, /src="https:\/\/creaturecycles\.co\.uk\/wp-content\/uploads\/2026\/10\/creature-logo-email-1\.png"/);
+      assert.match(sent[2].body.html, /alt="Creature Cycles"/);
+      assert.equal(/<h1[\s>]/i.test(sent[2].body.html), false);
+      assert.match(sent[2].body.text, /– Creature Cycles/);
     } finally {
       delete process.env.SMTP_HOST;
       delete process.env.SMTP_PORT;
