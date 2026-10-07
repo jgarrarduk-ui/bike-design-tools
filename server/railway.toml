@@ -1,0 +1,18 @@
+# Creature Cycles tools-api.
+# Railway does not take the service root directory from this file.
+# In the service settings set:
+#   Root Directory: server
+#   Config file path: /server/railway.toml
+# Then the Docker build context is this directory.
+# Attach a volume mounted at /data before the first deploy.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+requiredMountPath = "/data"

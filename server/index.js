@@ -5,6 +5,7 @@ require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
+const fs      = require('fs');
 
 const designsRouter   = require('./routes/designs');
 const webhooksRouter  = require('./routes/webhooks');
@@ -19,6 +20,8 @@ const PORT = process.env.PORT || 3001;
 // ── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  'https://creaturecycles.co.uk',
+  'https://www.creaturecycles.co.uk',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -64,14 +67,20 @@ app.get('/admin', (_req, res) => {
 });
 
 // ── Serve static frontend ─────────────────────────────────────────────────────
-// In production, serve the index.html from the project root.
-// In development, you can run a separate static server (e.g. `npx serve ..`).
+// Full-tree deploys serve index.html from the project root. API-only images
+// (Railway) do not include that file — check before sendFile so a missing
+// page returns 404 instead of crashing the process.
 const frontendDir = path.resolve(__dirname, '..');
-app.use(express.static(frontendDir, { index: 'index.html' }));
+const indexHtml   = path.join(frontendDir, 'index.html');
+const hasFrontend = fs.existsSync(indexHtml);
 
-// SPA fallback — send index.html for any unmatched GET
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(frontendDir, 'index.html'));
+if (hasFrontend) {
+  app.use(express.static(frontendDir, { index: 'index.html' }));
+}
+
+app.get('*', (_req, res, next) => {
+  if (!fs.existsSync(indexHtml)) return next();
+  res.sendFile(indexHtml);
 });
 
 // ── Error handler ─────────────────────────────────────────────────────────────
@@ -81,8 +90,9 @@ app.use((err, _req, res, _next) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`Creature Cycles backend listening on port ${PORT}`);
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, () => {
+  console.log(`Creature Cycles backend listening on ${HOST}:${PORT}`);
   console.log(`  WooCommerce : ${process.env.WC_URL   || '(not configured)'}`);
   console.log(`  Email       : ${process.env.SMTP_PASS ? (process.env.SMTP_HOST || '(SMTP_PASS set, host unset)') : '(SMTP_PASS not set)'}`);
   console.log(`  DB          : ${process.env.DB_PATH   || './data/designs.db'}`);
