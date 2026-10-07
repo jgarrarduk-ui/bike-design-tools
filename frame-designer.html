@@ -1171,6 +1171,26 @@
     cursor: pointer;
   }
   .shop-part input { accent-color: var(--accent); width: 15px; height: 15px; flex: none; }
+  .shop-part span:first-of-type { flex: 1; }
+  .shop-price {
+    margin-left: auto;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--lavender-br);
+  }
+  #shop-modal #shop-total {
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-hi);
+  }
+  #shop-modal #shop-save {
+    margin-top: -6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--lavender-br);
+  }
+  #shop-modal #shop-save[hidden] { display: none; }
   #shop-design-id {
     font-family: var(--font-mono);
     font-size: 11px;
@@ -1540,7 +1560,7 @@
 <div id="shop-modal-overlay" onclick="handleShopOverlayClick(event)">
   <div id="shop-modal" role="dialog" aria-labelledby="shop-title" aria-modal="true">
     <h2 id="shop-title">Save design</h2>
-    <p>Save this frame to your design, then continue to checkout for the rear-end parts. Download JSON stays on this computer.</p>
+    <p>Save this frame, then continue to checkout for the design files. Download JSON stays on this computer.</p>
     <div class="shop-field">
       <label for="shop-customer-name">your name</label>
       <input id="shop-customer-name" type="text" autocomplete="name" placeholder="name for the order">
@@ -1558,9 +1578,11 @@
       <input id="shop-designer" type="text" autocomplete="off" placeholder="optional, used on the JSON file">
     </div>
     <div>
-      <p style="margin-bottom:6px">parts</p>
+      <p style="margin-bottom:6px">design files</p>
       <div id="shop-parts"></div>
-      <p style="margin-top:6px">Whole rear end is optional and replaces the three parts above.</p>
+      <p id="shop-total"></p>
+      <p id="shop-save" hidden></p>
+      <p id="shop-print-note">Printed 316L is enquire only. Checkout is for these design files.</p>
     </div>
     <p id="shop-design-id" hidden></p>
     <p id="shop-status" role="status"></p>
@@ -4503,22 +4525,22 @@ function renderShopParts(){
     input.type = 'checkbox';
     input.dataset.productId = String(part.id);
     input.checked = defaults.has(part.id);
-    input.addEventListener('change', ()=>onShopPartChange(input));
+    input.addEventListener('change', ()=>onShopPartChange());
     const text = document.createElement('span');
-    text.textContent = part.optional ? part.name + ' (optional)' : part.name;
+    text.textContent = part.name;
+    const price = document.createElement('span');
+    price.className = 'shop-price';
+    price.textContent = FrameShop.formatGbp(part.price);
     label.appendChild(input);
     label.appendChild(text);
+    label.appendChild(price);
     root.appendChild(label);
   });
+  refreshShopTotal();
 }
 
-function onShopPartChange(input){
-  const checked = [...document.querySelectorAll('#shop-parts input:checked')]
-    .map(el=>Number(el.dataset.productId));
-  const next = new Set(FrameShop.applyAssemblyExclusivity(checked, Number(input.dataset.productId)));
-  document.querySelectorAll('#shop-parts input').forEach(el=>{
-    el.checked = next.has(Number(el.dataset.productId));
-  });
+function onShopPartChange(){
+  refreshShopTotal();
 }
 
 function selectedShopProductIds(){
@@ -4528,10 +4550,23 @@ function selectedShopProductIds(){
 }
 
 function setShopChecks(ids){
-  const selected = new Set(ids || []);
+  const selected = new Set(FrameShop.productIdsFromSelection(ids || []));
   document.querySelectorAll('#shop-parts input').forEach(el=>{
     el.checked = selected.has(Number(el.dataset.productId));
   });
+  refreshShopTotal();
+}
+
+function refreshShopTotal(){
+  const el = document.getElementById('shop-total');
+  const save = document.getElementById('shop-save');
+  if(!el || !window.FrameShop) return;
+  const ids = selectedShopProductIds();
+  el.textContent = FrameShop.selectionLabel(ids);
+  if(!save) return;
+  const saving = FrameShop.selectionSaving(ids);
+  save.textContent = saving;
+  save.hidden = !saving;
 }
 
 function setShopStatus(message, isError){

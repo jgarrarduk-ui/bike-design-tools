@@ -8,20 +8,20 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const ASSEMBLY_ID = 8637;
   const SESSION_KEY = 'creature.frameDesign';
 
-  // BB yoke, SS yoke, dropouts, and the optional assembled rear end.
-  // The assembled rear end replaces the three parts; it is not added to them.
+  // Design-file list prices locked 7 Oct 2026.
+  // All three display at TRIO_PRICE. The list sum is higher by £13.
+  // Printed 316L is enquire only, not a product.
+  const TRIO_PRICE = 150;
   const PARTS = [
-    { id: 8634, name: 'BB yoke' },
-    { id: 8635, name: 'SS yoke' },
-    { id: 8636, name: 'Dropouts' },
-    { id: 8637, name: 'Whole rear end', optional: true },
+    { id: 8634, name: 'BB yoke', price: 58 },
+    { id: 8635, name: 'SS yoke', price: 35 },
+    { id: 8636, name: 'Dropouts', price: 70 },
   ];
 
   function defaultProductIds() {
-    return PARTS.filter(part => !part.optional).map(part => part.id);
+    return PARTS.map(part => part.id);
   }
 
   function knownIds(ids) {
@@ -37,25 +37,52 @@
     return out;
   }
 
-  // Checked ids after a toggle. Whole rear end (8637) is exclusive.
-  function applyAssemblyExclusivity(checkedIds, changedId) {
-    const checked = knownIds(checkedIds);
-    const changed = Number(changedId);
-    if (changed === ASSEMBLY_ID && checked.includes(ASSEMBLY_ID)) return [ASSEMBLY_ID];
-    return checked.filter(id => id !== ASSEMBLY_ID);
+  function productIdsFromSelection(selectedIds) {
+    return knownIds(selectedIds);
   }
 
-  // Ids to send as productIds. An assembled rear end is the whole selection.
-  function productIdsFromSelection(selectedIds) {
-    const ids = knownIds(selectedIds);
-    if (ids.includes(ASSEMBLY_ID)) return [ASSEMBLY_ID];
-    return ids;
+  function formatGbp(amount) {
+    return '£' + amount;
+  }
+
+  function listTotal(selectedIds) {
+    const selected = new Set(productIdsFromSelection(selectedIds));
+    return PARTS.reduce((sum, part) => sum + (selected.has(part.id) ? part.price : 0), 0);
+  }
+
+  function isFullSet(selectedIds) {
+    return productIdsFromSelection(selectedIds).length === PARTS.length;
+  }
+
+  // All three show £150. Any shorter selection is the list sum of those files.
+  function selectionTotal(selectedIds) {
+    if (isFullSet(selectedIds)) return TRIO_PRICE;
+    return listTotal(selectedIds);
+  }
+
+  function partLabel(part) {
+    return part.name + ' ' + formatGbp(part.price);
+  }
+
+  function selectionSaving(selectedIds) {
+    if (!isFullSet(selectedIds)) return '';
+    const list = listTotal(selectedIds);
+    return 'List ' + formatGbp(list) + ', save ' + formatGbp(list - TRIO_PRICE);
+  }
+
+  function selectionLabel(selectedIds) {
+    const ids = productIdsFromSelection(selectedIds);
+    if (!ids.length) return 'Choose at least one design file.';
+    const total = formatGbp(selectionTotal(ids));
+    if (ids.length === PARTS.length) return 'Three design files ' + total;
+    if (ids.length === 1) return partLabel(PARTS.find(part => part.id === ids[0]));
+    return 'Selected design files ' + total;
   }
 
   function buildDesignPayload({ customerName, customerEmail, params, productIds }) {
     const ids = productIdsFromSelection(productIds);
     if (!ids.length) {
-      const err = new Error('Choose at least one part.');
+      const err = new Error('Choose at least one design file.');
       err.status = 400;
       throw err;
     }
@@ -105,7 +132,7 @@
   // Reuse a saved order when the geometry, email, and parts have not changed.
   function checkoutPlan({ saved, snapshot, productIds }) {
     const ids = productIdsFromSelection(productIds);
-    if (!ids.length) return { action: 'error', message: 'Choose at least one part.' };
+    if (!ids.length) return { action: 'error', message: 'Choose at least one design file.' };
     if (
       saved &&
       saved.designId &&
@@ -175,11 +202,16 @@
   }
 
   return {
-    ASSEMBLY_ID,
     SESSION_KEY,
     PARTS,
     defaultProductIds,
-    applyAssemblyExclusivity,
+    TRIO_PRICE,
+    formatGbp,
+    listTotal,
+    selectionTotal,
+    partLabel,
+    selectionSaving,
+    selectionLabel,
     productIdsFromSelection,
     buildDesignPayload,
     selectionSnapshot,

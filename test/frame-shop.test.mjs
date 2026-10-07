@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 
@@ -7,30 +8,65 @@ const FrameShop = require('../frame-shop.js');
 
 const PARAMS = { reach: 450, chainstay_length: 430, ht_angle: 64.5 };
 
-test('default selection is the three rear parts, not the assembled rear end', () => {
+test('default selection is the three design files', () => {
   assert.deepEqual(FrameShop.defaultProductIds(), [8634, 8635, 8636]);
-  assert.equal(FrameShop.PARTS.find(part => part.id === 8637).optional, true);
+  assert.equal(FrameShop.PARTS.some(part => part.id === 8637), false);
 });
 
-test('unknown product ids are dropped and the assembled rear end replaces the parts', () => {
+test('unknown product ids are dropped and 8637 is not a design file', () => {
   assert.deepEqual(FrameShop.productIdsFromSelection([8636, 8634, 9999, 8634]), [8636, 8634]);
-  assert.deepEqual(FrameShop.productIdsFromSelection([8634, 8635, 8637]), [8637]);
+  assert.deepEqual(FrameShop.productIdsFromSelection([8634, 8635, 8637]), [8634, 8635]);
+  assert.deepEqual(FrameShop.productIdsFromSelection([8637]), []);
   assert.deepEqual(FrameShop.productIdsFromSelection([]), []);
 });
 
-test('checking the assembled rear end clears the separate parts, and the reverse', () => {
-  assert.deepEqual(
-    FrameShop.applyAssemblyExclusivity([8634, 8635, 8636, 8637], 8637),
-    [8637],
-  );
-  assert.deepEqual(
-    FrameShop.applyAssemblyExclusivity([8637, 8636], 8636),
-    [8636],
-  );
-  assert.deepEqual(
-    FrameShop.applyAssemblyExclusivity([8634, 8635], 8634),
-    [8634, 8635],
-  );
+test('design-file prices show £150 when all three are selected', () => {
+  const byId = Object.fromEntries(FrameShop.PARTS.map(part => [part.id, part]));
+  assert.equal(byId[8634].name, 'BB yoke');
+  assert.equal(byId[8634].price, 58);
+  assert.equal(byId[8635].price, 35);
+  assert.equal(byId[8636].price, 70);
+  assert.equal(FrameShop.TRIO_PRICE, 150);
+  assert.equal(FrameShop.partLabel(byId[8634]), 'BB yoke £58');
+  assert.equal(FrameShop.partLabel(byId[8635]), 'SS yoke £35');
+  assert.equal(FrameShop.partLabel(byId[8636]), 'Dropouts £70');
+  assert.equal(FrameShop.listTotal([8634, 8635, 8636]), 163);
+  assert.equal(FrameShop.selectionTotal([8634, 8635, 8636]), 150);
+  assert.equal(FrameShop.selectionTotal([8636, 8634, 8635, 8637]), 150);
+  assert.equal(FrameShop.selectionSaving([8634, 8635, 8636]), 'List £163, save £13');
+  assert.equal(FrameShop.selectionTotal([8634, 8636]), 128);
+  assert.equal(FrameShop.selectionSaving([8634, 8636]), '');
+  assert.equal(FrameShop.selectionSaving([8635]), '');
+  assert.equal(FrameShop.selectionLabel([8634, 8635, 8636]), 'Three design files £150');
+  assert.equal(FrameShop.selectionLabel([8634, 8636]), 'Selected design files £128');
+  assert.equal(FrameShop.selectionLabel([8635]), 'SS yoke £35');
+  assert.equal(FrameShop.selectionLabel([8637]), 'Choose at least one design file.');
+  const labels = [
+    FrameShop.selectionLabel([8634, 8635, 8636]),
+    FrameShop.selectionSaving([8634, 8635, 8636]),
+    ...FrameShop.PARTS.map(part => FrameShop.partLabel(part)),
+  ];
+  for (const label of labels) {
+    assert.equal(/136|£24|−£|discount|save when|whole rear end/i.test(label), false);
+  }
+});
+
+test('Frame Designer shop copy shows the £150 trio and not the old rear-end price', () => {
+  const html = readFileSync(new URL('../frame-designer.html', import.meta.url), 'utf8');
+  const shop = readFileSync(new URL('../frame-shop.js', import.meta.url), 'utf8');
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  const customer = html + '\n' + shop;
+  assert.equal(/£136|−£24|-£24|save when all three|Whole rear end £|Whole rear end is optional/i.test(customer), false);
+  assert.equal(/8637/.test(shop), false);
+  assert.match(readme, /£58/);
+  assert.match(readme, /£35/);
+  assert.match(readme, /£70/);
+  assert.match(readme, /£163/);
+  assert.match(readme, /£150/);
+  assert.match(readme, /save £13/);
+  assert.match(html, /Printed 316L is enquire only/);
+  assert.match(html, /id="shop-total"/);
+  assert.match(html, /id="shop-save"/);
 });
 
 test('design payload is the Phase 2 tools-api body', () => {
@@ -52,7 +88,7 @@ test('design payload is the Phase 2 tools-api body', () => {
       params: PARAMS,
       productIds: [9999],
     }),
-    /at least one part/,
+    /at least one design file/,
   );
 });
 
