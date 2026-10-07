@@ -117,7 +117,11 @@ change, so a second click does not open a second order. Products stay draft;
 this page only creates an order through the tools-api.
 
 Deploy `frame-designer.html`, `frame-shop.js`, and `config.js` together under
-`/apps/`. `config.js` is only the public tools-api origin. The tools-api
+`/apps/`. The host caches `/apps/frame-shop.js` for a year
+(`Cache-Control: max-age=31536000`) and does not cache the HTML that long, so
+the page loads `frame-shop.js?v=…`. Bump that query when the script changes,
+or a phone keeps the old script beside the new page and the part list stays
+empty. `config.js` is only the public tools-api origin. The tools-api
 already accepts `productIds` (Phase 2) and prices those lines from WooCommerce.
 This page only sends the buyable design files.
 
