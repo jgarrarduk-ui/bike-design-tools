@@ -102,11 +102,11 @@ geometry as `params`, and `productIds` for the design files they picked:
 
 | Design file | Product | Price |
 |---|---|---|
-| BB yoke | 8634 | £58 |
-| SS yoke | 8635 | £42 |
-| Dropouts | 8636 | £64 |
+| BB yoke | 8634 | £58 | selectable |
+| SS yoke | 8635 | £42 | selectable |
+| Dropouts | 8636 | £64 | shown, Coming soon, not sent |
 
-Bought separately those files list at **£164**. When all three are checked, Frame Designer shows **£128** and **save £36**. A shorter selection stays the list sum of the files that are checked. Product 8637 is not a checkout choice. Printed 316L stays enquire/quote only. The Woo order applies the £36 reduction when those three lines share a `design_id`; that fee is not calculated in this page.
+BB yoke and SS yoke start checked. Together they list at **£100**. Dropouts stay visible, grayed, and untickable, and `productIds` never includes 8636. The full-set total is not shown while dropouts are unavailable. Product 8637 is not a checkout choice. Printed 316L stays enquire/quote only.
 
 The response `designId` (also accepted as `design_id`) is kept in
 `sessionStorage` and in `?design=` on the page. JSON download is the existing
@@ -119,7 +119,7 @@ this page only creates an order through the tools-api.
 Deploy `frame-designer.html`, `frame-shop.js`, and `config.js` together under
 `/apps/`. `config.js` is only the public tools-api origin. The tools-api
 already accepts `productIds` (Phase 2) and prices those lines from WooCommerce.
-This page does not apply the £36 reduction itself.
+This page only sends the buyable design files.
 
 ## Deploying
 

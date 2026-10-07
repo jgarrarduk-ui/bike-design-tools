@@ -1171,12 +1171,29 @@
     cursor: pointer;
   }
   .shop-part input { accent-color: var(--accent); width: 15px; height: 15px; flex: none; }
-  .shop-part span:first-of-type { flex: 1; }
+  .shop-part-name { flex: 1; display: flex; align-items: baseline; gap: 8px; }
+  .shop-soon {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--text-mid);
+  }
+  .shop-part.is-unavailable {
+    cursor: not-allowed;
+    color: var(--text-lo);
+    opacity: 0.72;
+  }
+  .shop-part.is-unavailable input { cursor: not-allowed; }
   .shop-price {
     margin-left: auto;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: var(--lavender-br);
+  }
+  .shop-part.is-unavailable .shop-price {
+    color: var(--text-lo);
+    font-weight: 600;
   }
   #shop-modal #shop-total {
     margin-top: 8px;
@@ -4519,15 +4536,25 @@ function renderShopParts(){
   root.innerHTML = '';
   const defaults = new Set(FrameShop.defaultProductIds());
   FrameShop.PARTS.forEach(part=>{
+    const unavailable = !!part.unavailable;
     const label = document.createElement('label');
-    label.className = 'shop-part';
+    label.className = unavailable ? 'shop-part is-unavailable' : 'shop-part';
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.dataset.productId = String(part.id);
-    input.checked = defaults.has(part.id);
+    input.checked = !unavailable && defaults.has(part.id);
+    input.disabled = unavailable;
+    if(unavailable) input.setAttribute('aria-disabled', 'true');
     input.addEventListener('change', ()=>onShopPartChange());
     const text = document.createElement('span');
+    text.className = 'shop-part-name';
     text.textContent = part.name;
+    if(unavailable){
+      const soon = document.createElement('span');
+      soon.className = 'shop-soon';
+      soon.textContent = 'Coming soon';
+      text.appendChild(soon);
+    }
     const price = document.createElement('span');
     price.className = 'shop-price';
     price.textContent = FrameShop.formatGbp(part.price);
@@ -4540,6 +4567,10 @@ function renderShopParts(){
 }
 
 function onShopPartChange(){
+  document.querySelectorAll('#shop-parts input').forEach(el=>{
+    const part = FrameShop.PARTS.find(item=>item.id === Number(el.dataset.productId));
+    if(part && part.unavailable) el.checked = false;
+  });
   refreshShopTotal();
 }
 

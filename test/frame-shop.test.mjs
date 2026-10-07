@@ -8,66 +8,63 @@ const FrameShop = require('../frame-shop.js');
 
 const PARAMS = { reach: 450, chainstay_length: 430, ht_angle: 64.5 };
 
-test('default selection is the three design files', () => {
-  assert.deepEqual(FrameShop.defaultProductIds(), [8634, 8635, 8636]);
+test('default selection is BB yoke and SS yoke', () => {
+  assert.deepEqual(FrameShop.defaultProductIds(), [8634, 8635]);
+  assert.equal(FrameShop.PARTS.find(part => part.id === 8636).unavailable, true);
   assert.equal(FrameShop.PARTS.some(part => part.id === 8637), false);
 });
 
-test('unknown product ids are dropped and 8637 is not a design file', () => {
-  assert.deepEqual(FrameShop.productIdsFromSelection([8636, 8634, 9999, 8634]), [8636, 8634]);
-  assert.deepEqual(FrameShop.productIdsFromSelection([8634, 8635, 8637]), [8634, 8635]);
+test('dropouts and unknown ids are never sent', () => {
+  assert.deepEqual(FrameShop.productIdsFromSelection([8636, 8634, 9999, 8634]), [8634]);
+  assert.deepEqual(FrameShop.productIdsFromSelection([8634, 8635, 8636]), [8634, 8635]);
+  assert.deepEqual(FrameShop.productIdsFromSelection([8636]), []);
   assert.deepEqual(FrameShop.productIdsFromSelection([8637]), []);
   assert.deepEqual(FrameShop.productIdsFromSelection([]), []);
 });
 
-test('design-file prices show £128 when all three are selected', () => {
+test('checkout shows BB and SS list prices and hides the full-set total', () => {
   const byId = Object.fromEntries(FrameShop.PARTS.map(part => [part.id, part]));
-  assert.equal(byId[8634].name, 'BB yoke');
   assert.equal(byId[8634].price, 58);
   assert.equal(byId[8635].price, 42);
   assert.equal(byId[8636].price, 64);
-  assert.equal(FrameShop.TRIO_PRICE, 128);
   assert.equal(FrameShop.partLabel(byId[8634]), 'BB yoke £58');
   assert.equal(FrameShop.partLabel(byId[8635]), 'SS yoke £42');
   assert.equal(FrameShop.partLabel(byId[8636]), 'Dropouts £64');
-  assert.equal(FrameShop.listTotal([8634, 8635, 8636]), 164);
-  assert.equal(FrameShop.selectionTotal([8634, 8635, 8636]), 128);
-  assert.equal(FrameShop.selectionTotal([8636, 8634, 8635, 8637]), 128);
-  assert.equal(FrameShop.selectionSaving([8634, 8635, 8636]), 'List £164, save £36');
-  assert.equal(FrameShop.selectionTotal([8634, 8636]), 122);
-  assert.equal(FrameShop.selectionSaving([8634, 8636]), '');
-  assert.equal(FrameShop.selectionSaving([8635]), '');
-  assert.equal(FrameShop.selectionLabel([8634, 8635, 8636]), 'Three design files £128');
-  assert.equal(FrameShop.selectionLabel([8634, 8636]), 'Selected design files £122');
+  assert.equal(FrameShop.selectionTotal([8634, 8635]), 100);
+  assert.equal(FrameShop.selectionSaving([8634, 8635]), '');
+  assert.equal(FrameShop.selectionLabel([8634, 8635]), 'Selected design files £100');
+  assert.equal(FrameShop.selectionTotal([8634, 8635, 8636]), 100);
+  assert.equal(FrameShop.selectionSaving([8634, 8635, 8636]), '');
+  assert.equal(FrameShop.selectionLabel([8634, 8635, 8636]), 'Selected design files £100');
+  assert.equal(FrameShop.selectionTotal([8634]), 58);
   assert.equal(FrameShop.selectionLabel([8635]), 'SS yoke £42');
-  assert.equal(FrameShop.selectionLabel([8637]), 'Choose at least one design file.');
-  const labels = [
+  assert.equal(FrameShop.selectionLabel([8636]), 'Choose at least one design file.');
+  const shown = [
+    FrameShop.selectionLabel([8634, 8635]),
     FrameShop.selectionLabel([8634, 8635, 8636]),
     FrameShop.selectionSaving([8634, 8635, 8636]),
-    ...FrameShop.PARTS.map(part => FrameShop.partLabel(part)),
+    FrameShop.partLabel(byId[8634]),
+    FrameShop.partLabel(byId[8635]),
   ];
-  for (const label of labels) {
-    assert.equal(/136|£24|−£|discount|save when|whole rear end/i.test(label), false);
+  for (const label of shown) {
+    assert.equal(/128|164|£36|save £|136|£24|three design files/i.test(label), false);
   }
 });
 
-test('Frame Designer shop copy shows the £128 trio and not the old rear-end price', () => {
+test('Frame Designer shop copy keeps dropouts visible and not for sale', () => {
   const html = readFileSync(new URL('../frame-designer.html', import.meta.url), 'utf8');
   const shop = readFileSync(new URL('../frame-shop.js', import.meta.url), 'utf8');
   const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-  const customer = html + '\n' + shop + '\n' + readme;
-  assert.equal(/£136|−£24|-£24|save when all three|Whole rear end £|Whole rear end is optional/i.test(customer), false);
-  assert.equal(/£35|£70|£150|£163|save £13/.test(customer), false);
+  const customer = html + '\n' + readme;
+  assert.equal(/£136|−£24|-£24|save when all three|Whole rear end £|Whole rear end is optional|save £36|£128/i.test(customer), false);
   assert.equal(/8637/.test(shop), false);
-  assert.match(readme, /£58/);
-  assert.match(readme, /£42/);
-  assert.match(readme, /£64/);
-  assert.match(readme, /£164/);
-  assert.match(readme, /£128/);
-  assert.match(readme, /save £36/);
+  assert.match(html, /Coming soon/);
+  assert.match(html, /is-unavailable/);
+  assert.match(html, /input\.disabled = unavailable/);
+  assert.match(readme, /Coming soon/);
+  assert.match(readme, /£100/);
+  assert.match(readme, /never includes 8636/);
   assert.match(html, /Printed 316L is enquire only/);
-  assert.match(html, /id="shop-total"/);
-  assert.match(html, /id="shop-save"/);
 });
 
 test('design payload is the Phase 2 tools-api body', () => {
@@ -82,6 +79,12 @@ test('design payload is the Phase 2 tools-api body', () => {
     params: PARAMS,
     productIds: [8635, 8634],
   });
+  assert.deepEqual(FrameShop.buildDesignPayload({
+    customerName: 'Ada',
+    customerEmail: 'ada@example.com',
+    params: PARAMS,
+    productIds: [8636, 8634, 8635, 8636],
+  }).productIds, [8634, 8635]);
   assert.throws(
     () => FrameShop.buildDesignPayload({
       customerName: 'Ada',
@@ -119,7 +122,7 @@ test('checkout redirects only to the store order-pay URL or a local placeholder'
 });
 
 test('an unchanged save is reused; a geometry change posts again', () => {
-  const ids = [8634, 8635, 8636];
+  const ids = [8634, 8635];
   const snapshot = FrameShop.selectionSnapshot(PARAMS, [8636, 8634, 8635], 'Ada@Example.com');
   const saved = {
     designId: 'design-1',

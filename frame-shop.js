@@ -11,21 +11,25 @@
   const SESSION_KEY = 'creature.frameDesign';
 
   // Design-file list prices locked 7 Oct 2026.
-  // All three display at TRIO_PRICE. List sum is £164; the shop shows save £36.
-  // Printed 316L is enquire only, not a product.
+  // Dropouts stay on the picker but are not sold. The full-set total is hidden
+  // until every part is buyable. Printed 316L is enquire only, not a product.
   const TRIO_PRICE = 128;
   const PARTS = [
     { id: 8634, name: 'BB yoke', price: 58 },
     { id: 8635, name: 'SS yoke', price: 42 },
-    { id: 8636, name: 'Dropouts', price: 64 },
+    { id: 8636, name: 'Dropouts', price: 64, unavailable: true },
   ];
 
+  function orderableParts() {
+    return PARTS.filter(part => !part.unavailable);
+  }
+
   function defaultProductIds() {
-    return PARTS.map(part => part.id);
+    return orderableParts().map(part => part.id);
   }
 
   function knownIds(ids) {
-    const known = new Set(PARTS.map(part => part.id));
+    const known = new Set(orderableParts().map(part => part.id));
     const out = [];
     const seen = new Set();
     for (const raw of ids || []) {
@@ -50,11 +54,14 @@
     return PARTS.reduce((sum, part) => sum + (selected.has(part.id) ? part.price : 0), 0);
   }
 
+  // The full-set price is withheld while any row is coming soon.
   function isFullSet(selectedIds) {
-    return productIdsFromSelection(selectedIds).length === PARTS.length;
+    if (PARTS.some(part => part.unavailable)) return false;
+    const ids = new Set(productIdsFromSelection(selectedIds));
+    return PARTS.every(part => ids.has(part.id));
   }
 
-  // All three show £128. Any shorter selection is the list sum of those files.
+  // Buyable files show their list sum. A full set is not offered while dropouts are unavailable.
   function selectionTotal(selectedIds) {
     if (isFullSet(selectedIds)) return TRIO_PRICE;
     return listTotal(selectedIds);
@@ -74,7 +81,7 @@
     const ids = productIdsFromSelection(selectedIds);
     if (!ids.length) return 'Choose at least one design file.';
     const total = formatGbp(selectionTotal(ids));
-    if (ids.length === PARTS.length) return 'Three design files ' + total;
+    if (isFullSet(ids)) return 'Three design files ' + total;
     if (ids.length === 1) return partLabel(PARTS.find(part => part.id === ids[0]));
     return 'Selected design files ' + total;
   }
