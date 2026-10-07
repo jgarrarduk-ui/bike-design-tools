@@ -159,6 +159,10 @@ row stays), and cancels the Woo order when it is still pending.
 `wordpress-plugins/mu-plugins/creature-unpaid-design-orders.php` into
 `wp-content/mu-plugins/` so WP-Cron cancels the same pending orders if the
 API timer is off. Layout installs that file. Paid orders are not cancelled.
+Copy `wordpress-plugins/mu-plugins/creature-fd-only-purchase.php` into the
+same folder so the BB yoke, SS yoke, and dropouts cannot be added from the
+catalogue without a `design_id`. Frame Designer checkout is still the
+tools-api order and the order-pay link; that path is not a basket add.
 
 The save email is Cadence's draft, which James approved: subject "Your Creature Cycles design is
 saved", buttons "Edit design" and "Take me to checkout", dropouts still
