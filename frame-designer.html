@@ -1201,13 +1201,13 @@
     font-weight: 700;
     color: var(--text-hi);
   }
-  #shop-modal #shop-save {
+  #shop-modal #shop-save-hint {
     margin-top: -6px;
     font-size: 12px;
     font-weight: 700;
     color: var(--lavender-br);
   }
-  #shop-modal #shop-save[hidden] { display: none; }
+  #shop-modal #shop-save-hint[hidden] { display: none; }
   #shop-design-id {
     font-family: var(--font-mono);
     font-size: 11px;
@@ -1226,12 +1226,12 @@
     border-radius: 3px;
     cursor: pointer;
   }
-  #shop-download, #shop-save {
+  #shop-download, #shop-save-btn {
     background: var(--hdr-bg);
     color: var(--lavender);
     border: 1px solid var(--accent);
   }
-  #shop-download:hover:not(:disabled), #shop-save:hover:not(:disabled) {
+  #shop-download:hover:not(:disabled), #shop-save-btn:hover:not(:disabled) {
     background: var(--accent);
     color: #fff;
   }
@@ -1596,16 +1596,33 @@
     </div>
     <div>
       <p style="margin-bottom:6px">design files</p>
-      <div id="shop-parts"></div>
-      <p id="shop-total"></p>
-      <p id="shop-save" hidden></p>
+      <!-- Fallback ticks if frame-shop.js has not filled the list yet. JS replaces these. -->
+      <div id="shop-parts">
+        <label class="shop-part">
+          <input type="checkbox" data-product-id="8634" checked>
+          <span class="shop-part-name">BB yoke</span>
+          <span class="shop-price">£58</span>
+        </label>
+        <label class="shop-part">
+          <input type="checkbox" data-product-id="8635" checked>
+          <span class="shop-part-name">SS yoke</span>
+          <span class="shop-price">£42</span>
+        </label>
+        <label class="shop-part is-unavailable">
+          <input type="checkbox" data-product-id="8636" disabled aria-disabled="true">
+          <span class="shop-part-name">Dropouts<span class="shop-soon">Coming soon</span></span>
+          <span class="shop-price">£64</span>
+        </label>
+      </div>
+      <p id="shop-total">Selected design files £100</p>
+      <p id="shop-save-hint" hidden></p>
       <p id="shop-print-note">Printed 316L is enquire only. Checkout is for these design files.</p>
     </div>
     <p id="shop-design-id" hidden></p>
     <p id="shop-status" role="status"></p>
     <div class="shop-actions">
       <button type="button" id="shop-download" onclick="downloadDesignJson()">Download JSON</button>
-      <button type="button" id="shop-save" onclick="saveDesignFromModal()">Save design</button>
+      <button type="button" id="shop-save-btn" onclick="saveDesignFromModal()">Save design</button>
       <button type="button" id="shop-continue" onclick="continueToShop()">Continue to shop</button>
     </div>
     <button type="button" class="shop-cancel" onclick="closeShop()">cancel</button>
@@ -1637,7 +1654,8 @@ viewBox="0 0 42000 7000"
 
 </script>
 <script src="config.js"></script>
-<script src="frame-shop.js"></script>
+<!-- /apps/frame-shop.js is cached for a year. Bump ?v= when that file changes. -->
+<script src="frame-shop.js?v=20261007"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -4530,25 +4548,44 @@ function toolsApiBase(){
   return (typeof base === 'string') ? base : '';
 }
 
+function shopToolsReady(){
+  return !!(window.FrameShop
+    && typeof FrameShop.pickerRows === 'function'
+    && typeof FrameShop.defaultProductIds === 'function'
+    && Array.isArray(FrameShop.PARTS));
+}
+
+function showShopToolsFailure(){
+  const bar = document.getElementById('statusbar');
+  if(bar) bar.textContent = 'shop tools failed to load';
+  const overlay = document.getElementById('shop-modal-overlay');
+  if(overlay) overlay.classList.add('open');
+  setShopStatus('Shop tools failed to load. Refresh the page and try again.', true);
+}
+
+// Rebuild the part list from the current ticks, or from the buyable defaults
+// when the list is still empty. An existing selection is kept so a resumed
+// design and a later save send the same product ids.
 function renderShopParts(){
   const root = document.getElementById('shop-parts');
-  if(!root || !window.FrameShop) return;
+  if(!root || !shopToolsReady()) return false;
+  const existing = root.querySelector('input');
+  const previous = existing ? selectedShopProductIds() : null;
   root.innerHTML = '';
-  const defaults = new Set(FrameShop.defaultProductIds());
-  FrameShop.PARTS.forEach(part=>{
-    const unavailable = !!part.unavailable;
+  FrameShop.pickerRows(previous).forEach(row=>{
+    const unavailable = row.disabled;
     const label = document.createElement('label');
     label.className = unavailable ? 'shop-part is-unavailable' : 'shop-part';
     const input = document.createElement('input');
     input.type = 'checkbox';
-    input.dataset.productId = String(part.id);
-    input.checked = !unavailable && defaults.has(part.id);
+    input.dataset.productId = String(row.id);
+    input.checked = row.checked;
     input.disabled = unavailable;
     if(unavailable) input.setAttribute('aria-disabled', 'true');
     input.addEventListener('change', ()=>onShopPartChange());
     const text = document.createElement('span');
     text.className = 'shop-part-name';
-    text.textContent = part.name;
+    text.textContent = row.name;
     if(unavailable){
       const soon = document.createElement('span');
       soon.className = 'shop-soon';
@@ -4557,13 +4594,14 @@ function renderShopParts(){
     }
     const price = document.createElement('span');
     price.className = 'shop-price';
-    price.textContent = FrameShop.formatGbp(part.price);
+    price.textContent = FrameShop.formatGbp(row.price);
     label.appendChild(input);
     label.appendChild(text);
     label.appendChild(price);
     root.appendChild(label);
   });
   refreshShopTotal();
+  return !!root.querySelector('input');
 }
 
 function onShopPartChange(){
@@ -4590,7 +4628,7 @@ function setShopChecks(ids){
 
 function refreshShopTotal(){
   const el = document.getElementById('shop-total');
-  const save = document.getElementById('shop-save');
+  const save = document.getElementById('shop-save-hint');
   if(!el || !window.FrameShop) return;
   const ids = selectedShopProductIds();
   el.textContent = FrameShop.selectionLabel(ids);
@@ -4616,7 +4654,7 @@ function showDesignId(id){
 
 function setShopBusy(busy){
   shopBusy = busy;
-  ['shop-save','shop-continue','shop-download'].forEach(id=>{
+  ['shop-save-btn','shop-continue','shop-download'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.disabled = busy;
   });
@@ -4638,9 +4676,8 @@ function currentShopSaved(){
 }
 
 function openShop(intent){
-  if(!window.FrameShop){
-    const bar = document.getElementById('statusbar');
-    if(bar) bar.textContent = 'shop tools failed to load';
+  if(!shopToolsReady() || !renderShopParts()){
+    showShopToolsFailure();
     return;
   }
   if(intent === 'checkout'){
@@ -4706,7 +4743,11 @@ function rememberDesign(record){
 }
 
 async function submitShop(andCheckout){
-  if(shopBusy || !window.FrameShop) return null;
+  if(shopBusy) return null;
+  if(!shopToolsReady() || !renderShopParts()){
+    showShopToolsFailure();
+    return null;
+  }
   const customer = shopCustomer();
   if(customer.error){
     setShopStatus(customer.error, true);
@@ -4810,7 +4851,11 @@ function restoreShopFromSession(urlId){
 
 // ?design= alone stays sessionStorage-only. design + resume hydrates from the API.
 async function restoreShopSession(){
-  if(!window.FrameShop) return;
+  if(!shopToolsReady()){
+    const bar = document.getElementById('statusbar');
+    if(bar) bar.textContent = 'shop tools failed to load';
+    return;
+  }
   renderShopParts();
   let urlId = '';
   let resume = '';

@@ -14,6 +14,29 @@ test('default selection is BB yoke and SS yoke', () => {
   assert.equal(FrameShop.PARTS.some(part => part.id === 8637), false);
 });
 
+test('picker ticks BB and SS by default and disables dropouts', () => {
+  const rows = FrameShop.pickerRows();
+  const byId = Object.fromEntries(rows.map(row => [row.id, row]));
+  assert.equal(rows.length, 3);
+  assert.equal(byId[8634].checked, true);
+  assert.equal(byId[8634].disabled, false);
+  assert.equal(byId[8634].name, 'BB yoke');
+  assert.equal(byId[8635].checked, true);
+  assert.equal(byId[8635].disabled, false);
+  assert.equal(byId[8635].name, 'SS yoke');
+  assert.equal(byId[8636].checked, false);
+  assert.equal(byId[8636].disabled, true);
+  assert.equal(byId[8636].name, 'Dropouts');
+
+  const kept = FrameShop.pickerRows([8635, 8636, 8635]);
+  const keptById = Object.fromEntries(kept.map(row => [row.id, row]));
+  assert.equal(keptById[8634].checked, false);
+  assert.equal(keptById[8635].checked, true);
+  assert.equal(keptById[8636].checked, false);
+  assert.equal(keptById[8636].disabled, true);
+  assert.equal(FrameShop.pickerRows([]).some(row => row.checked), false);
+});
+
 test('dropouts and unknown ids are never sent', () => {
   assert.deepEqual(FrameShop.productIdsFromSelection([8636, 8634, 9999, 8634]), [8634]);
   assert.deepEqual(FrameShop.productIdsFromSelection([8634, 8635, 8636]), [8634, 8635]);
@@ -260,8 +283,13 @@ test('fetchHydratedDesign requires a matching design id', async () => {
 
 test('Save design keeps its label, downloads JSON, and hydrates only with resume', () => {
   const html = readFileSync(new URL('../frame-designer.html', import.meta.url), 'utf8');
-  assert.match(html, /id="shop-save" onclick="saveDesignFromModal\(\)">Save design</);
+  assert.match(html, /id="shop-save-btn" onclick="saveDesignFromModal\(\)">Save design</);
   assert.match(html, /id="shop-continue" onclick="continueToShop\(\)">Continue to shop</);
+  assert.equal(/id="shop-save"[\s>]/.test(html), false);
+  assert.equal((html.match(/id="shop-save-btn"/g) || []).length, 1);
+  assert.equal((html.match(/id="shop-save-hint"/g) || []).length, 1);
+  assert.match(html, /src="frame-shop\.js\?v=\d+"/);
+  assert.equal(/src="frame-shop\.js"/.test(html), false);
   const saveFn = html.slice(
     html.indexOf('async function saveDesignFromModal'),
     html.indexOf('async function continueToShop'),
@@ -270,7 +298,19 @@ test('Save design keeps its label, downloads JSON, and hydrates only with resume
   assert.match(html, /if\(urlId && resume\)/);
   assert.match(html, /FrameShop\.fetchHydratedDesign\(toolsApiBase\(\), urlId, resume\)/);
   assert.match(html, /Coming soon/);
-  assert.equal(/8637/.test(html.slice(html.indexOf('function renderShopParts'), html.indexOf('function onShopPartChange'))), false);
+  const renderFn = html.slice(html.indexOf('function renderShopParts'), html.indexOf('function onShopPartChange'));
+  assert.equal(/8637/.test(renderFn), false);
+  assert.match(renderFn, /FrameShop\.pickerRows\(/);
+  assert.match(renderFn, /input\.checked = row\.checked/);
+  assert.match(renderFn, /input\.disabled = unavailable/);
+  const openFn = html.slice(html.indexOf('function openShop'), html.indexOf('function closeShop'));
+  assert.match(openFn, /renderShopParts\(\)/);
+  const parts = html.slice(html.indexOf('id="shop-parts"'), html.indexOf('id="shop-total"'));
+  assert.match(parts, /data-product-id="8634"[^>]*checked/);
+  assert.match(parts, /data-product-id="8635"[^>]*checked/);
+  assert.match(parts, /data-product-id="8636"[^>]*disabled/);
+  assert.match(parts, /Coming soon/);
+  assert.equal(/data-product-id="8636"[^>]*checked/.test(parts), false);
 });
 
 test('POST /api/designs uses the configured origin and surfaces API errors', async () => {

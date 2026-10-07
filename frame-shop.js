@@ -28,6 +28,24 @@
     return orderableParts().map(part => part.id);
   }
 
+  // Rows for the Save design picker. Omit selectedIds to tick the buyable
+  // defaults. Pass an array (including []) to keep that selection. Dropouts
+  // stay visible, disabled, and unchecked.
+  function pickerRows(selectedIds) {
+    const chosen = selectedIds == null ? defaultProductIds() : productIdsFromSelection(selectedIds);
+    const selected = new Set(chosen);
+    return PARTS.map(part => {
+      const unavailable = !!part.unavailable;
+      return {
+        id: part.id,
+        name: part.name,
+        price: part.price,
+        checked: !unavailable && selected.has(part.id),
+        disabled: unavailable,
+      };
+    });
+  }
+
   function knownIds(ids) {
     const known = new Set(orderableParts().map(part => part.id));
     const out = [];
@@ -274,6 +292,7 @@
     SESSION_KEY,
     PARTS,
     defaultProductIds,
+    pickerRows,
     TRIO_PRICE,
     formatGbp,
     listTotal,
