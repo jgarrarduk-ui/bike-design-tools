@@ -11,13 +11,13 @@
   const SESSION_KEY = 'creature.frameDesign';
 
   // Design-file list prices locked 7 Oct 2026.
-  // All three display at TRIO_PRICE. The list sum is higher by £13.
+  // All three display at TRIO_PRICE. List sum is £164; the shop shows save £36.
   // Printed 316L is enquire only, not a product.
-  const TRIO_PRICE = 150;
+  const TRIO_PRICE = 128;
   const PARTS = [
     { id: 8634, name: 'BB yoke', price: 58 },
-    { id: 8635, name: 'SS yoke', price: 35 },
-    { id: 8636, name: 'Dropouts', price: 70 },
+    { id: 8635, name: 'SS yoke', price: 42 },
+    { id: 8636, name: 'Dropouts', price: 64 },
   ];
 
   function defaultProductIds() {
@@ -54,7 +54,7 @@
     return productIdsFromSelection(selectedIds).length === PARTS.length;
   }
 
-  // All three show £150. Any shorter selection is the list sum of those files.
+  // All three show £128. Any shorter selection is the list sum of those files.
   function selectionTotal(selectedIds) {
     if (isFullSet(selectedIds)) return TRIO_PRICE;
     return listTotal(selectedIds);

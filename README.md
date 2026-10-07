@@ -103,10 +103,10 @@ geometry as `params`, and `productIds` for the design files they picked:
 | Design file | Product | Price |
 |---|---|---|
 | BB yoke | 8634 | £58 |
-| SS yoke | 8635 | £35 |
-| Dropouts | 8636 | £70 |
+| SS yoke | 8635 | £42 |
+| Dropouts | 8636 | £64 |
 
-Bought separately those files list at **£163**. When all three are checked, Frame Designer shows **£150** and **save £13**. A shorter selection stays the list sum of the files that are checked. Product 8637 is not a checkout choice. Printed 316L stays enquire/quote only. The Woo order applies the £13 reduction when those three lines share a `design_id`; that fee is not calculated in this page.
+Bought separately those files list at **£164**. When all three are checked, Frame Designer shows **£128** and **save £36**. A shorter selection stays the list sum of the files that are checked. Product 8637 is not a checkout choice. Printed 316L stays enquire/quote only. The Woo order applies the £36 reduction when those three lines share a `design_id`; that fee is not calculated in this page.
 
 The response `designId` (also accepted as `design_id`) is kept in
 `sessionStorage` and in `?design=` on the page. JSON download is the existing
@@ -119,7 +119,7 @@ this page only creates an order through the tools-api.
 Deploy `frame-designer.html`, `frame-shop.js`, and `config.js` together under
 `/apps/`. `config.js` is only the public tools-api origin. The tools-api
 already accepts `productIds` (Phase 2) and prices those lines from WooCommerce.
-This page does not apply the £13 reduction itself.
+This page does not apply the £36 reduction itself.
 
 ## Deploying
 

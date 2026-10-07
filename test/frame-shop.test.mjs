@@ -20,26 +20,26 @@ test('unknown product ids are dropped and 8637 is not a design file', () => {
   assert.deepEqual(FrameShop.productIdsFromSelection([]), []);
 });
 
-test('design-file prices show £150 when all three are selected', () => {
+test('design-file prices show £128 when all three are selected', () => {
   const byId = Object.fromEntries(FrameShop.PARTS.map(part => [part.id, part]));
   assert.equal(byId[8634].name, 'BB yoke');
   assert.equal(byId[8634].price, 58);
-  assert.equal(byId[8635].price, 35);
-  assert.equal(byId[8636].price, 70);
-  assert.equal(FrameShop.TRIO_PRICE, 150);
+  assert.equal(byId[8635].price, 42);
+  assert.equal(byId[8636].price, 64);
+  assert.equal(FrameShop.TRIO_PRICE, 128);
   assert.equal(FrameShop.partLabel(byId[8634]), 'BB yoke £58');
-  assert.equal(FrameShop.partLabel(byId[8635]), 'SS yoke £35');
-  assert.equal(FrameShop.partLabel(byId[8636]), 'Dropouts £70');
-  assert.equal(FrameShop.listTotal([8634, 8635, 8636]), 163);
-  assert.equal(FrameShop.selectionTotal([8634, 8635, 8636]), 150);
-  assert.equal(FrameShop.selectionTotal([8636, 8634, 8635, 8637]), 150);
-  assert.equal(FrameShop.selectionSaving([8634, 8635, 8636]), 'List £163, save £13');
-  assert.equal(FrameShop.selectionTotal([8634, 8636]), 128);
+  assert.equal(FrameShop.partLabel(byId[8635]), 'SS yoke £42');
+  assert.equal(FrameShop.partLabel(byId[8636]), 'Dropouts £64');
+  assert.equal(FrameShop.listTotal([8634, 8635, 8636]), 164);
+  assert.equal(FrameShop.selectionTotal([8634, 8635, 8636]), 128);
+  assert.equal(FrameShop.selectionTotal([8636, 8634, 8635, 8637]), 128);
+  assert.equal(FrameShop.selectionSaving([8634, 8635, 8636]), 'List £164, save £36');
+  assert.equal(FrameShop.selectionTotal([8634, 8636]), 122);
   assert.equal(FrameShop.selectionSaving([8634, 8636]), '');
   assert.equal(FrameShop.selectionSaving([8635]), '');
-  assert.equal(FrameShop.selectionLabel([8634, 8635, 8636]), 'Three design files £150');
-  assert.equal(FrameShop.selectionLabel([8634, 8636]), 'Selected design files £128');
-  assert.equal(FrameShop.selectionLabel([8635]), 'SS yoke £35');
+  assert.equal(FrameShop.selectionLabel([8634, 8635, 8636]), 'Three design files £128');
+  assert.equal(FrameShop.selectionLabel([8634, 8636]), 'Selected design files £122');
+  assert.equal(FrameShop.selectionLabel([8635]), 'SS yoke £42');
   assert.equal(FrameShop.selectionLabel([8637]), 'Choose at least one design file.');
   const labels = [
     FrameShop.selectionLabel([8634, 8635, 8636]),
@@ -51,19 +51,20 @@ test('design-file prices show £150 when all three are selected', () => {
   }
 });
 
-test('Frame Designer shop copy shows the £150 trio and not the old rear-end price', () => {
+test('Frame Designer shop copy shows the £128 trio and not the old rear-end price', () => {
   const html = readFileSync(new URL('../frame-designer.html', import.meta.url), 'utf8');
   const shop = readFileSync(new URL('../frame-shop.js', import.meta.url), 'utf8');
   const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-  const customer = html + '\n' + shop;
+  const customer = html + '\n' + shop + '\n' + readme;
   assert.equal(/£136|−£24|-£24|save when all three|Whole rear end £|Whole rear end is optional/i.test(customer), false);
+  assert.equal(/£35|£70|£150|£163|save £13/.test(customer), false);
   assert.equal(/8637/.test(shop), false);
   assert.match(readme, /£58/);
-  assert.match(readme, /£35/);
-  assert.match(readme, /£70/);
-  assert.match(readme, /£163/);
-  assert.match(readme, /£150/);
-  assert.match(readme, /save £13/);
+  assert.match(readme, /£42/);
+  assert.match(readme, /£64/);
+  assert.match(readme, /£164/);
+  assert.match(readme, /£128/);
+  assert.match(readme, /save £36/);
   assert.match(html, /Printed 316L is enquire only/);
   assert.match(html, /id="shop-total"/);
   assert.match(html, /id="shop-save"/);
