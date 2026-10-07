@@ -78,6 +78,14 @@ const FROM    = () => process.env.EMAIL_FROM     || '"Creature Cycles" <info@cre
 const REPLY   = () => process.env.EMAIL_REPLY_TO || 'info@creaturecycles.co.uk';
 const LEAD    = () => process.env.REVIEW_LEAD_TIME_DAYS || '7';
 
+// Absolute URL: email clients do not load relative images.
+// Source art is 480×80; 220×37 keeps that ratio.
+const EMAIL_LOGO_URL = 'https://creaturecycles.co.uk/wp-content/uploads/2026/10/creature-logo-email-1.png';
+
+function emailLogoHtml() {
+  return `<img src="${EMAIL_LOGO_URL}" width="220" height="37" alt="Creature Cycles" style="display:block;width:220px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none;margin:0 0 4px;">`;
+}
+
 // ── Shared HTML wrapper ───────────────────────────────────────────────────────
 function wrapHtml(bodyContent) {
   return `<!DOCTYPE html>
@@ -86,7 +94,7 @@ function wrapHtml(bodyContent) {
 <body style="font-family:monospace;background:#f4f4f4;padding:40px 0;">
   <table width="600" align="center" style="background:#fff;border-radius:8px;padding:40px;border:1px solid #ddd;">
     <tr><td>
-      <h1 style="font-family:monospace;color:#111;font-size:22px;margin-bottom:4px;">Creature Cycles</h1>
+      ${emailLogoHtml()}
       <p style="color:#666;font-size:13px;margin-top:0;">Bespoke Frame Design Files</p>
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
       ${bodyContent}
@@ -167,7 +175,7 @@ info@creaturecycles.co.uk`;
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${escapeHtml(SAVED_PREHEADER)}</div>
   <table width="600" align="center" style="background:#fff;border-radius:8px;padding:40px;border:1px solid #ddd;">
     <tr><td>
-      <h1 style="font-family:monospace;color:#111;font-size:22px;margin-bottom:4px;">Creature Cycles</h1>
+      ${emailLogoHtml()}
       <p style="color:#666;font-size:13px;margin-top:0;">Bespoke Frame Design Files</p>
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
       <p style="font-size:15px;color:#222;">${safeGreeting}</p>
