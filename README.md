@@ -16,9 +16,10 @@ during the dual-host period.
 | Spring Rate Calculator | `spring-calculator.html` | Rear coil spring rate from sag target, rider weight and shock travel. |
 | Suspension Designer | `suspension-designer/index.html` | Four-bar suspension kinematics solver. Currently the flex-stay variant — leverage ratio, anti-squat/anti-rise, pedal kickback, stay bending stress, derailleur cage take-up, validated against Linkage X3 — with other linkage types planned. |
 
-Each is a single HTML file: no build step, no dependencies, open it directly
-or serve the folder. `index.html` at the repo root is the landing page that
-links to all four.
+Each tool is a static page: no build step, open it directly or serve the
+folder. `index.html` at the repo root is the landing page that links to all
+four. Frame Designer also loads `config.js` (the tools-api origin) and
+`frame-shop.js` (save and checkout).
 
 Frame Designer's export screen also writes **notch templates**: a 1:1 A4 PDF
 of wrap-around cope templates for the front-triangle joints (TT and DT at the
@@ -45,7 +46,9 @@ older `/flexstay/` bookmarks (including GitHub Pages) still open the tool.
 
 ```
 index.html               tools landing page
+config.js                public tools-api origin for Frame Designer
 frame-designer.html      frame geometry tool
+frame-shop.js            Frame Designer save / part picker / checkout
 spoke-calculator.html    spoke length tool
 spring-calculator.html   spring rate tool
 suspension-designer/     suspension kinematics tool, its docs and tests
@@ -87,6 +90,36 @@ paid. In WordPress, add a webhook with topic Order updated and delivery URL
 `{BASE_URL}/api/webhooks/woocommerce/order-updated`. Set the webhook secret to
 `WC_WEBHOOK_SECRET`. Catalogue products are only referenced by id; this server
 does not publish them.
+
+## Frame Designer checkout
+
+Save design and Continue to shop in Frame Designer call the live tools-api.
+The origin is `config.js` (`CREATURE_TOOLS_API_BASE`), not a secret and not
+written into the page.
+
+Save posts `POST /api/designs` with the customer's name, email, the current
+geometry as `params`, and `productIds` for the design files they picked:
+
+| Design file | Product | Price |
+|---|---|---|
+| BB yoke | 8634 | £58 |
+| SS yoke | 8635 | £42 |
+| Dropouts | 8636 | £64 |
+
+Bought separately those files list at **£164**. When all three are checked, Frame Designer shows **£128** and **save £36**. A shorter selection stays the list sum of the files that are checked. Product 8637 is not a checkout choice. Printed 316L stays enquire/quote only. The Woo order applies the £36 reduction when those three lines share a `design_id`; that fee is not calculated in this page.
+
+The response `designId` (also accepted as `design_id`) is kept in
+`sessionStorage` and in `?design=` on the page. JSON download is the existing
+client-side export; the API does not return a file. Continue to shop follows
+`checkoutUrl` when it is a `https://creaturecycles.co.uk/.../checkout/order-pay/...`
+link. The same pending order is reused until the geometry, email, or parts
+change, so a second click does not open a second order. Products stay draft;
+this page only creates an order through the tools-api.
+
+Deploy `frame-designer.html`, `frame-shop.js`, and `config.js` together under
+`/apps/`. `config.js` is only the public tools-api origin. The tools-api
+already accepts `productIds` (Phase 2) and prices those lines from WooCommerce.
+This page does not apply the £36 reduction itself.
 
 ## Deploying
 
