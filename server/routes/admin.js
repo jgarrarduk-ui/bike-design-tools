@@ -9,6 +9,7 @@
  * Endpoints:
  *   GET  /api/admin/orders                    — list all orders
  *   POST /api/admin/orders/:id/send-review    — upload reviewed PDF and send review email
+ *   POST /api/admin/cleanup-unpaid            — expire resume tokens past TTL and cancel scrapped pending Woo orders
  */
 
 const express  = require('express');
@@ -16,6 +17,7 @@ const multer   = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const db       = require('../db');
 const email    = require('../services/email');
+const cleanup  = require('../services/unpaid-cleanup');
 
 const router = express.Router();
 
@@ -120,6 +122,19 @@ router.post('/orders/:id/send-review', upload.single('pdf'), async (req, res) =>
   } catch (err) {
     console.error(`[admin] Failed to send review email for ${id}:`, err.message);
     res.status(500).json({ error: 'Failed to send review email', detail: err.message });
+  }
+});
+
+// POST /api/admin/cleanup-unpaid
+// Hook for a scheduler. Also runs inside the process when
+// UNPAID_CLEANUP_INTERVAL_HOURS is set. Does not touch paid designs.
+router.post('/cleanup-unpaid', async (_req, res) => {
+  try {
+    const result = await cleanup.run();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[admin] unpaid cleanup failed:', err.message);
+    res.status(500).json({ error: 'Cleanup failed', detail: err.message });
   }
 });
 

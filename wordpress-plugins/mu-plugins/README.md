@@ -22,6 +22,12 @@ It loads on the next request, with no activate step. Under **Plugins → Must-Us
 
 To remove it, delete that file from `mu-plugins/`.
 
+## Unpaid design orders
+
+`creature-unpaid-design-orders.php` is a second must-use file. Copy it into `wp-content/mu-plugins/` the same way. Once a day, WP-Cron cancels WooCommerce orders that are still **pending**, were created more than 90 days ago, and have order meta `design_id` or `creature_design_id`. Paid orders are not touched. The tools-api does the same cancel when `UNPAID_CLEANUP_INTERVAL_HOURS` is set, and it also expires the resume token. Either path is enough for the Woo order. Running both is safe: a cancelled order is no longer pending.
+
+Default window is 90 days, matching the resume token. Filter `creature_unpaid_design_order_ttl_days` to shorten it. Layout installs this file; it does not publish products.
+
 ## Smoke test
 
 Use a pending order, then cancel it. Do not take payment.

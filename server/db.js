@@ -25,12 +25,17 @@ db.exec(`
     params               TEXT NOT NULL,          -- JSON string of bike parameters
     pdf_base64           TEXT,                   -- PDF generated client-side, stored as base64
     status               TEXT NOT NULL DEFAULT 'pending',
-                                                 -- pending | checkout_created | paid | in_review | accepted | delivered | failed
+                                                 -- pending | checkout_created | paid | in_review | accepted | delivered | failed | expired
     wc_order_id          TEXT,
     wc_checkout_url      TEXT,
     download_token       TEXT,
     download_expires_at  DATETIME,
-    delivered_at         DATETIME
+    delivered_at         DATETIME,
+    resume_token         TEXT,                   -- unguessable; required with the design id to reopen
+    product_ids          TEXT,                   -- JSON array from resolveProductIds at save
+    design_name          TEXT,                   -- optional frame name for the save email
+    resume_expires_at    DATETIME,               -- unpaid resume links last RESUME_TOKEN_TTL_DAYS (default 90)
+    deleted_at           DATETIME                -- set when an unpaid design is expired; row is kept
   );
 
   CREATE INDEX IF NOT EXISTS idx_designs_email        ON designs (customer_email);
@@ -54,5 +59,23 @@ if (!existingCols.includes('review_sent_at')) {
 if (!existingCols.includes('accepted_at')) {
   db.exec('ALTER TABLE designs ADD COLUMN accepted_at DATETIME');
 }
+// Resume links work while the design is unpaid and resume_expires_at is still
+// in the future (90 days from create, unless RESUME_TOKEN_TTL_DAYS overrides it).
+if (!existingCols.includes('resume_token')) {
+  db.exec('ALTER TABLE designs ADD COLUMN resume_token TEXT');
+}
+if (!existingCols.includes('product_ids')) {
+  db.exec('ALTER TABLE designs ADD COLUMN product_ids TEXT');
+}
+if (!existingCols.includes('design_name')) {
+  db.exec('ALTER TABLE designs ADD COLUMN design_name TEXT');
+}
+if (!existingCols.includes('resume_expires_at')) {
+  db.exec('ALTER TABLE designs ADD COLUMN resume_expires_at DATETIME');
+}
+if (!existingCols.includes('deleted_at')) {
+  db.exec('ALTER TABLE designs ADD COLUMN deleted_at DATETIME');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_designs_resume_tok ON designs (resume_token)');
 
 module.exports = db;
