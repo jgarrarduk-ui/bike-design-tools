@@ -493,6 +493,7 @@
   /* Panel buttons */
   #panel-btns {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     padding: 8px 10px 6px;
     border-top: 1px solid var(--border);
@@ -500,7 +501,7 @@
     flex-shrink: 0;
   }
   .panel-btn {
-    flex: 1;
+    flex: 1 1 calc(33.33% - 6px);
     background: var(--hdr-bg);
     color: var(--lavender);
     border: 1px solid var(--accent);
@@ -511,9 +512,17 @@
     padding: 7px 4px;
     cursor: pointer;
     letter-spacing: 0.3px;
+    line-height: 1.2;
     transition: background 0.1s, color 0.1s;
   }
+  .panel-btn-wide { flex: 1 1 calc(50% - 6px); }
   .panel-btn:hover { background: var(--accent); color: #fff; }
+  .panel-btn-primary {
+    background: var(--accent-hi);
+    color: #fff;
+    border-color: var(--accent-br);
+  }
+  .panel-btn-primary:hover { background: var(--accent-br); color: #000; }
 
   /* Status bar */
   #statusbar {
@@ -1102,6 +1111,113 @@
   }
   .exp-modal-btns button:hover { background: var(--hdr-bg); }
 
+  /* ── Save / shop modal ── */
+  #shop-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #shop-modal-overlay.open { display: flex; }
+  #shop-modal {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    width: min(420px, 100%);
+    max-height: min(90vh, 680px);
+    overflow: auto;
+    padding: 22px 24px 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  #shop-modal h2 {
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--lavender);
+    font-weight: 700;
+    margin: 0;
+  }
+  #shop-modal p { font-size: 11px; color: var(--text-lo); margin: 0; line-height: 1.45; }
+  .shop-field { display: flex; flex-direction: column; gap: 4px; }
+  .shop-field label { font-size: 11px; color: var(--text-hi); }
+  .shop-field input {
+    width: 100%;
+    padding: 6px 8px;
+    background: var(--input-bg);
+    color: var(--input-fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: var(--font);
+    font-size: 12px;
+  }
+  #shop-parts { display: flex; flex-direction: column; gap: 4px; }
+  .shop-part {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--hdr-bg);
+    color: var(--text-hi);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .shop-part input { accent-color: var(--accent); width: 15px; height: 15px; flex: none; }
+  #shop-design-id {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--lavender-br);
+    word-break: break-all;
+  }
+  #shop-status { min-height: 1.2em; font-size: 11px; color: var(--text-mid); }
+  #shop-status.is-error { color: var(--err); }
+  .shop-actions { display: flex; flex-direction: column; gap: 8px; }
+  .shop-actions button {
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    padding: 9px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  #shop-download, #shop-save {
+    background: var(--hdr-bg);
+    color: var(--lavender);
+    border: 1px solid var(--accent);
+  }
+  #shop-download:hover:not(:disabled), #shop-save:hover:not(:disabled) {
+    background: var(--accent);
+    color: #fff;
+  }
+  #shop-continue {
+    background: var(--accent-hi);
+    color: #fff;
+    border: 1px solid var(--accent-br);
+  }
+  #shop-continue:hover:not(:disabled) { background: var(--accent-br); color: #000; }
+  .shop-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .shop-cancel {
+    align-self: flex-end;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-mid);
+    font-family: var(--font);
+    font-size: 11px;
+    padding: 5px 18px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .shop-cancel:hover { background: var(--hdr-bg); }
+
   /* ── Zoom controls overlay — same stacked light buttons as Suspension Designer ── */
   #zoom-controls {
     position: absolute;
@@ -1337,9 +1453,11 @@
       <span class="derived-val" id="derived-wb">—</span>
     </div>
     <div id="panel-btns">
-      <button class="panel-btn" onclick="resetParams()">Reset</button>
-      <button class="panel-btn" onclick="openSave()">Export</button>
-      <button class="panel-btn" onclick="importJSON()">Import</button>
+      <button class="panel-btn" type="button" onclick="resetParams()">Reset</button>
+      <button class="panel-btn" type="button" onclick="openSave()">Export</button>
+      <button class="panel-btn" type="button" onclick="importJSON()">Import</button>
+      <button class="panel-btn panel-btn-wide" type="button" onclick="openShop('save')">Save design</button>
+      <button class="panel-btn panel-btn-wide panel-btn-primary" type="button" onclick="openShop('checkout')">Continue to shop</button>
     </div>
   </div>
 
@@ -1418,6 +1536,43 @@
   </div>
 </div>
 
+<!-- Save design / part picker. Checkout is a tools-api order, then Woo order-pay. -->
+<div id="shop-modal-overlay" onclick="handleShopOverlayClick(event)">
+  <div id="shop-modal" role="dialog" aria-labelledby="shop-title" aria-modal="true">
+    <h2 id="shop-title">Save design</h2>
+    <p>Save this frame to your design, then continue to checkout for the rear-end parts. Download JSON stays on this computer.</p>
+    <div class="shop-field">
+      <label for="shop-customer-name">your name</label>
+      <input id="shop-customer-name" type="text" autocomplete="name" placeholder="name for the order">
+    </div>
+    <div class="shop-field">
+      <label for="shop-customer-email">email</label>
+      <input id="shop-customer-email" type="email" autocomplete="email" placeholder="you@example.com">
+    </div>
+    <div class="shop-field">
+      <label for="shop-name">frame name</label>
+      <input id="shop-name" type="text" autocomplete="off" placeholder="optional, used on the JSON file">
+    </div>
+    <div class="shop-field">
+      <label for="shop-designer">designer</label>
+      <input id="shop-designer" type="text" autocomplete="off" placeholder="optional, used on the JSON file">
+    </div>
+    <div>
+      <p style="margin-bottom:6px">parts</p>
+      <div id="shop-parts"></div>
+      <p style="margin-top:6px">Whole rear end is optional and replaces the three parts above.</p>
+    </div>
+    <p id="shop-design-id" hidden></p>
+    <p id="shop-status" role="status"></p>
+    <div class="shop-actions">
+      <button type="button" id="shop-download" onclick="downloadDesignJson()">Download JSON</button>
+      <button type="button" id="shop-save" onclick="saveDesignFromModal()">Save design</button>
+      <button type="button" id="shop-continue" onclick="continueToShop()">Continue to shop</button>
+    </div>
+    <button type="button" class="shop-cancel" onclick="closeShop()">cancel</button>
+  </div>
+</div>
+
 <div id="statusbar">ready</div>
 
 <script type="text/plain" id="creature-logo-svg">
@@ -1442,6 +1597,8 @@ viewBox="0 0 42000 7000"
 </svg>
 
 </script>
+<script src="config.js"></script>
+<script src="frame-shop.js"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -2726,10 +2883,19 @@ function showError(msg, err){
 //  STATUS BAR
 // ═══════════════════════════════════════════════════════
 function updateStatus(g){
-  document.getElementById('statusbar').textContent =
+  let line =
     `Wheelbase: ${g.wheelbase.toFixed(1)} mm  ·  `+
     `Front Centre: ${g.front_centre.toFixed(1)} mm  ·  `+
     `Trail: ${g.trail.toFixed(1)} mm`;
+  try {
+    const saved = window.FrameShop ? currentShopSaved() : null;
+    if(saved && saved.designId) line += `  ·  Design ${saved.designId.slice(0, 8)}`;
+    else {
+      const urlId = new URL(location.href).searchParams.get('design');
+      if(urlId) line += `  ·  Design ${urlId.slice(0, 8)} is not in this session`;
+    }
+  } catch { /* session is optional */ }
+  document.getElementById('statusbar').textContent = line;
   document.getElementById('derived-wb').textContent = g.wheelbase.toFixed(1)+' mm';
 }
 
@@ -4312,6 +4478,263 @@ function setParams(p){
 // ═══════════════════════════════════════════════════════
 function resetParams(){ setParams({...DEFAULTS}); }
 
+// ═══════════════════════════════════════════════════════
+//  SAVE DESIGN / CONTINUE TO SHOP
+// ═══════════════════════════════════════════════════════
+// POST /api/designs with productIds, then follow the Woo order-pay URL.
+// The same saved order is reused until the geometry, email, or parts change.
+
+let shopBusy = false;
+
+function toolsApiBase(){
+  const base = window.CREATURE_TOOLS_API_BASE;
+  return (typeof base === 'string') ? base : '';
+}
+
+function renderShopParts(){
+  const root = document.getElementById('shop-parts');
+  if(!root || !window.FrameShop) return;
+  root.innerHTML = '';
+  const defaults = new Set(FrameShop.defaultProductIds());
+  FrameShop.PARTS.forEach(part=>{
+    const label = document.createElement('label');
+    label.className = 'shop-part';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.dataset.productId = String(part.id);
+    input.checked = defaults.has(part.id);
+    input.addEventListener('change', ()=>onShopPartChange(input));
+    const text = document.createElement('span');
+    text.textContent = part.optional ? part.name + ' (optional)' : part.name;
+    label.appendChild(input);
+    label.appendChild(text);
+    root.appendChild(label);
+  });
+}
+
+function onShopPartChange(input){
+  const checked = [...document.querySelectorAll('#shop-parts input:checked')]
+    .map(el=>Number(el.dataset.productId));
+  const next = new Set(FrameShop.applyAssemblyExclusivity(checked, Number(input.dataset.productId)));
+  document.querySelectorAll('#shop-parts input').forEach(el=>{
+    el.checked = next.has(Number(el.dataset.productId));
+  });
+}
+
+function selectedShopProductIds(){
+  const checked = [...document.querySelectorAll('#shop-parts input:checked')]
+    .map(el=>Number(el.dataset.productId));
+  return FrameShop.productIdsFromSelection(checked);
+}
+
+function setShopChecks(ids){
+  const selected = new Set(ids || []);
+  document.querySelectorAll('#shop-parts input').forEach(el=>{
+    el.checked = selected.has(Number(el.dataset.productId));
+  });
+}
+
+function setShopStatus(message, isError){
+  const el = document.getElementById('shop-status');
+  if(!el) return;
+  el.textContent = message || '';
+  el.classList.toggle('is-error', !!isError && !!message);
+}
+
+function showDesignId(id){
+  const el = document.getElementById('shop-design-id');
+  if(!el) return;
+  el.hidden = !id;
+  el.textContent = id ? ('Design ID ' + id) : '';
+}
+
+function setShopBusy(busy){
+  shopBusy = busy;
+  ['shop-save','shop-continue','shop-download'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.disabled = busy;
+  });
+}
+
+function shopCustomer(){
+  const customerName = document.getElementById('shop-customer-name').value.trim();
+  const customerEmail = document.getElementById('shop-customer-email').value.trim();
+  if(!customerName) return { error: 'Enter your name.' };
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) return { error: 'Enter a valid email.' };
+  return { customerName, customerEmail };
+}
+
+function currentShopSaved(){
+  let urlId = '';
+  try { urlId = new URL(location.href).searchParams.get('design') || ''; }
+  catch { urlId = ''; }
+  return FrameShop.readSession(sessionStorage, urlId);
+}
+
+function openShop(intent){
+  if(!window.FrameShop){
+    const bar = document.getElementById('statusbar');
+    if(bar) bar.textContent = 'shop tools failed to load';
+    return;
+  }
+  if(intent === 'checkout'){
+    const saved = currentShopSaved();
+    const email = (document.getElementById('shop-customer-email').value || (saved && saved.customerEmail) || '').trim();
+    const productIds = selectedShopProductIds();
+    const plan = FrameShop.checkoutPlan({
+      saved,
+      snapshot: FrameShop.selectionSnapshot(exportParams(), productIds, email),
+      productIds,
+    });
+    if(plan.action === 'redirect'){
+      location.assign(plan.checkoutUrl);
+      return;
+    }
+    document.getElementById('shop-modal-overlay').classList.add('open');
+    setShopStatus(plan.action === 'error' ? plan.message : '', plan.action === 'error');
+    document.getElementById('shop-customer-name').focus();
+    return;
+  }
+  setShopStatus('');
+  document.getElementById('shop-modal-overlay').classList.add('open');
+  document.getElementById('shop-customer-name').focus();
+}
+
+function closeShop(){
+  if(shopBusy) return;
+  document.getElementById('shop-modal-overlay').classList.remove('open');
+}
+
+function handleShopOverlayClick(e){
+  if(e.target === document.getElementById('shop-modal-overlay')) closeShop();
+}
+
+function downloadDesignJson(){
+  const name = document.getElementById('shop-name').value;
+  const designer = document.getElementById('shop-designer').value;
+  const exportName = document.getElementById('export-name');
+  const exportAuthor = document.getElementById('export-author');
+  if(exportName) exportName.value = name;
+  if(exportAuthor) exportAuthor.value = designer;
+  const out = {
+    _meta: {
+      author: designer,
+      name,
+      designer,
+      date: new Date().toISOString(),
+      version: '1.0',
+    },
+    ...exportParams(),
+  };
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  triggerDownload(URL.createObjectURL(blob), exportFilename('json'), true);
+}
+
+function rememberDesign(record){
+  FrameShop.writeSession(sessionStorage, record);
+  const url = new URL(location.href);
+  url.searchParams.set('design', record.designId);
+  history.replaceState(null, '', url.pathname + url.search + url.hash);
+  showDesignId(record.designId);
+  redraw();
+}
+
+async function submitShop(andCheckout){
+  if(shopBusy || !window.FrameShop) return null;
+  const customer = shopCustomer();
+  if(customer.error){
+    setShopStatus(customer.error, true);
+    return null;
+  }
+  const productIds = selectedShopProductIds();
+  const params = exportParams();
+  const snapshot = FrameShop.selectionSnapshot(params, productIds, customer.customerEmail);
+  const plan = FrameShop.checkoutPlan({
+    saved: currentShopSaved(),
+    snapshot,
+    productIds,
+  });
+  if(plan.action === 'error'){
+    setShopStatus(plan.message, true);
+    return null;
+  }
+  if(plan.action === 'redirect'){
+    const saved = currentShopSaved();
+    showDesignId(saved.designId);
+    setShopStatus(andCheckout ? 'Opening checkout.' : ('Design ' + saved.designId + ' is already saved.'));
+    return saved;
+  }
+  setShopBusy(true);
+  setShopStatus('Saving design…');
+  try {
+    const payload = FrameShop.buildDesignPayload({
+      customerName: customer.customerName,
+      customerEmail: customer.customerEmail,
+      params,
+      productIds: plan.productIds,
+    });
+    const data = await FrameShop.postDesign(toolsApiBase(), payload);
+    const designId = FrameShop.designIdFromResponse(data);
+    if(!designId) throw new Error('The tools API did not return a design id.');
+    if(!FrameShop.isOrderPayUrl(data.checkoutUrl)){
+      throw new Error('The tools API did not return a checkout link.');
+    }
+    const record = {
+      designId,
+      checkoutUrl: data.checkoutUrl,
+      snapshot,
+      customerName: customer.customerName,
+      customerEmail: customer.customerEmail,
+      productIds: plan.productIds,
+      params,
+    };
+    rememberDesign(record);
+    setShopStatus('Design saved.');
+    return record;
+  } catch(err){
+    setShopStatus(err.message || 'Could not save the design.', true);
+    return null;
+  } finally {
+    setShopBusy(false);
+  }
+}
+
+async function saveDesignFromModal(){
+  await submitShop(false);
+}
+
+async function continueToShop(){
+  const record = await submitShop(true);
+  if(record && record.checkoutUrl) location.assign(record.checkoutUrl);
+}
+
+function restoreShopSession(){
+  if(!window.FrameShop) return;
+  renderShopParts();
+  let urlId = '';
+  try { urlId = new URL(location.href).searchParams.get('design') || ''; }
+  catch { urlId = ''; }
+  const saved = FrameShop.readSession(sessionStorage, urlId);
+  const bar = document.getElementById('statusbar');
+  if(urlId && !saved){
+    if(bar) bar.textContent = 'design ' + urlId.slice(0, 8) + ' is not in this session — save again to continue';
+    return;
+  }
+  if(!saved) return;
+  if(saved.params && typeof saved.params === 'object'){
+    const frameParams = { ...saved.params };
+    delete frameParams.chainring_dia;
+    if(Object.keys(frameParams).length) setParams(frameParams);
+  }
+  const name = document.getElementById('shop-customer-name');
+  const email = document.getElementById('shop-customer-email');
+  if(name) name.value = saved.customerName || '';
+  if(email) email.value = saved.customerEmail || '';
+  if(Array.isArray(saved.productIds) && saved.productIds.length) setShopChecks(saved.productIds);
+  showDesignId(saved.designId);
+  if(bar && !saved.params) bar.textContent = 'Design ' + saved.designId.slice(0, 8) + ' saved';
+}
+
 function exportJSON(){
   const designer=(document.getElementById('export-author')||{}).value||'';
   const name=(document.getElementById('export-name')||{}).value||'';
@@ -4456,6 +4879,7 @@ window.addEventListener('error', e=>{
 params.stack = calcStackFromAtc(params);
 try { buildPanel(); } catch(e){ console.error('buildPanel failed:',e); }
 try { buildPresetPanel(); } catch(e){ console.error('buildPresetPanel failed:',e); }
+try { restoreShopSession(); } catch(e){ console.error('restoreShopSession failed:',e); }
 
 // Populate view panel preset selects
 (function buildViewPanelPresets(){
