@@ -20,6 +20,7 @@ delete process.env.WC_WEBHOOK_SECRET;
 delete process.env.SMTP_HOST;
 delete process.env.SMTP_USER;
 delete process.env.SMTP_PASS;
+delete process.env.RESEND_API_KEY;
 
 const require = createRequire(import.meta.url);
 const woocommerce = require('../services/woocommerce');

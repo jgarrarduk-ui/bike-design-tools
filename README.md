@@ -64,13 +64,13 @@ server/                  backend: design storage, checkout, email delivery
 Node/Express service behind the "buy this design" flow: stores a submitted
 design, hands off to WooCommerce for checkout, and emails the finished files
 once a design is reviewed and approved. SQLite for storage (`better-sqlite3`),
-`nodemailer` for email, `archiver` for zipping deliverables. Has its own
+Resend's HTTPS API for email, `archiver` for zipping deliverables. Has its own
 admin panel (`server/public/admin.html`).
 
 ```
 cd server
 npm install
-cp .env.example .env    # fill in WooCommerce, SMTP and admin credentials
+cp .env.example .env    # fill in WooCommerce, the Resend API key, and admin credentials
 npm start                # or: npm run dev
 ```
 
@@ -160,13 +160,17 @@ The save email is Cadence's draft, which James approved: subject "Your Creature 
 saved", buttons "Edit design" and "Take me to checkout", dropouts still
 coming soon, no prices. An empty first name is "Hi,".
 
-Mail goes out through nodemailer to Resend's SMTP. There is no Resend SDK.
-Set `SMTP_HOST=smtp.resend.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`,
-`SMTP_USER=resend`, and `SMTP_PASS` to the Resend API key.
-`EMAIL_FROM` is `Creature Cycles <info@creaturecycles.co.uk>` and
-`EMAIL_REPLY_TO` is `info@creaturecycles.co.uk`. Until `SMTP_PASS` is set the
-send is skipped and the save still succeeds. Verifying the domain in Resend
-is separate from this code. A live send waits on that secret and DNS.
+Mail goes out through the Resend HTTPS API (`POST https://api.resend.com/emails`).
+There is no SMTP client and no Resend SDK — Railway blocks outbound SMTP, so
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_SECURE` are not used.
+`SMTP_PASS` is the Resend API key and is sent as `Authorization: Bearer`.
+`RESEND_API_KEY` is accepted when `SMTP_PASS` is unset; you do not need to
+rename the existing secret. `EMAIL_FROM` is
+`Creature Cycles <info@creaturecycles.co.uk>` and `EMAIL_REPLY_TO` is
+`info@creaturecycles.co.uk`. Until one of those keys is set the send is
+skipped and the save still succeeds. The save response does not wait on
+Resend. Verifying the domain in Resend is separate from this code. A live
+send waits on that secret and DNS.
 `FRAME_DESIGNER_URL` overrides the edit link if the page is not on
 `/apps/frame-designer.html`. `FRONTEND_URL` must allow the Frame Designer
 origin so the hydrate `GET` is not blocked by CORS.

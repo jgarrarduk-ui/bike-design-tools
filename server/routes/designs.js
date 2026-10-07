@@ -249,18 +249,18 @@ router.post('/', async (req, res) => {
     console.warn(`[designs] ${reason} — using placeholder checkout URL:`, checkoutUrl);
   }
 
-  try {
-    await email.sendOrderConfirmation({
-      to: customerEmail.toLowerCase().trim(),
-      customerName: customerName.trim(),
-      designName,
-      designId,
-      editUrl: frameDesignerEditUrl(designId, resumeToken),
-      checkoutUrl: apiCheckoutUrl(designId, resumeToken),
-    });
-  } catch (err) {
+  // Do not await. A slow or failed Resend call must not hold the save
+  // response — SMTP to Resend used to hang this for ~120s on Railway.
+  email.sendOrderConfirmation({
+    to: customerEmail.toLowerCase().trim(),
+    customerName: customerName.trim(),
+    designName,
+    designId,
+    editUrl: frameDesignerEditUrl(designId, resumeToken),
+    checkoutUrl: apiCheckoutUrl(designId, resumeToken),
+  }).catch((err) => {
     console.warn('[designs] Confirmation email failed:', err.message);
-  }
+  });
 
   return res.json({
     designId,

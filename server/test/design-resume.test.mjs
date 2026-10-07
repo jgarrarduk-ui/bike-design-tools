@@ -18,6 +18,7 @@ delete process.env.WC_PRODUCT_PRICE;
 delete process.env.SMTP_HOST;
 delete process.env.SMTP_USER;
 delete process.env.SMTP_PASS;
+delete process.env.RESEND_API_KEY;
 delete process.env.EMAIL_FROM;
 delete process.env.EMAIL_REPLY_TO;
 delete process.env.FRAME_DESIGNER_URL;
@@ -26,7 +27,6 @@ const require = createRequire(import.meta.url);
 const db = require('../db');
 const designs = require('../routes/designs');
 const email = require('../services/email');
-const nodemailer = require('nodemailer');
 
 const PARAMS = {
   reach: 450,
@@ -48,7 +48,7 @@ const CATALOGUE = {
 const ENV_KEYS = [
   'WC_URL', 'WC_CONSUMER_KEY', 'WC_CONSUMER_SECRET',
   'WC_PRODUCT_ID', 'WC_PRODUCT_IDS', 'WC_PRODUCT_PRICE',
-  'BASE_URL', 'SMTP_HOST', 'SMTP_USER', 'SMTP_PASS',
+  'BASE_URL', 'SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'RESEND_API_KEY',
   'EMAIL_FROM', 'EMAIL_REPLY_TO', 'FRAME_DESIGNER_URL',
 ];
 
@@ -118,17 +118,14 @@ app.use('/api/designs', designs);
 describe('design resume links', { concurrency: false }, () => {
   /** @type {http.Server} */
   let server;
-  let originalTransport;
 
   before(async () => {
-    originalTransport = nodemailer.createTransport;
     server = await new Promise((resolve) => {
       const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
     });
   });
 
   after(async () => {
-    nodemailer.createTransport = originalTransport;
     if (server) {
       await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
     }
@@ -137,7 +134,7 @@ describe('design resume links', { concurrency: false }, () => {
     }
   });
 
-  test('save email copy has both links and skips SMTP when it is unset', async () => {
+  test('save email copy has both links and skips Resend when the key is unset', async () => {
     const editUrl = 'https://creaturecycles.co.uk/apps/frame-designer.html?design=abcdef12-rest&resume=tok';
     const checkoutUrl = 'https://tools.example/api/designs/abcdef12-rest/checkout?resume=tok';
     const message = email.designSavedMessage({
@@ -171,42 +168,100 @@ describe('design resume links', { concurrency: false }, () => {
     assert.equal(unnamed.text.includes('Hi ,'), false);
     assert.match(unnamed.text, /Your frame design is saved with Creature Cycles\./);
 
-    let created = 0;
-    nodemailer.createTransport = () => {
-      created += 1;
-      return { sendMail: async () => {} };
-    };
-    process.env.SMTP_HOST = 'smtp.resend.com';
-    process.env.SMTP_PORT = '465';
-    process.env.SMTP_USER = 'resend';
-    delete process.env.SMTP_PASS;
-    await email.sendOrderConfirmation({
-      to: 'ada@example.com',
-      customerName: 'Ada',
-      designId: 'abcdef12-rest',
-      editUrl: 'https://creaturecycles.co.uk/apps/frame-designer.html?design=1&resume=tok',
-      checkoutUrl: 'https://tools.example/api/designs/1/checkout?resume=tok',
-    });
-    assert.equal(created, 0);
-    assert.equal(email.isConfigured(), false);
-    delete process.env.SMTP_HOST;
-    delete process.env.SMTP_PORT;
-    delete process.env.SMTP_USER;
+    const originalFetch = global.fetch;
+    let resendCalls = 0;
+    try {
+      global.fetch = async (url) => {
+        if (String(url).includes('api.resend.com')) resendCalls += 1;
+        throw new Error(`unexpected fetch ${url}`);
+      };
+      process.env.SMTP_HOST = 'smtp.resend.com';
+      process.env.SMTP_PORT = '465';
+      process.env.SMTP_USER = 'resend';
+      delete process.env.SMTP_PASS;
+      delete process.env.RESEND_API_KEY;
+      await email.sendOrderConfirmation({
+        to: 'ada@example.com',
+        customerName: 'Ada',
+        designId: 'abcdef12-rest',
+        editUrl: 'https://creaturecycles.co.uk/apps/frame-designer.html?design=1&resume=tok',
+        checkoutUrl: 'https://tools.example/api/designs/1/checkout?resume=tok',
+      });
+      assert.equal(resendCalls, 0);
+      assert.equal(email.isConfigured(), false);
+
+      const sent = [];
+      global.fetch = async (url, opts = {}) => {
+        const headers = opts.headers || {};
+        sent.push({
+          url: String(url),
+          authorization: headers.Authorization || headers.authorization,
+          body: JSON.parse(opts.body),
+        });
+        return new Response(JSON.stringify({ id: 'email_alias' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      };
+      process.env.RESEND_API_KEY = 're_alias';
+      assert.equal(email.isConfigured(), true);
+      await email.sendOrderConfirmation({
+        to: 'ada@example.com',
+        customerName: 'Ada',
+        designName: 'Night Train',
+        designId: 'abcdef12-rest',
+        editUrl,
+        checkoutUrl,
+      });
+      process.env.SMTP_PASS = 're_smtp_pass';
+      assert.equal(email.isConfigured(), true);
+      await email.sendOrderConfirmation({
+        to: 'ada@example.com',
+        customerName: 'Ada',
+        designName: 'Night Train',
+        designId: 'abcdef12-rest',
+        editUrl,
+        checkoutUrl,
+      });
+      assert.equal(sent.length, 2);
+      assert.equal(sent[0].url, 'https://api.resend.com/emails');
+      assert.equal(sent[0].authorization, 'Bearer re_alias');
+      assert.equal(sent[1].authorization, 'Bearer re_smtp_pass');
+      assert.equal(sent[1].body.from, '"Creature Cycles" <info@creaturecycles.co.uk>');
+      assert.equal(sent[1].body.reply_to, 'info@creaturecycles.co.uk');
+      assert.deepEqual(sent[1].body.to, ['ada@example.com']);
+      assert.equal(sent[1].body.subject, 'Your Creature Cycles design is saved');
+    } finally {
+      delete process.env.SMTP_HOST;
+      delete process.env.SMTP_PORT;
+      delete process.env.SMTP_USER;
+      delete process.env.SMTP_PASS;
+      delete process.env.RESEND_API_KEY;
+      global.fetch = originalFetch;
+    }
   });
 
   test('POST stores resume_token and product_ids and emails both links', async () => {
     const sent = [];
-    nodemailer.createTransport = () => ({
-      sendMail: async (msg) => { sent.push(msg); },
-    });
     await withEnv({
       ...CATALOGUE,
-      SMTP_HOST: 'smtp.example',
-      SMTP_USER: 'mailer',
       SMTP_PASS: 'secret',
     }, async () => {
       const original = global.fetch;
-      global.fetch = async () => wooOrder(5150);
+      global.fetch = async (url, opts = {}) => {
+        if (String(url) === 'https://api.resend.com/emails') {
+          const headers = opts.headers || {};
+          sent.push({
+            authorization: headers.Authorization || headers.authorization,
+            ...JSON.parse(opts.body),
+          });
+          return new Response(JSON.stringify({ id: 'email_test' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return wooOrder(5150);
+      };
       try {
         const res = await request(server, 'POST', '/api/designs', {
           customerName: 'Ada Lovelace',
@@ -227,9 +282,10 @@ describe('design resume links', { concurrency: false }, () => {
         assert.equal(db.prepare(`SELECT datetime(resume_expires_at) > datetime('now', '+89 days') AS ok FROM designs WHERE id = ?`).get(row.id).ok, 1);
         assert.deepEqual(JSON.parse(row.product_ids), [8635, 8634]);
         assert.equal(sent.length, 1);
+        assert.equal(sent[0].authorization, 'Bearer secret');
         assert.equal(sent[0].from, '"Creature Cycles" <info@creaturecycles.co.uk>');
-        assert.equal(sent[0].replyTo, 'info@creaturecycles.co.uk');
-        assert.equal(sent[0].to, 'ada@example.com');
+        assert.equal(sent[0].reply_to, 'info@creaturecycles.co.uk');
+        assert.deepEqual(sent[0].to, ['ada@example.com']);
         assert.equal(sent[0].subject, 'Your Creature Cycles design is saved');
         const edit = `https://creaturecycles.co.uk/apps/frame-designer.html?design=${row.id}&resume=${row.resume_token}`;
         const checkout = `https://tools.example/api/designs/${row.id}/checkout?resume=${row.resume_token}`;
@@ -250,6 +306,50 @@ describe('design resume links', { concurrency: false }, () => {
         });
         assert.equal(implicit.status, 200);
         assert.deepEqual(JSON.parse(rowFor(implicit.body.designId).product_ids), [8634]);
+      } finally {
+        global.fetch = original;
+      }
+    });
+  });
+
+  test('POST returns without waiting for a hung Resend send', async () => {
+    await withEnv({
+      ...CATALOGUE,
+      SMTP_PASS: 're_hang',
+    }, async () => {
+      const original = global.fetch;
+      let resendStarted = 0;
+      global.fetch = (url, opts = {}) => {
+        if (String(url) === 'https://api.resend.com/emails') {
+          resendStarted += 1;
+          return new Promise((_resolve, reject) => {
+            const signal = opts.signal;
+            if (signal) {
+              const onAbort = () => {
+                const reason = signal.reason instanceof Error ? signal.reason : new Error('aborted');
+                reject(reason);
+              };
+              if (signal.aborted) onAbort();
+              else signal.addEventListener('abort', onAbort, { once: true });
+            }
+          });
+        }
+        return wooOrder(5400);
+      };
+      try {
+        const started = Date.now();
+        const res = await request(server, 'POST', '/api/designs', {
+          customerName: 'Ada Lovelace',
+          customerEmail: 'ada-hang@example.com',
+          params: PARAMS,
+          productIds: [8634],
+        });
+        const elapsed = Date.now() - started;
+        assert.equal(res.status, 200);
+        assert.ok(res.body.designId);
+        assert.equal(res.body.message, 'Design saved. Proceed to checkout.');
+        assert.equal(resendStarted, 1);
+        assert.ok(elapsed < 1500, `save waited ${elapsed}ms on mail`);
       } finally {
         global.fetch = original;
       }
