@@ -582,7 +582,7 @@ creature_fd_exp_expect(
 remove_filter( 'creature_fd_lead_time', 'creature_fd_exp_lead_override' );
 
 $yoke = Creature_Fd_Only_Purchase::purchase_markup( 8634, true );
-$yoke_button = strpos( (string) $yoke, 'Design yours in Frame Designer' );
+$yoke_button = strpos( (string) $yoke, 'Open Frame Designer' );
 $yoke_lead   = strpos( (string) $yoke, 'Design files are delivered within 5 working days of payment.' );
 creature_fd_exp_expect( false !== $yoke_button && false !== $yoke_lead && $yoke_button < $yoke_lead, '8634 page shows the lead time under the button' );
 $ss = Creature_Fd_Only_Purchase::purchase_markup( 8635, true );

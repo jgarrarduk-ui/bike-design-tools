@@ -394,14 +394,14 @@ $drop = new Creature_Fd_Only_Test_Product( 8636 );
 $other = new Creature_Fd_Only_Test_Product( 100 );
 
 $bb_html = Creature_Fd_Only_Purchase::purchase_markup( $bb, true );
-creature_fd_expect( is_string( $bb_html ) && false !== strpos( $bb_html, 'Design yours in Frame Designer' ), 'BB button label' );
+creature_fd_expect( is_string( $bb_html ) && false !== strpos( $bb_html, 'Open Frame Designer' ), 'BB button label' );
 creature_fd_expect( false !== strpos( (string) $bb_html, 'href="/apps/frame-designer.html"' ), 'BB button href is the plain FD url' );
 creature_fd_expect( false === strpos( (string) $bb_html, 'frame-designer.html?' ), 'no invented query param' );
 creature_fd_expect( false === strpos( (string) $bb_html, 'ajax_add_to_cart' ), 'no ajax class' );
 creature_fd_expect( false === strpos( (string) $bb_html, 'data-product_id' ), 'no ajax product id attr' );
 creature_fd_expect( false === strpos( (string) $bb_html, 'add-to-cart' ), 'no add-to-cart url' );
 creature_fd_expect( false === strpos( (string) $bb_html, 'quantity' ), 'no quantity box' );
-$bb_button = strpos( (string) $bb_html, 'Design yours in Frame Designer' );
+$bb_button = strpos( (string) $bb_html, 'Open Frame Designer' );
 $bb_lead   = strpos( (string) $bb_html, 'Design files are delivered within 5 working days of payment.' );
 creature_fd_expect( false !== $bb_button && false !== $bb_lead && $bb_button < $bb_lead, 'lead time sits under the FD button' );
 creature_fd_expect( false !== strpos( (string) $bb_html, 'creature-fd-lead-time' ), 'lead time paragraph class' );
@@ -439,6 +439,7 @@ $loop = Creature_Fd_Only_Purchase::on_loop_link(
 creature_fd_expect( false === strpos( $loop, 'ajax_add_to_cart' ), 'loop strips ajax' );
 creature_fd_expect( false === strpos( $loop, 'add-to-cart' ), 'loop strips add-to-cart' );
 creature_fd_expect( false !== strpos( $loop, 'href="/apps/frame-designer.html"' ), 'loop uses FD url' );
+creature_fd_expect( false !== strpos( $loop, 'class="button creature-fd-only-link"' ), 'loop link keeps the Woo button class' );
 
 $loop_other = Creature_Fd_Only_Purchase::on_loop_link( '<a href="/?add-to-cart=100">Add</a>', $other );
 creature_fd_expect( '<a href="/?add-to-cart=100">Add</a>' === $loop_other, 'other loop buttons stay' );
@@ -457,7 +458,7 @@ function creature_fd_render_simple() {
 $GLOBALS['product'] = $other;
 $plain = creature_fd_render_simple();
 creature_fd_expect( 1 === substr_count( $plain, 'WOO_ADD_TO_CART_FORM' ), 'a normal product renders exactly one Woo buy form' );
-creature_fd_expect( false === strpos( $plain, 'Design yours in Frame Designer' ), 'a normal product does not get the FD button' );
+creature_fd_expect( false === strpos( $plain, 'Open Frame Designer' ), 'a normal product does not get the FD button' );
 creature_fd_expect( false === strpos( $plain, 'Coming soon' ), 'a normal product does not get Coming soon' );
 
 $plain_again = creature_fd_render_simple();
@@ -466,7 +467,7 @@ creature_fd_expect( 1 === substr_count( $plain_again, 'WOO_ADD_TO_CART_FORM' ), 
 $GLOBALS['product'] = $bb;
 $yoke = creature_fd_render_simple();
 creature_fd_expect( 0 === substr_count( $yoke, 'WOO_ADD_TO_CART_FORM' ), '8634 renders zero Woo buy forms' );
-creature_fd_expect( 1 === substr_count( $yoke, 'Design yours in Frame Designer' ), '8634 renders one FD button' );
+creature_fd_expect( 1 === substr_count( $yoke, 'Open Frame Designer' ), '8634 renders one FD button' );
 creature_fd_expect( false === strpos( $yoke, 'quantity' ), '8634 form has no quantity box' );
 creature_fd_expect( false === strpos( $yoke, 'add-to-cart' ), '8634 form is not an add-to-cart' );
 
@@ -480,7 +481,7 @@ $soon = creature_fd_render_simple();
 creature_fd_expect( 0 === substr_count( $soon, 'WOO_ADD_TO_CART_FORM' ), '8636 renders zero Woo buy forms' );
 creature_fd_expect( 1 === substr_count( $soon, '>Coming soon<' ), '8636 renders one Coming soon control' );
 creature_fd_expect( false === strpos( $soon, 'href=' ), '8636 Coming soon is not a link' );
-creature_fd_expect( false === strpos( $soon, 'Design yours in Frame Designer' ), '8636 does not get the FD link' );
+creature_fd_expect( false === strpos( $soon, 'Open Frame Designer' ), '8636 does not get the FD link' );
 
 add_action(
 	'woocommerce_single_product_summary',
@@ -498,7 +499,7 @@ do_action( 'woocommerce_single_product_summary' );
 $astra_plain = (string) ob_get_clean();
 creature_fd_expect( 1 === substr_count( $astra_plain, 'ASTRA_STRUCTURE_START' ), 'Astra structure runs once' );
 creature_fd_expect( 1 === substr_count( $astra_plain, 'WOO_ADD_TO_CART_FORM' ), 'Astra normal product still has one buy form' );
-creature_fd_expect( false === strpos( $astra_plain, 'Design yours in Frame Designer' ), 'Astra normal product has no extra FD button' );
+creature_fd_expect( false === strpos( $astra_plain, 'Open Frame Designer' ), 'Astra normal product has no extra FD button' );
 
 $GLOBALS['product'] = $bb;
 ob_start();
@@ -506,8 +507,8 @@ do_action( 'woocommerce_single_product_summary' );
 $astra_yoke = (string) ob_get_clean();
 creature_fd_expect( 1 === substr_count( $astra_yoke, 'ASTRA_STRUCTURE_START' ), 'Astra yoke page structure runs once' );
 creature_fd_expect( 0 === substr_count( $astra_yoke, 'WOO_ADD_TO_CART_FORM' ), 'Astra yoke page does not keep the Woo form' );
-creature_fd_expect( 1 === substr_count( $astra_yoke, 'Design yours in Frame Designer' ), 'Astra yoke page shows one FD button inside the form slot' );
-$fd_at = strpos( $astra_yoke, 'Design yours in Frame Designer' );
+creature_fd_expect( 1 === substr_count( $astra_yoke, 'Open Frame Designer' ), 'Astra yoke page shows one FD button inside the form slot' );
+$fd_at = strpos( $astra_yoke, 'Open Frame Designer' );
 $end_at = strpos( $astra_yoke, 'ASTRA_STRUCTURE_END' );
 creature_fd_expect( false !== $fd_at && false !== $end_at && $fd_at < $end_at, 'FD button is inside Astra structure, not after it' );
 
@@ -519,6 +520,8 @@ creature_fd_expect( false === strpos( $card, 'add_to_cart_button' ), 'card butto
 creature_fd_expect( false === strpos( $card, 'data-product_id' ), 'card button drops the product id' );
 creature_fd_expect( false === strpos( $card, 'add-to-cart' ), 'card button is not an add-to-cart url' );
 creature_fd_expect( false !== strpos( $card, 'ast-on-card-button' ), 'card button keeps Astra placement class' );
+creature_fd_expect( false !== strpos( $card, 'class="ast-on-card-button creature-fd-only-link"' ), 'card link omits the Woo button class' );
+creature_fd_expect( false !== strpos( $card, '<span class="ast-card-action-tooltip">Open Frame Designer</span>' ), 'card link keeps the tooltip' );
 creature_fd_expect( false !== strpos( $card, 'href="/apps/frame-designer.html"' ), 'card button links to Frame Designer' );
 
 $card_soon_html = '<a href="/?add-to-cart=8636" class="ast-on-card-button ajax_add_to_cart" data-product_id="8636">Add</a>';
@@ -526,6 +529,7 @@ $card_soon = Creature_Fd_Only_Purchase::on_astra_card_buttons( $card_soon_html, 
 creature_fd_expect( false !== strpos( $card_soon, '>Coming soon<' ), 'dropouts card is Coming soon' );
 creature_fd_expect( false === strpos( $card_soon, 'ajax_add_to_cart' ), 'dropouts card is not ajax' );
 creature_fd_expect( false === strpos( $card_soon, 'href=' ), 'dropouts card is not a link' );
+creature_fd_expect( false !== strpos( $card_soon, '<span class="ast-on-card-button button disabled creature-fd-only-soon"' ), 'coming soon card stays a span with the button class' );
 
 $card_other = Creature_Fd_Only_Purchase::on_astra_card_buttons( $card_html, $other );
 creature_fd_expect( $card_html === $card_other, 'other product cards keep Astra ajax button' );
@@ -568,7 +572,7 @@ $block = Creature_Fd_Only_Purchase::on_render_block(
 	array( 'blockName' => 'woocommerce/add-to-cart-form' ),
 	(object) array( 'context' => array( 'postId' => 8635 ) )
 );
-creature_fd_expect( false !== strpos( $block, 'Design yours in Frame Designer' ), 'block form replaced' );
+creature_fd_expect( false !== strpos( $block, 'Open Frame Designer' ), 'block form replaced' );
 creature_fd_expect( false === strpos( $block, 'ajax_add_to_cart' ), 'block form has no ajax' );
 
 $soon_block = Creature_Fd_Only_Purchase::on_render_block(
