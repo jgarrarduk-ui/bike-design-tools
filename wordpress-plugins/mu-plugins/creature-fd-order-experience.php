@@ -51,8 +51,9 @@
  * /design-file-licence/, /build-specification/), opened in a new tab. The
  * links render while those pages are still drafts. Woo's own terms checkbox
  * is hidden on that page so the customer sees one terms box. The
- * cancellation waiver stays a separate box underneath. Filter creature_fd_cancellation_waiver_text to
- * follow the final T&Cs. Payment is refused until both are ticked: the
+ * cancellation waiver stays a separate box underneath. Filter
+ * creature_fd_cancellation_waiver_text to follow the final T&Cs. Payment
+ * is refused until both are ticked: the
  * classic pay form (WooPayments card, and a normal Pay for order submit),
  * PayPal's pay-now create-order call, and the Store API checkout used by
  * WooPayments express buttons. Express buttons on that page do not post the
