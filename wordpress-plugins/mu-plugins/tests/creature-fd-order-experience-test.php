@@ -114,6 +114,18 @@ if ( ! function_exists( 'get_query_var' ) ) {
 		return isset( $GLOBALS['creature_fd_exp_query'][ $key ] ) ? $GLOBALS['creature_fd_exp_query'][ $key ] : '';
 	}
 }
+if ( ! function_exists( 'wc_get_orders' ) ) {
+	function wc_get_orders( $args ) {
+		$token = isset( $args['meta_value'] ) ? (string) $args['meta_value'] : '';
+		$found = array();
+		foreach ( $GLOBALS['creature_fd_exp_orders'] as $order ) {
+			if ( $token !== '' && (string) $order->get_meta( '_creature_fd_change_token' ) === $token ) {
+				$found[] = $order;
+			}
+		}
+		return $found;
+	}
+}
 if ( ! function_exists( 'wc_get_order' ) ) {
 	function wc_get_order( $id ) {
 		$id = (int) $id;
@@ -218,6 +230,14 @@ class Creature_Fd_Exp_Item {
 		unset( $single );
 		return isset( $this->meta[ $key ] ) ? $this->meta[ $key ] : '';
 	}
+
+	public function update_meta_data( $key, $value ) {
+		$this->meta[ $key ] = $value;
+	}
+
+	public function save() {
+		return true;
+	}
 }
 
 class Creature_Fd_Exp_Order {
@@ -227,6 +247,7 @@ class Creature_Fd_Exp_Order {
 	public $meta;
 	public $total = '136.00';
 	public $notes = array();
+	public $status = 'processing';
 
 	public function __construct( $id, $key, $items, $meta = array() ) {
 		$this->id    = (int) $id;
@@ -266,6 +287,18 @@ class Creature_Fd_Exp_Order {
 
 	public function add_order_note( $note ) {
 		$this->notes[] = (string) $note;
+	}
+
+	public function get_status() {
+		return $this->status;
+	}
+
+	public function get_date_paid() {
+		return null;
+	}
+
+	public function get_edit_order_url() {
+		return 'https://shop.example/wp-admin/admin.php?page=wc-orders&action=edit&id=' . $this->id;
 	}
 }
 
@@ -728,6 +761,138 @@ try {
 }
 creature_fd_exp_expect( ! $threw, 'PayPal pay-now leaves a non-FD order alone' );
 do_action( 'after_woocommerce_pay' );
+
+$statuses = Creature_Fd_Order_Experience::filter_order_statuses( array( 'wc-processing' => 'Processing', 'wc-completed' => 'Completed' ) );
+creature_fd_exp_expect( isset( $statuses['wc-in-design'] ) && 'In design' === $statuses['wc-in-design'], 'In design is a shop order status' );
+$paid_statuses = Creature_Fd_Order_Experience::filter_paid_statuses( array( 'processing', 'completed' ) );
+creature_fd_exp_expect( in_array( 'in-design', $paid_statuses, true ), 'In design stays a paid status so stock is not restored' );
+$bulk = Creature_Fd_Order_Experience::filter_bulk_actions( array() );
+creature_fd_exp_expect( isset( $bulk['mark_in-design'] ), 'In design is a bulk action' );
+creature_fd_exp_expect( isset( $GLOBALS['creature_fd_exp_filters']['bulk_actions-woocommerce_page_wc-orders'] ), 'HPOS orders screen gets the bulk action' );
+creature_fd_exp_expect( 24 === Creature_Fd_Order_Experience::change_window_hours(), 'change window defaults to 24 hours' );
+
+function creature_fd_exp_window_one_hour() {
+	return 1;
+}
+
+$change_fd = creature_fd_exp_order( 21, array( new Creature_Fd_Exp_Item( 8634, array( 'design_id' => 'design-21', 'geometry_summary' => 'Reach: 450mm' ) ) ) );
+$change_fd->total = '136.00';
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $other, false, false, $processing );
+$other_change_mail = ob_get_clean();
+creature_fd_exp_expect( false === strpos( $other_change_mail, 'Request a change' ), 'non-FD processing email has no change link' );
+
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $change_fd, false, false, $processing );
+$change_mail = ob_get_clean();
+$change_token = (string) $change_fd->get_meta( '_creature_fd_change_token' );
+creature_fd_exp_expect( 1 === preg_match( '/^[a-f0-9]{64}$/', $change_token ), 'processing email mints an unguessable change token' );
+creature_fd_exp_expect( false !== strpos( $change_mail, 'Request a change' ) && false !== strpos( $change_mail, 'design-21' ) && false !== strpos( $change_mail, $change_token ), 'processing email links the FD order and token' );
+$again = Creature_Fd_Order_Experience::ensure_change_token( $change_fd );
+creature_fd_exp_expect( $again === $change_token, 'the change token is not rotated' );
+$paid_at = (string) $change_fd->get_meta( '_creature_fd_change_paid_at' );
+creature_fd_exp_expect( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $paid_at ), 'change window is stamped in UTC' );
+
+$open = Creature_Fd_Order_Experience::verify_change_request( $change_fd, $change_token, 'design-21' );
+creature_fd_exp_expect( ! empty( $open['ok'] ) && array( 8634 ) === $open['productIds'], 'a fresh token verifies for this design' );
+$wrong = Creature_Fd_Order_Experience::verify_change_request( $change_fd, str_repeat( 'ab', 32 ), 'design-21' );
+creature_fd_exp_expect( empty( $wrong['ok'] ) && 'invalid' === $wrong['error'], 'a different token does not verify' );
+$other_design = Creature_Fd_Order_Experience::verify_change_request( $change_fd, $change_token, 'design-other' );
+creature_fd_exp_expect( empty( $other_design['ok'] ), 'the token does not open another design' );
+
+$change_fd->meta['_creature_fd_change_paid_at'] = gmdate( 'Y-m-d\TH:i:s\Z', time() - ( 24 * 3600 ) - 5 );
+$expired = Creature_Fd_Order_Experience::verify_change_request( $change_fd, $change_token, 'design-21' );
+creature_fd_exp_expect( empty( $expired['ok'] ) && 'closed' === $expired['error'], 'the link dies 24 hours after payment' );
+creature_fd_exp_expect( Creature_Fd_Order_Experience::CHANGE_CLOSED_MESSAGE === $expired['message'], 'expired verification uses the friendly sentence' );
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $change_fd, false, true, $processing );
+$expired_mail = ob_get_clean();
+creature_fd_exp_expect( false === strpos( $expired_mail, 'Request a change' ), 'an expired window is left off the email' );
+
+$change_fd->meta['_creature_fd_change_paid_at'] = gmdate( 'Y-m-d\TH:i:s\Z', time() - 60 );
+$change_fd->status = 'in-design';
+$started = Creature_Fd_Order_Experience::verify_change_request( $change_fd, $change_token, 'design-21' );
+creature_fd_exp_expect( empty( $started['ok'] ) && 'closed' === $started['error'], 'In design closes the change window' );
+$change_fd->status = 'processing';
+$change_fd->meta['_creature_fd_change_closed'] = '1';
+$flagged = Creature_Fd_Order_Experience::verify_change_request( $change_fd, $change_token, 'design-21' );
+creature_fd_exp_expect( empty( $flagged['ok'] ), 'the order-screen flag closes the change window' );
+unset( $change_fd->meta['_creature_fd_change_closed'] );
+
+add_filter( 'creature_fd_change_window_hours', 'creature_fd_exp_window_one_hour' );
+$change_fd->meta['_creature_fd_change_paid_at'] = gmdate( 'Y-m-d\TH:i:s\Z', time() - 3700 );
+$short = Creature_Fd_Order_Experience::verify_change_request( $change_fd, $change_token, 'design-21' );
+creature_fd_exp_expect( empty( $short['ok'] ) && 'closed' === $short['error'], 'the change window follows its filter' );
+remove_filter( 'creature_fd_change_window_hours', 'creature_fd_exp_window_one_hour' );
+$change_fd->meta['_creature_fd_change_paid_at'] = gmdate( 'Y-m-d\TH:i:s\Z' );
+
+$parts = Creature_Fd_Order_Experience::apply_change_revision(
+	$change_fd,
+	array(
+		'token'           => $change_token,
+		'designId'        => 'design-21',
+		'productIds'      => array( 8635, 8634 ),
+		'geometrySummary' => 'Reach: 460mm',
+	)
+);
+creature_fd_exp_expect( empty( $parts['ok'] ) && 'parts' === $parts['error'], 'a part change is rejected' );
+creature_fd_exp_expect( '136.00' === $change_fd->get_total(), 'a rejected part change leaves the total unchanged' );
+creature_fd_exp_expect( 'Reach: 450mm' === (string) $change_fd->items[0]->get_meta( 'geometry_summary' ), 'a rejected part change leaves the geometry' );
+
+$saved = Creature_Fd_Order_Experience::apply_change_revision(
+	$change_fd,
+	array(
+		'token'           => $change_token,
+		'designId'        => 'design-21',
+		'productIds'      => array( 8634 ),
+		'geometrySummary' => 'Reach: 460mm',
+		'idempotencyKey'  => 'abc123',
+	)
+);
+creature_fd_exp_expect( ! empty( $saved['ok'] ) && empty( $saved['unchanged'] ), 'matching parts save a geometry revision' );
+creature_fd_exp_expect( '136.00' === $saved['total'] && '136.00' === $change_fd->get_total(), 'a geometry revision leaves the total unchanged' );
+creature_fd_exp_expect( 'Reach: 460mm' === (string) $change_fd->items[0]->get_meta( 'geometry_summary' ), 'line geometry_summary is updated' );
+creature_fd_exp_expect( '1' === (string) $change_fd->get_meta( '_creature_fd_change_revision' ), 'the revision number is stored on the order' );
+creature_fd_exp_expect( 1 === count( $change_fd->notes ) && false !== strpos( $change_fd->notes[0], 'Reach: 450mm' ) && false !== strpos( $change_fd->notes[0], 'Reach: 460mm' ), 'the order note records old and new geometry' );
+$repeat = Creature_Fd_Order_Experience::apply_change_revision(
+	$change_fd,
+	array(
+		'token'           => $change_token,
+		'designId'        => 'design-21',
+		'productIds'      => array( 8634 ),
+		'geometrySummary' => 'Reach: 460mm',
+		'idempotencyKey'  => 'abc123',
+	)
+);
+creature_fd_exp_expect( ! empty( $repeat['unchanged'] ) && 1 === count( $change_fd->notes ), 'the same geometry does not add another note' );
+
+$change_fd->meta['_creature_fd_change_last_at'] = gmdate( 'Y-m-d\TH:i:s\Z' );
+$rated = Creature_Fd_Order_Experience::apply_change_revision(
+	$change_fd,
+	array(
+		'token'           => $change_token,
+		'designId'        => 'design-21',
+		'productIds'      => array( 8634 ),
+		'geometrySummary' => 'Reach: 470mm',
+		'idempotencyKey'  => 'def456',
+	)
+);
+creature_fd_exp_expect( empty( $rated['ok'] ) && 'rate' === $rated['error'], 'a second different save inside the guard is refused' );
+creature_fd_exp_expect( '136.00' === $change_fd->get_total() && 'Reach: 460mm' === (string) $change_fd->items[0]->get_meta( 'geometry_summary' ), 'the rate guard leaves the order untouched' );
+
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $change_fd, false, false, $completed );
+$done_mail = ob_get_clean();
+creature_fd_exp_expect( false === strpos( $done_mail, 'Request a change' ), 'completed email has no change link' );
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $change_fd, false, false, $on_hold );
+$hold_change = ob_get_clean();
+creature_fd_exp_expect( false !== strpos( $hold_change, 'Request a change' ), 'on-hold email includes the change link while the window is open' );
+
+$read = Creature_Fd_Order_Experience::rest_read_change( array( 'design' => 'design-21', 'token' => $change_token ) );
+creature_fd_exp_expect( 200 === $read['status'] && ! empty( $read['data']['ok'] ), 'the shop endpoint reads an open change token' );
+$closed_read = Creature_Fd_Order_Experience::rest_read_change( array( 'design' => 'design-21', 'token' => str_repeat( 'cd', 32 ) ) );
+creature_fd_exp_expect( 404 === $closed_read['status'] && false === strpos( json_encode( $closed_read ), 'design-21' ), 'an unknown token response has no order details' );
 
 echo "\n{$GLOBALS['creature_fd_exp_passed']} passed, {$GLOBALS['creature_fd_exp_failed']} failed\n";
 exit( $GLOBALS['creature_fd_exp_failed'] > 0 ? 1 : 0 );

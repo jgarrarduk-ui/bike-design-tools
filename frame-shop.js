@@ -47,17 +47,22 @@
   // Rows for the Save design picker. Omit selectedIds to tick the buyable
   // defaults. Pass an array (including []) to keep that selection. Dropouts
   // stay visible, disabled, and unchecked.
-  function pickerRows(selectedIds) {
+  const PARTS_LOCK_NOTE = 'These parts are the ones you paid for, so they stay as they are. You can still change the geometry.';
+  const CHANGE_CLOSED_MESSAGE = 'The change window has closed. Reply to your confirmation email and we\'ll help.';
+
+  function pickerRows(selectedIds, options) {
+    const lockParts = !!(options && options.lockParts);
     const chosen = selectedIds == null ? defaultProductIds() : productIdsFromSelection(selectedIds);
     const selected = new Set(chosen);
     return PARTS.map(part => {
-      const unavailable = !!part.unavailable;
+      const comingSoon = !!part.unavailable;
       return {
         id: part.id,
         name: part.name,
         price: part.price,
-        checked: !unavailable && selected.has(part.id),
-        disabled: unavailable,
+        checked: !comingSoon && selected.has(part.id),
+        disabled: comingSoon || lockParts,
+        comingSoon,
       };
     });
   }
@@ -275,6 +280,102 @@
     return data;
   }
 
+  function changeUrl(apiBase, designId, changeToken) {
+    const url = new URL(apiUrl(apiBase) + '/' + encodeURIComponent(String(designId || '').trim()));
+    url.searchParams.set('change', String(changeToken || ''));
+    return url.toString();
+  }
+
+  function sessionFromChange(data) {
+    const session = sessionFromHydrate({
+      designId: data && data.designId,
+      params: data && data.params,
+      productIds: data && data.productIds,
+      customerName: data && data.customerName,
+      customerEmail: data && data.customerEmail,
+      checkoutUrl: '',
+    });
+    session.mode = 'amend';
+    session.checkoutUrl = '';
+    session.revision = Number(data && data.revision) || 0;
+    session.lockedProductIds = session.productIds.slice();
+    return session;
+  }
+
+  async function fetchChangeDesign(apiBase, designId, changeToken, fetchImpl) {
+    const url = changeUrl(apiBase, designId, changeToken);
+    const doFetch = fetchImpl || fetch;
+    let res;
+    try {
+      res = await doFetch(url, { method: 'GET', headers: { accept: 'application/json' } });
+    } catch {
+      throw new Error('Could not reach the tools API.');
+    }
+    let data = {};
+    try { data = await res.json(); } catch { data = {}; }
+    if (res.status === 410 || (data && data.error === 'closed')) {
+      const err = new Error(CHANGE_CLOSED_MESSAGE);
+      err.closed = true;
+      err.status = 410;
+      throw err;
+    }
+    const id = String(designId || '').trim();
+    if (!res.ok || !data || data.mode !== 'amend' || data.designId !== id) {
+      const err = new Error('This design link has expired or is not valid.');
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
+  function revisionPlan({ lockedIds, productIds, params, savedParams }) {
+    const locked = productIdsFromSelection(lockedIds).slice().sort((a, b) => a - b);
+    const next = productIdsFromSelection(productIds).slice().sort((a, b) => a - b);
+    if (!locked.length || locked.join(',') !== next.join(',')) {
+      return { action: 'error', message: 'Those parts can\'t be changed on this order.' };
+    }
+    if (savedParams && JSON.stringify(savedParams) === JSON.stringify(params)) {
+      return { action: 'unchanged', productIds: locked };
+    }
+    return { action: 'post', productIds: locked };
+  }
+
+  async function postRevision(apiBase, designId, payload, fetchImpl) {
+    const url = apiUrl(apiBase) + '/' + encodeURIComponent(String(designId || '').trim()) + '/revision';
+    const doFetch = fetchImpl || fetch;
+    let res;
+    try {
+      res = await doFetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({
+          change: payload && payload.change,
+          params: payload && payload.params,
+          productIds: payload && payload.productIds,
+        }),
+      });
+    } catch {
+      throw new Error('Could not reach the tools API.');
+    }
+    let data = {};
+    try { data = await res.json(); } catch { data = {}; }
+    if (res.status === 410 || (data && data.error === 'closed')) {
+      const err = new Error(CHANGE_CLOSED_MESSAGE);
+      err.closed = true;
+      err.status = 410;
+      throw err;
+    }
+    if (!res.ok) {
+      const message = data && typeof data.message === 'string' && data.message
+        ? data.message
+        : (data && typeof data.error === 'string' && data.error ? data.error : 'Could not save the changes.');
+      const err = new Error(message);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
   async function postDesign(apiBase, payload, fetchImpl) {
     const url = apiUrl(apiBase);
     const doFetch = fetchImpl || fetch;
@@ -328,6 +429,13 @@
     hydrateUrl,
     sessionFromHydrate,
     fetchHydratedDesign,
+    PARTS_LOCK_NOTE,
+    CHANGE_CLOSED_MESSAGE,
+    changeUrl,
+    sessionFromChange,
+    fetchChangeDesign,
+    revisionPlan,
+    postRevision,
     postDesign,
     FD_LEAD_TIME,
     designFileDeliverySentence,

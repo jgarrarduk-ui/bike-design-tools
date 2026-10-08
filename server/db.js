@@ -76,6 +76,19 @@ if (!existingCols.includes('resume_expires_at')) {
 if (!existingCols.includes('deleted_at')) {
   db.exec('ALTER TABLE designs ADD COLUMN deleted_at DATETIME');
 }
+if (!existingCols.includes('revision')) {
+  db.exec('ALTER TABLE designs ADD COLUMN revision INTEGER NOT NULL DEFAULT 0');
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_designs_resume_tok ON designs (resume_token)');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS design_revisions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    design_id   TEXT NOT NULL,
+    revision    INTEGER NOT NULL,
+    params      TEXT NOT NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_design_revisions_design ON design_revisions (design_id, revision);
+`);
 
 module.exports = db;

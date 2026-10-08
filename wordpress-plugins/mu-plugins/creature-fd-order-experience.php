@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Creature Cycles Frame Designer Order Experience
- * Description: Customer-facing copy for Frame Designer orders. Replaces the order-pay guest warning on those orders, hides internal line meta from customers, prints the delivery lead time, and requires the straight-away cancellation waiver before payment. Does not change prices, totals, or order creation.
- * Version: 1.1.0
+ * Description: Customer-facing copy for Frame Designer orders. Replaces the order-pay guest warning on those orders, hides internal line meta from customers, prints the delivery lead time, requires the straight-away cancellation waiver before payment, and adds the paid-order change link. Does not change prices, totals, or order creation.
+ * Version: 1.2.0
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  *
@@ -33,10 +33,15 @@
  * cannot read this constant. Its FD_LEAD_TIME env (or legacy
  * REVIEW_LEAD_TIME_DAYS) must be kept in step by hand.
  *
- * A later "Request a change" link can call is_fd_order() and
- * design_id_from_order() from the customer email hook already used here.
- * That flow is not built: it still needs a short-lived resume-style token
- * and a revision saved against the same Woo order.
+ * Request a change
+ * ----------------
+ * Processing and on-hold emails for a Frame Designer order include a link
+ * while the window is open. The token is minted here, on the order, because
+ * this email is sent at payment and the window follows the paid date and the
+ * In design status. Filter creature_fd_change_window_hours (default 24).
+ * The tools-api stores the geometry revisions and emails
+ * info@creaturecycles.co.uk. This file updates geometry_summary and an order
+ * note on the same order. It does not create an order or take payment.
  *
  * Cancellation waiver
  * ------------------
@@ -121,6 +126,16 @@ final class Creature_Fd_Order_Experience {
 		add_action( 'woocommerce_checkout_validate_order_before_payment', array( __CLASS__, 'on_validate_before_payment' ), 10, 2 );
 		add_action( 'woocommerce_paypal_payments_create_order_request_started', array( __CLASS__, 'on_paypal_create_order' ), 10, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'on_admin_order_waiver' ), 10, 1 );
+
+		add_action( 'init', array( __CLASS__, 'register_in_design_status' ) );
+		add_filter( 'wc_order_statuses', array( __CLASS__, 'filter_order_statuses' ) );
+		add_filter( 'woocommerce_order_is_paid_statuses', array( __CLASS__, 'filter_paid_statuses' ) );
+		add_filter( 'bulk_actions-edit-shop_order', array( __CLASS__, 'filter_bulk_actions' ) );
+		add_filter( 'bulk_actions-woocommerce_page_wc-orders', array( __CLASS__, 'filter_bulk_actions' ) );
+		add_action( 'woocommerce_order_status_in-design', array( __CLASS__, 'on_marked_in_design' ), 10, 1 );
+		add_action( 'woocommerce_process_shop_order_meta', array( __CLASS__, 'on_save_change_flag' ), 20, 1 );
+		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'on_admin_order_change' ), 12, 1 );
+		add_action( 'rest_api_init', array( __CLASS__, 'register_change_routes' ) );
 	}
 
 	/**
@@ -368,16 +383,28 @@ final class Creature_Fd_Order_Experience {
 			return;
 		}
 		$lines = array( self::delivery_sentence() );
+		$waiver_line = '';
 		if ( 'customer_processing_order' === $id && self::order_has_waiver( $order ) ) {
-			$lines[] = self::waiver_email_line();
+			$waiver_line = self::waiver_email_line();
+			$lines[]     = $waiver_line;
+		}
+		$change_url = '';
+		if ( in_array( $id, array( 'customer_processing_order', 'customer_on_hold_order' ), true ) ) {
+			$change_url = self::change_email_url( $order );
+		}
+		if ( '' !== $change_url ) {
+			$lines[] = 'Request a change: ' . $change_url;
 		}
 		if ( $plain_text ) {
 			echo "\n" . implode( "\n", $lines ) . "\n\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain text, no markup.
 			return;
 		}
 		echo '<p class="creature-fd-lead-time">' . self::esc( $lines[0] ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
-		if ( isset( $lines[1] ) ) {
-			echo '<p class="creature-fd-cancellation-waiver">' . self::esc( $lines[1] ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
+		if ( '' !== $waiver_line ) {
+			echo '<p class="creature-fd-cancellation-waiver">' . self::esc( $waiver_line ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
+		}
+		if ( '' !== $change_url ) {
+			echo '<p class="creature-fd-change-link"><a href="' . self::esc( $change_url ) . '">Request a change</a></p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
 		}
 	}
 
@@ -924,6 +951,678 @@ final class Creature_Fd_Order_Experience {
 			}
 		}
 		return array_values( $out );
+	}
+
+	const CHANGE_WINDOW_HOURS = 24;
+
+	const CHANGE_CLOSED_MESSAGE = 'The change window has closed. Reply to your confirmation email and we\'ll help.';
+
+	const CHANGE_TOKEN_META = '_creature_fd_change_token';
+
+	const CHANGE_PAID_AT_META = '_creature_fd_change_paid_at';
+
+	const CHANGE_CLOSED_META = '_creature_fd_change_closed';
+
+	const CHANGE_REVISION_META = '_creature_fd_change_revision';
+
+	const CHANGE_IDEM_META = '_creature_fd_change_idem';
+
+	const CHANGE_LAST_META = '_creature_fd_change_last_at';
+
+	const CHANGE_RATE_SECONDS = 10;
+
+	const DESIGNER_URL = 'https://creaturecycles.co.uk/apps/frame-designer.html';
+
+	/**
+	 * Custom status used when James starts the design. Registered for the
+	 * admin list and bulk action. It is a paid status so stock is not restored
+	 * when an order leaves processing. No customer email class is registered.
+	 */
+	public static function register_in_design_status() {
+		if ( ! function_exists( 'register_post_status' ) ) {
+			return;
+		}
+		$args = array(
+			'label'                     => 'In design',
+			'public'                    => false,
+			'internal'                  => false,
+			'exclude_from_search'       => false,
+			'show_in_admin_all_list'    => true,
+			'show_in_admin_status_list' => true,
+		);
+		if ( function_exists( '_n_noop' ) ) {
+			$args['label_count'] = _n_noop(
+				'In design <span class="count">(%s)</span>',
+				'In design <span class="count">(%s)</span>'
+			);
+		}
+		register_post_status( 'wc-in-design', $args );
+	}
+
+	/**
+	 * @param mixed $statuses
+	 * @return mixed
+	 */
+	public static function filter_order_statuses( $statuses ) {
+		if ( ! is_array( $statuses ) ) {
+			return $statuses;
+		}
+		if ( isset( $statuses['wc-in-design'] ) ) {
+			return $statuses;
+		}
+		$updated = array();
+		foreach ( $statuses as $key => $label ) {
+			$updated[ $key ] = $label;
+			if ( 'wc-processing' === $key ) {
+				$updated['wc-in-design'] = 'In design';
+			}
+		}
+		if ( ! isset( $updated['wc-in-design'] ) ) {
+			$updated['wc-in-design'] = 'In design';
+		}
+		return $updated;
+	}
+
+	/**
+	 * Keep stock reduced. Moving processing → In design must not restock.
+	 *
+	 * @param mixed $statuses
+	 * @return mixed
+	 */
+	public static function filter_paid_statuses( $statuses ) {
+		if ( ! is_array( $statuses ) ) {
+			return $statuses;
+		}
+		if ( ! in_array( 'in-design', $statuses, true ) ) {
+			$statuses[] = 'in-design';
+		}
+		return $statuses;
+	}
+
+	/**
+	 * @param mixed $actions
+	 * @return mixed
+	 */
+	public static function filter_bulk_actions( $actions ) {
+		if ( ! is_array( $actions ) ) {
+			$actions = array();
+		}
+		$actions['mark_in-design'] = 'Change status to In design';
+		return $actions;
+	}
+
+	/**
+	 * @return int
+	 */
+	public static function change_window_hours() {
+		$value = apply_filters( 'creature_fd_change_window_hours', self::CHANGE_WINDOW_HOURS );
+		$hours = is_numeric( $value ) ? (int) $value : self::CHANGE_WINDOW_HOURS;
+		if ( $hours < 1 || $hours > 720 ) {
+			return self::CHANGE_WINDOW_HOURS;
+		}
+		return $hours;
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return bool
+	 */
+	public static function change_is_started( $order ) {
+		if ( ! is_object( $order ) ) {
+			return false;
+		}
+		$status = method_exists( $order, 'get_status' ) ? (string) $order->get_status() : '';
+		$status = preg_replace( '/^wc-/', '', $status );
+		if ( 'in-design' === $status ) {
+			return true;
+		}
+		if ( ! method_exists( $order, 'get_meta' ) ) {
+			return false;
+		}
+		return '1' === (string) $order->get_meta( self::CHANGE_CLOSED_META, true );
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return int Unix timestamp, or 0 when payment has not been stamped.
+	 */
+	public static function change_paid_timestamp( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+			return 0;
+		}
+		$stored = (string) $order->get_meta( self::CHANGE_PAID_AT_META, true );
+		if ( '' !== $stored ) {
+			$parsed = strtotime( $stored );
+			return false === $parsed ? 0 : (int) $parsed;
+		}
+		if ( ! method_exists( $order, 'get_date_paid' ) ) {
+			return 0;
+		}
+		$date = $order->get_date_paid();
+		if ( is_object( $date ) && method_exists( $date, 'getTimestamp' ) ) {
+			return (int) $date->getTimestamp();
+		}
+		return 0;
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return string
+	 */
+	public static function change_window_ends_at( $order ) {
+		$paid = self::change_paid_timestamp( $order );
+		if ( ! $paid ) {
+			return '';
+		}
+		return gmdate( 'Y-m-d\TH:i:s\Z', $paid + ( self::change_window_hours() * 3600 ) );
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return bool
+	 */
+	public static function change_window_open( $order ) {
+		if ( ! self::is_fd_order( $order ) || self::change_is_started( $order ) ) {
+			return false;
+		}
+		$paid = self::change_paid_timestamp( $order );
+		if ( ! $paid ) {
+			return true;
+		}
+		$ends = $paid + ( self::change_window_hours() * 3600 );
+		return time() < $ends;
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return string
+	 */
+	public static function ensure_change_token( $order ) {
+		if ( ! self::change_window_open( $order ) || ! method_exists( $order, 'get_meta' ) || ! method_exists( $order, 'update_meta_data' ) ) {
+			return '';
+		}
+		$existing = (string) $order->get_meta( self::CHANGE_TOKEN_META, true );
+		if ( self::token_shape( $existing ) ) {
+			return $existing;
+		}
+		try {
+			$token = bin2hex( random_bytes( 32 ) );
+		} catch ( Exception $e ) {
+			unset( $e );
+			return '';
+		}
+		$order->update_meta_data( self::CHANGE_TOKEN_META, $token );
+		if ( '' === (string) $order->get_meta( self::CHANGE_PAID_AT_META, true ) ) {
+			$paid = self::change_paid_timestamp( $order );
+			$order->update_meta_data( self::CHANGE_PAID_AT_META, gmdate( 'Y-m-d\TH:i:s\Z', $paid ? $paid : time() ) );
+		}
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
+		return $token;
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return string
+	 */
+	public static function change_email_url( $order ) {
+		if ( ! self::change_window_open( $order ) ) {
+			return '';
+		}
+		$token  = self::ensure_change_token( $order );
+		$design = self::design_id_from_order( $order );
+		if ( '' === $token || '' === $design ) {
+			return '';
+		}
+		$base = self::designer_url();
+		$join = false === strpos( $base, '?' ) ? '?' : '&';
+		return $base . $join . 'design=' . rawurlencode( $design ) . '&change=' . rawurlencode( $token );
+	}
+
+	/**
+	 * @param mixed  $order
+	 * @param string $token
+	 * @param string $design_id
+	 * @return array
+	 */
+	public static function verify_change_request( $order, $token, $design_id ) {
+		$stored = ( is_object( $order ) && method_exists( $order, 'get_meta' ) ) ? (string) $order->get_meta( self::CHANGE_TOKEN_META, true ) : '';
+		$given  = is_string( $token ) ? $token : '';
+		if ( ! self::is_fd_order( $order ) || ! self::token_shape( $stored ) || ! self::token_shape( $given ) || ! hash_equals( $stored, $given ) ) {
+			return array( 'ok' => false, 'error' => 'invalid' );
+		}
+		if ( (string) $design_id !== self::design_id_from_order( $order ) ) {
+			return array( 'ok' => false, 'error' => 'invalid' );
+		}
+		if ( ! self::change_window_open( $order ) ) {
+			return array(
+				'ok'      => false,
+				'error'   => 'closed',
+				'message' => self::CHANGE_CLOSED_MESSAGE,
+			);
+		}
+		return array(
+			'ok'               => true,
+			'designId'         => self::design_id_from_order( $order ),
+			'orderId'          => method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0,
+			'productIds'       => self::order_fd_product_ids( $order ),
+			'geometrySummary'  => self::order_geometry( $order ),
+			'revision'         => (int) $order->get_meta( self::CHANGE_REVISION_META, true ),
+			'windowEnds'       => self::change_window_ends_at( $order ),
+			'status'           => method_exists( $order, 'get_status' ) ? (string) $order->get_status() : '',
+			'orderUrl'         => self::order_admin_url( $order ),
+		);
+	}
+
+	/**
+	 * Update geometry on this order. Product ids, totals, and payment stay put.
+	 *
+	 * @param mixed $order
+	 * @param array $args
+	 * @return array
+	 */
+	public static function apply_change_revision( $order, $args ) {
+		$args    = is_array( $args ) ? $args : array();
+		$token   = isset( $args['token'] ) ? $args['token'] : '';
+		$design  = isset( $args['designId'] ) ? $args['designId'] : '';
+		$check   = self::verify_change_request( $order, $token, $design );
+		$total   = ( is_object( $order ) && method_exists( $order, 'get_total' ) ) ? $order->get_total() : '';
+		if ( empty( $check['ok'] ) ) {
+			$check['total'] = $total;
+			return $check;
+		}
+		$wanted  = self::normalize_id_list( isset( $args['productIds'] ) ? $args['productIds'] : array() );
+		$current = self::order_fd_product_ids( $order );
+		if ( ! $wanted || $wanted !== $current ) {
+			return array(
+				'ok'      => false,
+				'error'   => 'parts',
+				'message' => 'Those parts can\'t be changed on this order.',
+				'total'   => $total,
+			);
+		}
+		$summary = isset( $args['geometrySummary'] ) ? trim( (string) $args['geometrySummary'] ) : '';
+		$summary = trim( (string) preg_replace( '/\s+/', ' ', $summary ) );
+		if ( '' === $summary || strlen( $summary ) > 500 ) {
+			return array( 'ok' => false, 'error' => 'geometry', 'total' => $total );
+		}
+		$old      = self::order_geometry( $order );
+		$revision = (int) $order->get_meta( self::CHANGE_REVISION_META, true );
+		$key      = isset( $args['idempotencyKey'] ) ? (string) $args['idempotencyKey'] : '';
+		if ( strlen( $key ) > 80 ) {
+			$key = '';
+		}
+		$stored_key = (string) $order->get_meta( self::CHANGE_IDEM_META, true );
+		if ( ( '' !== $key && $key === $stored_key ) || $summary === $old ) {
+			return array(
+				'ok'            => true,
+				'unchanged'     => true,
+				'designId'      => $check['designId'],
+				'orderId'       => $check['orderId'],
+				'orderUrl'      => $check['orderUrl'],
+				'revision'      => $revision,
+				'oldGeometry'   => $old,
+				'newGeometry'   => $old,
+				'productIds'    => $current,
+				'total'         => $total,
+			);
+		}
+		$last = (string) $order->get_meta( self::CHANGE_LAST_META, true );
+		$last_ts = '' !== $last ? strtotime( $last ) : false;
+		if ( false !== $last_ts && ( time() - (int) $last_ts ) < self::CHANGE_RATE_SECONDS ) {
+			return array(
+				'ok'      => false,
+				'error'   => 'rate',
+				'message' => 'Please wait a moment before saving another change.',
+				'total'   => $total,
+			);
+		}
+		self::write_geometry( $order, $summary );
+		$revision++;
+		$now = gmdate( 'Y-m-d\TH:i:s\Z' );
+		$order->update_meta_data( self::CHANGE_REVISION_META, (string) $revision );
+		$order->update_meta_data( self::CHANGE_LAST_META, $now );
+		if ( '' !== $key ) {
+			$order->update_meta_data( self::CHANGE_IDEM_META, $key );
+		}
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
+		if ( method_exists( $order, 'add_order_note' ) ) {
+			$was = '' !== $old ? $old : '(none)';
+			$order->add_order_note( 'Geometry revised (revision ' . $revision . '). Was: ' . $was . '. Now: ' . $summary . '.' );
+		}
+		return array(
+			'ok'           => true,
+			'unchanged'    => false,
+			'designId'     => $check['designId'],
+			'orderId'      => $check['orderId'],
+			'orderUrl'     => self::order_admin_url( $order ),
+			'revision'     => $revision,
+			'oldGeometry'  => $old,
+			'newGeometry'  => $summary,
+			'productIds'   => $current,
+			'total'        => $total,
+		);
+	}
+
+	/**
+	 * @param mixed $order_id
+	 */
+	public static function on_marked_in_design( $order_id ) {
+		$order = function_exists( 'wc_get_order' ) ? wc_get_order( $order_id ) : null;
+		if ( ! is_object( $order ) || ! method_exists( $order, 'update_meta_data' ) ) {
+			return;
+		}
+		if ( '1' === (string) $order->get_meta( self::CHANGE_CLOSED_META, true ) ) {
+			return;
+		}
+		$order->update_meta_data( self::CHANGE_CLOSED_META, '1' );
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
+	}
+
+	/**
+	 * @param mixed $order
+	 */
+	public static function on_admin_order_change( $order ) {
+		if ( ! self::is_fd_order( $order ) ) {
+			return;
+		}
+		$open = self::change_window_open( $order );
+		$ends = self::change_window_ends_at( $order );
+		echo '<p class="creature-fd-change-window"><strong>Change window:</strong> ';
+		if ( $open && '' !== $ends ) {
+			echo 'open until ' . self::esc( $ends ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
+		} elseif ( $open ) {
+			echo 'open';
+		} else {
+			echo 'closed';
+		}
+		echo '</p>';
+		$checked = self::change_is_started( $order ) ? ' checked="checked"' : '';
+		echo '<p class="creature-fd-change-closed"><label>';
+		echo '<input type="hidden" name="creature_fd_change_flag_present" value="1" />';
+		echo '<input type="checkbox" name="creature_fd_change_closed" value="1"' . $checked . ' /> '; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- fixed attribute.
+		echo 'Change window closed</label></p>';
+	}
+
+	/**
+	 * @param mixed $order_id
+	 */
+	public static function on_save_change_flag( $order_id ) {
+		if ( ! isset( $_POST['creature_fd_change_flag_present'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			return;
+		}
+		$order = function_exists( 'wc_get_order' ) ? wc_get_order( $order_id ) : null;
+		if ( ! self::is_fd_order( $order ) || ! method_exists( $order, 'update_meta_data' ) ) {
+			return;
+		}
+		$closed = isset( $_POST['creature_fd_change_closed'] ) && '1' === (string) wp_unslash( $_POST['creature_fd_change_closed'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( self::status_is_in_design( $order ) ) {
+			$closed = true;
+		}
+		$order->update_meta_data( self::CHANGE_CLOSED_META, $closed ? '1' : '' );
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
+	}
+
+	public static function register_change_routes() {
+		if ( ! function_exists( 'register_rest_route' ) ) {
+			return;
+		}
+		register_rest_route(
+			'creature-fd/v1',
+			'/change',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => array( __CLASS__, 'rest_read_change' ),
+					'permission_callback' => '__return_true',
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => array( __CLASS__, 'rest_apply_change' ),
+					'permission_callback' => '__return_true',
+				),
+			)
+		);
+	}
+
+	/**
+	 * @param mixed $request
+	 * @return mixed
+	 */
+	public static function rest_read_change( $request ) {
+		$design = (string) self::request_param( $request, 'design' );
+		$token  = (string) self::request_param( $request, 'token' );
+		$order  = self::order_by_change_token( $token );
+		if ( ! $order ) {
+			return self::rest_response( array( 'error' => 'invalid', 'message' => 'This link is not valid.' ), 404 );
+		}
+		$check = self::verify_change_request( $order, $token, $design );
+		if ( empty( $check['ok'] ) && isset( $check['error'] ) && 'closed' === $check['error'] ) {
+			return self::rest_response(
+				array( 'error' => 'closed', 'message' => self::CHANGE_CLOSED_MESSAGE ),
+				410
+			);
+		}
+		if ( empty( $check['ok'] ) ) {
+			return self::rest_response( array( 'error' => 'invalid', 'message' => 'This link is not valid.' ), 404 );
+		}
+		return self::rest_response( $check, 200 );
+	}
+
+	/**
+	 * @param mixed $request
+	 * @return mixed
+	 */
+	public static function rest_apply_change( $request ) {
+		$token = (string) self::request_param( $request, 'token' );
+		$order = self::order_by_change_token( $token );
+		if ( ! $order ) {
+			return self::rest_response( array( 'error' => 'invalid', 'message' => 'This link is not valid.' ), 404 );
+		}
+		$ids = self::request_param( $request, 'productIds' );
+		$result = self::apply_change_revision(
+			$order,
+			array(
+				'token'           => $token,
+				'designId'        => (string) self::request_param( $request, 'designId' ),
+				'productIds'      => is_array( $ids ) ? $ids : array(),
+				'geometrySummary' => (string) self::request_param( $request, 'geometrySummary' ),
+				'idempotencyKey'  => (string) self::request_param( $request, 'idempotencyKey' ),
+			)
+		);
+		$status = 200;
+		if ( empty( $result['ok'] ) ) {
+			$error  = isset( $result['error'] ) ? $result['error'] : 'invalid';
+			$status = 'parts' === $error ? 409 : ( 'rate' === $error ? 429 : ( 'closed' === $error ? 410 : ( 'geometry' === $error ? 400 : 404 ) ) );
+		}
+		return self::rest_response( $result, $status );
+	}
+
+	/**
+	 * @param string $token
+	 * @return object|null
+	 */
+	public static function order_by_change_token( $token ) {
+		if ( ! self::token_shape( $token ) || ! function_exists( 'wc_get_orders' ) ) {
+			return null;
+		}
+		$orders = wc_get_orders(
+			array(
+				'limit'      => 2,
+				'status'     => 'any',
+				'meta_key'   => self::CHANGE_TOKEN_META,
+				'meta_value' => $token,
+				'return'     => 'objects',
+			)
+		);
+		if ( ! is_array( $orders ) || 1 !== count( $orders ) ) {
+			return null;
+		}
+		$order = $orders[0];
+		return self::is_order( $order ) ? $order : null;
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return string
+	 */
+	public static function order_admin_url( $order ) {
+		if ( is_object( $order ) && method_exists( $order, 'get_edit_order_url' ) ) {
+			$url = $order->get_edit_order_url();
+			if ( is_string( $url ) && '' !== $url ) {
+				return $url;
+			}
+		}
+		$id = ( is_object( $order ) && method_exists( $order, 'get_id' ) ) ? (int) $order->get_id() : 0;
+		if ( function_exists( 'admin_url' ) && $id ) {
+			return admin_url( 'post.php?post=' . $id . '&action=edit' );
+		}
+		return '';
+	}
+
+	/**
+	 * @return string
+	 */
+	private static function designer_url() {
+		$value = apply_filters( 'creature_fd_designer_url', self::DESIGNER_URL );
+		if ( ! is_string( $value ) ) {
+			return self::DESIGNER_URL;
+		}
+		$value = trim( $value );
+		if ( ! preg_match( '#^https://#', $value ) || strlen( $value ) > 300 ) {
+			return self::DESIGNER_URL;
+		}
+		return $value;
+	}
+
+	/**
+	 * @param string $token
+	 * @return bool
+	 */
+	private static function token_shape( $token ) {
+		return is_string( $token ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $token );
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return bool
+	 */
+	private static function status_is_in_design( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_status' ) ) {
+			return false;
+		}
+		$status = preg_replace( '/^wc-/', '', (string) $order->get_status() );
+		return 'in-design' === $status;
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return int[]
+	 */
+	private static function order_fd_product_ids( $order ) {
+		$ids = array();
+		foreach ( self::order_items( $order ) as $item ) {
+			if ( ! self::item_is_fd_product( $item ) ) {
+				continue;
+			}
+			foreach ( self::item_product_ids( $item ) as $id ) {
+				if ( in_array( $id, self::product_ids(), true ) ) {
+					$ids[] = (int) $id;
+				}
+			}
+		}
+		$ids = array_values( array_unique( $ids ) );
+		sort( $ids );
+		return $ids;
+	}
+
+	/**
+	 * @param mixed $ids
+	 * @return int[]
+	 */
+	private static function normalize_id_list( $ids ) {
+		$list = self::normalize_ids( $ids );
+		sort( $list );
+		return $list;
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return string
+	 */
+	private static function order_geometry( $order ) {
+		foreach ( self::order_items( $order ) as $item ) {
+			if ( ! self::item_is_fd_product( $item ) || ! is_object( $item ) || ! method_exists( $item, 'get_meta' ) ) {
+				continue;
+			}
+			$value = trim( (string) $item->get_meta( 'geometry_summary', true ) );
+			if ( '' !== $value ) {
+				return $value;
+			}
+		}
+		if ( is_object( $order ) && method_exists( $order, 'get_meta' ) ) {
+			return trim( (string) $order->get_meta( 'geometry_summary', true ) );
+		}
+		return '';
+	}
+
+	/**
+	 * @param mixed  $order
+	 * @param string $summary
+	 */
+	private static function write_geometry( $order, $summary ) {
+		foreach ( self::order_items( $order ) as $item ) {
+			if ( ! self::item_is_fd_product( $item ) || ! is_object( $item ) || ! method_exists( $item, 'update_meta_data' ) ) {
+				continue;
+			}
+			$item->update_meta_data( 'geometry_summary', $summary );
+			if ( method_exists( $item, 'save' ) ) {
+				$item->save();
+			}
+		}
+		if ( is_object( $order ) && method_exists( $order, 'update_meta_data' ) ) {
+			$order->update_meta_data( 'geometry_summary', $summary );
+		}
+	}
+
+	/**
+	 * @param mixed  $request
+	 * @param string $key
+	 * @return mixed
+	 */
+	private static function request_param( $request, $key ) {
+		if ( is_object( $request ) && method_exists( $request, 'get_param' ) ) {
+			$value = $request->get_param( $key );
+			if ( null !== $value && '' !== $value ) {
+				return $value;
+			}
+		}
+		if ( is_array( $request ) && isset( $request[ $key ] ) ) {
+			return $request[ $key ];
+		}
+		return '';
+	}
+
+	/**
+	 * @param array $data
+	 * @param int   $status
+	 * @return mixed
+	 */
+	private static function rest_response( $data, $status ) {
+		if ( class_exists( 'WP_REST_Response' ) ) {
+			return new WP_REST_Response( $data, $status );
+		}
+		return array(
+			'data'   => $data,
+			'status' => (int) $status,
+		);
 	}
 
 	/**

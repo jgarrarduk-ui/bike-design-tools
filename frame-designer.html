@@ -1185,6 +1185,8 @@
     opacity: 0.72;
   }
   .shop-part.is-unavailable input { cursor: not-allowed; }
+  .shop-part.is-locked { cursor: not-allowed; }
+  .shop-part.is-locked input { cursor: not-allowed; }
   .shop-price {
     margin-left: auto;
     font-weight: 700;
@@ -1374,6 +1376,9 @@
 </style>
 </head>
 <body>
+<div id="change-closed-page" hidden style="max-width:36rem;margin:4rem auto;padding:0 1.5rem;font-size:1.15rem;line-height:1.5">
+  <p>The change window has closed. Reply to your confirmation email and we'll help.</p>
+</div>
 
 <svg width="0" height="0" aria-hidden="true" style="position:absolute">
   <!-- Recolor glyph alpha only. The old 1-R knockout treated the filter
@@ -1577,7 +1582,7 @@
 <div id="shop-modal-overlay" onclick="handleShopOverlayClick(event)">
   <div id="shop-modal" role="dialog" aria-labelledby="shop-title" aria-modal="true">
     <h2 id="shop-title">Save design</h2>
-    <p>Save this frame, then continue to checkout for the design files. Saving also downloads JSON on this computer. A link to edit later, and a link to checkout, are emailed to you.</p>
+    <p id="shop-intro">Save this frame, then continue to checkout for the design files. Saving also downloads JSON on this computer. A link to edit later, and a link to checkout, are emailed to you.</p>
     <div class="shop-field">
       <label for="shop-customer-name">your name</label>
       <input id="shop-customer-name" type="text" autocomplete="name" placeholder="name for the order">
@@ -1614,6 +1619,7 @@
           <span class="shop-price">£64</span>
         </label>
       </div>
+      <p id="shop-parts-lock" hidden>These parts are the ones you paid for, so they stay as they are. You can still change the geometry.</p>
       <p id="shop-total">Selected design files £100</p>
       <p id="shop-save-hint" hidden></p>
       <p id="shop-print-note">Printed 316L is enquire only. Checkout is for these design files.</p>
@@ -1656,7 +1662,7 @@ viewBox="0 0 42000 7000"
 </script>
 <script src="config.js"></script>
 <!-- /apps/frame-shop.js is cached for a year. Bump ?v= when that file changes. -->
-<script src="frame-shop.js?v=20261008"></script>
+<script src="frame-shop.js?v=20261009"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -4567,16 +4573,21 @@ function showShopToolsFailure(){
 // Rebuild the part list from the current ticks, or from the buyable defaults
 // when the list is still empty. An existing selection is kept so a resumed
 // design and a later save send the same product ids.
+let shopAmend = false;
+let shopChangeToken = '';
+let shopLockedIds = [];
+
 function renderShopParts(){
   const root = document.getElementById('shop-parts');
   if(!root || !shopToolsReady()) return false;
   const existing = root.querySelector('input');
-  const previous = existing ? selectedShopProductIds() : null;
+  const previous = shopAmend ? shopLockedIds : (existing ? selectedShopProductIds() : null);
   root.innerHTML = '';
-  FrameShop.pickerRows(previous).forEach(row=>{
+  FrameShop.pickerRows(previous, { lockParts: shopAmend }).forEach(row=>{
     const unavailable = row.disabled;
+    const comingSoon = !!row.comingSoon;
     const label = document.createElement('label');
-    label.className = unavailable ? 'shop-part is-unavailable' : 'shop-part';
+    label.className = 'shop-part' + (comingSoon ? ' is-unavailable' : (unavailable ? ' is-locked' : ''));
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.dataset.productId = String(row.id);
@@ -4587,7 +4598,7 @@ function renderShopParts(){
     const text = document.createElement('span');
     text.className = 'shop-part-name';
     text.textContent = row.name;
-    if(unavailable){
+    if(comingSoon){
       const soon = document.createElement('span');
       soon.className = 'shop-soon';
       soon.textContent = 'Coming soon';
@@ -4606,6 +4617,10 @@ function renderShopParts(){
 }
 
 function onShopPartChange(){
+  if(shopAmend){
+    setShopChecks(shopLockedIds);
+    return;
+  }
   document.querySelectorAll('#shop-parts input').forEach(el=>{
     const part = FrameShop.PARTS.find(item=>item.id === Number(el.dataset.productId));
     if(part && part.unavailable) el.checked = false;
@@ -4676,7 +4691,46 @@ function currentShopSaved(){
   return FrameShop.readSession(sessionStorage, urlId);
 }
 
+function showChangeClosed(){
+  document.querySelectorAll('body > *').forEach(el=>{
+    if(el.id === 'change-closed-page') return;
+    el.style.display = 'none';
+  });
+  const page = document.getElementById('change-closed-page');
+  if(page){
+    page.hidden = false;
+    page.style.display = 'block';
+  }
+}
+
+function applyAmendChrome(){
+  shopAmend = true;
+  const title = document.getElementById('shop-title');
+  if(title) title.textContent = 'Request a change';
+  const intro = document.getElementById('shop-intro');
+  if(intro) intro.textContent = 'Update the geometry on this paid order. The parts stay as you bought them. Saving does not take another payment.';
+  const save = document.getElementById('shop-save-btn');
+  if(save) save.textContent = 'Save changes';
+  const cont = document.getElementById('shop-continue');
+  if(cont) cont.hidden = true;
+  const lock = document.getElementById('shop-parts-lock');
+  if(lock){
+    lock.hidden = false;
+    lock.textContent = FrameShop.PARTS_LOCK_NOTE;
+  }
+  renderShopParts();
+}
+
 function openShop(intent){
+  if(shopAmend){
+    if(!shopToolsReady() || !renderShopParts()){
+      showShopToolsFailure();
+      return;
+    }
+    setShopStatus('');
+    document.getElementById('shop-modal-overlay').classList.add('open');
+    return;
+  }
   if(!shopToolsReady() || !renderShopParts()){
     showShopToolsFailure();
     return;
@@ -4743,7 +4797,52 @@ function rememberDesign(record){
   redraw();
 }
 
+async function saveChangesFromModal(){
+  if(!shopAmend || shopBusy) return;
+  const saved = currentShopSaved();
+  const params = exportParams();
+  const plan = FrameShop.revisionPlan({
+    lockedIds: shopLockedIds,
+    productIds: selectedShopProductIds(),
+    params,
+    savedParams: saved && saved.params,
+  });
+  if(plan.action === 'error'){
+    setShopStatus(plan.message, true);
+    return;
+  }
+  if(plan.action === 'unchanged'){
+    setShopStatus('No geometry changes to save.');
+    return;
+  }
+  setShopBusy(true);
+  setShopStatus('Saving changes…');
+  try {
+    const data = await FrameShop.postRevision(toolsApiBase(), saved && saved.designId, {
+      change: shopChangeToken,
+      params,
+      productIds: plan.productIds,
+    });
+    if(saved){
+      saved.params = params;
+      saved.snapshot = FrameShop.selectionSnapshot(params, plan.productIds, saved.customerEmail || '');
+      saved.revision = data && data.revision;
+      FrameShop.writeSession(sessionStorage, saved);
+    }
+    setShopStatus('Changes saved. We have your new geometry.');
+  } catch(err){
+    if(err && err.closed){
+      showChangeClosed();
+      return;
+    }
+    setShopStatus((err && err.message) || 'Could not save the changes.', true);
+  } finally {
+    setShopBusy(false);
+  }
+}
+
 async function submitShop(andCheckout){
+  if(shopAmend) return null;
   if(shopBusy) return null;
   if(!shopToolsReady() || !renderShopParts()){
     showShopToolsFailure();
@@ -4809,6 +4908,10 @@ async function submitShop(andCheckout){
 }
 
 async function saveDesignFromModal(){
+  if(shopAmend){
+    await saveChangesFromModal();
+    return;
+  }
   const record = await submitShop(false);
   if(!record) return;
   downloadDesignJson();
@@ -4819,6 +4922,7 @@ async function saveDesignFromModal(){
 }
 
 async function continueToShop(){
+  if(shopAmend) return;
   const record = await submitShop(true);
   if(record && record.checkoutUrl) location.assign(record.checkoutUrl);
 }
@@ -4860,13 +4964,38 @@ async function restoreShopSession(){
   renderShopParts();
   let urlId = '';
   let resume = '';
+  let change = '';
   try {
     const q = new URL(location.href).searchParams;
     urlId = (q.get('design') || '').trim();
     resume = (q.get('resume') || '').trim();
+    change = (q.get('change') || '').trim();
   } catch {
     urlId = '';
     resume = '';
+    change = '';
+  }
+  if(urlId && change){
+    const bar = document.getElementById('statusbar');
+    try {
+      const data = await FrameShop.fetchChangeDesign(toolsApiBase(), urlId, change);
+      const record = FrameShop.sessionFromChange(data);
+      shopChangeToken = change;
+      shopLockedIds = record.lockedProductIds.slice();
+      applyShopRecord(record);
+      FrameShop.writeSession(sessionStorage, record);
+      applyAmendChrome();
+      if(bar) bar.textContent = 'Design ' + record.designId.slice(0, 8) + ' opened for a change';
+      return;
+    } catch(err){
+      if(err && err.closed){
+        showChangeClosed();
+        return;
+      }
+      console.warn('design change failed:', err && err.message);
+      if(bar) bar.textContent = 'This change link could not be opened.';
+      return;
+    }
   }
   if(urlId && resume){
     const bar = document.getElementById('statusbar');

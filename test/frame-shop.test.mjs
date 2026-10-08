@@ -288,7 +288,7 @@ test('Save design keeps its label, downloads JSON, and hydrates only with resume
   assert.equal(/id="shop-save"[\s>]/.test(html), false);
   assert.equal((html.match(/id="shop-save-btn"/g) || []).length, 1);
   assert.equal((html.match(/id="shop-save-hint"/g) || []).length, 1);
-  assert.match(html, /src="frame-shop\.js\?v=20261008"/);
+  assert.match(html, /src="frame-shop\.js\?v=20261009"/);
   assert.match(html, /id="shop-lead-time">Design files are delivered within 5 working days of payment\.</);
   const leadAt = html.indexOf('id="shop-lead-time"');
   const continueAt = html.indexOf('id="shop-continue"');
@@ -327,6 +327,97 @@ test('Save design keeps its label, downloads JSON, and hydrates only with resume
   assert.match(parts, /data-product-id="8636"[^>]*disabled/);
   assert.match(parts, /Coming soon/);
   assert.equal(/data-product-id="8636"[^>]*checked/.test(parts), false);
+});
+
+test('amend mode locks the paid parts and saves geometry without checkout', async () => {
+  const html = readFileSync(new URL('../frame-designer.html', import.meta.url), 'utf8');
+  assert.equal(FrameShop.CHANGE_CLOSED_MESSAGE, 'The change window has closed. Reply to your confirmation email and we\'ll help.');
+  assert.match(html, /The change window has closed\. Reply to your confirmation email and we'll help\./);
+  assert.match(html, /id="change-closed-page"/);
+  assert.match(html, /id="shop-parts-lock"/);
+  assert.match(html, /save\.textContent = 'Save changes'/);
+  assert.match(html, /fetchChangeDesign\(toolsApiBase\(\), urlId, change\)/);
+  assert.match(html, /if\(shopAmend\)\{\s*await saveChangesFromModal\(\)/);
+  assert.match(html, /if\(shopAmend\) return;/);
+  const locked = FrameShop.pickerRows([8634, 8635], { lockParts: true });
+  const byId = Object.fromEntries(locked.map(row => [row.id, row]));
+  assert.equal(byId[8634].checked, true);
+  assert.equal(byId[8634].disabled, true);
+  assert.equal(byId[8634].comingSoon, false);
+  assert.equal(byId[8635].checked, true);
+  assert.equal(byId[8635].disabled, true);
+  assert.equal(byId[8636].checked, false);
+  assert.equal(byId[8636].disabled, true);
+  assert.equal(byId[8636].comingSoon, true);
+  assert.match(FrameShop.PARTS_LOCK_NOTE, /paid for/);
+
+  const url = new URL(FrameShop.changeUrl('https://creature-tools-api-production.up.railway.app/', 'design-1', 'change-token'));
+  assert.equal(url.pathname, '/api/designs/design-1');
+  assert.equal(url.searchParams.get('change'), 'change-token');
+  assert.equal(url.searchParams.get('resume'), null);
+
+  const session = FrameShop.sessionFromChange({
+    mode: 'amend',
+    designId: 'design-1',
+    params: PARAMS,
+    productIds: [8636, 8634],
+    customerName: 'Ada',
+    customerEmail: 'ada@example.com',
+    checkoutUrl: 'https://creaturecycles.co.uk/checkout/order-pay/10/',
+    revision: 0,
+  });
+  assert.equal(session.mode, 'amend');
+  assert.equal(session.checkoutUrl, '');
+  assert.deepEqual(session.lockedProductIds, [8634]);
+
+  const rejected = FrameShop.revisionPlan({
+    lockedIds: [8634],
+    productIds: [8634, 8635],
+    params: { ...PARAMS, reach: 460 },
+    savedParams: PARAMS,
+  });
+  assert.equal(rejected.action, 'error');
+  const same = FrameShop.revisionPlan({
+    lockedIds: [8634, 8635],
+    productIds: [8635, 8634],
+    params: PARAMS,
+    savedParams: PARAMS,
+  });
+  assert.equal(same.action, 'unchanged');
+  const post = FrameShop.revisionPlan({
+    lockedIds: [8634, 8635],
+    productIds: [8634, 8635],
+    params: { ...PARAMS, reach: 460 },
+    savedParams: PARAMS,
+  });
+  assert.equal(post.action, 'post');
+  assert.deepEqual(post.productIds, [8634, 8635]);
+
+  let seen;
+  const saved = await FrameShop.postRevision(
+    'https://creature-tools-api-production.up.railway.app',
+    'design-1',
+    { change: 'change-token', params: PARAMS, productIds: [8634, 8635], checkoutUrl: 'https://nope.example' },
+    async (target, opts) => {
+      seen = { target, opts };
+      return { ok: true, status: 200, json: async () => ({ ok: true, revision: 1, designId: 'design-1' }) };
+    },
+  );
+  assert.equal(saved.revision, 1);
+  assert.equal(seen.target, 'https://creature-tools-api-production.up.railway.app/api/designs/design-1/revision');
+  assert.deepEqual(JSON.parse(seen.opts.body), {
+    change: 'change-token',
+    params: PARAMS,
+    productIds: [8634, 8635],
+  });
+  await assert.rejects(
+    () => FrameShop.fetchChangeDesign('https://example.test', 'design-1', 'tok', async () => ({
+      ok: false,
+      status: 410,
+      json: async () => ({ error: 'closed', message: FrameShop.CHANGE_CLOSED_MESSAGE }),
+    })),
+    (err) => err.closed === true && err.message === FrameShop.CHANGE_CLOSED_MESSAGE,
+  );
 });
 
 test('POST /api/designs uses the configured origin and surfaces API errors', async () => {
