@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles Frame Designer Only Purchase
  * Description: Frame Designer is the only way to buy the BB yoke (8634), SS yoke (8635), and dropouts (8636). Hides the catalogue add-to-cart control and rejects basket lines with no design_id. Must-use plugin. Does not touch REST-created orders or order-pay.
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  *
@@ -337,7 +337,7 @@ final class Creature_Fd_Only_Purchase {
 			}
 		}
 		$url   = self::escape_url( self::designer_url() );
-		$inner = '<a href="' . $url . '" class="button creature-fd-only-link">Design yours in Frame Designer</a>';
+		$inner = '<a href="' . $url . '" class="button creature-fd-only-link">Open Frame Designer</a>';
 		// Product summary only. Loop and card controls stay a single link.
 		if ( $wrap ) {
 			$inner .= self::lead_time_markup();
@@ -471,6 +471,11 @@ final class Creature_Fd_Only_Purchase {
 	/**
 	 * Card control with Astra's overlay class, and without ajax add-to-cart.
 	 *
+	 * The link omits Woo's "button" class. `.woocommerce-js a.button` is
+	 * position:relative and would beat Astra's absolute `.ast-on-card-button`,
+	 * leaving a gap under the card image. The Coming soon control stays a
+	 * span, which that anchor rule does not match.
+	 *
 	 * @param mixed $product
 	 * @return string|null
 	 */
@@ -484,7 +489,7 @@ final class Creature_Fd_Only_Purchase {
 			}
 		}
 		$url = self::escape_url( self::designer_url() );
-		return '<a href="' . $url . '" class="ast-on-card-button button creature-fd-only-link"><span class="ast-card-action-tooltip">Design yours in Frame Designer</span></a>';
+		return '<a href="' . $url . '" class="ast-on-card-button creature-fd-only-link"><span class="ast-card-action-tooltip">Open Frame Designer</span></a>';
 	}
 
 	/**
