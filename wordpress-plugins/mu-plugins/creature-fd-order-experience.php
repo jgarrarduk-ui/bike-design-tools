@@ -47,9 +47,11 @@
  * ------------------
  * On order-pay, a Frame Designer order shows two required checkboxes. The
  * first agrees to the Terms & Conditions, the Design File Licence, and the
- * Required Build Specification. Woo's own terms checkbox is hidden on that
- * page so the customer sees one terms box. The cancellation waiver stays a
- * separate box underneath. Filter creature_fd_cancellation_waiver_text to
+ * Required Build Specification. Each of those titles is a link (/terms/,
+ * /design-file-licence/, /build-specification/), opened in a new tab. The
+ * links render while those pages are still drafts. Woo's own terms checkbox
+ * is hidden on that page so the customer sees one terms box. The
+ * cancellation waiver stays a separate box underneath. Filter creature_fd_cancellation_waiver_text to
  * follow the final T&Cs. Payment is refused until both are ticked: the
  * classic pay form (WooPayments card, and a normal Pay for order submit),
  * PayPal's pay-now create-order call, and the Store API checkout used by
@@ -514,7 +516,8 @@ final class Creature_Fd_Order_Experience {
 	public static function terms_label_html() {
 		$terms   = self::document_link( self::terms_document_url(), 'Terms & Conditions' );
 		$licence = self::document_link( self::licence_document_url(), 'Design File Licence' );
-		return 'I agree to the ' . $terms . ', the ' . $licence . ' and the Required Build Specification supplied with my design files.';
+		$spec    = self::document_link( self::build_spec_document_url(), 'Required Build Specification' );
+		return 'I agree to the ' . $terms . ', the ' . $licence . ' and the ' . $spec . ' supplied with my design files.';
 	}
 
 	/**
@@ -529,6 +532,13 @@ final class Creature_Fd_Order_Experience {
 	 */
 	public static function licence_document_url() {
 		return self::document_url( 'creature_fd_design_file_licence_url', '/design-file-licence/' );
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function build_spec_document_url() {
+		return self::document_url( 'creature_fd_build_spec_url', '/build-specification/' );
 	}
 
 	/**

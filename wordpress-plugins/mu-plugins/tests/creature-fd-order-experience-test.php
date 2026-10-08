@@ -808,15 +808,11 @@ creature_fd_exp_expect( 2 === substr_count( $fd_box, '<input ' ), 'FD order-pay 
 creature_fd_exp_expect( false !== strpos( $fd_box, 'I agree to the ' ), 'terms checkbox starts with the agreed sentence' );
 creature_fd_exp_expect( false !== strpos( $fd_box, '>Terms &amp; Conditions</a>' ), 'Terms & Conditions is a link' );
 creature_fd_exp_expect( false !== strpos( $fd_box, '>Design File Licence</a>' ), 'Design File Licence is a link' );
+creature_fd_exp_expect( false !== strpos( $fd_box, '>Required Build Specification</a>' ), 'Required Build Specification is a link' );
 creature_fd_exp_expect( false !== strpos( $fd_box, 'href="https://creaturecycles.co.uk/terms/"' ), 'Terms & Conditions links to /terms/' );
 creature_fd_exp_expect( false !== strpos( $fd_box, 'href="https://creaturecycles.co.uk/design-file-licence/"' ), 'Design File Licence links to /design-file-licence/' );
-creature_fd_exp_expect( 2 === substr_count( $fd_box, 'target="_blank"' ) && 2 === substr_count( $fd_box, 'rel="noopener"' ), 'both document links open in a new tab' );
-$spec_at = strpos( $fd_box, 'Required Build Specification' );
-$before_spec = false === $spec_at ? '' : substr( $fd_box, 0, $spec_at );
-creature_fd_exp_expect(
-	false !== $spec_at && substr_count( $before_spec, '<a ' ) === substr_count( $before_spec, '</a>' ) && 2 === substr_count( $fd_box, '<a ' ),
-	'Required Build Specification is not a link'
-);
+creature_fd_exp_expect( false !== strpos( $fd_box, 'href="https://creaturecycles.co.uk/build-specification/"' ), 'Required Build Specification links to /build-specification/' );
+creature_fd_exp_expect( 3 === substr_count( $fd_box, '<a ' ) && 3 === substr_count( $fd_box, 'target="_blank"' ) && 3 === substr_count( $fd_box, 'rel="noopener"' ), 'all three document links open in a new tab' );
 creature_fd_exp_expect( false !== strpos( $fd_box, 'supplied with my design files.' ), 'terms checkbox keeps the supplied-with-files ending' );
 creature_fd_exp_expect( '' === $other_box, 'non-FD order-pay does not render the terms checkbox' );
 
@@ -845,6 +841,12 @@ $licence_url_cb = function () {
 add_filter( 'creature_fd_design_file_licence_url', $licence_url_cb );
 creature_fd_exp_expect( '/legal/design-file-licence/' === Creature_Fd_Order_Experience::licence_document_url(), 'licence URL follows its filter' );
 remove_filter( 'creature_fd_design_file_licence_url', $licence_url_cb );
+$spec_url_cb = function () {
+	return 'https://example.test/legal/build-specification';
+};
+add_filter( 'creature_fd_build_spec_url', $spec_url_cb );
+creature_fd_exp_expect( 'https://example.test/legal/build-specification' === Creature_Fd_Order_Experience::build_spec_document_url(), 'build specification URL follows its filter' );
+remove_filter( 'creature_fd_build_spec_url', $spec_url_cb );
 
 $terms_order = creature_fd_exp_order( 16, array( new Creature_Fd_Exp_Item( 8634, array( 'design_id' => 'design-16' ) ) ) );
 $terms_order->total = '136.00';
