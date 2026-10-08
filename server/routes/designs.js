@@ -39,6 +39,7 @@ const db = require('../db');
 const woocommerce = require('../services/woocommerce');
 const email = require('../services/email');
 const cleanup = require('../services/unpaid-cleanup');
+const changeWindow = require('../services/change-window');
 
 const router = express.Router();
 
@@ -307,10 +308,25 @@ router.get('/:id/checkout', async (req, res) => {
   return res.redirect(302, checkoutUrl);
 });
 
-router.get('/:id', (req, res) => {
-  const design = loadResumableDesign(req.params.id, resumeFromQuery(req));
-  if (!design) return res.status(404).json({ error: 'Design not found.' });
-  return res.json(hydrateBody(design));
+router.post('/:id/revision', async (req, res, next) => {
+  try {
+    return await changeWindow.revise(req, res);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/:id', async (req, res, next) => {
+  try {
+    if (req.query && typeof req.query.change === 'string' && req.query.change) {
+      return await changeWindow.hydrate(req, res);
+    }
+    const design = loadResumableDesign(req.params.id, resumeFromQuery(req));
+    if (!design) return res.status(404).json({ error: 'Design not found.' });
+    return res.json(hydrateBody(design));
+  } catch (err) {
+    return next(err);
+  }
 });
 
 module.exports = router;

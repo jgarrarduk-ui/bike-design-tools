@@ -485,13 +485,78 @@ Thank you for choosing Creature Cycles!
   console.log(`[email] Sent final files to ${to} for design ${designId}`);
 }
 
+const CHANGE_NOTIFY_TO = 'info@creaturecycles.co.uk';
+
+function changeNotifyAddress() {
+  const configured = trimmedEnv('FD_CHANGE_NOTIFY_EMAIL');
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(configured)) return configured;
+  return CHANGE_NOTIFY_TO;
+}
+
+function changeNoticeMessage({ orderId, orderUrl, designId, revision, oldGeometry, newGeometry }) {
+  const orderLine = orderUrl ? String(orderUrl) : String(orderId || '');
+  const text = [
+    'A customer updated the geometry on a paid Frame Designer order.',
+    '',
+    `Order: ${orderLine}`,
+    `Design: ${designId || ''}`,
+    `Revision: ${revision}`,
+    '',
+    `Previous geometry: ${oldGeometry || '(none)'}`,
+    `New geometry: ${newGeometry || ''}`,
+    '',
+    'No new payment was taken.',
+  ].join('\n');
+
+  const html = wrapHtml(`
+    <p style="font-size:15px;color:#222;line-height:1.6;">
+      A customer updated the geometry on a paid Frame Designer order.
+    </p>
+    <p style="font-size:14px;color:#333;line-height:1.8;">
+      <strong>Order:</strong> ${orderUrl ? `<a href="${escapeHtml(orderUrl)}">${escapeHtml(orderUrl)}</a>` : escapeHtml(orderLine)}<br>
+      <strong>Design:</strong> ${escapeHtml(designId || '')}<br>
+      <strong>Revision:</strong> ${escapeHtml(revision)}
+    </p>
+    <p style="font-size:14px;color:#222;line-height:1.6;">
+      <strong>Previous geometry:</strong> ${escapeHtml(oldGeometry || '(none)')}<br>
+      <strong>New geometry:</strong> ${escapeHtml(newGeometry || '')}
+    </p>
+    <p style="font-size:14px;color:#555;">No new payment was taken.</p>
+  `);
+
+  return {
+    to: changeNotifyAddress(),
+    subject: `Frame Designer geometry change — order ${orderId || ''}`.trim(),
+    text,
+    html,
+  };
+}
+
+async function sendChangeNotice(details) {
+  const message = changeNoticeMessage(details);
+  if (!isConfigured()) {
+    console.warn('[email] Resend API key not set — skipping geometry change notice for order', details && details.orderId);
+    return { sent: false, message };
+  }
+  await postResend({
+    to: message.to,
+    subject: message.subject,
+    text: message.text,
+    html: message.html,
+  });
+  console.log(`[email] Sent geometry change notice to ${message.to} for order ${details && details.orderId}`);
+  return { sent: true, message };
+}
+
 module.exports = {
   isConfigured,
   designFileLeadTime,
   designFileDeliverySentence,
   designSavedMessage,
+  changeNoticeMessage,
   sendOrderConfirmation,
   sendPaymentConfirmation,
   sendDesignReview,
   sendDesignAccepted,
+  sendChangeNotice,
 };

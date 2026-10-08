@@ -377,6 +377,46 @@ async function cancelPendingOrder(wcOrderId) {
   return { cancelled: true };
 }
 
+/**
+ * Ask the shop whether a paid Frame Designer order can still be changed,
+ * and write a geometry revision onto that same order.
+ * The change token is the credential. This does not send prices or totals.
+ *
+ * @param {'GET'|'POST'} method
+ * @param {object} payload
+ * @returns {Promise<{status: number, body: object}>}
+ */
+async function requestChange(method, payload) {
+  if (!env('WC_URL')) {
+    const err = new Error('WooCommerce is not configured.');
+    err.status = 503;
+    throw err;
+  }
+  const url = new URL(`${env('WC_URL').replace(/\/$/, '')}/wp-json/creature-fd/v1/change`);
+  const opts = {
+    method,
+    headers: { accept: 'application/json' },
+  };
+  if (method === 'GET') {
+    url.searchParams.set('design', String(payload.designId || ''));
+    url.searchParams.set('token', String(payload.token || ''));
+  } else {
+    opts.headers['content-type'] = 'application/json';
+    opts.body = JSON.stringify({
+      designId: payload.designId,
+      token: payload.token,
+      productIds: payload.productIds,
+      geometrySummary: payload.geometrySummary,
+      idempotencyKey: payload.idempotencyKey,
+    });
+  }
+  const res = await fetch(url, opts);
+  let body = {};
+  try { body = await res.json(); } catch { body = {}; }
+  if (!body || typeof body !== 'object') body = {};
+  return { status: res.status, body };
+}
+
 module.exports = {
   isConfigured,
   createOrder,
@@ -384,7 +424,9 @@ module.exports = {
   resolveProductIds,
   buildOrderPayload,
   designIdFromOrder,
+  geometrySummaryFrom,
   configuredProductIds,
   getOrder,
   cancelPendingOrder,
+  requestChange,
 };
