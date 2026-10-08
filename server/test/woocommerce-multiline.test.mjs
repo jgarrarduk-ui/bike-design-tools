@@ -231,6 +231,8 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
       assert.notEqual(payload.line_items[0].meta_data, payload.line_items[1].meta_data);
       assert.equal(payload.billing.first_name, 'Ada');
       assert.equal(payload.billing.last_name, 'Lovelace');
+      assert.equal(payload.customer_note, undefined);
+      assert.equal(JSON.stringify(payload).includes('Bespoke bike design'), false);
     });
   });
 
@@ -303,8 +305,17 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
     await withEnv(CATALOGUE, async () => {
       const original = global.fetch;
       let captured;
+      const notes = [];
       global.fetch = async (url, opts) => {
-        captured = { url, body: JSON.parse(opts.body), authorization: opts.headers.Authorization };
+        const href = String(url);
+        if (href.endsWith('/notes')) {
+          notes.push(JSON.parse(opts.body));
+          return new Response(JSON.stringify({ id: 1 }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        captured = { url: href, body: JSON.parse(opts.body), authorization: opts.headers.Authorization };
         return new Response(JSON.stringify({
           id: 4242,
           order_key: 'wc_order_test',
@@ -322,6 +333,10 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
         assert.equal(result.wcOrderId, '4242');
         assert.match(result.checkoutUrl, /order-pay\/4242/);
         assert.equal(captured.url, 'https://shop.example/wp-json/wc/v3/orders');
+        assert.equal(captured.body.customer_note, undefined);
+        assert.equal(notes.length, 1);
+        assert.equal(notes[0].customer_note, false);
+        assert.equal(notes[0].note, 'Bespoke bike design — ID: design-9');
         assert.equal(captured.url.includes('/products'), false);
         assert.ok(captured.authorization.startsWith('Basic '), 'sends basic auth');
         assert.deepEqual(
@@ -384,7 +399,13 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
     await withEnv(CATALOGUE, async () => {
       const original = global.fetch;
       let captured;
-      global.fetch = async (_url, opts) => {
+      global.fetch = async (url, opts) => {
+        if (String(url).includes('/notes')) {
+          return new Response(JSON.stringify({ id: 1 }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         captured = JSON.parse(opts.body);
         return new Response(JSON.stringify({
           id: 5150,
@@ -420,7 +441,13 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
     await withEnv({ ...CATALOGUE, WC_PRODUCT_PRICE: '49.00' }, async () => {
       const original = global.fetch;
       const bodies = [];
-      global.fetch = async (_url, opts) => {
+      global.fetch = async (url, opts) => {
+        if (String(url).includes('/notes')) {
+          return new Response(JSON.stringify({ id: 1 }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         bodies.push(JSON.parse(opts.body));
         const id = 6100 + bodies.length;
         return new Response(JSON.stringify({
@@ -469,7 +496,13 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
     await withEnv(CATALOGUE, async () => {
       const original = global.fetch;
       let captured;
-      global.fetch = async (_url, opts) => {
+      global.fetch = async (url, opts) => {
+        if (String(url).includes('/notes')) {
+          return new Response(JSON.stringify({ id: 1 }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
         captured = JSON.parse(opts.body);
         return new Response(JSON.stringify({ id: 8, order_key: 'k' }), {
           status: 201,
@@ -602,5 +635,56 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
       if (prev === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = prev;
     }
+  });
+
+  test('cancelling or refunding a paid design updates its status once', async () => {
+    const cancelled = 'design-cancel';
+    insertDesign({ id: cancelled, status: 'paid', wcOrderId: '9010' });
+    const orderBody = (id, wooId, status) => ({
+      id: wooId,
+      status,
+      meta_data: [{ key: 'design_id', value: id }],
+      line_items: [
+        { product_id: 8634, meta_data: [{ key: 'design_id', value: id }] },
+      ],
+    });
+    assert.equal((await post(server, '/api/webhooks/woocommerce/order-updated', orderBody(cancelled, 9010, 'cancelled'))).status, 200);
+    assert.equal((await waitForStatus(cancelled, 'cancelled')).status, 'cancelled');
+    assert.equal((await post(server, '/api/webhooks/woocommerce/order-updated', orderBody(cancelled, 9010, 'cancelled'))).status, 200);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(designStatus(cancelled).status, 'cancelled');
+
+    const refunded = 'design-refund';
+    insertDesign({ id: refunded, status: 'in_review', wcOrderId: '9011' });
+    assert.equal((await post(server, '/api/webhooks/woocommerce/order-updated', orderBody(refunded, 9011, 'refunded'))).status, 200);
+    assert.equal((await waitForStatus(refunded, 'refunded')).status, 'refunded');
+    assert.equal((await post(server, '/api/webhooks/woocommerce/order-updated', orderBody(refunded, 9011, 'cancelled'))).status, 200);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(designStatus(refunded).status, 'refunded');
+
+    const failed = 'design-failed-then-paid';
+    insertDesign({ id: failed, status: 'checkout_created', wcOrderId: '9013' });
+    assert.equal((await post(server, '/api/webhooks/woocommerce/order-updated', orderBody(failed, 9013, 'failed'))).status, 200);
+    assert.equal((await waitForStatus(failed, 'failed')).status, 'failed');
+    assert.equal((await post(server, '/api/webhooks/woocommerce/order-updated', orderBody(failed, 9013, 'processing'))).status, 200);
+    assert.equal((await waitForStatus(failed, 'paid')).status, 'paid');
+
+    const expired = 'design-expired-cancel';
+    insertDesign({ id: expired, status: 'expired', wcOrderId: '9012' });
+    assert.equal((await post(server, '/api/webhooks/woocommerce/order-updated', orderBody(expired, 9012, 'cancelled'))).status, 200);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(designStatus(expired).status, 'expired');
+
+    const untouched = 'design-not-this-order';
+    insertDesign({ id: untouched, status: 'paid', wcOrderId: '8888' });
+    assert.equal((await post(server, '/api/webhooks/woocommerce/order-updated', {
+      id: 9099,
+      status: 'cancelled',
+      meta_data: [],
+      line_items: [{ product_id: 100, meta_data: [] }],
+    })).status, 200);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(designStatus(untouched).status, 'paid');
+    assert.equal(designStatus('missing-design'), undefined);
   });
 });

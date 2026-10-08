@@ -8,8 +8,10 @@
  * the order and on every line item so a paid order.updated webhook can find
  * the design, and so each line still identifies the design on its own.
  *
- * This module only creates and reads orders. It does not publish or update
- * products, so catalogue entries can stay draft.
+ * This module creates and reads orders, and stores the design id as a private
+ * order note. It does not publish or update products, so catalogue entries
+ * can stay draft. The design id is not written into customer_note, because
+ * Woo prints that field on customer emails.
  *
  * Requires environment variables:
  *   WC_URL, WC_CONSUMER_KEY, WC_CONSUMER_SECRET,
@@ -21,6 +23,8 @@
  * WordPress webhook (topic: Order updated):
  *   {BASE_URL}/api/webhooks/woocommerce/order-updated
  */
+
+const crypto = require('crypto');
 
 const WC_API_VERSION = process.env.WC_API_VERSION || 'v3';
 let loggedConfigError = '';
@@ -259,8 +263,11 @@ function buildOrderPayload({
     },
     line_items: lineItems,
     meta_data: meta,
-    customer_note: `Bespoke bike design — ID: ${designId}`,
   };
+}
+
+function designNoteText(designId) {
+  return `Bespoke bike design — ID: ${designId}`;
 }
 
 /**
@@ -290,6 +297,7 @@ async function createOrder({
     productIds, resolvedIds, implicitDefault,
   });
   const order = await wcFetch('/orders', 'POST', payload);
+  await addPrivateDesignNote(order.id, designId);
 
   const checkoutUrl = order.payment_url ||
     `${env('WC_URL').replace(/\/$/, '')}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${order.order_key}`;
@@ -386,6 +394,18 @@ async function cancelPendingOrder(wcOrderId) {
  * @param {object} payload
  * @returns {Promise<{status: number, body: object}>}
  */
+async function addPrivateDesignNote(orderId, designId) {
+  if (!orderId) return;
+  try {
+    await wcFetch(`/orders/${encodeURIComponent(String(orderId))}/notes`, 'POST', {
+      note: designNoteText(designId),
+      customer_note: false,
+    });
+  } catch (err) {
+    console.warn('[woocommerce] Could not store the private design note:', err.message);
+  }
+}
+
 async function requestChange(method, payload) {
   if (!env('WC_URL')) {
     const err = new Error('WooCommerce is not configured.');
@@ -393,9 +413,15 @@ async function requestChange(method, payload) {
     throw err;
   }
   const url = new URL(`${env('WC_URL').replace(/\/$/, '')}/wp-json/creature-fd/v1/change`);
+  url.searchParams.set('cb', crypto.randomBytes(8).toString('hex'));
   const opts = {
     method,
-    headers: { accept: 'application/json' },
+    cache: 'no-store',
+    headers: {
+      accept: 'application/json',
+      'cache-control': 'no-cache',
+      pragma: 'no-cache',
+    },
   };
   if (method === 'GET') {
     url.searchParams.set('design', String(payload.designId || ''));
@@ -423,6 +449,7 @@ module.exports = {
   getDesignIdFromOrder,
   resolveProductIds,
   buildOrderPayload,
+  designNoteText,
   designIdFromOrder,
   geometrySummaryFrom,
   configuredProductIds,

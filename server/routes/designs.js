@@ -309,6 +309,7 @@ router.get('/:id/checkout', async (req, res) => {
 });
 
 router.post('/:id/revision', async (req, res, next) => {
+  res.set('Cache-Control', 'no-store, private');
   try {
     return await changeWindow.revise(req, res);
   } catch (err) {
@@ -319,6 +320,7 @@ router.post('/:id/revision', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     if (req.query && typeof req.query.change === 'string' && req.query.change) {
+      res.set('Cache-Control', 'no-store, private');
       return await changeWindow.hydrate(req, res);
     }
     const design = loadResumableDesign(req.params.id, resumeFromQuery(req));

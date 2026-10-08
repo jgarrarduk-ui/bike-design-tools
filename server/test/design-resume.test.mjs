@@ -474,6 +474,12 @@ describe('design resume links', { concurrency: false }, () => {
       global.fetch = async (_url, opts = {}) => {
         const method = opts.method || 'GET';
         if (method === 'POST') {
+          if (String(_url).includes('/notes')) {
+            return new Response(JSON.stringify({ id: 1 }), {
+              status: 201,
+              headers: { 'content-type': 'application/json' },
+            });
+          }
           posts.push(JSON.parse(opts.body));
           const id = nextId;
           nextId += 1;

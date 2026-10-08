@@ -5,7 +5,9 @@
  *
  * Listens for `order.updated` events from WooCommerce.
  * On receipt: validates HMAC signature, checks order status is paid,
- * finds matching design, generates download token, sends email with download link.
+ * finds matching design, and sends the payment email. The same Order updated
+ * topic also moves a paid design to cancelled, refunded, or failed. No second
+ * webhook or secret is required.
  *
  * WooCommerce setup (WordPress admin):
  *   WooCommerce → Settings → Advanced → Webhooks → Add webhook
@@ -31,6 +33,18 @@ const router = express.Router();
 
 // Statuses that indicate a completed payment in WooCommerce
 const PAID_STATUSES = new Set(['processing', 'completed']);
+
+// Woo statuses that take a design out of the paid review queue.
+// `failed` only applies before payment, so a later processing event can
+// still mark the design paid. cancelled and refunded apply after payment.
+const CLOSED_STATUSES = {
+  cancelled: 'cancelled',
+  refunded: 'refunded',
+  failed: 'failed',
+};
+
+const PRE_PAYMENT = ['pending', 'checkout_created', 'failed'];
+const AFTER_PAYMENT = ['paid', 'in_review', 'accepted', 'delivered', 'failed', 'cancelled'];
 
 // ── HMAC validation middleware ───────────────────────────────────────────────
 function verifyWooCommerceSignature(req, res, next) {
@@ -90,31 +104,24 @@ router.post(
 
     if (!wcOrderId) return;
 
+    const design = await findDesign(order, wcOrderId);
+    if (!design) {
+      console.warn(`[webhook] No design found for WooCommerce order ${wcOrderId}`);
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(CLOSED_STATUSES, status)) {
+      applyClosedStatus(design, status);
+      return;
+    }
+
     // Only process paid statuses
     if (!PAID_STATUSES.has(status)) {
       console.info(`[webhook] Order ${wcOrderId} status '${status}' — not a paid status, ignoring`);
       return;
     }
 
-    // ── Find design by WooCommerce order ID ──────────────────────────────────
-    let design = db.prepare('SELECT * FROM designs WHERE wc_order_id = ?').get(wcOrderId);
-
-    // Fallback: design_id on the order, then on any line item. The webhook
-    // payload is enough; the API read covers a payload that omitted meta.
-    if (!design) {
-      const designId = woocommerce.designIdFromOrder(order)
-        || await woocommerce.getDesignIdFromOrder(wcOrderId);
-      if (designId) {
-        design = db.prepare('SELECT * FROM designs WHERE id = ?').get(designId);
-      }
-    }
-
-    if (!design) {
-      console.warn(`[webhook] No design found for WooCommerce order ${wcOrderId}`);
-      return;
-    }
-
-    if (!['pending', 'checkout_created'].includes(design.status)) {
+    if (!PRE_PAYMENT.includes(design.status)) {
       console.info(`[webhook] Design ${design.id} status '${design.status}' — already past payment, skipping`);
       return;
     }
@@ -135,5 +142,33 @@ router.post(
     }
   },
 );
+
+async function findDesign(order, wcOrderId) {
+  let design = db.prepare('SELECT * FROM designs WHERE wc_order_id = ?').get(wcOrderId);
+  if (design) return design;
+  const designId = woocommerce.designIdFromOrder(order)
+    || await woocommerce.getDesignIdFromOrder(wcOrderId);
+  if (!designId) return null;
+  return db.prepare('SELECT * FROM designs WHERE id = ?').get(designId) || null;
+}
+
+function applyClosedStatus(design, wooStatus) {
+  const next = CLOSED_STATUSES[wooStatus];
+  if (!next || design.status === next) {
+    console.info(`[webhook] Design ${design.id} status '${design.status}' — already ${next}, skipping`);
+    return;
+  }
+  if (wooStatus === 'failed') {
+    if (!['pending', 'checkout_created'].includes(design.status)) {
+      console.info(`[webhook] Design ${design.id} status '${design.status}' — not moving a paid design to failed`);
+      return;
+    }
+  } else if (!AFTER_PAYMENT.includes(design.status) || (wooStatus === 'cancelled' && design.status === 'refunded')) {
+    console.info(`[webhook] Design ${design.id} status '${design.status}' — leaving it on Woo status '${wooStatus}'`);
+    return;
+  }
+  db.prepare('UPDATE designs SET status = ? WHERE id = ?').run(next, design.id);
+  console.info(`[webhook] Design ${design.id} status '${design.status}' → '${next}'`);
+}
 
 module.exports = router;

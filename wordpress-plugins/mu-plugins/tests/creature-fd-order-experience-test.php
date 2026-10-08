@@ -201,6 +201,27 @@ if ( ! function_exists( 'wc_print_notice' ) ) {
 if ( ! class_exists( 'WooCommerce' ) ) {
 	class WooCommerce {}
 }
+$GLOBALS['creature_fd_exp_headers'] = array();
+if ( ! function_exists( 'nocache_headers' ) ) {
+	function nocache_headers() {
+		$headers = apply_filters( 'nocache_headers', array() );
+		$GLOBALS['creature_fd_exp_headers'][] = 'nocache_headers';
+		if ( is_array( $headers ) && isset( $headers['Cache-Control'] ) ) {
+			$GLOBALS['creature_fd_exp_headers'][] = 'Cache-Control: ' . $headers['Cache-Control'];
+		}
+	}
+}
+if ( ! function_exists( 'headers_sent' ) ) {
+	function headers_sent() {
+		return false;
+	}
+}
+if ( ! function_exists( 'header' ) ) {
+	function header( $header, $replace = true ) {
+		unset( $replace );
+		$GLOBALS['creature_fd_exp_headers'][] = (string) $header;
+	}
+}
 
 require dirname( __DIR__ ) . '/creature-fd-only-purchase.php';
 require dirname( __DIR__ ) . '/creature-fd-order-experience.php';
@@ -889,10 +910,41 @@ do_action( 'woocommerce_email_before_order_table', $change_fd, false, false, $on
 $hold_change = ob_get_clean();
 creature_fd_exp_expect( false !== strpos( $hold_change, 'Request a change' ), 'on-hold email includes the change link while the window is open' );
 
+$GLOBALS['creature_fd_exp_headers'] = array();
 $read = Creature_Fd_Order_Experience::rest_read_change( array( 'design' => 'design-21', 'token' => $change_token ) );
 creature_fd_exp_expect( 200 === $read['status'] && ! empty( $read['data']['ok'] ), 'the shop endpoint reads an open change token' );
 $closed_read = Creature_Fd_Order_Experience::rest_read_change( array( 'design' => 'design-21', 'token' => str_repeat( 'cd', 32 ) ) );
 creature_fd_exp_expect( 404 === $closed_read['status'] && false === strpos( json_encode( $closed_read ), 'design-21' ), 'an unknown token response has no order details' );
+$change_headers = implode( "\n", $GLOBALS['creature_fd_exp_headers'] );
+creature_fd_exp_expect( 2 === substr_count( $change_headers, 'nocache_headers' ), 'change reads call nocache_headers' );
+creature_fd_exp_expect( 2 === substr_count( $change_headers, 'Cache-Control: no-store, private' ), 'open and error change reads are not stored' );
+$GLOBALS['creature_fd_exp_headers'] = array();
+$bad_save = Creature_Fd_Order_Experience::rest_apply_change( array( 'token' => str_repeat( 'ab', 32 ), 'designId' => 'design-21' ) );
+creature_fd_exp_expect( 404 === $bad_save['status'], 'a bad change save is an error' );
+creature_fd_exp_expect(
+	false !== strpos( implode( "\n", $GLOBALS['creature_fd_exp_headers'] ), 'Cache-Control: no-store, private' ),
+	'a refused change save is not stored'
+);
+
+$design_uuid = '11111111-1111-4111-8111-111111111111';
+$design_leak = 'Bespoke bike design — ID: ' . $design_uuid;
+$typed_note  = 'Please call before you ship.';
+creature_fd_exp_expect( '' === Creature_Fd_Order_Experience::filter_customer_note( $design_leak, $fd ), 'a customer view drops a note that is only the design id' );
+creature_fd_exp_expect(
+	$typed_note === Creature_Fd_Order_Experience::filter_customer_note( $typed_note . ' ' . $design_leak, $fd ),
+	'a genuine customer note stays when the design id sentence is removed'
+);
+creature_fd_exp_expect( $typed_note === Creature_Fd_Order_Experience::filter_customer_note( $typed_note, $fd ), 'a customer note with no design id is unchanged' );
+creature_fd_exp_expect( $design_leak === Creature_Fd_Order_Experience::filter_customer_note( $design_leak, $other ), 'a non-FD order keeps its customer note' );
+$GLOBALS['creature_fd_exp_is_admin'] = true;
+creature_fd_exp_expect( $design_leak === Creature_Fd_Order_Experience::filter_customer_note( $design_leak, $fd ), 'wp-admin still shows the design id note' );
+$GLOBALS['creature_fd_exp_is_admin'] = false;
+Creature_Fd_Order_Experience::on_email_details_start( $fd, false );
+creature_fd_exp_expect( '' === Creature_Fd_Order_Experience::filter_customer_note( $design_leak, $fd ), 'a customer email drops the design id note' );
+Creature_Fd_Order_Experience::on_email_details_end();
+Creature_Fd_Order_Experience::on_email_details_start( $fd, true );
+creature_fd_exp_expect( $design_leak === Creature_Fd_Order_Experience::filter_customer_note( $design_leak, $fd ), 'a shop email keeps the design id note' );
+Creature_Fd_Order_Experience::on_email_details_end();
 
 echo "\n{$GLOBALS['creature_fd_exp_passed']} passed, {$GLOBALS['creature_fd_exp_failed']} failed\n";
 exit( $GLOBALS['creature_fd_exp_failed'] > 0 ? 1 : 0 );
