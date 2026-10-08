@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles Frame Designer Order Experience
  * Description: Customer-facing copy for Frame Designer orders. Replaces the order-pay guest warning on those orders, hides internal line meta from customers, prints the delivery lead time, requires the straight-away cancellation waiver before payment, and adds the paid-order change link. Does not change prices, totals, or order creation.
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  *
@@ -114,6 +114,7 @@ final class Creature_Fd_Order_Experience {
 		add_action( 'shutdown', array( __CLASS__, 'disarm_guest_notice' ), 0 );
 
 		add_filter( 'woocommerce_order_item_get_formatted_meta_data', array( __CLASS__, 'filter_formatted_meta' ), 10, 2 );
+		add_filter( 'woocommerce_order_get_customer_note', array( __CLASS__, 'filter_customer_note' ), 10, 2 );
 		add_action( 'woocommerce_email_order_details', array( __CLASS__, 'on_email_details_start' ), 1, 4 );
 		add_action( 'woocommerce_email_order_details', array( __CLASS__, 'on_email_details_end' ), 999, 4 );
 
@@ -695,6 +696,32 @@ final class Creature_Fd_Order_Experience {
 	 * @param mixed $order
 	 * @param bool  $sent_to_admin
 	 */
+	/**
+	 * Hide the tools-api design-id sentence from customers. A note the
+	 * customer actually typed is left in place. Staff and shop emails keep
+	 * the original text.
+	 *
+	 * @param mixed $note
+	 * @param mixed $order
+	 * @return mixed
+	 */
+	public static function filter_customer_note( $note, $order ) {
+		if ( ! is_string( $note ) || '' === $note || self::show_internal_meta() || ! self::is_fd_order( $order ) ) {
+			return $note;
+		}
+		$stripped = preg_replace(
+			'/[ \t]*Bespoke bike design\s+[—–-]\s+ID:\s*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.?/u',
+			'',
+			$note
+		);
+		if ( ! is_string( $stripped ) ) {
+			return $note;
+		}
+		$stripped = trim( (string) preg_replace( '/[ \t]{2,}/', ' ', $stripped ) );
+		$stripped = trim( (string) preg_replace( "/\n{3,}/", "\n\n", $stripped ) );
+		return $stripped;
+	}
+
 	public static function on_email_details_start( $order = null, $sent_to_admin = false ) {
 		unset( $order );
 		self::$email_to_admin = (bool) $sent_to_admin;
@@ -1616,13 +1643,52 @@ final class Creature_Fd_Order_Experience {
 	 * @return mixed
 	 */
 	private static function rest_response( $data, $status ) {
+		self::send_change_nocache();
 		if ( class_exists( 'WP_REST_Response' ) ) {
-			return new WP_REST_Response( $data, $status );
+			$response = new WP_REST_Response( $data, $status );
+			if ( method_exists( $response, 'header' ) ) {
+				$response->header( 'Cache-Control', 'no-store, private' );
+			}
+			return $response;
 		}
 		return array(
 			'data'   => $data,
 			'status' => (int) $status,
 		);
+	}
+
+	/**
+	 * The tools-api reads this route on every amend open. A cached 200 would
+	 * reopen a window that has since closed.
+	 */
+	private static function send_change_nocache() {
+		if ( function_exists( 'add_filter' ) ) {
+			add_filter( 'nocache_headers', array( __CLASS__, 'change_nocache_headers' ) );
+		}
+		if ( function_exists( 'nocache_headers' ) ) {
+			nocache_headers();
+		}
+		if ( function_exists( 'remove_filter' ) ) {
+			remove_filter( 'nocache_headers', array( __CLASS__, 'change_nocache_headers' ) );
+		}
+		if ( function_exists( 'headers_sent' ) && headers_sent() ) {
+			return;
+		}
+		if ( function_exists( 'header' ) ) {
+			header( 'Cache-Control: no-store, private', true );
+		}
+	}
+
+	/**
+	 * @param mixed $headers
+	 * @return array
+	 */
+	public static function change_nocache_headers( $headers ) {
+		if ( ! is_array( $headers ) ) {
+			$headers = array();
+		}
+		$headers['Cache-Control'] = 'no-store, private';
+		return $headers;
 	}
 
 	/**

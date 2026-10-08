@@ -21,6 +21,7 @@ const db = require('../db');
 const designs = require('../routes/designs');
 const email = require('../services/email');
 const changeWindow = require('../services/change-window');
+const woocommerce = require('../services/woocommerce');
 
 const DESIGN = '11111111-1111-1111-1111-111111111111';
 const TOKEN = 'a'.repeat(64);
@@ -57,7 +58,7 @@ function request(server, method, urlPath, body) {
         const raw = Buffer.concat(chunks).toString('utf8');
         let parsed = raw;
         try { parsed = JSON.parse(raw); } catch { /* keep text */ }
-        resolve({ status: res.statusCode, body: parsed, raw });
+        resolve({ status: res.statusCode, body: parsed, raw, headers: res.headers });
       });
     });
     req.on('error', reject);
@@ -89,7 +90,15 @@ describe('paid design changes', { concurrency: false }, () => {
     process.env.SMTP_PASS = 're_test';
     global.fetch = async (url, opts = {}) => {
       const href = String(url);
-      calls.push({ href, method: opts.method || 'GET', body: opts.body ? JSON.parse(opts.body) : null });
+      const headers = opts.headers || {};
+      calls.push({
+        href,
+        method: opts.method || 'GET',
+        cache: opts.cache,
+        cacheControl: headers['cache-control'] || headers['Cache-Control'] || '',
+        pragma: headers.pragma || headers.Pragma || '',
+        body: opts.body ? JSON.parse(opts.body) : null,
+      });
       if (href.includes('api.resend.com')) {
         return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
       }
@@ -183,6 +192,7 @@ describe('paid design changes', { concurrency: false }, () => {
     assert.deepEqual(open.body.productIds, [8634, 8635]);
     assert.equal(open.body.customerEmail, 'ada@example.com');
     assert.equal(JSON.stringify(open.body).includes(TOKEN), false);
+    assert.equal(open.headers['cache-control'], 'no-store, private');
 
     closed = true;
     const shut = await request(server, 'GET', `/api/designs/${DESIGN}?change=${TOKEN}`);
@@ -192,7 +202,32 @@ describe('paid design changes', { concurrency: false }, () => {
     assert.equal(shut.raw.includes('Ada Lovelace'), false);
     assert.equal(shut.raw.includes('Reach'), false);
     assert.equal(shut.raw.includes(TOKEN), false);
+    assert.equal(shut.headers['cache-control'], 'no-store, private');
     closed = false;
+  });
+
+  test('each shop read of the change route bypasses the cache', async () => {
+    calls = [];
+    await woocommerce.requestChange('GET', { designId: DESIGN, token: TOKEN });
+    await woocommerce.requestChange('GET', { designId: DESIGN, token: TOKEN });
+    await woocommerce.requestChange('POST', {
+      designId: DESIGN,
+      token: TOKEN,
+      productIds: [8634, 8635],
+      geometrySummary: 'Reach: 450mm',
+      idempotencyKey: 'abc',
+    });
+    const reads = calls.filter((call) => call.href.includes('/wp-json/creature-fd/v1/change'));
+    assert.equal(reads.length, 3);
+    const urls = reads.map((call) => call.href);
+    assert.equal(new Set(urls).size, 3);
+    for (const call of reads) {
+      const parsed = new URL(call.href);
+      assert.match(parsed.searchParams.get('cb') || '', /^[a-f0-9]{16}$/);
+      assert.equal(call.cache, 'no-store');
+      assert.equal(call.cacheControl, 'no-cache');
+      assert.equal(call.pragma, 'no-cache');
+    }
   });
 
   test('revision keeps the design id, stores history, and emails James', async () => {
@@ -204,6 +239,7 @@ describe('paid design changes', { concurrency: false }, () => {
       productIds: [8635, 8634],
     });
     assert.equal(saved.status, 200);
+    assert.equal(saved.headers['cache-control'], 'no-store, private');
     assert.equal(saved.body.ok, true);
     assert.equal(saved.body.unchanged, false);
     assert.equal(saved.body.revision, 1);
@@ -246,6 +282,7 @@ describe('paid design changes', { concurrency: false }, () => {
       productIds: [8634],
     });
     assert.equal(rejected.status, 409);
+    assert.equal(rejected.headers['cache-control'], 'no-store, private');
     assert.equal(rejected.body.error, 'parts');
     assert.equal(calls.some((call) => call.method === 'POST' && call.href.includes('/wp-json/creature-fd/v1/change')), false);
     assert.equal(calls.some((call) => call.href.includes('api.resend.com')), false);
