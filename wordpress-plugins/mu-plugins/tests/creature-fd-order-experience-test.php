@@ -137,6 +137,11 @@ if ( ! function_exists( 'absint' ) ) {
 		return abs( (int) $value );
 	}
 }
+if ( ! function_exists( 'home_url' ) ) {
+	function home_url( $path = '' ) {
+		return 'https://creaturecycles.co.uk' . $path;
+	}
+}
 if ( ! function_exists( 'wp_unslash' ) ) {
 	function wp_unslash( $value ) {
 		return is_string( $value ) ? stripslashes( $value ) : $value;
@@ -702,16 +707,18 @@ Creature_Fd_Order_Experience::on_before_pay_action( $other );
 creature_fd_exp_expect( array() === $GLOBALS['creature_fd_exp_notices'], 'non-FD pay_action does not ask for the waiver' );
 
 $_POST['creature_fd_cancellation_waiver'] = '1';
+$_POST['creature_fd_terms_accepted']       = '1';
 Creature_Fd_Order_Experience::on_before_pay_action( $fd );
 creature_fd_exp_expect( '1' === (string) $fd->get_meta( '_creature_fd_cancellation_waiver' ), 'consent is stored as order meta' );
 creature_fd_exp_expect( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', (string) $fd->get_meta( '_creature_fd_cancellation_waiver_at' ) ), 'consent timestamp is UTC' );
 creature_fd_exp_expect( $waiver === (string) $fd->get_meta( '_creature_fd_cancellation_waiver_text' ), 'consent stores the wording shown' );
 creature_fd_exp_expect( '1' === (string) $fd->get_meta( '_creature_fd_cancellation_waiver_version' ), 'consent stores the wording version' );
 creature_fd_exp_expect( '136.00' === $fd->get_total(), 'recording consent leaves the total unchanged' );
-creature_fd_exp_expect( 1 === count( $fd->notes ) && false !== strpos( $fd->notes[0], $waiver ), 'wp-admin order note records the waiver' );
+$note_text = implode( ' ', $fd->notes );
+creature_fd_exp_expect( 1 === substr_count( $note_text, $waiver ) && false !== strpos( $note_text, $waiver ), 'wp-admin order note records the waiver' );
 Creature_Fd_Order_Experience::on_before_pay_action( $fd );
-creature_fd_exp_expect( 1 === count( $fd->notes ), 'a second pay attempt does not add another note' );
-unset( $_POST['creature_fd_cancellation_waiver'] );
+creature_fd_exp_expect( 1 === substr_count( implode( ' ', $fd->notes ), $waiver ), 'a second pay attempt does not add another note' );
+unset( $_POST['creature_fd_cancellation_waiver'], $_POST['creature_fd_terms_accepted'] );
 
 ob_start();
 Creature_Fd_Order_Experience::on_admin_order_waiver( $fd );
@@ -766,7 +773,10 @@ try {
 		array(
 			'context'  => 'pay-now',
 			'order_id' => 15,
-			'form'     => array( array( 'name' => 'creature_fd_cancellation_waiver', 'value' => '1' ) ),
+			'form'     => array(
+				array( 'name' => 'creature_fd_cancellation_waiver', 'value' => '1' ),
+				array( 'name' => 'creature_fd_terms_accepted', 'value' => '1' ),
+			),
 		)
 	);
 } catch ( RuntimeException $e ) {
@@ -781,6 +791,226 @@ try {
 	$threw = true;
 }
 creature_fd_exp_expect( ! $threw, 'PayPal pay-now leaves a non-FD order alone' );
+
+$terms_wording = 'I agree to the Terms & Conditions, the Design File Licence and the Required Build Specification supplied with my design files.';
+$terms_error   = 'Please tick the box to agree to the Terms & Conditions, the Design File Licence and the Required Build Specification. Payment has not been taken.';
+$terms_email   = 'You agreed to our Terms & Conditions, Design File Licence and Required Build Specification.';
+
+creature_fd_exp_expect( false === strpos( $src, 'get_post_status' ), 'terms links are not gated on page status' );
+creature_fd_exp_expect( false === strpos( $src, 'wc_get_page_id' ), 'terms links do not hardcode a page id' );
+creature_fd_exp_expect( false === strpos( $src, 'calculate_totals' ), 'terms acceptance does not recalculate totals' );
+
+$terms_at = strpos( $fd_box, 'name="creature_fd_terms_accepted"' );
+$waiver_at = strpos( $fd_box, 'name="creature_fd_cancellation_waiver"' );
+creature_fd_exp_expect( false !== $terms_at && false !== $waiver_at && $terms_at < $waiver_at, 'FD order-pay prints the terms checkbox before the waiver' );
+creature_fd_exp_expect( 1 === substr_count( $fd_box, 'name="creature_fd_terms_accepted"' ), 'FD order-pay prints one terms checkbox' );
+creature_fd_exp_expect( 2 === substr_count( $fd_box, '<input ' ), 'FD order-pay prints the terms box and the waiver only' );
+creature_fd_exp_expect( false !== strpos( $fd_box, 'I agree to the ' ), 'terms checkbox starts with the agreed sentence' );
+creature_fd_exp_expect( false !== strpos( $fd_box, '>Terms &amp; Conditions</a>' ), 'Terms & Conditions is a link' );
+creature_fd_exp_expect( false !== strpos( $fd_box, '>Design File Licence</a>' ), 'Design File Licence is a link' );
+creature_fd_exp_expect( false !== strpos( $fd_box, '>Required Build Specification</a>' ), 'Required Build Specification is a link' );
+creature_fd_exp_expect( false !== strpos( $fd_box, 'href="https://creaturecycles.co.uk/terms/"' ), 'Terms & Conditions links to /terms/' );
+creature_fd_exp_expect( false !== strpos( $fd_box, 'href="https://creaturecycles.co.uk/design-file-licence/"' ), 'Design File Licence links to /design-file-licence/' );
+creature_fd_exp_expect( false !== strpos( $fd_box, 'href="https://creaturecycles.co.uk/build-specification/"' ), 'Required Build Specification links to /build-specification/' );
+creature_fd_exp_expect( 3 === substr_count( $fd_box, '<a ' ) && 3 === substr_count( $fd_box, 'target="_blank"' ) && 3 === substr_count( $fd_box, 'rel="noopener"' ), 'all three document links open in a new tab' );
+creature_fd_exp_expect( false !== strpos( $fd_box, 'supplied with my design files.' ), 'terms checkbox keeps the supplied-with-files ending' );
+creature_fd_exp_expect( '' === $other_box, 'non-FD order-pay does not render the terms checkbox' );
+
+creature_fd_exp_arm_pay( $other );
+creature_fd_exp_expect( true === Creature_Fd_Order_Experience::filter_checkout_show_terms( true ), 'non-FD order-pay keeps Woo\'s terms checkbox' );
+creature_fd_exp_arm_pay( $fd );
+creature_fd_exp_expect( false === Creature_Fd_Order_Experience::filter_checkout_show_terms( true ), 'FD order-pay hides Woo\'s terms checkbox' );
+$GLOBALS['creature_fd_exp_endpoint'] = '';
+creature_fd_exp_expect( true === Creature_Fd_Order_Experience::filter_checkout_show_terms( true ), 'normal checkout keeps Woo\'s terms checkbox' );
+
+$terms_url_cb = function () {
+	return 'https://example.test/legal/terms';
+};
+add_filter( 'creature_fd_terms_url', $terms_url_cb );
+creature_fd_exp_expect( 'https://example.test/legal/terms' === Creature_Fd_Order_Experience::terms_document_url(), 'terms URL follows its filter' );
+remove_filter( 'creature_fd_terms_url', $terms_url_cb );
+$bad_url_cb = function () {
+	return 'javascript:alert(1)';
+};
+add_filter( 'creature_fd_terms_url', $bad_url_cb );
+creature_fd_exp_expect( 'https://creaturecycles.co.uk/terms/' === Creature_Fd_Order_Experience::terms_document_url(), 'a non-http terms URL falls back to /terms/' );
+remove_filter( 'creature_fd_terms_url', $bad_url_cb );
+$licence_url_cb = function () {
+	return '/legal/design-file-licence/';
+};
+add_filter( 'creature_fd_design_file_licence_url', $licence_url_cb );
+creature_fd_exp_expect( '/legal/design-file-licence/' === Creature_Fd_Order_Experience::licence_document_url(), 'licence URL follows its filter' );
+remove_filter( 'creature_fd_design_file_licence_url', $licence_url_cb );
+$spec_url_cb = function () {
+	return 'https://example.test/legal/build-specification';
+};
+add_filter( 'creature_fd_build_spec_url', $spec_url_cb );
+creature_fd_exp_expect( 'https://example.test/legal/build-specification' === Creature_Fd_Order_Experience::build_spec_document_url(), 'build specification URL follows its filter' );
+remove_filter( 'creature_fd_build_spec_url', $spec_url_cb );
+
+$terms_order = creature_fd_exp_order( 16, array( new Creature_Fd_Exp_Item( 8634, array( 'design_id' => 'design-16' ) ) ) );
+$terms_order->total = '136.00';
+$GLOBALS['creature_fd_exp_notices'] = array();
+$_POST['creature_fd_cancellation_waiver'] = '1';
+unset( $_POST['creature_fd_terms_accepted'] );
+Creature_Fd_Order_Experience::on_before_pay_action( $terms_order );
+creature_fd_exp_expect(
+	isset( $GLOBALS['creature_fd_exp_notices'][0] ) && 'error' === $GLOBALS['creature_fd_exp_notices'][0][1] && $terms_error === $GLOBALS['creature_fd_exp_notices'][0][0],
+	'pay_action refuses an FD order without the terms tick'
+);
+creature_fd_exp_expect( ! Creature_Fd_Order_Experience::order_has_terms( $terms_order ), 'refused terms does not store terms meta' );
+creature_fd_exp_expect( ! Creature_Fd_Order_Experience::order_has_waiver( $terms_order ), 'refused terms does not store the waiver either' );
+creature_fd_exp_expect( '136.00' === $terms_order->get_total(), 'refused terms leaves the total unchanged' );
+
+$_POST['creature_fd_terms_accepted'] = '1';
+Creature_Fd_Order_Experience::on_before_pay_action( $terms_order );
+creature_fd_exp_expect( '1' === (string) $terms_order->get_meta( '_creature_fd_terms_accepted' ), 'terms consent is stored as order meta' );
+creature_fd_exp_expect( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', (string) $terms_order->get_meta( '_creature_fd_terms_accepted_at' ) ), 'terms timestamp is UTC' );
+creature_fd_exp_expect( $terms_wording === (string) $terms_order->get_meta( '_creature_fd_terms_wording' ), 'terms meta stores the exact label' );
+$terms_versions = json_decode( (string) $terms_order->get_meta( '_creature_fd_terms_versions' ), true );
+creature_fd_exp_expect(
+	is_array( $terms_versions ) && '1' === $terms_versions['terms'] && '1' === $terms_versions['design_file_licence'] && '1' === $terms_versions['build_spec'],
+	'terms versions default to 1'
+);
+creature_fd_exp_expect( '136.00' === $terms_order->get_total(), 'recording terms leaves the total unchanged' );
+$terms_notes = implode( ' ', $terms_order->notes );
+creature_fd_exp_expect( 1 === substr_count( $terms_notes, 'Customer agreed to the Terms & Conditions, Design File Licence and Required Build Specification' ), 'wp-admin order note records the terms' );
+creature_fd_exp_expect( false !== strpos( $terms_notes, 'terms 1, design file licence 1, build spec 1' ), 'the terms note includes the versions' );
+Creature_Fd_Order_Experience::on_before_pay_action( $terms_order );
+creature_fd_exp_expect( 1 === substr_count( implode( ' ', $terms_order->notes ), 'Customer agreed to the Terms & Conditions' ), 'a second pay attempt does not add another terms note' );
+
+$spec_version_cb = function () {
+	return '2';
+};
+add_filter( 'creature_fd_build_spec_version', $spec_version_cb );
+$versioned = creature_fd_exp_order( 17, array( new Creature_Fd_Exp_Item( 8635, array( 'design_id' => 'design-17' ) ) ) );
+$versioned->total = '136.00';
+Creature_Fd_Order_Experience::on_before_pay_action( $versioned );
+$versioned_versions = json_decode( (string) $versioned->get_meta( '_creature_fd_terms_versions' ), true );
+creature_fd_exp_expect(
+	is_array( $versioned_versions ) && '1' === $versioned_versions['terms'] && '1' === $versioned_versions['design_file_licence'] && '2' === $versioned_versions['build_spec'],
+	'build spec version follows its filter'
+);
+creature_fd_exp_expect( '136.00' === $versioned->get_total(), 'a filtered version does not change the total' );
+remove_filter( 'creature_fd_build_spec_version', $spec_version_cb );
+
+ob_start();
+Creature_Fd_Order_Experience::on_admin_order_terms( $terms_order );
+$admin_terms = ob_get_clean();
+creature_fd_exp_expect( false !== strpos( $admin_terms, 'Terms accepted:' ), 'order screen shows Terms accepted' );
+creature_fd_exp_expect( false !== strpos( $admin_terms, 'terms 1, design file licence 1, build spec 1' ), 'order screen shows the document versions' );
+ob_start();
+Creature_Fd_Order_Experience::on_admin_order_terms( $other );
+creature_fd_exp_expect( '' === ob_get_clean(), 'a non-FD order screen has no terms line' );
+
+$waiver_in_mail = strpos( $paid_mail, $waiver_email );
+$terms_in_mail  = strpos( $paid_mail, 'You agreed to our Terms &amp; Conditions, Design File Licence and Required Build Specification.' );
+creature_fd_exp_expect( false !== $waiver_in_mail && false !== $terms_in_mail && $waiver_in_mail < $terms_in_mail, 'processing email prints the terms line after the waiver' );
+creature_fd_exp_expect( false !== strpos( $paid_mail, 'creature-fd-terms-accepted' ), 'processing email marks the terms line' );
+$waiver_in_text = strpos( $paid_text, $waiver_email );
+$terms_in_text  = strpos( $paid_text, $terms_email );
+creature_fd_exp_expect( false !== $waiver_in_text && false !== $terms_in_text && $waiver_in_text < $terms_in_text, 'processing plain text prints the terms line after the waiver' );
+creature_fd_exp_expect( false === strpos( $hold_mail, $terms_email ), 'on-hold email does not add the terms line' );
+creature_fd_exp_expect( false === strpos( $other_paid, $terms_email ), 'a non-FD order does not get the terms line' );
+
+$GLOBALS['creature_fd_exp_notices'] = array();
+$_POST['creature_fd_cancellation_waiver'] = '1';
+$_POST['creature_fd_terms_accepted']      = '1';
+$other->total = '136.00';
+Creature_Fd_Order_Experience::on_before_pay_action( $other );
+creature_fd_exp_expect( array() === $GLOBALS['creature_fd_exp_notices'], 'non-FD pay_action does not ask for the terms' );
+creature_fd_exp_expect( ! Creature_Fd_Order_Experience::order_has_terms( $other ), 'non-FD pay_action does not store terms meta' );
+creature_fd_exp_expect( '136.00' === $other->get_total(), 'non-FD pay_action leaves the total unchanged' );
+
+if ( ! isset( $GLOBALS['wp'] ) || ! is_object( $GLOBALS['wp'] ) ) {
+	$GLOBALS['wp'] = new stdClass();
+}
+$store_terms = creature_fd_exp_order( 18, array( new Creature_Fd_Exp_Item( 8634, array( 'design_id' => 'design-18' ) ) ) );
+$store_terms->total = '136.00';
+$GLOBALS['wp']->query_vars = array( 'rest_route' => '/wc/store/v1/checkout/18' );
+$_POST['creature_fd_cancellation_waiver'] = '1';
+unset( $_POST['creature_fd_terms_accepted'] );
+$store_terms_errors = new WP_Error();
+Creature_Fd_Order_Experience::on_validate_before_payment( $store_terms, $store_terms_errors );
+creature_fd_exp_expect(
+	$store_terms_errors->has_errors() && isset( $store_terms_errors->errors['creature_fd_terms_accepted'] ) && $terms_error === $store_terms_errors->errors['creature_fd_terms_accepted'],
+	'Store API order-pay refuses an FD order without the terms tick'
+);
+creature_fd_exp_expect( ! Creature_Fd_Order_Experience::order_has_terms( $store_terms ) && ! Creature_Fd_Order_Experience::order_has_waiver( $store_terms ), 'Store API refusal stores neither consent' );
+creature_fd_exp_expect( '136.00' === $store_terms->get_total(), 'Store API refusal leaves the total unchanged' );
+$_POST['creature_fd_terms_accepted'] = '1';
+$store_ok = new WP_Error();
+Creature_Fd_Order_Experience::on_validate_before_payment( $store_terms, $store_ok );
+creature_fd_exp_expect( ! $store_ok->has_errors() && Creature_Fd_Order_Experience::order_has_terms( $store_terms ), 'Store API order-pay with both boxes stores the terms' );
+$cart_terms = new WP_Error();
+$GLOBALS['wp']->query_vars = array( 'rest_route' => '/wc/store/v1/checkout' );
+unset( $_POST['creature_fd_terms_accepted'] );
+Creature_Fd_Order_Experience::on_validate_before_payment( $fd, $cart_terms );
+creature_fd_exp_expect( ! $cart_terms->has_errors(), 'regular Store API checkout is not asked for the terms' );
+$GLOBALS['wp']->query_vars = array( 'rest_route' => '/wc/store/v1/checkout/14' );
+$_POST['creature_fd_cancellation_waiver'] = '1';
+unset( $_POST['creature_fd_terms_accepted'] );
+$plain_terms = new WP_Error();
+Creature_Fd_Order_Experience::on_validate_before_payment( $other, $plain_terms );
+creature_fd_exp_expect( ! $plain_terms->has_errors() && ! Creature_Fd_Order_Experience::order_has_terms( $other ), 'Store API order-pay ignores terms on a non-FD order' );
+
+$paypal_terms = creature_fd_exp_order( 19, array( new Creature_Fd_Exp_Item( 8636, array( 'creature_design_id' => 'design-19' ) ) ) );
+$paypal_terms->total = '136.00';
+$threw = false;
+$paypal_message = '';
+try {
+	Creature_Fd_Order_Experience::on_paypal_create_order(
+		array(
+			'context'  => 'pay-now',
+			'order_id' => 19,
+			'form'     => array(
+				array( 'name' => 'creature_fd_cancellation_waiver', 'value' => '1' ),
+			),
+		)
+	);
+} catch ( RuntimeException $e ) {
+	$threw = true;
+	$paypal_message = $e->getMessage();
+}
+creature_fd_exp_expect( $threw && $terms_error === $paypal_message, 'PayPal pay-now refuses an FD order without the terms tick' );
+creature_fd_exp_expect( ! Creature_Fd_Order_Experience::order_has_terms( $paypal_terms ) && ! Creature_Fd_Order_Experience::order_has_waiver( $paypal_terms ), 'PayPal refusal stores neither consent' );
+creature_fd_exp_expect( '136.00' === $paypal_terms->get_total(), 'PayPal refusal leaves the total unchanged' );
+$threw = false;
+try {
+	Creature_Fd_Order_Experience::on_paypal_create_order(
+		array(
+			'context'  => 'pay-now',
+			'order_id' => 19,
+			'form'     => 'creature_fd_cancellation_waiver=1&creature_fd_terms_accepted=1',
+		)
+	);
+} catch ( RuntimeException $e ) {
+	$threw = true;
+}
+$paypal_versions = json_decode( (string) $paypal_terms->get_meta( '_creature_fd_terms_versions' ), true );
+creature_fd_exp_expect( ! $threw && Creature_Fd_Order_Experience::order_has_terms( $paypal_terms ), 'PayPal pay-now with both boxes stores the terms' );
+creature_fd_exp_expect(
+	is_array( $paypal_versions ) && '1' === $paypal_versions['terms'] && '1' === $paypal_versions['design_file_licence'] && '1' === $paypal_versions['build_spec'],
+	'PayPal stores the default document versions'
+);
+creature_fd_exp_expect( '136.00' === $paypal_terms->get_total(), 'PayPal terms consent does not change the total' );
+$threw = false;
+try {
+	Creature_Fd_Order_Experience::on_paypal_create_order(
+		array(
+			'context'  => 'pay-now',
+			'order_id' => 14,
+			'form'     => array(
+				array( 'name' => 'creature_fd_cancellation_waiver', 'value' => '1' ),
+			),
+		)
+	);
+} catch ( RuntimeException $e ) {
+	$threw = true;
+}
+creature_fd_exp_expect( ! $threw && ! Creature_Fd_Order_Experience::order_has_terms( $other ), 'PayPal pay-now does not require terms on a non-FD order' );
+
+unset( $_POST['creature_fd_cancellation_waiver'], $_POST['creature_fd_terms_accepted'] );
 do_action( 'after_woocommerce_pay' );
 
 $statuses = Creature_Fd_Order_Experience::filter_order_statuses( array( 'wc-processing' => 'Processing', 'wc-completed' => 'Completed' ) );

@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Creature Cycles Frame Designer Order Experience
- * Description: Customer-facing copy for Frame Designer orders. Replaces the order-pay guest warning on those orders, hides internal line meta from customers, prints the delivery lead time, requires the straight-away cancellation waiver before payment, and adds the paid-order change link. Does not change prices, totals, or order creation.
- * Version: 1.2.1
+ * Description: Customer-facing copy for Frame Designer orders. Replaces the order-pay guest warning on those orders, hides internal line meta from customers, prints the delivery lead time, requires the design-file terms and the straight-away cancellation waiver before payment, and adds the paid-order change link. Does not change prices, totals, or order creation.
+ * Version: 1.3.0
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  *
@@ -45,14 +45,20 @@
  *
  * Cancellation waiver
  * ------------------
- * On order-pay, a Frame Designer order shows a separate required checkbox.
- * Filter creature_fd_cancellation_waiver_text to follow the final T&Cs.
- * Woo's own terms checkbox is left as it is. Payment is refused until the
- * box is ticked: the classic pay form (WooPayments card, and a normal Pay
- * for order submit), PayPal's pay-now create-order call, and the Store API
- * checkout used by WooPayments express buttons. Express buttons on that
- * page do not post the checkbox, so they are hidden and the Store API
- * rejects them. Totals are not recalculated.
+ * On order-pay, a Frame Designer order shows two required checkboxes. The
+ * first agrees to the Terms & Conditions, the Design File Licence, and the
+ * Required Build Specification. Each of those titles is a link (/terms/,
+ * /design-file-licence/, /build-specification/), opened in a new tab. The
+ * links render while those pages are still drafts. Woo's own terms checkbox
+ * is hidden on that page so the customer sees one terms box. The
+ * cancellation waiver stays a separate box underneath. Filter
+ * creature_fd_cancellation_waiver_text to follow the final T&Cs. Payment
+ * is refused until both are ticked: the
+ * classic pay form (WooPayments card, and a normal Pay for order submit),
+ * PayPal's pay-now create-order call, and the Store API checkout used by
+ * WooPayments express buttons. Express buttons on that page do not post the
+ * checkboxes, so they are hidden and the Store API rejects them. Totals
+ * are not recalculated.
  */
 
 if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
@@ -85,6 +91,22 @@ final class Creature_Fd_Order_Experience {
 	const WAIVER_TEXT_META = '_creature_fd_cancellation_waiver_text';
 
 	const WAIVER_VERSION_META = '_creature_fd_cancellation_waiver_version';
+
+	const TERMS_WORDING = 'I agree to the Terms & Conditions, the Design File Licence and the Required Build Specification supplied with my design files.';
+
+	const TERMS_ERROR = 'Please tick the box to agree to the Terms & Conditions, the Design File Licence and the Required Build Specification. Payment has not been taken.';
+
+	const TERMS_EMAIL = 'You agreed to our Terms & Conditions, Design File Licence and Required Build Specification.';
+
+	const TERMS_FIELD = 'creature_fd_terms_accepted';
+
+	const TERMS_META = '_creature_fd_terms_accepted';
+
+	const TERMS_AT_META = '_creature_fd_terms_accepted_at';
+
+	const TERMS_WORDING_META = '_creature_fd_terms_wording';
+
+	const TERMS_VERSIONS_META = '_creature_fd_terms_versions';
 
 	/** @var bool */
 	private static $booted = false;
@@ -122,11 +144,13 @@ final class Creature_Fd_Order_Experience {
 		add_action( 'woocommerce_email_before_order_table', array( __CLASS__, 'on_email_before_order_table' ), 10, 4 );
 
 		add_action( 'before_woocommerce_pay_form', array( __CLASS__, 'on_before_pay_form_express' ), 2, 1 );
+		add_filter( 'woocommerce_checkout_show_terms', array( __CLASS__, 'filter_checkout_show_terms' ) );
 		add_action( 'woocommerce_pay_order_before_submit', array( __CLASS__, 'on_pay_order_before_submit' ) );
 		add_action( 'woocommerce_before_pay_action', array( __CLASS__, 'on_before_pay_action' ), 5, 1 );
 		add_action( 'woocommerce_checkout_validate_order_before_payment', array( __CLASS__, 'on_validate_before_payment' ), 10, 2 );
 		add_action( 'woocommerce_paypal_payments_create_order_request_started', array( __CLASS__, 'on_paypal_create_order' ), 10, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'on_admin_order_waiver' ), 10, 1 );
+		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'on_admin_order_terms' ), 11, 1 );
 
 		add_action( 'init', array( __CLASS__, 'register_in_design_status' ) );
 		add_filter( 'wc_order_statuses', array( __CLASS__, 'filter_order_statuses' ) );
@@ -389,6 +413,11 @@ final class Creature_Fd_Order_Experience {
 			$waiver_line = self::waiver_email_line();
 			$lines[]     = $waiver_line;
 		}
+		$terms_line = '';
+		if ( 'customer_processing_order' === $id && self::order_has_terms( $order ) ) {
+			$terms_line = self::TERMS_EMAIL;
+			$lines[]    = $terms_line;
+		}
 		$change_url = '';
 		if ( in_array( $id, array( 'customer_processing_order', 'customer_on_hold_order' ), true ) ) {
 			$change_url = self::change_email_url( $order );
@@ -403,6 +432,9 @@ final class Creature_Fd_Order_Experience {
 		echo '<p class="creature-fd-lead-time">' . self::esc( $lines[0] ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
 		if ( '' !== $waiver_line ) {
 			echo '<p class="creature-fd-cancellation-waiver">' . self::esc( $waiver_line ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
+		}
+		if ( '' !== $terms_line ) {
+			echo '<p class="creature-fd-terms-accepted">' . self::esc( $terms_line ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
 		}
 		if ( '' !== $change_url ) {
 			echo '<p class="creature-fd-change-link"><a href="' . self::esc( $change_url ) . '">Request a change</a></p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
@@ -464,6 +496,64 @@ final class Creature_Fd_Order_Experience {
 	}
 
 	/**
+	 * @return string
+	 */
+	public static function terms_error() {
+		return self::TERMS_ERROR;
+	}
+
+	/**
+	 * Plain label stored on the order. The checkbox HTML links the first two documents.
+	 *
+	 * @return string
+	 */
+	public static function terms_wording() {
+		return self::TERMS_WORDING;
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function terms_label_html() {
+		$terms   = self::document_link( self::terms_document_url(), 'Terms & Conditions' );
+		$licence = self::document_link( self::licence_document_url(), 'Design File Licence' );
+		$spec    = self::document_link( self::build_spec_document_url(), 'Required Build Specification' );
+		return 'I agree to the ' . $terms . ', the ' . $licence . ' and the ' . $spec . ' supplied with my design files.';
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function terms_document_url() {
+		return self::document_url( 'creature_fd_terms_url', '/terms/' );
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function licence_document_url() {
+		return self::document_url( 'creature_fd_design_file_licence_url', '/design-file-licence/' );
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function build_spec_document_url() {
+		return self::document_url( 'creature_fd_build_spec_url', '/build-specification/' );
+	}
+
+	/**
+	 * @return array{terms: string, design_file_licence: string, build_spec: string}
+	 */
+	public static function terms_versions() {
+		return array(
+			'terms'                => self::document_version( 'creature_fd_terms_version' ),
+			'design_file_licence'  => self::document_version( 'creature_fd_design_file_licence_version' ),
+			'build_spec'           => self::document_version( 'creature_fd_build_spec_version' ),
+		);
+	}
+
+	/**
 	 * Hide wallet buttons that pay through the Store API and never post this checkbox.
 	 * The PayPal payment method stays; its create-order call is checked separately.
 	 *
@@ -478,13 +568,34 @@ final class Creature_Fd_Order_Experience {
 	}
 
 	/**
-	 * Checkbox inside the pay form, separate from Woo's terms box.
+	 * Hide Woo's terms block on a Frame Designer order-pay page. The pay form
+	 * prints that block only when this filter stays true. Checkout and every
+	 * other order keep the value Woo passed in.
+	 *
+	 * @param mixed $show
+	 * @return mixed
+	 */
+	public static function filter_checkout_show_terms( $show ) {
+		if ( self::is_fd_order( self::order_from_pay_request() ) ) {
+			return false;
+		}
+		return $show;
+	}
+
+	/**
+	 * Terms checkbox, then the cancellation waiver. Woo's terms box is not printed.
 	 */
 	public static function on_pay_order_before_submit() {
 		$order = self::order_from_pay_request();
 		if ( ! self::is_fd_order( $order ) ) {
 			return;
 		}
+		echo '<p class="form-row creature-fd-terms validate-required">';
+		echo '<label for="creature-fd-terms-accepted">';
+		echo '<input type="checkbox" name="' . self::esc( self::TERMS_FIELD ) . '" id="creature-fd-terms-accepted" value="1" required="required" aria-required="true" /> ';
+		echo '<span>' . self::terms_label_html() . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- links are escaped in terms_label_html.
+		echo '</label></p>';
+
 		$text = self::waiver_text();
 		echo '<p class="form-row creature-fd-cancellation-waiver">';
 		echo '<label for="creature-fd-cancellation-waiver">';
@@ -509,7 +620,14 @@ final class Creature_Fd_Order_Experience {
 			}
 			return;
 		}
+		if ( ! self::posted_terms() ) {
+			if ( function_exists( 'wc_add_notice' ) ) {
+				wc_add_notice( self::terms_error(), 'error' );
+			}
+			return;
+		}
 		self::record_waiver( $order );
+		self::record_terms( $order );
 	}
 
 	/**
@@ -523,12 +641,21 @@ final class Creature_Fd_Order_Experience {
 		if ( ! self::is_store_api_existing_order_payment() || ! self::is_fd_order( $order ) ) {
 			return;
 		}
-		if ( self::posted_waiver() ) {
+		$waiver = self::posted_waiver();
+		$terms  = self::posted_terms();
+		if ( $waiver && $terms ) {
 			self::record_waiver( $order );
+			self::record_terms( $order );
 			return;
 		}
-		if ( is_object( $errors ) && method_exists( $errors, 'add' ) ) {
+		if ( ! is_object( $errors ) || ! method_exists( $errors, 'add' ) ) {
+			return;
+		}
+		if ( ! $waiver ) {
 			$errors->add( 'creature_fd_cancellation_waiver', self::waiver_error() );
+		}
+		if ( ! $terms ) {
+			$errors->add( 'creature_fd_terms_accepted', self::terms_error() );
 		}
 	}
 
@@ -548,11 +675,15 @@ final class Creature_Fd_Order_Experience {
 		if ( ! self::is_fd_order( $order ) ) {
 			return;
 		}
-		if ( self::form_has_waiver( isset( $data['form'] ) ? $data['form'] : null ) ) {
-			self::record_waiver( $order );
-			return;
+		$form = isset( $data['form'] ) ? $data['form'] : null;
+		if ( ! self::form_has_waiver( $form ) ) {
+			throw new RuntimeException( self::waiver_error() );
 		}
-		throw new RuntimeException( self::waiver_error() );
+		if ( ! self::form_has_terms( $form ) ) {
+			throw new RuntimeException( self::terms_error() );
+		}
+		self::record_waiver( $order );
+		self::record_terms( $order );
 	}
 
 	/**
@@ -602,13 +733,75 @@ final class Creature_Fd_Order_Experience {
 	}
 
 	/**
+	 * @param mixed $order
+	 */
+	public static function record_terms( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'update_meta_data' ) ) {
+			return;
+		}
+		$already  = self::order_has_terms( $order );
+		$versions = self::terms_versions();
+		$encoded  = function_exists( 'wp_json_encode' ) ? wp_json_encode( $versions ) : json_encode( $versions );
+		$at       = gmdate( 'Y-m-d\TH:i:s\Z' );
+		$order->update_meta_data( self::TERMS_META, '1' );
+		$order->update_meta_data( self::TERMS_AT_META, $at );
+		$order->update_meta_data( self::TERMS_WORDING_META, self::terms_wording() );
+		$order->update_meta_data( self::TERMS_VERSIONS_META, $encoded );
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
+		if ( ! $already && method_exists( $order, 'add_order_note' ) ) {
+			$order->add_order_note( 'Customer agreed to the Terms & Conditions, Design File Licence and Required Build Specification (' . self::terms_versions_text( $versions ) . ') at ' . $at . '.' );
+		}
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return bool
+	 */
+	public static function order_has_terms( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+			return false;
+		}
+		return '1' === (string) $order->get_meta( self::TERMS_META, true );
+	}
+
+	/**
+	 * @param mixed $order
+	 */
+	public static function on_admin_order_terms( $order ) {
+		if ( ! self::order_has_terms( $order ) || ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+			return;
+		}
+		$at       = (string) $order->get_meta( self::TERMS_AT_META, true );
+		$versions = self::terms_versions_from_meta( $order->get_meta( self::TERMS_VERSIONS_META, true ) );
+		echo '<p class="creature-fd-terms-admin"><strong>Terms accepted:</strong> ';
+		echo self::esc( $at ) . ' <span class="creature-fd-terms-versions">' . self::esc( self::terms_versions_text( $versions ) ) . '</span></p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped.
+	}
+
+	/**
+	 * @return bool
+	 */
+	public static function posted_terms() {
+		return self::posted_flag( self::TERMS_FIELD );
+	}
+
+	/**
 	 * @return bool
 	 */
 	public static function posted_waiver() {
-		if ( ! isset( $_POST[ self::WAIVER_FIELD ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		return self::posted_flag( self::WAIVER_FIELD );
+	}
+
+	/**
+	 * @param string $field
+	 * @return bool
+	 */
+	private static function posted_flag( $field ) {
+		if ( ! isset( $_POST[ $field ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			return false;
 		}
-		$value = $_POST[ self::WAIVER_FIELD ]; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$value = $_POST[ $field ]; // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( function_exists( 'wp_unslash' ) ) {
 			$value = wp_unslash( $value );
 		}
@@ -620,6 +813,23 @@ final class Creature_Fd_Order_Experience {
 	 * @return bool
 	 */
 	public static function form_has_waiver( $form ) {
+		return self::form_has_field( $form, self::WAIVER_FIELD );
+	}
+
+	/**
+	 * @param mixed $form
+	 * @return bool
+	 */
+	public static function form_has_terms( $form ) {
+		return self::form_has_field( $form, self::TERMS_FIELD );
+	}
+
+	/**
+	 * @param mixed  $form
+	 * @param string $field
+	 * @return bool
+	 */
+	private static function form_has_field( $form, $field ) {
 		if ( is_string( $form ) ) {
 			parse_str( $form, $parsed );
 			$form = $parsed;
@@ -627,18 +837,98 @@ final class Creature_Fd_Order_Experience {
 		if ( ! is_array( $form ) ) {
 			return false;
 		}
-		if ( array_key_exists( self::WAIVER_FIELD, $form ) ) {
-			return self::waiver_value_is_yes( $form[ self::WAIVER_FIELD ] );
+		if ( array_key_exists( $field, $form ) ) {
+			return self::waiver_value_is_yes( $form[ $field ] );
 		}
 		foreach ( $form as $row ) {
 			if ( ! is_array( $row ) || ! isset( $row['name'] ) ) {
 				continue;
 			}
-			if ( self::WAIVER_FIELD === (string) $row['name'] && isset( $row['value'] ) && self::waiver_value_is_yes( $row['value'] ) ) {
+			if ( $field === (string) $row['name'] && isset( $row['value'] ) && self::waiver_value_is_yes( $row['value'] ) ) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * @param string $filter
+	 * @param string $path
+	 * @return string
+	 */
+	private static function document_url( $filter, $path ) {
+		$default = function_exists( 'home_url' ) ? home_url( $path ) : $path;
+		$value   = apply_filters( $filter, $default );
+		if ( ! is_string( $value ) ) {
+			return $default;
+		}
+		$value = trim( $value );
+		if ( preg_match( '#^https?://#i', $value ) && strlen( $value ) <= 300 ) {
+			return $value;
+		}
+		if ( strlen( $value ) <= 300 && preg_match( '#^/[A-Za-z0-9._~:/?\#\[\]@!$&\'()*+,;=%-]*$#', $value ) ) {
+			return $value;
+		}
+		return $default;
+	}
+
+	/**
+	 * @param string $url
+	 * @param string $label
+	 * @return string
+	 */
+	private static function document_link( $url, $label ) {
+		return '<a href="' . self::esc_attr( $url ) . '" target="_blank" rel="noopener">' . self::esc( $label ) . '</a>';
+	}
+
+	/**
+	 * @param string $filter
+	 * @return string
+	 */
+	private static function document_version( $filter ) {
+		$value = apply_filters( $filter, '1' );
+		if ( ! is_string( $value ) && ! is_numeric( $value ) ) {
+			return '1';
+		}
+		$value = trim( (string) $value );
+		if ( '' === $value || strlen( $value ) > 40 ) {
+			return '1';
+		}
+		return $value;
+	}
+
+	/**
+	 * @param mixed $raw
+	 * @return array
+	 */
+	private static function terms_versions_from_meta( $raw ) {
+		if ( is_array( $raw ) ) {
+			return $raw;
+		}
+		$decoded = json_decode( (string) $raw, true );
+		return is_array( $decoded ) ? $decoded : array();
+	}
+
+	/**
+	 * @param array $versions
+	 * @return string
+	 */
+	private static function terms_versions_text( $versions ) {
+		$terms   = isset( $versions['terms'] ) ? (string) $versions['terms'] : '1';
+		$licence = isset( $versions['design_file_licence'] ) ? (string) $versions['design_file_licence'] : '1';
+		$spec    = isset( $versions['build_spec'] ) ? (string) $versions['build_spec'] : '1';
+		return 'terms ' . $terms . ', design file licence ' . $licence . ', build spec ' . $spec;
+	}
+
+	/**
+	 * @param string $text
+	 * @return string
+	 */
+	private static function esc_attr( $text ) {
+		if ( function_exists( 'esc_attr' ) ) {
+			return esc_attr( $text );
+		}
+		return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
 	}
 
 	/**
