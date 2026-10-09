@@ -269,6 +269,7 @@ class Creature_Fd_Exp_Order {
 	public $total = '136.00';
 	public $notes = array();
 	public $status = 'processing';
+	public $saves  = 0;
 
 	public function __construct( $id, $key, $items, $meta = array() ) {
 		$this->id    = (int) $id;
@@ -299,6 +300,7 @@ class Creature_Fd_Exp_Order {
 	}
 
 	public function save() {
+		$this->saves++;
 		return $this->id;
 	}
 
@@ -803,14 +805,25 @@ do_action( 'woocommerce_email_before_order_table', $other, false, false, $proces
 $other_change_mail = ob_get_clean();
 creature_fd_exp_expect( false === strpos( $other_change_mail, 'Request a change' ), 'non-FD processing email has no change link' );
 
+$change_fd->saves = 0;
+do_action( 'woocommerce_order_status_processing', $change_fd->get_id(), $change_fd );
+$change_token = (string) $change_fd->get_meta( '_creature_fd_change_token' );
+creature_fd_exp_expect( 1 === preg_match( '/^[a-f0-9]{64}$/', $change_token ), 'processing transition mints an unguessable change token' );
+creature_fd_exp_expect( 1 === $change_fd->saves, 'processing transition saves the new token once' );
+$minted_saves = $change_fd->saves;
+do_action( 'woocommerce_order_status_processing', $change_fd->get_id(), $change_fd );
+creature_fd_exp_expect( $change_token === (string) $change_fd->get_meta( '_creature_fd_change_token' ) && $minted_saves === $change_fd->saves, 'a second processing transition reuses the token and does not save' );
+$change_fd->saves = 0;
 ob_start();
 do_action( 'woocommerce_email_before_order_table', $change_fd, false, false, $processing );
 $change_mail = ob_get_clean();
-$change_token = (string) $change_fd->get_meta( '_creature_fd_change_token' );
-creature_fd_exp_expect( 1 === preg_match( '/^[a-f0-9]{64}$/', $change_token ), 'processing email mints an unguessable change token' );
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $change_fd, false, false, $processing );
+$change_mail_again = ob_get_clean();
 creature_fd_exp_expect( false !== strpos( $change_mail, 'Request a change' ) && false !== strpos( $change_mail, 'design-21' ) && false !== strpos( $change_mail, $change_token ), 'processing email links the FD order and token' );
+creature_fd_exp_expect( $change_token === (string) $change_fd->get_meta( '_creature_fd_change_token' ) && 0 === $change_fd->saves && false !== strpos( $change_mail_again, $change_token ), 'rendering the change email twice does not save or mint a new token' );
 $again = Creature_Fd_Order_Experience::ensure_change_token( $change_fd );
-creature_fd_exp_expect( $again === $change_token, 'the change token is not rotated' );
+creature_fd_exp_expect( $again === $change_token && 0 === $change_fd->saves, 'the change token is not rotated' );
 $paid_at = (string) $change_fd->get_meta( '_creature_fd_change_paid_at' );
 creature_fd_exp_expect( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $paid_at ), 'change window is stamped in UTC' );
 
@@ -825,10 +838,12 @@ $change_fd->meta['_creature_fd_change_paid_at'] = gmdate( 'Y-m-d\TH:i:s\Z', time
 $expired = Creature_Fd_Order_Experience::verify_change_request( $change_fd, $change_token, 'design-21' );
 creature_fd_exp_expect( empty( $expired['ok'] ) && 'closed' === $expired['error'], 'the link dies 24 hours after payment' );
 creature_fd_exp_expect( Creature_Fd_Order_Experience::CHANGE_CLOSED_MESSAGE === $expired['message'], 'expired verification uses the friendly sentence' );
+$change_fd->saves = 0;
 ob_start();
 do_action( 'woocommerce_email_before_order_table', $change_fd, false, true, $processing );
 $expired_mail = ob_get_clean();
-creature_fd_exp_expect( false === strpos( $expired_mail, 'Request a change' ), 'an expired window is left off the email' );
+do_action( 'woocommerce_order_status_processing', $change_fd->get_id(), $change_fd );
+creature_fd_exp_expect( false === strpos( $expired_mail, 'Request a change' ) && 0 === $change_fd->saves && $change_token === (string) $change_fd->get_meta( '_creature_fd_change_token' ), 'an expired window is left off the email and does not save' );
 
 $change_fd->meta['_creature_fd_change_paid_at'] = gmdate( 'Y-m-d\TH:i:s\Z', time() - 60 );
 $change_fd->status = 'in-design';
@@ -909,6 +924,61 @@ ob_start();
 do_action( 'woocommerce_email_before_order_table', $change_fd, false, false, $on_hold );
 $hold_change = ob_get_clean();
 creature_fd_exp_expect( false !== strpos( $hold_change, 'Request a change' ), 'on-hold email includes the change link while the window is open' );
+
+function creature_fd_exp_email_preview() {
+	return true;
+}
+
+$old_fd = creature_fd_exp_order( 8753, array( new Creature_Fd_Exp_Item( 8634, array( 'design_id' => 'design-8753' ) ) ) );
+$old_fd->saves = 0;
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $old_fd, false, false, $processing );
+ob_end_clean();
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $old_fd, false, false, $processing );
+$old_mail = ob_get_clean();
+creature_fd_exp_expect( '' === (string) $old_fd->get_meta( '_creature_fd_change_token' ) && 0 === $old_fd->saves && false === strpos( $old_mail, 'Request a change' ), 'rendering an order with no token twice does not save or mint one' );
+
+add_filter( 'woocommerce_is_email_preview', 'creature_fd_exp_email_preview' );
+$old_fd->saves = 0;
+do_action( 'woocommerce_order_status_processing', $old_fd->get_id(), $old_fd );
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $old_fd, false, false, $processing );
+$preview_mail = ob_get_clean();
+remove_filter( 'woocommerce_is_email_preview', 'creature_fd_exp_email_preview' );
+creature_fd_exp_expect( '' === (string) $old_fd->get_meta( '_creature_fd_change_token' ) && 0 === $old_fd->saves && false === strpos( $preview_mail, 'Request a change' ), 'an email preview does not save or mint a token' );
+
+$GLOBALS['creature_fd_exp_is_admin'] = true;
+$_GET['preview_woocommerce_mail']     = 'yes';
+$old_fd->saves                        = 0;
+do_action( 'woocommerce_order_status_on-hold', $old_fd->get_id(), $old_fd );
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $old_fd, false, false, $on_hold );
+$admin_preview = ob_get_clean();
+unset( $_GET['preview_woocommerce_mail'] );
+$GLOBALS['creature_fd_exp_is_admin'] = false;
+creature_fd_exp_expect( '' === (string) $old_fd->get_meta( '_creature_fd_change_token' ) && 0 === $old_fd->saves && false === strpos( $admin_preview, 'Request a change' ), 'an admin email preview request does not save or mint a token' );
+
+$closed_fd = creature_fd_exp_order(
+	8754,
+	array( new Creature_Fd_Exp_Item( 8634, array( 'design_id' => 'design-8754' ) ) ),
+	array( '_creature_fd_change_paid_at' => gmdate( 'Y-m-d\TH:i:s\Z', time() - ( 25 * 3600 ) ) )
+);
+$closed_fd->saves = 0;
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $closed_fd, false, false, $processing );
+$closed_mail = ob_get_clean();
+do_action( 'woocommerce_order_status_processing', $closed_fd->get_id(), $closed_fd );
+creature_fd_exp_expect( false === strpos( $closed_mail, 'Request a change' ) && 0 === $closed_fd->saves && '' === (string) $closed_fd->get_meta( '_creature_fd_change_token' ), 'a closed order email has no link and does not save' );
+
+$started_fd = creature_fd_exp_order( 8755, array( new Creature_Fd_Exp_Item( 8635, array( 'design_id' => 'design-8755' ) ) ) );
+$started_fd->status = 'in-design';
+$started_fd->saves  = 0;
+ob_start();
+do_action( 'woocommerce_email_before_order_table', $started_fd, false, false, $processing );
+$started_mail = ob_get_clean();
+do_action( 'woocommerce_order_status_processing', $started_fd->get_id(), $started_fd );
+creature_fd_exp_expect( false === strpos( $started_mail, 'Request a change' ) && 0 === $started_fd->saves, 'an In design order email has no link and does not save' );
 
 $GLOBALS['creature_fd_exp_headers'] = array();
 $read = Creature_Fd_Order_Experience::rest_read_change( array( 'design' => 'design-21', 'token' => $change_token ) );

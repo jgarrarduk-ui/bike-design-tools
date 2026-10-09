@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles Frame Designer Order Experience
  * Description: Customer-facing copy for Frame Designer orders. Replaces the order-pay guest warning on those orders, hides internal line meta from customers, prints the delivery lead time, requires the straight-away cancellation waiver before payment, and adds the paid-order change link. Does not change prices, totals, or order creation.
- * Version: 1.2.1
+ * Version: 1.2.2
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  *
@@ -36,9 +36,11 @@
  * Request a change
  * ----------------
  * Processing and on-hold emails for a Frame Designer order include a link
- * while the window is open. The token is minted here, on the order, because
- * this email is sent at payment and the window follows the paid date and the
- * In design status. Filter creature_fd_change_window_hours (default 24).
+ * while the window is open. The token is minted when the order becomes
+ * processing or on-hold, and only when one is not already stored. Rendering
+ * the email, including a preview, an admin resend, or an order whose window
+ * is closed, reads that token and does not save the order. Filter
+ * creature_fd_change_window_hours (default 24).
  * The tools-api stores the geometry revisions and emails
  * info@creaturecycles.co.uk. This file updates geometry_summary and an order
  * note on the same order. It does not create an order or take payment.
@@ -102,6 +104,9 @@ final class Creature_Fd_Order_Experience {
 	 */
 	private static $email_to_admin = null;
 
+	/** @var bool True while a customer email body is being rendered. */
+	private static $rendering_change_email = false;
+
 	public static function boot() {
 		if ( self::$booted || ! class_exists( 'WooCommerce' ) ) {
 			return;
@@ -133,6 +138,8 @@ final class Creature_Fd_Order_Experience {
 		add_filter( 'woocommerce_order_is_paid_statuses', array( __CLASS__, 'filter_paid_statuses' ) );
 		add_filter( 'bulk_actions-edit-shop_order', array( __CLASS__, 'filter_bulk_actions' ) );
 		add_filter( 'bulk_actions-woocommerce_page_wc-orders', array( __CLASS__, 'filter_bulk_actions' ) );
+		add_action( 'woocommerce_order_status_processing', array( __CLASS__, 'on_order_paid_for_change' ), 5, 2 );
+		add_action( 'woocommerce_order_status_on-hold', array( __CLASS__, 'on_order_paid_for_change' ), 5, 2 );
 		add_action( 'woocommerce_order_status_in-design', array( __CLASS__, 'on_marked_in_design' ), 10, 1 );
 		add_action( 'woocommerce_process_shop_order_meta', array( __CLASS__, 'on_save_change_flag' ), 20, 1 );
 		add_action( 'woocommerce_admin_order_data_after_billing_address', array( __CLASS__, 'on_admin_order_change' ), 12, 1 );
@@ -376,6 +383,21 @@ final class Creature_Fd_Order_Experience {
 	 * @param object $email
 	 */
 	public static function on_email_before_order_table( $order, $sent_to_admin = false, $plain_text = false, $email = null ) {
+		self::$rendering_change_email = true;
+		try {
+			self::write_email_before_order_table( $order, $sent_to_admin, $plain_text, $email );
+		} finally {
+			self::$rendering_change_email = false;
+		}
+	}
+
+	/**
+	 * @param mixed  $order
+	 * @param bool   $sent_to_admin
+	 * @param bool   $plain_text
+	 * @param object $email
+	 */
+	private static function write_email_before_order_table( $order, $sent_to_admin, $plain_text, $email ) {
 		if ( $sent_to_admin || ! self::is_fd_order( $order ) ) {
 			return;
 		}
@@ -1129,6 +1151,10 @@ final class Creature_Fd_Order_Experience {
 		if ( is_object( $date ) && method_exists( $date, 'getTimestamp' ) ) {
 			return (int) $date->getTimestamp();
 		}
+		if ( is_string( $date ) && '' !== $date ) {
+			$parsed = strtotime( $date );
+			return false === $parsed ? 0 : (int) $parsed;
+		}
 		return 0;
 	}
 
@@ -1161,15 +1187,72 @@ final class Creature_Fd_Order_Experience {
 	}
 
 	/**
+	 * Mint on the processing or on-hold transition. A second transition
+	 * reuses the stored token and does not save.
+	 *
+	 * @param mixed $order_id
+	 * @param mixed $order
+	 */
+	public static function on_order_paid_for_change( $order_id, $order = null ) {
+		if ( self::$rendering_change_email || self::is_email_preview() ) {
+			return;
+		}
+		if ( ! is_object( $order ) ) {
+			$order = function_exists( 'wc_get_order' ) ? wc_get_order( $order_id ) : null;
+		}
+		self::ensure_change_token( $order );
+	}
+
+	/**
+	 * WooCommerce → Settings → Emails sets this while it renders a preview,
+	 * including a preview of a real order. The older preview screen is an
+	 * admin request with preview_woocommerce_mail.
+	 *
+	 * @return bool
+	 */
+	public static function is_email_preview() {
+		if ( function_exists( 'apply_filters' ) && apply_filters( 'woocommerce_is_email_preview', false ) ) {
+			return true;
+		}
+		if ( ! function_exists( 'is_admin' ) || ! is_admin() ) {
+			return false;
+		}
+		foreach ( array( 'preview_woocommerce_mail', 'preview_woo_block_email' ) as $key ) {
+			if ( isset( $_GET[ $key ] ) || isset( $_REQUEST[ $key ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @param mixed $order
+	 * @return string
+	 */
+	public static function stored_change_token( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+			return '';
+		}
+		$existing = (string) $order->get_meta( self::CHANGE_TOKEN_META, true );
+		return self::token_shape( $existing ) ? $existing : '';
+	}
+
+	/**
+	 * Write a token only at the payment transition. Email render and preview
+	 * pass through here and get the stored token back, with no save.
+	 *
 	 * @param mixed $order
 	 * @return string
 	 */
 	public static function ensure_change_token( $order ) {
+		if ( self::$rendering_change_email || self::is_email_preview() ) {
+			return self::stored_change_token( $order );
+		}
 		if ( ! self::change_window_open( $order ) || ! method_exists( $order, 'get_meta' ) || ! method_exists( $order, 'update_meta_data' ) ) {
 			return '';
 		}
-		$existing = (string) $order->get_meta( self::CHANGE_TOKEN_META, true );
-		if ( self::token_shape( $existing ) ) {
+		$existing = self::stored_change_token( $order );
+		if ( '' !== $existing ) {
 			return $existing;
 		}
 		try {
@@ -1197,7 +1280,7 @@ final class Creature_Fd_Order_Experience {
 		if ( ! self::change_window_open( $order ) ) {
 			return '';
 		}
-		$token  = self::ensure_change_token( $order );
+		$token  = self::stored_change_token( $order );
 		$design = self::design_id_from_order( $order );
 		if ( '' === $token || '' === $design ) {
 			return '';
