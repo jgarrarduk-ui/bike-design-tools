@@ -143,9 +143,9 @@ router.post('/cleanup-unpaid', async (_req, res) => {
 
 // POST /api/admin/retention-purge
 // Same job as the in-process timer. RETENTION_PURGE_DRY_RUN=1 logs only.
-router.post('/retention-purge', (_req, res) => {
+router.post('/retention-purge', async (_req, res) => {
   try {
-    const result = retention.run();
+    const result = await retention.run();
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('[admin] retention purge failed:', err.message);

@@ -190,22 +190,42 @@ cleared. Geometry `params` and `design_revisions` stay. `anonymised_at` is
 stamped so a later run skips the row. Resume, checkout, and download then
 answer 404, the same as an unknown token.
 
-Unpaid designs (`pending`, `checkout_created`, `failed`, `expired`,
-`cancelled`, and any other status that was never paid) are anonymised once
-`created_at` is older than `RETENTION_UNPAID_DAYS` (default `90`). Paid
-designs (`paid`, `in_review`, `accepted`, `delivered`, `refunded`) are kept
-for `RETENTION_PAID_DAYS` (default `2192`, about six years) from `paid_at`,
-or from `created_at` when payment was never stamped.
+A design is kept for `RETENTION_PAID_DAYS` (default `2192`, about six years)
+when any paid signal is set: `paid_at`, `accepted_at`, `delivered_at`,
+`review_sent_at`, a review PDF or `review_token`, a `download_token` or
+`download_expires_at`, a paid-family status (`paid`, `in_review`, `accepted`,
+`delivered`, `refunded`), or `date_paid` on the linked Woo order. The clock
+is `paid_at`, otherwise that Woo date, otherwise `created_at`. Status on its
+own does not decide this. A design marked `failed` after accept, and a paid
+order later cancelled, refunded, or failed, stay on the six-year clock.
+`paid_at` is stamped when the order-updated webhook marks a design paid, and
+cancel or refund does not clear it.
+
+Only a design with none of those signals can be anonymised at
+`RETENTION_UNPAID_DAYS` (default `90`), and only once unpaid-cleanup has
+finished with it (`expired` or `cancelled`) or the Woo order is cancelled,
+failed, or missing. A `pending` or `checkout_created` row whose Woo order is
+still pending is skipped. Before the first real purge, rows with a
+`wc_order_id` and no `paid_at` are checked against Woo in batches and
+`date_paid` is copied onto `paid_at`. If Woo cannot be checked, that row is
+skipped for the run.
+
+Values of `RETENTION_UNPAID_DAYS` below 30 are raised to 30, and values of
+`RETENTION_PAID_DAYS` below 2192 are raised to 2192, each with a warning.
+Unset stays 90 and 2192.
 
 The job starts about 30 seconds after boot and then every
 `RETENTION_PURGE_INTERVAL_HOURS` (default `24`), the same shape as unpaid
-cleanup. `0` turns the timer off. `RETENTION_PURGE_DRY_RUN=1` logs the count
-and the design ids and writes nothing. Logs do not include names or email
-addresses. `POST /api/admin/retention-purge` runs the same job.
+cleanup. `0` turns the timer off. `RETENTION_PURGE_DRY_RUN=1` logs a
+breakdown and the design ids and writes nothing, including the `paid_at`
+backfill: would-anonymise unpaid, would-anonymise paid, skipped as
+paid-signals, skipped as Woo unknown, skipped as still payable. Logs do not
+include names or email addresses. `POST /api/admin/retention-purge` runs the
+same job.
 
 On the first Railway deploy, set `RETENTION_PURGE_DRY_RUN=1`, deploy, and
-read the `[retention] dry-run would anonymise` line before turning the dry
-run off.
+read the `[retention] dry-run` lines before turning the dry run off. Rows
+whose Woo order cannot be reached are not anonymised on that run.
 
 The save email is Cadence's draft, which James approved: subject "Your Creature Cycles design is
 saved", buttons "Edit design" and "Take me to checkout", dropouts still

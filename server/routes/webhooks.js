@@ -173,6 +173,7 @@ function applyClosedStatus(design, wooStatus) {
     console.info(`[webhook] Design ${design.id} status '${design.status}' — leaving it on Woo status '${wooStatus}'`);
     return;
   }
+  // Status only. paid_at is left set, including on cancel and refund.
   db.prepare('UPDATE designs SET status = ? WHERE id = ?').run(next, design.id);
   console.info(`[webhook] Design ${design.id} status '${design.status}' → '${next}'`);
 }

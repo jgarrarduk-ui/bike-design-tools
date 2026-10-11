@@ -3,13 +3,36 @@
 /**
  * Data-retention purge.
  *
- * Unpaid designs (anything that was never paid: pending, checkout_created,
- * failed, expired, cancelled, and any other non-paid status) are anonymised
- * in place once created_at is older than RETENTION_UNPAID_DAYS (default 90).
+ * A design is paid, and stays on the six-year clock, when any paid signal is
+ * present. Status alone is not enough, and a non-paid status does not make a
+ * design unpaid. Paid signals:
+ *   - paid_at
+ *   - accepted_at, delivered_at, review_sent_at
+ *   - review_pdf_base64, review_token
+ *   - download_token, download_expires_at (a download link was issued)
+ *   - status was a paid-family value: paid, in_review, accepted, delivered,
+ *     refunded
+ *   - the linked Woo order has date_paid
  *
- * Paid designs (paid, in_review, accepted, delivered, refunded) are kept for
- * RETENTION_PAID_DAYS (default 2192, about six years) from paid_at, or from
- * created_at when payment was never stamped.
+ * That keeps a design set to failed after accept (the final-files email
+ * failed; accepted_at and download_token are still set) and a paid order
+ * later cancelled, refunded, or failed. Only a design with none of those
+ * signals is eligible at RETENTION_UNPAID_DAYS.
+ *
+ * Rows with wc_order_id and no paid_at are checked against Woo before a
+ * purge decision, in batches. date_paid is copied onto paid_at on a live
+ * run. If Woo cannot be checked, that row is skipped. A dry run classifies
+ * from date_paid and does not write. Never purge on an unknown order.
+ *
+ * An unpaid row is anonymised only after unpaid-cleanup has finished with
+ * it (status expired or cancelled) or the Woo order is cancelled, failed,
+ * or missing. pending and checkout_created rows whose order is still
+ * pending are left alone, so a payable checkout is not orphaned.
+ *
+ * The paid clock is paid_at, otherwise the Woo date_paid found this run,
+ * otherwise created_at. RETENTION_UNPAID_DAYS below 30 is raised to 30.
+ * RETENTION_PAID_DAYS below 2192 is raised to 2192. A warning is logged.
+ * Unset values stay 90 and 2192 with no warning.
  *
  * customer_name and customer_email are NOT NULL. SQLite cannot drop that
  * with ALTER TABLE, and rebuilding the table would rewrite every stored PDF.
@@ -24,33 +47,68 @@
  *
  * Schedule matches unpaid cleanup: a first run shortly after boot, then every
  * RETENTION_PURGE_INTERVAL_HOURS (default 24). 0 disables the timer.
- * RETENTION_PURGE_DRY_RUN=1 logs the count and design ids and writes nothing.
- * Logs never include a name or an email address.
+ * RETENTION_PURGE_DRY_RUN=1 logs the breakdown and design ids and writes
+ * nothing, including the paid_at backfill. Logs never include a name or an
+ * email address.
  */
 
 const db = require('../db');
 
 const DEFAULT_UNPAID_DAYS = 90;
 const DEFAULT_PAID_DAYS = 2192;
+const MIN_UNPAID_DAYS = 30;
+const MIN_PAID_DAYS = 2192;
 const DEFAULT_INTERVAL_HOURS = 24;
+const WOO_BATCH = 50;
 
 const PAID_STATUSES = ['paid', 'in_review', 'accepted', 'delivered', 'refunded'];
 
+// Columns that mean the customer paid or we issued review or delivery files.
+// resume_token, pdf_base64, and wc_checkout_url are not paid signals.
+const PAID_SIGNAL_COLUMNS = [
+  'paid_at',
+  'accepted_at',
+  'delivered_at',
+  'review_sent_at',
+  'review_pdf_base64',
+  'review_token',
+  'download_token',
+  'download_expires_at',
+];
+
+const CLEANUP_DONE = new Set(['expired', 'cancelled', 'canceled']);
+const DEAD_ORDER_STATUSES = new Set(['cancelled', 'canceled', 'failed', 'trash']);
+
 const REDACTED_NAME = 'redacted';
 
-function positiveInt(raw, fallback) {
+function configuredDays(raw, fallback, floor, envName) {
   if (raw == null || String(raw).trim() === '') return fallback;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return fallback;
-  return Math.floor(n);
+  const days = Math.floor(n);
+  if (days < floor) {
+    console.warn(`[retention] ${envName}=${days} is below ${floor}; using ${floor}`);
+    return floor;
+  }
+  return days;
 }
 
 function unpaidDays() {
-  return positiveInt(process.env.RETENTION_UNPAID_DAYS, DEFAULT_UNPAID_DAYS);
+  return configuredDays(
+    process.env.RETENTION_UNPAID_DAYS,
+    DEFAULT_UNPAID_DAYS,
+    MIN_UNPAID_DAYS,
+    'RETENTION_UNPAID_DAYS',
+  );
 }
 
 function paidDays() {
-  return positiveInt(process.env.RETENTION_PAID_DAYS, DEFAULT_PAID_DAYS);
+  return configuredDays(
+    process.env.RETENTION_PAID_DAYS,
+    DEFAULT_PAID_DAYS,
+    MIN_PAID_DAYS,
+    'RETENTION_PAID_DAYS',
+  );
 }
 
 function intervalHours() {
@@ -71,24 +129,83 @@ function redactedEmail(id) {
   return `redacted+${safe || 'design'}@invalid`;
 }
 
-function dueDesigns() {
-  const paidList = PAID_STATUSES.map((status) => `'${status}'`).join(', ');
+function nonEmpty(value) {
+  return value != null && String(value).trim() !== '';
+}
+
+function parseTime(value) {
+  if (!value) return null;
+  const text = String(value).trim();
+  const hasZone = /(?:Z|[+-]\d\d:?\d\d)$/i.test(text);
+  const normalised = hasZone ? text : `${text.replace(' ', 'T')}Z`;
+  const ms = Date.parse(normalised);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function olderThan(stamp, days, now = Date.now()) {
+  const ms = parseTime(stamp);
+  if (ms == null) return false;
+  return ms + days * 24 * 60 * 60 * 1000 < now;
+}
+
+function paidAtFromWoo(value) {
+  const ms = parseTime(value);
+  if (ms == null) return null;
+  return new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function hasLocalPaidSignal(row) {
+  if (row.paid_at) return true;
+  if (PAID_STATUSES.includes(row.status)) return true;
+  if (row.accepted_at || row.delivered_at || row.review_sent_at) return true;
+  if (row.has_review_pdf) return true;
+  if (nonEmpty(row.review_token) || nonEmpty(row.download_token)) return true;
+  if (row.download_expires_at) return true;
+  return false;
+}
+
+function loadRows() {
   return db.prepare(`
-    SELECT id FROM designs
+    SELECT id, status, created_at, paid_at, accepted_at, delivered_at, review_sent_at,
+           CASE
+             WHEN review_pdf_base64 IS NOT NULL AND length(review_pdf_base64) > 0 THEN 1
+             ELSE 0
+           END AS has_review_pdf,
+           review_token, download_token, download_expires_at, wc_order_id
+    FROM designs
     WHERE anonymised_at IS NULL
-      AND created_at IS NOT NULL
-      AND (
-        (
-          status IN (${paidList})
-          AND datetime(COALESCE(paid_at, created_at), '+' || ? || ' days') < datetime('now')
-        )
-        OR (
-          status NOT IN (${paidList})
-          AND datetime(created_at, '+' || ? || ' days') < datetime('now')
-        )
-      )
     ORDER BY id
-  `).all(String(paidDays()), String(unpaidDays()));
+  `).all();
+}
+
+async function defaultGetOrder(wcOrderId) {
+  const woocommerce = require('./woocommerce');
+  if (!woocommerce.isConfigured()) {
+    const err = new Error('WooCommerce is not configured');
+    err.code = 'WOO_UNCONFIGURED';
+    throw err;
+  }
+  return woocommerce.getOrder(wcOrderId);
+}
+
+async function lookupOrders(rows, getOrder) {
+  const needing = rows.filter((row) => row.wc_order_id && !row.paid_at);
+  const map = new Map();
+  for (let i = 0; i < needing.length; i += WOO_BATCH) {
+    const batch = needing.slice(i, i + WOO_BATCH);
+    for (const row of batch) {
+      try {
+        const order = await getOrder(row.wc_order_id);
+        map.set(row.id, { order: order || null, unknown: false });
+      } catch {
+        // Fail safe: this design is not purged on this run. The error body
+        // can echo an order, so it is not logged.
+        console.warn(`[retention] design ${row.id} skipped; Woo order ${row.wc_order_id} could not be checked`);
+        map.set(row.id, { order: null, unknown: true });
+      }
+    }
+  }
+  return map;
 }
 
 function anonymise(id) {
@@ -111,20 +228,101 @@ function anonymise(id) {
   return result.changes === 1;
 }
 
-function run() {
-  const ids = dueDesigns().map((row) => row.id);
+function logBucket(preview, label, ids) {
+  const mode = preview ? 'dry-run ' : '';
+  const suffix = ids.length ? `: ${ids.join(', ')}` : '';
+  console.log(`[retention] ${mode}${label} ${ids.length}${suffix}`);
+}
+
+async function run(options = {}) {
   const preview = dryRun();
-  if (!preview) {
-    for (const id of ids) anonymise(id);
+  const unpaidWindow = unpaidDays();
+  const paidWindow = paidDays();
+  const getOrder = options.getOrder || defaultGetOrder;
+  const rows = loadRows();
+  const lookups = await lookupOrders(rows, getOrder);
+
+  const unpaidIds = [];
+  const paidIds = [];
+  const skippedPaid = [];
+  const skippedWoo = [];
+  const skippedPayable = [];
+
+  const stampPaidAt = db.prepare(`
+    UPDATE designs
+    SET paid_at = ?
+    WHERE id = ?
+      AND paid_at IS NULL
+  `);
+
+  for (const row of rows) {
+    const lookup = lookups.get(row.id);
+    const localPaid = hasLocalPaidSignal(row);
+    const unpaidDue = olderThan(row.created_at, unpaidWindow);
+
+    if (lookup && lookup.unknown) {
+      const stamp = row.paid_at || row.created_at;
+      if (localPaid && !olderThan(stamp, paidWindow)) {
+        if (unpaidDue) skippedPaid.push(row.id);
+      } else if (unpaidDue || localPaid) {
+        skippedWoo.push(row.id);
+      }
+      continue;
+    }
+
+    let paidStamp = row.paid_at || null;
+    const datePaid = lookup && lookup.order ? lookup.order.date_paid : null;
+    const wooPaid = nonEmpty(datePaid);
+    if (wooPaid) {
+      const normalised = paidAtFromWoo(datePaid) || paidAtFromWoo(row.created_at);
+      if (normalised) {
+        paidStamp = paidStamp || normalised;
+        if (!preview && !row.paid_at) stampPaidAt.run(normalised, row.id);
+      }
+    }
+
+    if (localPaid || wooPaid) {
+      const stamp = paidStamp || row.created_at;
+      if (olderThan(stamp, paidWindow)) paidIds.push(row.id);
+      else if (unpaidDue) skippedPaid.push(row.id);
+      continue;
+    }
+
+    if (!unpaidDue) continue;
+
+    const order = lookup ? lookup.order : null;
+    const wooStatus = order ? String(order.status || '').toLowerCase() : '';
+    const orderMissing = !row.wc_order_id || (lookup && !lookup.order);
+    const orderDead = DEAD_ORDER_STATUSES.has(wooStatus);
+    if (CLEANUP_DONE.has(row.status) || orderMissing || orderDead) {
+      unpaidIds.push(row.id);
+      continue;
+    }
+    skippedPayable.push(row.id);
   }
-  const verb = preview ? 'dry-run would anonymise' : 'anonymised';
-  console.log(`[retention] ${verb} ${ids.length} design(s)${ids.length ? `: ${ids.join(', ')}` : ''}`);
+
+  const designIds = [...unpaidIds, ...paidIds].sort();
+  if (!preview) {
+    for (const id of designIds) anonymise(id);
+  }
+
+  logBucket(preview, preview ? 'would-anonymise unpaid' : 'anonymised unpaid', unpaidIds);
+  logBucket(preview, preview ? 'would-anonymise paid' : 'anonymised paid', paidIds);
+  logBucket(preview, 'skipped as paid-signals', skippedPaid);
+  logBucket(preview, 'skipped as Woo unknown', skippedWoo);
+  logBucket(preview, 'skipped as still payable', skippedPayable);
+
   return {
     dryRun: preview,
-    unpaidDays: unpaidDays(),
-    paidDays: paidDays(),
-    count: ids.length,
-    designIds: ids,
+    unpaidDays: unpaidWindow,
+    paidDays: paidWindow,
+    count: designIds.length,
+    designIds,
+    wouldAnonymiseUnpaid: unpaidIds,
+    wouldAnonymisePaid: paidIds,
+    skippedPaidSignals: skippedPaid,
+    skippedWooUnknown: skippedWoo,
+    skippedStillPayable: skippedPayable,
   };
 }
 
@@ -136,11 +334,11 @@ function scheduleRetentionPurge() {
   }
   const ms = hours * 60 * 60 * 1000;
   const tick = () => {
-    try {
-      run();
-    } catch (err) {
-      console.error('[retention] run failed:', err.message);
-    }
+    Promise.resolve()
+      .then(() => run())
+      .catch((err) => {
+        console.error('[retention] run failed:', err.message);
+      });
   };
   setTimeout(tick, 30 * 1000);
   setInterval(tick, ms);
@@ -151,14 +349,16 @@ function scheduleRetentionPurge() {
 module.exports = {
   DEFAULT_UNPAID_DAYS,
   DEFAULT_PAID_DAYS,
+  MIN_UNPAID_DAYS,
+  MIN_PAID_DAYS,
   PAID_STATUSES,
+  PAID_SIGNAL_COLUMNS,
   REDACTED_NAME,
   unpaidDays,
   paidDays,
   intervalHours,
   dryRun,
   redactedEmail,
-  dueDesigns,
   run,
   scheduleRetentionPurge,
 };
