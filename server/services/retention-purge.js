@@ -27,11 +27,12 @@
  *
  * Each run writes at most RETENTION_PURGE_MAX eligible rows (default 20)
  * and leaves the rest for the next run. That cap does not abort the run.
- * The run aborts with no writes when the Woo API check fails, Woo returns
- * 401 or 403, more than three lookups fail in a row, more than 20% of the
- * lookups fail (at least two), or at least 10 orders were checked and more
- * than half of those came back cancelled or trash. Any other single-order
- * failure skips that row only.
+ * Cancelled orders are the normal result of the unpaid cleanup, so a large
+ * cancelled backlog is drained in batches rather than aborted. The run
+ * aborts with no writes when the Woo API check fails, Woo returns 401 or
+ * 403, more than three lookups fail in a row, or more than 20% of the
+ * lookups fail (at least two). Any other single-order failure skips that
+ * row only.
  *
  * The anonymise UPDATE repeats the selection: same status, same wc_order_id,
  * resume link still expired, and the paid clock uses the latest timestamp.
@@ -66,8 +67,6 @@ const DEFAULT_INTERVAL_HOURS = 24;
 const MIN_INTERVAL_HOURS = 1;
 const MAX_INTERVAL_HOURS = 168;
 const DEFAULT_PURGE_MAX = 20;
-const PURGE_FRACTION = 0.5;
-const MIN_WOO_FRACTION_ROWS = 10;
 const ERROR_FRACTION = 0.2;
 const ERROR_STREAK_MAX = 3;
 const LOCK_STALE_MS = 30 * 60 * 1000;
@@ -579,9 +578,6 @@ async function runLocked(options, owner) {
 
   unpaidTargets.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   paidIds.sort();
-  const wooEligible = unpaidTargets.filter((item) => item.wcOrderId).length;
-  const fractionBreaker = wooRows.length >= MIN_WOO_FRACTION_ROWS
-    && wooEligible / wooRows.length > PURGE_FRACTION;
   const keptIndefinitely = {
     invalidOrderId: keptInvalid.length,
     paidWithoutTimestamp: keptNoStamp.length,
@@ -589,33 +585,6 @@ async function runLocked(options, owner) {
   };
   const keptMode = preview ? 'dry-run ' : '';
   console.log(`[retention] ${keptMode}kept with no end date: invalid-order ${keptInvalid.length}, paid-without-timestamp ${keptNoStamp.length}, payable-order ${keptPayableOrder.length}`);
-
-  if (fractionBreaker) {
-    const planned = [...unpaidTargets.map((item) => item.id), ...paidIds].sort();
-    logBucket(preview, 'would-anonymise unpaid', unpaidTargets.map((item) => item.id));
-    logBucket(preview, 'would-anonymise paid', paidIds);
-    logBucket(preview, 'skipped as paid-signals', skippedPaid);
-    logBucket(preview, 'skipped as Woo unknown', skippedWoo);
-    logBucket(preview, 'skipped as Woo error', skippedWooError);
-    logBucket(preview, 'skipped as still payable', skippedPayable);
-    console.error(`[retention] aborted; Woo made ${wooEligible} of ${wooRows.length} checked orders eligible (more than half)`);
-    return emptyResult({
-      ok: false,
-      aborted: true,
-      reason: 'circuit-breaker',
-      dryRun: preview,
-      unpaidDays: unpaidWindow,
-      paidDays: paidWindow,
-      designIds: planned,
-      wouldAnonymiseUnpaid: unpaidTargets.map((item) => item.id),
-      wouldAnonymisePaid: paidIds,
-      skippedPaidSignals: skippedPaid,
-      skippedWooUnknown: skippedWoo,
-      skippedWooError,
-      skippedStillPayable: skippedPayable,
-      keptIndefinitely,
-    });
-  }
 
   const batch = takeBatch(unpaidTargets, paidIds, limit);
   if (preview) {

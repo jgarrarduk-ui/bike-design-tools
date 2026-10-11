@@ -220,12 +220,12 @@ succeeded, and that row is still kept.
 
 Each run anonymises at most `RETENTION_PURGE_MAX` eligible rows (default
 20) and leaves the rest for the next run. The cap does not abort the run.
-The run aborts with no writes when `GET /system_status` fails, when Woo
-returns 401 or 403, when more than three lookups fail in a row, when more
-than 20% of the lookups fail (and at least two fail), or when at least 10
-orders were checked and more than half of those came back `cancelled` or
-`trash`. Any other single-order failure, including a timeout or a 404,
-skips that row only.
+A large set of `cancelled` orders is the normal result of the unpaid
+cleanup, so that backlog drains over later runs. The run aborts with no
+writes when `GET /system_status` fails, when Woo returns 401 or 403, when
+more than three lookups fail in a row, or when more than 20% of the lookups
+fail (and at least two fail). Any other single-order failure, including a
+timeout or a 404, skips that row only.
 
 The anonymise statement repeats the decision: same status, same
 `wc_order_id`, resume link still expired, and the paid clock uses the

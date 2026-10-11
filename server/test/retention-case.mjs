@@ -718,25 +718,35 @@ const cases = {
     assert.equal(row('expired-91').status, 'expired');
   },
 
-  async 'circuit-fraction'() {
-    for (let i = 0; i < 10; i += 1) {
+  async 'cancelled-backlog-drains'() {
+    for (let i = 0; i < 60; i += 1) {
+      const n = String(i).padStart(2, '0');
       insert({
-        id: `woo-${i}`,
+        id: `c-${n}`,
         status: 'expired',
         createdSql: "datetime('now', '-120 days')",
         expiresSql: RESUME_DONE,
-        wcOrderId: String(90000 + i),
+        wcOrderId: String(91000 + i),
       });
     }
-    const result = await retention.run(woo(async (orderId) => ({
-      id: orderId,
-      status: Number(orderId) - 90000 < 6 ? 'cancelled' : 'pending',
-    })));
-    assert.equal(result.aborted, true);
-    assert.equal(result.reason, 'circuit-breaker');
-    for (let i = 0; i < 10; i += 1) {
-      assert.equal(row(`woo-${i}`).anonymised_at, null);
-      assert.equal(row(`woo-${i}`).customer_email, SAMPLE);
+    const getOrder = async (orderId) => ({ id: orderId, status: 'cancelled' });
+    for (let pass = 0; pass < 3; pass += 1) {
+      const result = await retention.run(woo(getOrder));
+      assert.equal(result.aborted, false);
+      assert.equal(result.reason, null);
+      const expected = [];
+      for (let i = pass * 20; i < (pass + 1) * 20; i += 1) {
+        expected.push(`c-${String(i).padStart(2, '0')}`);
+      }
+      assert.deepEqual(result.designIds, expected);
+      assert.equal(result.deferredIds.length, 40 - pass * 20);
+    }
+    const done = await retention.run(woo(getOrder));
+    assert.deepEqual(done.designIds, []);
+    for (let i = 0; i < 60; i += 1) {
+      const id = `c-${String(i).padStart(2, '0')}`;
+      assert.equal(row(id).customer_email, `redacted+${id}@invalid`);
+      assert.ok(row(id).anonymised_at);
     }
   },
 

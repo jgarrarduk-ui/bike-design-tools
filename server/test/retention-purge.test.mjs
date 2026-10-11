@@ -27,7 +27,7 @@ const names = [
   'resumable-without-order-kept',
   'expired-resume-without-order-purged',
   'expired-purged',
-  'circuit-fraction',
+  'cancelled-backlog-drains',
   'circuit-max',
   'race-recheck',
   'overlap-lock',
