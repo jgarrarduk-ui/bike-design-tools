@@ -111,6 +111,16 @@ router.post(
       return;
     }
 
+    if (design.anonymised_at) {
+      console.error(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; design is anonymised`);
+      try {
+        await email.sendRetentionAlert({ designId: design.id, wcOrderId, wooStatus: status });
+      } catch {
+        console.error(`[webhook] admin alert failed for design ${design.id} order ${wcOrderId}`);
+      }
+      return;
+    }
+
     if (Object.prototype.hasOwnProperty.call(CLOSED_STATUSES, status)) {
       applyClosedStatus(design, status);
       return;

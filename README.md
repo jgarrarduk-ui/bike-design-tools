@@ -184,48 +184,67 @@ days”; delete the old variable or set it to `5`.
 The tools-api anonymises a design in place. It does not delete the row.
 `customer_name` becomes `redacted` and `customer_email` becomes
 `redacted+<id>@invalid` (the columns are `NOT NULL`, and rewriting the table
-would copy every stored PDF). `pdf_base64`, the review PDF, `resume_token`,
+would copy every stored PDF). `design_name`, `pdf_base64`, the review PDF, `resume_token`,
 `download_token`, `review_token`, their expiries, and `wc_checkout_url` are
 cleared. Geometry `params` and `design_revisions` stay. `anonymised_at` is
 stamped so a later run skips the row. Resume, checkout, and download then
-answer 404, the same as an unknown token.
+answer 404, the same as an unknown token. SQLite `secure_delete` is on, and
+a live run that anonymised a row runs `VACUUM`. The linked Woo order still
+holds the customer's billing details. This job does not change Woo.
 
 A design is kept for `RETENTION_PAID_DAYS` (default `2192`, about six years)
 when any paid signal is set: `paid_at`, `accepted_at`, `delivered_at`,
 `review_sent_at`, a review PDF or `review_token`, a `download_token` or
 `download_expires_at`, a paid-family status (`paid`, `in_review`, `accepted`,
-`delivered`, `refunded`), or `date_paid` on the linked Woo order. The clock
-is `paid_at`, otherwise that Woo date, otherwise `created_at`. Status on its
-own does not decide this. A design marked `failed` after accept, and a paid
-order later cancelled, refunded, or failed, stay on the six-year clock.
-`paid_at` is stamped when the order-updated webhook marks a design paid, and
-cancel or refund does not clear it.
+`delivered`, `refunded`), or `date_paid_gmt` / `date_paid` on the linked Woo
+order. The clock is the latest of `paid_at`, `review_sent_at`, `accepted_at`,
+`delivered_at`, and Woo `date_paid_gmt`. It is not `created_at`. A paid
+signal with no timestamp is kept. A design marked `failed` after accept, and
+a paid order later cancelled or refunded, stay on that clock. `paid_at` is
+stamped when the order-updated webhook marks a design paid, and cancel or
+refund does not clear it. 2192 days is about six years from payment. HMRC's
+six years run from the end of the accounting period, so this floor can be
+up to about a year short. It stays at 2192 until that is signed off.
 
-Only a design with none of those signals can be anonymised at
-`RETENTION_UNPAID_DAYS` (default `90`), and only once unpaid-cleanup has
-finished with it (`expired` or `cancelled`) or the Woo order is cancelled,
-failed, or missing. A `pending` or `checkout_created` row whose Woo order is
-still pending is skipped. Before the first real purge, rows with a
-`wc_order_id` and no `paid_at` are checked against Woo in batches and
-`date_paid` is copied onto `paid_at`. If Woo cannot be checked, that row is
-skipped for the run.
+An unpaid design is anonymised only when it is past `RETENTION_UNPAID_DAYS`
+(default `90`) and the Woo order is exactly `cancelled` or `trash`, or the
+design never had a `wc_order_id` and is no longer resumable. `pending` and
+`checkout_created` rows are kept while the resume link works, unless that
+order is `cancelled` or `trash`. `pending`, `on-hold`, and `failed` Woo
+orders are still payable and are kept. A Woo 404 is not "missing" unless
+the code is `woocommerce_rest_shop_order_invalid_id` and `GET /system_status`
+succeeded, and that row is still kept. A failed API check, or a 401, 403,
+5xx, network error, or any other 404, aborts the whole run with no writes.
+If one run would anonymise more than `RETENTION_PURGE_MAX` rows (default
+20) or more than half the rows it scanned, it aborts and writes nothing.
+The anonymise statement re-checks that a just-paid row is no longer unpaid.
+The timer and `POST /api/admin/retention-purge` share a database lock, so
+two runs cannot overlap.
+
+An order-updated webhook for an anonymised design does not change the row
+and does not email the redacted address. It logs the design id and Woo
+order id and emails info@creaturecycles.co.uk.
 
 Values of `RETENTION_UNPAID_DAYS` below 30 are raised to 30, and values of
 `RETENTION_PAID_DAYS` below 2192 are raised to 2192, each with a warning.
-Unset stays 90 and 2192.
+A value that is not a number logs an error and uses 90 or 2192. Unset stays
+90 and 2192.
 
 The job starts about 30 seconds after boot and then every
-`RETENTION_PURGE_INTERVAL_HOURS` (default `24`), the same shape as unpaid
-cleanup. `0` turns the timer off. `RETENTION_PURGE_DRY_RUN=1` logs a
-breakdown and the design ids and writes nothing, including the `paid_at`
-backfill: would-anonymise unpaid, would-anonymise paid, skipped as
-paid-signals, skipped as Woo unknown, skipped as still payable. Logs do not
-include names or email addresses. `POST /api/admin/retention-purge` runs the
-same job.
+`RETENTION_PURGE_INTERVAL_HOURS` (default `24`, clamped to 1–168; `0` turns
+the timer off). The purge writes only when `RETENTION_PURGE_DRY_RUN` is
+exactly `0`. Unset, empty, and any other value are a dry run. A dry run
+logs a breakdown and the design ids and writes nothing, including the
+`paid_at` backfill: would-anonymise unpaid, would-anonymise paid, skipped
+as paid-signals, skipped as Woo unknown, skipped as still payable. Logs do
+not include names, email addresses, or resume, checkout, accept, or
+download links. `POST /api/admin/retention-purge` runs the same job.
 
-On the first Railway deploy, set `RETENTION_PURGE_DRY_RUN=1`, deploy, and
-read the `[retention] dry-run` lines before turning the dry run off. Rows
-whose Woo order cannot be reached are not anonymised on that run.
+On the first Railway deploy, leave `RETENTION_PURGE_DRY_RUN` unset or `1`,
+deploy, and read the `[retention] dry-run` lines. Set it to exactly `0`
+only after those counts look right. A Woo outage aborts that run. A run
+that would anonymise more than 20 rows, or more than half the table, also
+aborts.
 
 The save email is Cadence's draft, which James approved: subject "Your Creature Cycles design is
 saved", buttons "Edit design" and "Take me to checkout", dropouts still

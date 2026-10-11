@@ -15,6 +15,8 @@ const db = new Database(DB_PATH);
 // WAL mode for better concurrent read performance
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+// Zero freed pages so an anonymised name, email, or PDF is not left on disk.
+db.pragma('secure_delete = ON');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS designs (
@@ -88,6 +90,7 @@ if (!existingCols.includes('revision')) {
   db.exec('ALTER TABLE designs ADD COLUMN revision INTEGER NOT NULL DEFAULT 0');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_designs_resume_tok ON designs (resume_token)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_designs_anonymised_at ON designs (anonymised_at)');
 db.exec(`
   CREATE TABLE IF NOT EXISTS design_revisions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -142,11 +142,15 @@ router.post('/cleanup-unpaid', async (_req, res) => {
 });
 
 // POST /api/admin/retention-purge
-// Same job as the in-process timer. RETENTION_PURGE_DRY_RUN=1 logs only.
+// Same job as the in-process timer. The purge runs live only when
+// RETENTION_PURGE_DRY_RUN is exactly "0". The DB lock is shared with the timer.
 router.post('/retention-purge', async (_req, res) => {
   try {
     const result = await retention.run();
-    res.json({ ok: true, ...result });
+    if (result.reason === 'overlap') {
+      return res.status(409).json({ ok: false, ...result });
+    }
+    res.json({ ok: !result.aborted, ...result });
   } catch (err) {
     console.error('[admin] retention purge failed:', err.message);
     res.status(500).json({ error: 'Retention purge failed' });

@@ -354,7 +354,6 @@ Questions? Just reply to this email.
 async function sendDesignReview({ to, customerName, designId, previewUrl, acceptUrl }) {
   if (!isConfigured()) {
     console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping review email to', maskEmail(to));
-    console.info('[email] Accept URL would have been:', acceptUrl);
     return;
   }
 
@@ -426,7 +425,6 @@ Design ID: ${shortId}
 async function sendDesignAccepted({ to, customerName, designId, downloadUrl, expiresAt }) {
   if (!isConfigured()) {
     console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping accepted email to', maskEmail(to));
-    console.info('[email] Download URL would have been:', downloadUrl);
     return;
   }
 
@@ -550,6 +548,44 @@ async function sendChangeNotice(details) {
   return { sent: true, message };
 }
 
+async function sendRetentionAlert({ designId, wcOrderId, wooStatus }) {
+  const to = changeNotifyAddress();
+  const text = [
+    'A WooCommerce update arrived for an anonymised Frame Designer design.',
+    'The tools-api did not change the design and did not email the customer.',
+    '',
+    `Design: ${designId}`,
+    `Woo order: ${wcOrderId}`,
+    `Woo status: ${wooStatus}`,
+    '',
+    'Recover the customer from the Woo order if this payment should be fulfilled.',
+  ].join('\n');
+  const html = wrapHtml(`
+    <p style="font-size:15px;color:#222;line-height:1.6;">
+      A WooCommerce update arrived for an anonymised Frame Designer design.
+      The tools-api did not change the design and did not email the customer.
+    </p>
+    <p style="font-size:14px;color:#333;line-height:1.8;">
+      <strong>Design:</strong> ${escapeHtml(designId || '')}<br>
+      <strong>Woo order:</strong> ${escapeHtml(String(wcOrderId || ''))}<br>
+      <strong>Woo status:</strong> ${escapeHtml(wooStatus || '')}
+    </p>
+    <p style="font-size:14px;color:#555;">Recover the customer from the Woo order if this payment should be fulfilled.</p>
+  `);
+  if (!isConfigured()) {
+    console.error(`[email] retention alert not sent (no API key) design ${designId} order ${wcOrderId} status ${wooStatus}`);
+    return { sent: false };
+  }
+  await postResend({
+    to,
+    subject: `Frame Designer anonymised design ${designId} order ${wcOrderId}`,
+    text,
+    html,
+  });
+  console.error(`[email] retention alert sent for design ${designId} order ${wcOrderId}`);
+  return { sent: true };
+}
+
 module.exports = {
   isConfigured,
   designFileLeadTime,
@@ -561,4 +597,5 @@ module.exports = {
   sendDesignReview,
   sendDesignAccepted,
   sendChangeNotice,
+  sendRetentionAlert,
 };

@@ -68,11 +68,18 @@ async function wcFetch(path, method = 'GET', body = null) {
   };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(apiUrl(path), opts);
-  const data = await res.json();
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = text; }
+  }
   if (!res.ok) {
     let msg = data && typeof data === 'object' ? (data.message || data.code || 'request failed') : data;
     if (msg && typeof msg === 'object') msg = 'request failed';
-    throw new Error(`WooCommerce ${method} ${path} → ${res.status}: ${redactText(msg)}`);
+    const err = new Error(`WooCommerce ${method} ${path} → ${res.status}: ${redactText(String(msg || 'request failed'))}`);
+    err.status = res.status;
+    err.code = data && typeof data === 'object' ? data.code : undefined;
+    throw err;
   }
   return data;
 }
@@ -355,8 +362,25 @@ async function getDesignIdFromOrder(wcOrderId) {
 }
 
 /**
- * Read one Woo order. null when Woo has no such order (404).
- * Other failures throw so the caller can keep a stored checkout URL.
+ * Confirm the Woo REST API is this shop. A 404 from a wrong host or a
+ * broken permalink must not be treated as a missing order.
+ *
+ * @returns {Promise<true>}
+ */
+async function checkApi() {
+  if (!isConfigured()) {
+    const err = new Error('WooCommerce is not configured');
+    err.code = 'WOO_UNCONFIGURED';
+    throw err;
+  }
+  await wcFetch('/system_status');
+  return true;
+}
+
+/**
+ * Read one Woo order. null only when Woo says that order id does not exist
+ * (`woocommerce_rest_shop_order_invalid_id`). Any other 404, and every
+ * auth or server failure, throws so the caller can fail closed.
  *
  * @param {string|number} wcOrderId
  * @returns {Promise<object|null>}
@@ -366,7 +390,7 @@ async function getOrder(wcOrderId) {
   try {
     return await wcFetch(`/orders/${encodeURIComponent(String(wcOrderId))}`);
   } catch (err) {
-    if (/→ 404:/.test(err.message)) return null;
+    if (err.status === 404 && err.code === 'woocommerce_rest_shop_order_invalid_id') return null;
     throw err;
   }
 }
@@ -455,6 +479,7 @@ module.exports = {
   designIdFromOrder,
   geometrySummaryFrom,
   configuredProductIds,
+  checkApi,
   getOrder,
   cancelPendingOrder,
   requestChange,

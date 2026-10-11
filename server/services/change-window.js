@@ -100,7 +100,7 @@ function shopOk(result) {
 async function hydrate(req, res) {
   const design = loadDesign(req.params.id);
   const token = typeof req.query.change === 'string' ? req.query.change : '';
-  if (!design || !token) return invalid(res);
+  if (!design || !token || design.anonymised_at) return invalid(res);
 
   const result = await askShop('GET', { designId: design.id, token });
   if (shopClosed(result)) return closed(res);
@@ -151,7 +151,7 @@ async function revise(req, res) {
   const body = req.body || {};
   const token = typeof body.change === 'string' ? body.change : '';
   const params = body.params;
-  if (!design || !token) return invalid(res);
+  if (!design || !token || design.anonymised_at) return invalid(res);
   if (!params || typeof params !== 'object' || Array.isArray(params)) {
     return res.status(400).json({ error: 'params (bike geometry object) is required.' });
   }
