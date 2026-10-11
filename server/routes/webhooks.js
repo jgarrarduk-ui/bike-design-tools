@@ -113,11 +113,7 @@ router.post(
 
     if (design.anonymised_at) {
       console.error(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; design is anonymised`);
-      try {
-        await email.sendRetentionAlert({ designId: design.id, wcOrderId, wooStatus: status });
-      } catch {
-        console.error(`[webhook] admin alert failed for design ${design.id} order ${wcOrderId}`);
-      }
+      if (PAID_STATUSES.has(status)) await alertAnonymisedPayment(design, wcOrderId, status);
       return;
     }
 
@@ -158,6 +154,22 @@ router.post(
     }
   },
 );
+
+async function alertAnonymisedPayment(design, wcOrderId, status) {
+  const claim = db.prepare(`
+    UPDATE designs
+    SET retention_alerted_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+      AND retention_alerted_at IS NULL
+  `).run(design.id);
+  if (claim.changes !== 1) return;
+  try {
+    await email.sendRetentionAlert({ designId: design.id, wcOrderId, wooStatus: status });
+  } catch {
+    db.prepare('UPDATE designs SET retention_alerted_at = NULL WHERE id = ?').run(design.id);
+    console.error(`[webhook] admin alert failed for design ${design.id} order ${wcOrderId}`);
+  }
+}
 
 async function findDesign(order, wcOrderId) {
   let design = db.prepare('SELECT * FROM designs WHERE wc_order_id = ?').get(wcOrderId);

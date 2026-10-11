@@ -15,9 +15,12 @@ const names = [
   'failed-after-accept',
   'webhook-cancel-keeps-paid',
   'backfill-gmt',
-  'woo-network-aborts',
+  'woo-row-error-skips',
+  'woo-auth-aborts',
+  'woo-error-streak-aborts',
+  'woo-error-fraction-aborts',
   'api-check-aborts',
-  'generic-404-aborts',
+  'generic-404-skips-row',
   'invalid-order-id-is-kept',
   'payable-orders-kept',
   'cancelled-order-is-purged',
@@ -36,6 +39,7 @@ const names = [
   'dry-run-default-on',
   'woo-error-redacts-email',
   'anonymised-change-link',
+  'review-html-escape',
 ];
 
 function runCase(name, dryRun) {
@@ -72,5 +76,5 @@ for (const name of names) {
 }
 
 test('retention cases are listed', () => {
-  assert.equal(names.length, 30);
+  assert.equal(names.length, 34);
 });

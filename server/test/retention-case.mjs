@@ -23,6 +23,7 @@ else process.env.RETENTION_PURGE_DRY_RUN = workerData.dryRun == null ? '0' : wor
 
 const require = createRequire(import.meta.url);
 const SAMPLE = 'jane.doe@example.com';
+const RESUME_DONE = "datetime('now', '-1 day')";
 
 if (workerData.name === 'migration') {
   const Database = require('better-sqlite3');
@@ -133,8 +134,8 @@ function request(server, urlPath, { method = 'GET', json, headers } = {}) {
 const cases = {
   async 'unpaid-window'() {
     insert({ id: 'unpaid-89', status: 'pending', createdSql: "datetime('now', '-89 days')" });
-    insert({ id: 'unpaid-91', status: 'cancelled', createdSql: "datetime('now', '-91 days')" });
-    insert({ id: 'failed-91', status: 'failed', createdSql: "datetime('now', '-91 days')" });
+    insert({ id: 'unpaid-91', status: 'cancelled', createdSql: "datetime('now', '-91 days')", expiresSql: RESUME_DONE });
+    insert({ id: 'failed-91', status: 'failed', createdSql: "datetime('now', '-91 days')", expiresSql: RESUME_DONE });
     keeper('keep-a');
     keeper('keep-b');
     const result = await retention.run();
@@ -210,7 +211,7 @@ const cases = {
   },
 
   async 'dry-run'() {
-    insert({ id: 'dry-91', status: 'expired', createdSql: "datetime('now', '-91 days')" });
+    insert({ id: 'dry-91', status: 'expired', createdSql: "datetime('now', '-91 days')", expiresSql: RESUME_DONE });
     insert({
       id: 'dry-paid',
       status: 'delivered',
@@ -298,10 +299,15 @@ const cases = {
     } finally {
       await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
     }
-    const bytes = fs.readFileSync(dbPath);
-    assert.equal(bytes.includes(Buffer.from('purge-me@example.com')), false);
-    assert.equal(bytes.includes(Buffer.from('Secret Frame Name')), false);
+    const files = [dbPath];
+    if (fs.existsSync(`${dbPath}-wal`)) files.push(`${dbPath}-wal`);
+    for (const file of files) {
+      const bytes = fs.readFileSync(file);
+      assert.equal(bytes.includes(Buffer.from('purge-me@example.com')), false, file);
+      assert.equal(bytes.includes(Buffer.from('Secret Frame Name')), false, file);
+    }
     assert.equal(db.pragma('secure_delete', { simple: true }), 1);
+    assert.equal(String(db.pragma('journal_mode', { simple: true })).toLowerCase(), 'wal');
   },
 
   async 'log-mask-and-links'() {
@@ -446,14 +452,14 @@ const cases = {
     assert.equal(row('backfill-paid').status, 'pending');
   },
 
-  async 'woo-network-aborts'() {
-    insert({ id: 'still-here', status: 'expired', createdSql: "datetime('now', '-120 days')" });
+  async 'woo-row-error-skips'() {
+    insert({ id: 'still-here', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
     insert({
       id: 'woo-down',
       status: 'pending',
       createdSql: "datetime('now', '-120 days')",
       wcOrderId: '88003',
-      expiresSql: "datetime('now', '-1 day')",
+      expiresSql: RESUME_DONE,
     });
     let calls = 0;
     const result = await retention.run(woo(async () => {
@@ -461,12 +467,85 @@ const cases = {
       const err = new Error('connect ECONNREFUSED');
       throw err;
     }));
+    assert.equal(result.aborted, false);
+    assert.equal(result.reason, null);
+    assert.equal(calls, 1);
+    assert.deepEqual(result.designIds, ['still-here']);
+    assert.ok(result.skippedWooError.includes('woo-down'));
+    assert.equal(row('woo-down').anonymised_at, null);
+    assert.equal(row('woo-down').customer_email, SAMPLE);
+    assert.equal(row('still-here').customer_email, 'redacted+still-here@invalid');
+  },
+
+  async 'woo-auth-aborts'() {
+    insert({ id: 'still-here', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
+    insert({
+      id: 'auth-row',
+      status: 'expired',
+      createdSql: "datetime('now', '-120 days')",
+      wcOrderId: '88031',
+      expiresSql: RESUME_DONE,
+    });
+    const result = await retention.run(woo(async () => {
+      const err = new Error('unauthorized');
+      err.status = 401;
+      throw err;
+    }));
+    assert.equal(result.aborted, true);
+    assert.equal(result.reason, 'woo-auth');
+    assert.equal(row('still-here').anonymised_at, null);
+    assert.equal(row('auth-row').customer_email, SAMPLE);
+  },
+
+  async 'woo-error-streak-aborts'() {
+    insert({ id: 'still-here', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
+    for (let i = 0; i < 20; i += 1) {
+      insert({
+        id: `err-${String(i).padStart(2, '0')}`,
+        status: 'expired',
+        createdSql: "datetime('now', '-120 days')",
+        wcOrderId: String(88100 + i),
+        expiresSql: RESUME_DONE,
+      });
+    }
+    let calls = 0;
+    const result = await retention.run(woo(async () => {
+      calls += 1;
+      const err = new Error('timeout');
+      err.status = 504;
+      throw err;
+    }));
     assert.equal(result.aborted, true);
     assert.equal(result.reason, 'woo-error');
-    assert.equal(calls, 1);
-    assert.equal(row('woo-down').anonymised_at, null);
+    assert.equal(calls, 4);
     assert.equal(row('still-here').anonymised_at, null);
-    assert.equal(row('still-here').customer_email, SAMPLE);
+    assert.equal(row('err-00').customer_email, SAMPLE);
+  },
+
+  async 'woo-error-fraction-aborts'() {
+    insert({ id: 'still-here', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
+    for (let i = 0; i < 4; i += 1) {
+      insert({
+        id: `mix-${i}`,
+        status: 'expired',
+        createdSql: "datetime('now', '-120 days')",
+        wcOrderId: String(88200 + i),
+        expiresSql: RESUME_DONE,
+      });
+    }
+    let calls = 0;
+    const result = await retention.run(woo(async () => {
+      calls += 1;
+      if (calls === 2) return { status: 'pending' };
+      const err = new Error('timeout');
+      err.status = 504;
+      throw err;
+    }));
+    assert.equal(result.aborted, true);
+    assert.equal(result.reason, 'woo-error');
+    assert.equal(calls, 3);
+    assert.equal(row('still-here').anonymised_at, null);
+    assert.equal(row('mix-0').customer_email, SAMPLE);
   },
 
   async 'api-check-aborts'() {
@@ -489,13 +568,14 @@ const cases = {
     assert.equal(row('needs-woo').anonymised_at, null);
   },
 
-  async 'generic-404-aborts'() {
-    insert({ id: 'still-here', status: 'expired', createdSql: "datetime('now', '-120 days')" });
+  async 'generic-404-skips-row'() {
+    insert({ id: 'still-here', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
     insert({
       id: 'bad-route',
       status: 'expired',
       createdSql: "datetime('now', '-120 days')",
       wcOrderId: '88010',
+      expiresSql: RESUME_DONE,
     });
     const result = await retention.run(woo(async () => {
       const err = new Error('not found');
@@ -503,19 +583,21 @@ const cases = {
       err.code = 'rest_no_route';
       throw err;
     }));
-    assert.equal(result.aborted, true);
-    assert.equal(result.reason, 'woo-error');
-    assert.equal(row('still-here').anonymised_at, null);
+    assert.equal(result.aborted, false);
+    assert.deepEqual(result.designIds, ['still-here']);
+    assert.ok(result.skippedWooError.includes('bad-route'));
     assert.equal(row('bad-route').anonymised_at, null);
+    assert.equal(row('bad-route').customer_email, SAMPLE);
   },
 
   async 'invalid-order-id-is-kept'() {
-    insert({ id: 'no-order', status: 'expired', createdSql: "datetime('now', '-120 days')" });
+    insert({ id: 'no-order', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
     insert({
       id: 'gone-order',
       status: 'expired',
       createdSql: "datetime('now', '-120 days')",
       wcOrderId: '88011',
+      expiresSql: RESUME_DONE,
     });
     keeper();
     const result = await retention.run(woo(async () => null));
@@ -536,6 +618,7 @@ const cases = {
         id,
         status: 'expired',
         createdSql: "datetime('now', '-120 days')",
+        expiresSql: RESUME_DONE,
         wcOrderId: id,
       });
     }
@@ -568,15 +651,34 @@ const cases = {
       createdSql: "datetime('now', '-91 days')",
       wcOrderId: '88013',
     });
+    insert({
+      id: 'woo-cancelled-old',
+      status: 'checkout_created',
+      createdSql: "datetime('now', '-91 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88014',
+    });
+    insert({
+      id: 'woo-trash-old',
+      status: 'pending',
+      createdSql: "datetime('now', '-91 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88015',
+    });
     keeper('keep-a');
     keeper('keep-b');
     const result = await retention.run(woo(async (orderId) => ({
       id: orderId,
-      status: String(orderId) === '88013' ? 'trash' : 'cancelled',
+      status: String(orderId) === '88013' || String(orderId) === '88015' ? 'trash' : 'cancelled',
     })));
     assert.equal(result.aborted, false);
-    assert.deepEqual(result.designIds, ['woo-cancelled', 'woo-trash']);
-    assert.equal(row('woo-cancelled').customer_email, 'redacted+woo-cancelled@invalid');
+    assert.deepEqual(result.designIds, ['woo-cancelled-old', 'woo-trash-old']);
+    assert.equal(row('woo-cancelled').customer_email, SAMPLE);
+    assert.equal(row('woo-cancelled').resume_token, 'resume-woo-cancelled');
+    assert.ok(result.skippedStillPayable.includes('woo-cancelled'));
+    assert.ok(result.skippedStillPayable.includes('woo-trash'));
+    assert.equal(row('woo-cancelled-old').customer_email, 'redacted+woo-cancelled-old@invalid');
+    assert.equal(row('woo-trash-old').customer_email, 'redacted+woo-trash-old@invalid');
   },
 
   async 'resumable-without-order-kept'() {
@@ -607,7 +709,7 @@ const cases = {
   },
 
   async 'expired-purged'() {
-    insert({ id: 'expired-91', status: 'expired', createdSql: "datetime('now', '-91 days')" });
+    insert({ id: 'expired-91', status: 'expired', createdSql: "datetime('now', '-91 days')", expiresSql: RESUME_DONE });
     keeper();
     const result = await retention.run();
     assert.deepEqual(result.designIds, ['expired-91']);
@@ -617,28 +719,45 @@ const cases = {
   },
 
   async 'circuit-fraction'() {
-    insert({ id: 'a', status: 'expired', createdSql: "datetime('now', '-120 days')" });
-    insert({ id: 'b', status: 'expired', createdSql: "datetime('now', '-120 days')" });
-    insert({ id: 'c', status: 'expired', createdSql: "datetime('now', '-120 days')" });
-    const result = await retention.run();
+    for (let i = 0; i < 10; i += 1) {
+      insert({
+        id: `woo-${i}`,
+        status: 'expired',
+        createdSql: "datetime('now', '-120 days')",
+        expiresSql: RESUME_DONE,
+        wcOrderId: String(90000 + i),
+      });
+    }
+    const result = await retention.run(woo(async (orderId) => ({
+      id: orderId,
+      status: Number(orderId) - 90000 < 6 ? 'cancelled' : 'pending',
+    })));
     assert.equal(result.aborted, true);
     assert.equal(result.reason, 'circuit-breaker');
-    assert.equal(row('a').customer_email, SAMPLE);
-    assert.equal(row('b').anonymised_at, null);
-    assert.equal(row('c').anonymised_at, null);
+    for (let i = 0; i < 10; i += 1) {
+      assert.equal(row(`woo-${i}`).anonymised_at, null);
+      assert.equal(row(`woo-${i}`).customer_email, SAMPLE);
+    }
   },
 
   async 'circuit-max'() {
     process.env.RETENTION_PURGE_MAX = '1';
-    insert({ id: 'a', status: 'expired', createdSql: "datetime('now', '-120 days')" });
-    insert({ id: 'b', status: 'expired', createdSql: "datetime('now', '-120 days')" });
+    insert({ id: 'a', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
+    insert({ id: 'b', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
+    insert({ id: 'c', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
     keeper('keep-a');
     keeper('keep-b');
-    const result = await retention.run();
-    assert.equal(result.aborted, true);
-    assert.equal(result.reason, 'circuit-breaker');
-    assert.equal(row('a').anonymised_at, null);
+    const first = await retention.run();
+    assert.equal(first.aborted, false);
+    assert.equal(first.reason, null);
+    assert.deepEqual(first.designIds, ['a']);
+    assert.deepEqual(first.deferredIds, ['b', 'c']);
+    assert.equal(row('a').customer_email, 'redacted+a@invalid');
     assert.equal(row('b').anonymised_at, null);
+    assert.equal(row('c').customer_email, SAMPLE);
+    const second = await retention.run();
+    assert.deepEqual(second.designIds, ['b']);
+    assert.equal(row('c').anonymised_at, null);
   },
 
   async 'race-recheck'() {
@@ -646,7 +765,22 @@ const cases = {
       id: 'race-1',
       status: 'expired',
       createdSql: "datetime('now', '-120 days')",
+      expiresSql: RESUME_DONE,
       wcOrderId: '88020',
+    });
+    insert({
+      id: 'race-order',
+      status: 'expired',
+      createdSql: "datetime('now', '-120 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88022',
+    });
+    insert({
+      id: 'race-paid',
+      status: 'delivered',
+      createdSql: "datetime('now', '-10 days')",
+      paidSql: "datetime('now', '-2558 days')",
+      acceptedSql: "datetime('now', '-2558 days')",
     });
     keeper();
     const result = await retention.run(woo(async () => {
@@ -655,16 +789,28 @@ const cases = {
         SET status = 'paid', paid_at = CURRENT_TIMESTAMP
         WHERE id = 'race-1'
       `).run();
+      db.prepare(`
+        UPDATE designs
+        SET wc_order_id = '99999', status = 'checkout_created'
+        WHERE id = 'race-order'
+      `).run();
+      db.prepare(`UPDATE designs SET accepted_at = datetime('now') WHERE id = 'race-paid'`).run();
       return { id: 88020, status: 'cancelled' };
     }));
     assert.equal(result.aborted, false);
     assert.equal(result.designIds.includes('race-1'), false);
+    assert.equal(result.designIds.includes('race-order'), false);
+    assert.equal(result.designIds.includes('race-paid'), false);
     const kept = row('race-1');
     assert.equal(kept.status, 'paid');
     assert.ok(kept.paid_at);
     assert.equal(kept.customer_email, SAMPLE);
     assert.equal(kept.anonymised_at, null);
     assert.equal(kept.design_name, "Jane's gravel bike");
+    assert.equal(row('race-order').wc_order_id, '99999');
+    assert.equal(row('race-order').customer_email, SAMPLE);
+    assert.equal(row('race-paid').customer_email, SAMPLE);
+    assert.equal(row('race-paid').anonymised_at, null);
   },
 
   async 'overlap-lock'() {
@@ -688,6 +834,13 @@ const cases = {
     const finished = await first;
     assert.equal(finished.reason, null);
     assert.equal(row('locked').anonymised_at, null);
+    db.prepare(`UPDATE designs SET resume_expires_at = datetime('now', '-1 day') WHERE id = 'locked'`).run();
+    const stale = new Date(Date.now() - 31 * 60 * 1000).toISOString();
+    db.prepare('UPDATE retention_lock SET owner = ?, acquired_at = ? WHERE id = 1').run('other-run', stale);
+    const taken = await retention.run(woo(async () => ({ id: 88021, status: 'cancelled' })));
+    assert.equal(taken.aborted, false);
+    assert.equal(taken.reason, null);
+    assert.equal(row('locked').customer_email, 'redacted+locked@invalid');
   },
 
   async 'anonymised-webhook'() {
@@ -716,6 +869,13 @@ const cases = {
       await new Promise((resolve) => setTimeout(resolve, 40));
       assert.equal(row('already-gone').status, 'expired');
       assert.equal(row('already-gone').customer_email, SAMPLE);
+      assert.ok(row('already-gone').retention_alerted_at);
+      const again = await request(server, '/api/webhooks/woocommerce/order-updated', {
+        method: 'POST',
+        json: { id: 88030, status: 'completed' },
+      });
+      assert.equal(again.status, 200);
+      await new Promise((resolve) => setTimeout(resolve, 40));
       const cancelled = await request(server, '/api/webhooks/woocommerce/order-updated', {
         method: 'POST',
         json: { id: 88030, status: 'cancelled' },
@@ -729,13 +889,14 @@ const cases = {
     }
     const blob = lines.join('\n');
     assert.match(blob, /design already-gone order 88030 status processing ignored/);
+    assert.match(blob, /design already-gone order 88030 status completed ignored/);
     assert.match(blob, /design already-gone order 88030 status cancelled ignored/);
-    assert.match(blob, /retention alert not sent \(no API key\) design already-gone order 88030/);
+    assert.equal(blob.match(/retention alert not sent \(no API key\) design already-gone order 88030/g).length, 1);
     assert.equal(blob.includes(SAMPLE), false);
   },
 
   async 'admin-route'() {
-    insert({ id: 'expired-91', status: 'expired', createdSql: "datetime('now', '-91 days')" });
+    insert({ id: 'expired-91', status: 'expired', createdSql: "datetime('now', '-91 days')", expiresSql: RESUME_DONE });
     keeper();
     const admin = require('../routes/admin');
     const app = express();
@@ -806,7 +967,7 @@ const cases = {
     assert.equal(legacy.customer_email, SAMPLE);
     assert.equal(legacy.pdf_base64, 'cGRm');
     const cols = db.pragma('table_info(designs)').map((col) => col.name);
-    for (const name of ['paid_at', 'anonymised_at', 'accepted_at', 'design_name', 'revision']) {
+    for (const name of ['paid_at', 'anonymised_at', 'accepted_at', 'design_name', 'revision', 'retention_alerted_at']) {
       assert.ok(cols.includes(name), name);
     }
     assert.equal(db.pragma('secure_delete', { simple: true }), 1);
@@ -882,7 +1043,7 @@ const cases = {
   },
 
   async 'dry-run-default-on'() {
-    insert({ id: 'expired-91', status: 'expired', createdSql: "datetime('now', '-91 days')" });
+    insert({ id: 'expired-91', status: 'expired', createdSql: "datetime('now', '-91 days')", expiresSql: RESUME_DONE });
     keeper();
     const result = await retention.run();
     assert.equal(result.dryRun, true);
@@ -916,6 +1077,30 @@ const cases = {
       );
     } finally {
       global.fetch = previous;
+    }
+  },
+
+  async 'review-html-escape'() {
+    insert({
+      id: 'xss-review',
+      status: 'in_review',
+      createdSql: "datetime('now', '-1 day')",
+      email: 'ann"><script>alert(1)</script>@example.com',
+      reviewToken: 'rv-xss',
+      reviewPdf: 'cGRm',
+      name: 'Eve',
+    });
+    const review = require('../routes/review');
+    const app = express();
+    app.use('/api/review', review);
+    const server = await listen(app);
+    try {
+      const res = await request(server, '/api/review/accept/rv-xss');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.includes('<script>'), false);
+      assert.match(res.body, /ann&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;@example.com/);
+    } finally {
+      await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
     }
   },
 

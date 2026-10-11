@@ -15,6 +15,16 @@ const { maskEmail } = require('../services/redact');
 
 const router = express.Router();
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
 // ── GET /api/review/preview/:token ────────────────────────────────────────────
 router.get('/preview/:token', (req, res) => {
   const design = db.prepare('SELECT * FROM designs WHERE review_token = ?').get(req.params.token);
@@ -90,9 +100,10 @@ router.get('/accept/:token', async (req, res) => {
     db.prepare(`UPDATE designs SET status = 'failed' WHERE id = ?`).run(design.id);
   }
 
+  const safeEmail = escapeHtml(design.customer_email);
   res.send(acceptPage(
     'Design accepted!',
-    `Thank you! Your final design files have been emailed to <strong>${design.customer_email}</strong>. Please check your inbox — the download link is valid for ${expiryHours} hours.`,
+    `Thank you! Your final design files have been emailed to <strong>${safeEmail}</strong>. Please check your inbox — the download link is valid for ${Number(expiryHours)} hours.`,
     true,
   ));
 });
@@ -106,7 +117,7 @@ function acceptPage(title, message, success) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${title} — Creature Cycles</title>
+  <title>${escapeHtml(title)} — Creature Cycles</title>
   <style>
     body { font-family: monospace; background: #f4f4f4; margin: 0; padding: 40px 20px; }
     .card { max-width: 540px; margin: 60px auto; background: #fff; border-radius: 8px;

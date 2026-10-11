@@ -380,7 +380,8 @@ async function checkApi() {
 /**
  * Read one Woo order. null only when Woo says that order id does not exist
  * (`woocommerce_rest_shop_order_invalid_id`). Any other 404, and every
- * auth or server failure, throws so the caller can fail closed.
+ * auth or server failure, throws. The retention purge skips one bad order
+ * and aborts only on auth failures or a run of errors.
  *
  * @param {string|number} wcOrderId
  * @returns {Promise<object|null>}

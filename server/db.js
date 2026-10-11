@@ -86,6 +86,9 @@ if (!existingCols.includes('paid_at')) {
 if (!existingCols.includes('anonymised_at')) {
   db.exec('ALTER TABLE designs ADD COLUMN anonymised_at DATETIME');
 }
+if (!existingCols.includes('retention_alerted_at')) {
+  db.exec('ALTER TABLE designs ADD COLUMN retention_alerted_at DATETIME');
+}
 if (!existingCols.includes('revision')) {
   db.exec('ALTER TABLE designs ADD COLUMN revision INTEGER NOT NULL DEFAULT 0');
 }

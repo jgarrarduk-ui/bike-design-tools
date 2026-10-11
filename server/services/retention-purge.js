@@ -17,26 +17,31 @@
  * delivered_at, and Woo date_paid_gmt. created_at is not a payment time.
  * With no such timestamp the row is kept.
  *
- * An unpaid row is anonymised only when it is past RETENTION_UNPAID_DAYS
- * and either:
+ * An unpaid row is anonymised only when it is past RETENTION_UNPAID_DAYS,
+ * the resume link has expired, and either:
  *   - it has a Woo order whose status is exactly cancelled or trash, or
- *   - it never had a wc_order_id and it is not still resumable
- * pending and checkout_created stay while the resume link is valid, unless
- * that Woo order is cancelled or trash. pending, on-hold, and failed Woo
- * orders are still payable and are never anonymised. A 404 is not a missing
- * order unless Woo returns woocommerce_rest_shop_order_invalid_id and the
- * WC API check passed, and even then the row is kept: only cancelled and
- * trash are dead.
+ *   - it never had a wc_order_id
+ * A resume link that is still valid keeps the row even when that Woo order
+ * is cancelled or trash. pending, on-hold, and failed Woo orders are still
+ * payable and are never anonymised. A confirmed invalid order id is kept.
  *
- * A 401, 403, 5xx, network error, generic 404, or failed API check aborts
- * the whole run before any write. If more than RETENTION_PURGE_MAX rows
- * (default 20) or more than half the rows in the scan would be anonymised,
- * the run aborts and writes nothing.
+ * Each run writes at most RETENTION_PURGE_MAX eligible rows (default 20)
+ * and leaves the rest for the next run. That cap does not abort the run.
+ * The run aborts with no writes when the Woo API check fails, Woo returns
+ * 401 or 403, more than three lookups fail in a row, more than 20% of the
+ * lookups fail (at least two), or at least 10 orders were checked and more
+ * than half of those came back cancelled or trash. Any other single-order
+ * failure skips that row only.
  *
- * The anonymise UPDATE repeats the paid-signal check in its WHERE clause,
- * inside one transaction. A DB lock row stops a second run, including the
- * admin route, from overlapping. After a live run that anonymised at least
- * one row, VACUUM runs with secure_delete on.
+ * The anonymise UPDATE repeats the selection: same status, same wc_order_id,
+ * resume link still expired, and the paid clock uses the latest timestamp.
+ * A lock row with an owner id stops a second run, including the admin route.
+ * The owner refreshes the lock while it works. A lock older than 30 minutes
+ * can be taken over. A run releases only its own lock.
+ *
+ * After a live run that anonymised at least one row, and only when the
+ * database is in WAL mode, the purge runs wal_checkpoint(TRUNCATE).
+ * secure_delete stays on. VACUUM is not run: it rewrites every stored PDF.
  *
  * customer_name and customer_email are NOT NULL, so the purge writes
  * "redacted" and "redacted+<id>@invalid". design_name and the PDFs and
@@ -49,6 +54,7 @@
  * and use the default. The timer interval is 0 (off) or clamped to 1–168h.
  */
 
+const crypto = require('crypto');
 const db = require('../db');
 const cleanup = require('./unpaid-cleanup');
 
@@ -61,7 +67,11 @@ const MIN_INTERVAL_HOURS = 1;
 const MAX_INTERVAL_HOURS = 168;
 const DEFAULT_PURGE_MAX = 20;
 const PURGE_FRACTION = 0.5;
+const MIN_WOO_FRACTION_ROWS = 10;
+const ERROR_FRACTION = 0.2;
+const ERROR_STREAK_MAX = 3;
 const LOCK_STALE_MS = 30 * 60 * 1000;
+const HEARTBEAT_MS = 60 * 1000;
 
 const PAID_STATUSES = ['paid', 'in_review', 'accepted', 'delivered', 'refunded'];
 const PAID_SIGNAL_COLUMNS = [
@@ -76,16 +86,19 @@ const PAID_SIGNAL_COLUMNS = [
 ];
 const WOO_PAID_STATUSES = new Set(['processing', 'completed', 'refunded']);
 const DEAD_ORDER_STATUSES = new Set(['cancelled', 'trash']);
-const RESUME_STATUSES = new Set(['pending', 'checkout_created']);
 const REDACTED_NAME = 'redacted';
 const INVALID_ORDER_CODE = 'woocommerce_rest_shop_order_invalid_id';
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS retention_lock (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    acquired_at TEXT
+    acquired_at TEXT,
+    owner TEXT
   );
 `);
+const lockCols = new Set(db.pragma('table_info(retention_lock)').map((col) => col.name));
+if (!lockCols.has('owner')) db.exec('ALTER TABLE retention_lock ADD COLUMN owner TEXT');
+if (!lockCols.has('acquired_at')) db.exec('ALTER TABLE retention_lock ADD COLUMN acquired_at TEXT');
 
 function parseEnvNumber(raw) {
   if (raw == null) return { ok: false, empty: true, text: '' };
@@ -211,8 +224,8 @@ function hasLocalPaidSignal(row) {
   return false;
 }
 
-function resumable(row) {
-  return RESUME_STATUSES.has(row.status) && !cleanup.resumeExpired(row);
+function resumeStillValid(row) {
+  return !cleanup.resumeExpired(row);
 }
 
 function loadRows() {
@@ -253,29 +266,61 @@ function abortError(reason) {
   return err;
 }
 
-function isHardWooError(err) {
-  if (!err || err.code === 'RETENTION_ABORT') return false;
-  const status = Number(err.status);
-  if (status === 404 && err.code === INVALID_ORDER_CODE) return false;
-  return true;
+function isAuthError(err) {
+  const status = Number(err && err.status);
+  return status === 401 || status === 403;
 }
 
-function acquireLock() {
+function isInvalidOrder(err) {
+  return Boolean(err) && Number(err.status) === 404 && err.code === INVALID_ORDER_CODE;
+}
+
+function wooFailureStatus(err) {
+  if (err && err.status) return err.status;
+  return 'network';
+}
+
+function acquireLock(owner) {
   const take = db.transaction(() => {
-    db.prepare('INSERT OR IGNORE INTO retention_lock (id, acquired_at) VALUES (1, NULL)').run();
-    const row = db.prepare('SELECT acquired_at FROM retention_lock WHERE id = 1').get();
-    if (row && row.acquired_at) {
+    db.prepare('INSERT OR IGNORE INTO retention_lock (id, acquired_at, owner) VALUES (1, NULL, NULL)').run();
+    const row = db.prepare('SELECT acquired_at, owner FROM retention_lock WHERE id = 1').get();
+    if (row && row.owner && row.owner !== owner && row.acquired_at) {
       const acquired = Date.parse(row.acquired_at);
       if (Number.isFinite(acquired) && Date.now() - acquired < LOCK_STALE_MS) return false;
     }
-    db.prepare('UPDATE retention_lock SET acquired_at = ? WHERE id = 1').run(new Date().toISOString());
+    db.prepare('UPDATE retention_lock SET acquired_at = ?, owner = ? WHERE id = 1').run(new Date().toISOString(), owner);
     return true;
   });
   return take.immediate();
 }
 
-function releaseLock() {
-  db.prepare('UPDATE retention_lock SET acquired_at = NULL WHERE id = 1').run();
+function heartbeat(owner) {
+  const result = db.prepare(`
+    UPDATE retention_lock SET acquired_at = ? WHERE id = 1 AND owner = ?
+  `).run(new Date().toISOString(), owner);
+  return result.changes === 1;
+}
+
+function releaseLock(owner) {
+  db.prepare(`
+    UPDATE retention_lock SET acquired_at = NULL, owner = NULL WHERE id = 1 AND owner = ?
+  `).run(owner);
+}
+
+function checkpointWal() {
+  let mode = '';
+  try {
+    mode = String(db.pragma('journal_mode', { simple: true }) || '');
+  } catch (err) {
+    console.error('[retention] wal checkpoint failed:', (err && err.code) || 'error');
+    return;
+  }
+  if (mode.toLowerCase() !== 'wal') return;
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch (err) {
+    console.error('[retention] wal checkpoint failed:', (err && err.code) || 'error');
+  }
 }
 
 const anonymiseUnpaid = db.prepare(`
@@ -303,6 +348,16 @@ const anonymiseUnpaid = db.prepare(`
     AND (download_token IS NULL OR trim(download_token) = '')
     AND download_expires_at IS NULL
     AND status NOT IN ('paid', 'in_review', 'accepted', 'delivered', 'refunded')
+    AND status = ?
+    AND COALESCE(wc_order_id, '') = COALESCE(?, '')
+    AND (
+      (resume_expires_at IS NOT NULL AND datetime(resume_expires_at) <= datetime('now'))
+      OR (
+        resume_expires_at IS NULL
+        AND created_at IS NOT NULL
+        AND datetime(created_at, '+' || ? || ' days') <= datetime('now')
+      )
+    )
 `);
 
 const anonymisePaid = db.prepare(`
@@ -322,7 +377,12 @@ const anonymisePaid = db.prepare(`
   WHERE id = ?
     AND anonymised_at IS NULL
     AND datetime(
-      COALESCE(paid_at, review_sent_at, accepted_at, delivered_at),
+      max(
+        COALESCE(paid_at, '0'),
+        COALESCE(review_sent_at, '0'),
+        COALESCE(accepted_at, '0'),
+        COALESCE(delivered_at, '0')
+      ),
       '+' || ? || ' days'
     ) < datetime('now')
 `);
@@ -368,23 +428,38 @@ function emptyResult(extra) {
     count: 0,
     designIds: [],
     writtenIds: [],
+    deferredIds: [],
     wouldAnonymiseUnpaid: [],
     wouldAnonymisePaid: [],
     skippedPaidSignals: [],
     skippedWooUnknown: [],
+    skippedWooError: [],
     skippedStillPayable: [],
+    keptIndefinitely: { invalidOrderId: 0, paidWithoutTimestamp: 0, payableWooOrder: 0 },
     ...extra,
   };
 }
 
-async function runLocked(options) {
+function takeBatch(unpaidTargets, paidIds, limit) {
+  const unpaid = unpaidTargets.slice(0, limit);
+  const paid = paidIds.slice(0, Math.max(0, limit - unpaid.length));
+  const deferred = [
+    ...unpaidTargets.slice(unpaid.length).map((item) => item.id),
+    ...paidIds.slice(paid.length),
+  ];
+  return { unpaid, paid, deferred };
+}
+
+async function runLocked(options, owner) {
   const preview = dryRun();
   const unpaidWindow = unpaidDays();
   const paidWindow = paidDays();
   const limit = purgeMax();
+  const resumeTtl = String(cleanup.resumeTtlDays());
   const getOrder = options.getOrder || defaultGetOrder;
   const rows = loadRows();
   const lookups = new Map();
+  const wooErrors = new Set();
   const wooRows = rows.filter((row) => needsWoo(row, unpaidWindow, paidWindow));
 
   if (wooRows.length) {
@@ -397,9 +472,12 @@ async function runLocked(options) {
     }
   }
 
+  let errorCount = 0;
+  let streak = 0;
   for (const row of wooRows) {
     try {
       const order = await getOrder(row.wc_order_id);
+      streak = 0;
       if (order == null) {
         lookups.set(row.id, { gone: true, order: null });
         console.warn(`[retention] design ${row.id} kept; Woo order ${row.wc_order_id} is not a valid order id`);
@@ -407,23 +485,44 @@ async function runLocked(options) {
         lookups.set(row.id, { gone: false, order });
       }
     } catch (err) {
-      if (isHardWooError(err)) {
-        const status = err && err.status ? err.status : 'network';
-        console.error(`[retention] aborted; Woo request failed for order ${row.wc_order_id} (${status})`);
+      if (isInvalidOrder(err)) {
+        streak = 0;
+        lookups.set(row.id, { gone: true, order: null });
+        console.warn(`[retention] design ${row.id} kept; Woo order ${row.wc_order_id} is not a valid order id`);
+        continue;
+      }
+      if (isAuthError(err)) {
+        console.error(`[retention] aborted; Woo auth failed for order ${row.wc_order_id} (${wooFailureStatus(err)})`);
+        throw abortError('woo-auth');
+      }
+      errorCount += 1;
+      streak += 1;
+      wooErrors.add(row.id);
+      console.error(`[retention] skipped design ${row.id}; Woo request failed for order ${row.wc_order_id} (${wooFailureStatus(err)})`);
+      const errorFraction = wooRows.length ? errorCount / wooRows.length : 1;
+      if (streak > ERROR_STREAK_MAX || (errorCount > 1 && errorFraction > ERROR_FRACTION)) {
+        console.error(`[retention] aborted; Woo errors ${errorCount} of ${wooRows.length} (streak ${streak})`);
         throw abortError('woo-error');
       }
-      throw err;
     }
   }
 
-  const unpaidIds = [];
+  const unpaidTargets = [];
   const paidIds = [];
   const skippedPaid = [];
   const skippedWoo = [];
+  const skippedWooError = [];
   const skippedPayable = [];
+  const keptInvalid = [];
+  const keptNoStamp = [];
+  const keptPayableOrder = [];
   const gmtStamps = [];
 
   for (const row of rows) {
+    if (wooErrors.has(row.id)) {
+      skippedWooError.push(row.id);
+      continue;
+    }
     const lookup = lookups.get(row.id);
     const localPaid = hasLocalPaidSignal(row);
     const unpaidDue = olderThan(row.created_at, unpaidWindow);
@@ -437,7 +536,10 @@ async function runLocked(options) {
     );
 
     if (lookup && lookup.gone) {
-      if (unpaidDue || localPaid) skippedWoo.push(row.id);
+      if (unpaidDue || localPaid) {
+        skippedWoo.push(row.id);
+        keptInvalid.push(row.id);
+      }
       continue;
     }
 
@@ -447,10 +549,16 @@ async function runLocked(options) {
       if (gmt && !row.paid_at && !preview) gmtStamps.push({ id: row.id, stamp: paidAtFromWoo(gmt) });
       if (stamp && olderThan(stamp, paidWindow)) paidIds.push(row.id);
       else if (unpaidDue || !stamp) skippedPaid.push(row.id);
+      if (!stamp) keptNoStamp.push(row.id);
       continue;
     }
 
     if (!unpaidDue) continue;
+
+    if (resumeStillValid(row)) {
+      skippedPayable.push(row.id);
+      continue;
+    }
 
     if (row.wc_order_id) {
       if (!lookup || !order) {
@@ -458,33 +566,39 @@ async function runLocked(options) {
         continue;
       }
       if (DEAD_ORDER_STATUSES.has(wooStatus)) {
-        unpaidIds.push(row.id);
+        unpaidTargets.push({ id: row.id, status: row.status, wcOrderId: row.wc_order_id });
         continue;
       }
       skippedPayable.push(row.id);
+      keptPayableOrder.push(row.id);
       continue;
     }
 
-    if (resumable(row)) {
-      skippedPayable.push(row.id);
-      continue;
-    }
-    unpaidIds.push(row.id);
+    unpaidTargets.push({ id: row.id, status: row.status, wcOrderId: row.wc_order_id });
   }
 
-  const planned = [...unpaidIds, ...paidIds].sort();
-  const fraction = rows.length ? planned.length / rows.length : 0;
-  const breaker = planned.length > limit || fraction > PURGE_FRACTION;
-  if (preview || breaker) {
-    logBucket(preview, 'would-anonymise unpaid', unpaidIds);
+  unpaidTargets.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  paidIds.sort();
+  const wooEligible = unpaidTargets.filter((item) => item.wcOrderId).length;
+  const fractionBreaker = wooRows.length >= MIN_WOO_FRACTION_ROWS
+    && wooEligible / wooRows.length > PURGE_FRACTION;
+  const keptIndefinitely = {
+    invalidOrderId: keptInvalid.length,
+    paidWithoutTimestamp: keptNoStamp.length,
+    payableWooOrder: keptPayableOrder.length,
+  };
+  const keptMode = preview ? 'dry-run ' : '';
+  console.log(`[retention] ${keptMode}kept with no end date: invalid-order ${keptInvalid.length}, paid-without-timestamp ${keptNoStamp.length}, payable-order ${keptPayableOrder.length}`);
+
+  if (fractionBreaker) {
+    const planned = [...unpaidTargets.map((item) => item.id), ...paidIds].sort();
+    logBucket(preview, 'would-anonymise unpaid', unpaidTargets.map((item) => item.id));
     logBucket(preview, 'would-anonymise paid', paidIds);
-  }
-  logBucket(preview, 'skipped as paid-signals', skippedPaid);
-  logBucket(preview, 'skipped as Woo unknown', skippedWoo);
-  logBucket(preview, 'skipped as still payable', skippedPayable);
-
-  if (breaker) {
-    console.error(`[retention] aborted; would anonymise ${planned.length} of ${rows.length} (limit ${limit}, or more than half)`);
+    logBucket(preview, 'skipped as paid-signals', skippedPaid);
+    logBucket(preview, 'skipped as Woo unknown', skippedWoo);
+    logBucket(preview, 'skipped as Woo error', skippedWooError);
+    logBucket(preview, 'skipped as still payable', skippedPayable);
+    console.error(`[retention] aborted; Woo made ${wooEligible} of ${wooRows.length} checked orders eligible (more than half)`);
     return emptyResult({
       ok: false,
       aborted: true,
@@ -493,29 +607,54 @@ async function runLocked(options) {
       unpaidDays: unpaidWindow,
       paidDays: paidWindow,
       designIds: planned,
-      wouldAnonymiseUnpaid: unpaidIds,
+      wouldAnonymiseUnpaid: unpaidTargets.map((item) => item.id),
       wouldAnonymisePaid: paidIds,
       skippedPaidSignals: skippedPaid,
       skippedWooUnknown: skippedWoo,
+      skippedWooError,
       skippedStillPayable: skippedPayable,
+      keptIndefinitely,
     });
   }
+
+  const batch = takeBatch(unpaidTargets, paidIds, limit);
+  if (preview) {
+    logBucket(true, 'would-anonymise unpaid', batch.unpaid.map((item) => item.id));
+    logBucket(true, 'would-anonymise paid', batch.paid);
+    logBucket(true, 'deferred', batch.deferred);
+  }
+  logBucket(preview, 'skipped as paid-signals', skippedPaid);
+  logBucket(preview, 'skipped as Woo unknown', skippedWoo);
+  logBucket(preview, 'skipped as Woo error', skippedWooError);
+  logBucket(preview, 'skipped as still payable', skippedPayable);
+  if (!preview && batch.deferred.length) logBucket(false, 'deferred', batch.deferred);
 
   let writtenUnpaid = [];
   let writtenPaid = [];
   if (!preview) {
+    if (!heartbeat(owner)) {
+      console.error('[retention] skipped; lock lost');
+      return emptyResult({ ok: false, aborted: true, reason: 'overlap' });
+    }
     const apply = db.transaction(() => {
       for (const item of gmtStamps) {
         if (item.stamp) stampPaidAt.run(item.stamp, item.id);
       }
       backfillLocalPaidAt.run();
       const didUnpaid = [];
-      for (const id of unpaidIds) {
-        const result = anonymiseUnpaid.run(REDACTED_NAME, redactedEmail(id), id);
-        if (result.changes === 1) didUnpaid.push(id);
+      for (const item of batch.unpaid) {
+        const result = anonymiseUnpaid.run(
+          REDACTED_NAME,
+          redactedEmail(item.id),
+          item.id,
+          item.status,
+          item.wcOrderId,
+          resumeTtl,
+        );
+        if (result.changes === 1) didUnpaid.push(item.id);
       }
       const didPaid = [];
-      for (const id of paidIds) {
+      for (const id of batch.paid) {
         const result = anonymisePaid.run(REDACTED_NAME, redactedEmail(id), id, String(paidWindow));
         if (result.changes === 1) didPaid.push(id);
       }
@@ -524,12 +663,12 @@ async function runLocked(options) {
     const written = apply();
     writtenUnpaid = written.didUnpaid;
     writtenPaid = written.didPaid;
-    if (writtenUnpaid.length + writtenPaid.length > 0) {
-      db.exec('VACUUM');
-    }
+    if (writtenUnpaid.length + writtenPaid.length > 0) checkpointWal();
   }
 
-  const designIds = (preview ? planned : [...writtenUnpaid, ...writtenPaid].sort());
+  const designIds = (preview
+    ? [...batch.unpaid.map((item) => item.id), ...batch.paid].sort()
+    : [...writtenUnpaid, ...writtenPaid].sort());
   if (!preview) {
     logBucket(false, 'anonymised unpaid', writtenUnpaid);
     logBucket(false, 'anonymised paid', writtenPaid);
@@ -542,18 +681,22 @@ async function runLocked(options) {
     count: designIds.length,
     designIds,
     writtenIds: preview ? [] : designIds,
-    wouldAnonymiseUnpaid: preview ? unpaidIds : writtenUnpaid,
-    wouldAnonymisePaid: preview ? paidIds : writtenPaid,
+    deferredIds: batch.deferred,
+    wouldAnonymiseUnpaid: preview ? batch.unpaid.map((item) => item.id) : writtenUnpaid,
+    wouldAnonymisePaid: preview ? batch.paid : writtenPaid,
     skippedPaidSignals: skippedPaid,
     skippedWooUnknown: skippedWoo,
+    skippedWooError,
     skippedStillPayable: skippedPayable,
+    keptIndefinitely,
   });
 }
 
 async function run(options = {}) {
+  const owner = crypto.randomUUID();
   let held = false;
   try {
-    held = acquireLock();
+    held = acquireLock(owner);
   } catch (err) {
     if (err && (err.code === 'SQLITE_BUSY' || err.code === 'SQLITE_LOCKED')) {
       console.error('[retention] skipped; another purge is already running');
@@ -565,15 +708,20 @@ async function run(options = {}) {
     console.error('[retention] skipped; another purge is already running');
     return emptyResult({ ok: false, aborted: true, reason: 'overlap' });
   }
+  const beat = setInterval(() => {
+    try { heartbeat(owner); } catch { /* the next write checks ownership */ }
+  }, HEARTBEAT_MS);
+  if (typeof beat.unref === 'function') beat.unref();
   try {
-    return await runLocked(options);
+    return await runLocked(options, owner);
   } catch (err) {
     if (err && err.code === 'RETENTION_ABORT') {
       return emptyResult({ ok: false, aborted: true, reason: err.reason });
     }
     throw err;
   } finally {
-    try { releaseLock(); } catch { /* the connection may already be closed */ }
+    clearInterval(beat);
+    try { releaseLock(owner); } catch { /* the connection may already be closed */ }
   }
 }
 
