@@ -687,32 +687,74 @@ function place(a0,b0,a1,b1,p){
   return add(a1, rot(sub(p,a0),{x:0,y:0},t));
 }
 
+/* Which rigid body carries each point. Absent cfg fields give today's flex-stay:
+   axle and brake on A, shock eye on C (the seat stay) unless shockMount, shock
+   other end on the frame. A truthy non-object is the legacy linkageMode
+   boolean: it means the shock eye rides the rocker R. */
+function bodiesOf(cfg){
+  const o=(cfg && typeof cfg==='object') ? cfg : (cfg ? {shockMount:1} : {});
+  return {
+    axle:o.axleBody||'A', brake:o.brakeBody||'A',
+    se:o.seBody||(o.shockMount?'R':'C'), sg:o.sgBody||'F',
+    linkless:!!o.linkless,
+    flex:o.flexStay===undefined ? true : !!o.flexStay
+  };
+}
+
 /* Topology
    body A  main pivot, rear axle, flex pivot        rotates about MP
-   body B  flex pivot, link pivot, shock eye        pinned to A at FP
-   link    link pivot to second pivot               pinned to ground at SP
+   body C  flex pivot, link pivot, shock eye        pinned to A at FP
+   body R  link pivot to second pivot               pinned to ground at SP
    shock   shock eye to shock ground
-   One degree of freedom: a four-bar MP-FP-LP-SP.                                    */
-function solve(g, phi, prevLP, linkageMode){
-  const FP=rot(g.FP,g.MP,phi), AX=rot(g.AX,g.MP,phi);
-  const hit=circles(FP, dist(g.FP,g.LP), g.SP, dist(g.SP,g.LP));
-  if(!hit) return null;
-  const ref=prevLP||g.LP;
-  const LP = dist(hit[0],ref)<=dist(hit[1],ref) ? hit[0] : hit[1];
-  /* Shock eye rigid to body B (the seat stay) by default -- place() maps the
-     rest pair (FP,LP) onto this frame's (FP,LP) and carries SE along for the
-     ride. linkageMode instead makes SE rigid to the LP-SP link/rocker: SP
-     never moves, so place(g.SP,g.LP,g.SP,LP,g.SE) reduces to a pure rotation
-     about the fixed SP by whatever angle LP has swept -- a different rigid
-     body, same helper. At phi=0 both branches reduce to the identity map
-     (FP and the solved LP both equal their rest values), so SE=g.SE either
-     way: switching modes never jumps the drawing at top-out, only away from
-     it. */
-  const SE = linkageMode ? place(g.SP,g.LP,g.SP,LP,g.SE) : place(g.FP,g.LP,FP,LP,g.SE);
-  return {phi,FP,AX,LP,SE,
-    shock: dist(SE,g.SG),
+   One degree of freedom: a four-bar MP-FP-LP-SP. In flex-stay the seat stay is C
+   and the link is R; a linkless single pivot has only A.                          */
+// Where a rest point p sits once body X has moved to pose s (s carries phi, FP, LP).
+// Identity for the frame; the four-bar bodies are rigid maps about their own pivots.
+function poseAt(g,s,X,p){
+  if(X==='A') return rot(p,g.MP,s.phi);
+  if(X==='C') return place(g.FP,g.LP,s.FP,s.LP,p);
+  if(X==='R') return place(g.SP,g.LP,g.SP,s.LP,p);
+  return p;
+}
+// Instant centre of body X relative to the frame, null at infinity. A turns about
+// MP and R about SP. The coupler's IC is where the lines MP-FP and SP-LP cross
+// (Kennedy: frame, A and C share one pole, so it lies on both).
+function icOf(g,s,X){
+  if(X==='A') return g.MP;
+  if(X==='R') return g.SP;
+  if(X==='C' && s.LP) return lineHit(g.MP,s.FP,g.SP,s.LP);
+  return null;
+}
+// When the IC is at infinity, the parallel links set its direction. MP-FP runs
+// parallel to SP-LP there, so either is valid; MP-FP is used.
+function icDirOf(g,s,X){
+  return (X==='C' && s.LP && !icOf(g,s,X)) ? unit(sub(s.FP,g.MP)) : null;
+}
+
+function solve(g, phi, prevLP, bod){
+  const B=(bod && typeof bod==='object') ? bod : bodiesOf(bod);
+  const FP=rot(g.FP,g.MP,phi);
+  let LP=null;
+  if(!B.linkless){
+    const hit=circles(FP, dist(g.FP,g.LP), g.SP, dist(g.SP,g.LP));
+    if(!hit) return null;
+    const ref=prevLP||g.LP;
+    LP = dist(hit[0],ref)<=dist(hit[1],ref) ? hit[0] : hit[1];
+  }
+  /* The shock eye follows whichever body B.se names. By default that is the seat
+     stay C: place() maps the rest pair (FP,LP) onto this frame's and carries SE
+     along. With the rocker R instead, SP never moves, so the same helper reduces
+     to a pure rotation about SP by the angle LP has swept. At phi=0 every body
+     map is the identity, so all points sit at their rest values either way and
+     switching bodies never jumps the drawing at top-out, only away from it. */
+  const s={phi,FP,LP};
+  const AX=poseAt(g,s,B.axle,g.AX), SE=poseAt(g,s,B.se,g.SE), SG=poseAt(g,s,B.sg,g.SG);
+  return {phi,FP,AX,LP,SE,SG,
+    shock: dist(SE,SG),
     rise: AX.y-g.AX.y,
-    stayAngle: Math.atan2(LP.y-FP.y,LP.x-FP.x)-phi}; // body B angle in body A's frame
+    stayAngle: LP ? Math.atan2(LP.y-FP.y,LP.x-FP.x)-phi : 0, // body C angle in body A's frame
+    IC: icOf(g,s,B.axle), ICdir: icDirOf(g,s,B.axle),
+    ICb: icOf(g,s,B.brake), ICbdir: icDirOf(g,s,B.brake)};
 }
 
 /* Rotate body A until the shock has been compressed by `comp`. `phiHint`, when
@@ -729,10 +771,23 @@ function solve(g, phi, prevLP, linkageMode){
    finds: same root, same tolerance, just less of the interval to search to
    get there. First frame has no previous phi, so it falls back to 0, exactly
    as before. */
-function atCompression(g, comp, guess, phiHint, linkageMode){
+/* Which way phi shortens the shock. Probed once per sweep rather than assumed,
+   since the drive direction depends on the bodies the shock is bolted to. A
+   non-solving probe falls back to -1, the flex-stay direction. */
+function shockSign(g,B){
+  const up=solve(g,0.01,null,B), dn=solve(g,-0.01,null,B);
+  if(!up || !dn) return -1;
+  return up.shock<dn.shock ? 1 : -1;
+}
+
+function atCompression(g, comp, guess, phiHint, bod){
+  const B=(bod && typeof bod==='object') ? bod : bodiesOf(bod);
+  const dir=B.sign || shockSign(g,B);
   const L0=dist(g.SE,g.SG), target=L0-comp;
-  let lo=(phiHint||phiHint===0)?phiHint:0, hi=-0.85, prev=null;   // negative phi drives the axle upward
-  const f=p=>{const s=solve(g,p,prev,linkageMode); if(!s) return null; prev=s.LP; return s.shock-target};
+  // 1.6rad reaches full stroke on short links that rotate a lot; the flex-stay
+  // solution is found well inside 0.85rad, so widening changes nothing there
+  let lo=(phiHint||phiHint===0)?phiHint:0, hi=dir*1.6, prev=null;
+  const f=p=>{const s=solve(g,p,prev,B); if(!s) return null; prev=s.LP; return s.shock-target};
   /* Rotating by zero still round-trips through the rigid-body transform, so the
      residual at zero compression is floating point noise of either sign rather
      than a clean zero. Treating that as a real sign meant the bracket search
@@ -740,30 +795,28 @@ function atCompression(g, comp, guess, phiHint, linkageMode){
   const TOL=1e-6;
   let fa=f(lo);
   if(fa===null) return null;
-  if(Math.abs(fa)<=TOL) return solve(g,lo,guess,linkageMode);
+  if(Math.abs(fa)<=TOL) return solve(g,lo,guess,B);
   let a=lo, b=null;
-  const N=140;
+  const N=200;
   for(let i=1;i<=N;i++){
     const p=lo+(hi-lo)*i/N, v=f(p);
     if(v===null) break;
-    if(Math.abs(v)<=TOL) return solve(g,p,guess,linkageMode);
+    if(Math.abs(v)<=TOL) return solve(g,p,guess,B);
     if(fa*v<0){b=p;break}
     a=p;fa=v;
   }
   if(b===null) return null;
-  /* 30 bisections of an interval no wider than 0.85rad resolves phi to about
-     8e-10rad -- on a 500mm lever arm that's under a micron, already far past
-     any precision this tool draws or reports at. The old 60 was roughly a
-     million times finer than that again, solving for precision nothing here
-     could ever use. Halved, not dropped further, to keep a comfortable
-     margin over floating-point noise rather than chase the theoretical
-     minimum. */
+  /* 30 bisections of one coarse step (1.6rad / 200, under 0.01rad) resolves phi
+     far below anything this tool draws or reports at -- on a 500mm lever arm a
+     micron is already ~2e-9rad. Kept at 30, not dropped further, to keep a
+     comfortable margin over floating-point noise rather than chase the
+     theoretical minimum. */
   for(let i=0;i<30;i++){
     const m=(a+b)/2, v=f(m);
     if(v===null) break;
     if(fa*v<=0){b=m} else {a=m;fa=v}
   }
-  return solve(g,(a+b)/2,guess,linkageMode);
+  return solve(g,(a+b)/2,guess,B);
 }
 
 // Upper chain run: the tangent that runs over the top of both circles.
@@ -1031,6 +1084,7 @@ function sweep(g,cfg,n=61){
   const ri=(cfg.idlerTeeth||14)*P/(2*Math.PI);
   const Rr=cfg.rw/2 + cfg.tyreR;  // rim bead diameter plus tyre height
   const base=topRun(g,cfg,rc,rg,ri,idlerAt(g,cfg,0),g.AX).force;
+  const B=bodiesOf(cfg); B.sign=shockSign(g,B);     // probed once, reused by every frame
   /* The wheel rolls on the ground; it is the frame that moves down onto it. The
      contact patch therefore stays at ground level through the travel instead of
      riding up with the axle, which is what the anti-squat datum is measured from.
@@ -1038,22 +1092,27 @@ function sweep(g,cfg,n=61){
   const ground=g.AX.y-Rr;
   const out=[], routes=[]; let prev=null, prevPhi=undefined;
   for(let i=0;i<=n;i++){
-    const s=atCompression(g, cfg.stroke*i/n, prev, prevPhi, cfg.shockMount);
+    const s=atCompression(g, cfg.stroke*i/n, prev, prevPhi, B);
     if(!s) return {frames:out, error:'The linkage jams before the shock reaches full stroke. '+
         'Usually the shock link is too short to reach, or the second pivot is too far from the main pivot.'};
     prev=s.LP; prevPhi=s.phi;
     const CP={x:s.AX.x, y:ground};
-    const IC=g.MP;                                   // wheel carrier is pinned to the frame
-    const guide=rot({x:g.AX.x+GDX, y:g.AX.y+GDY}, g.MP, s.phi);
+    /* Anti-squat looks at the axle body's IC. A pole at infinity is replaced by a
+       point 1m out along the parallel links, which gives the same line. Anti-rise
+       does the same for the brake body; for brakeBody 'A' that is g.MP, as before. */
+    const ICp = s.IC || (s.ICdir && add(s.AX, mul(s.ICdir,1000)));
+    const ICbp = s.ICb || (s.ICbdir && add(CP, mul(s.ICbdir,1000)));
+    // the guide rides the axle body, placed the same way as AX
+    const guide=poseAt(g, s, B.axle, {x:g.AX.x+GDX, y:g.AX.y+GDY});
     const ID=idlerAt(g,cfg,s.phi);
     const {route,force:cr}=topRun(g,cfg,rc,rg,ri,ID,s.AX);
     routes.push(route);
     let as=null, ifc=null, asH=null;
-    if(cr){
-      ifc=lineHit(cr.p1,cr.p2,s.AX,IC);
+    if(cr && ICp){
+      ifc=lineHit(cr.p1,cr.p2,s.AX,ICp);
       if(ifc){asH=heightAt(CP,ifc,cfg.fax); if(asH!==null) as=(asH-CP.y)/cfg.cogh*100}
     }
-    const hb=heightAt(CP,IC,cfg.fax);
+    const hb=ICbp ? heightAt(CP,ICbp,cfg.fax) : null;
     out.push({...s, stroke:cfg.stroke*i/n, CP, guide, idler:ID, ifc, asH, arH:hb,
       as, ar: hb===null?null:(hb-CP.y)/cfg.cogh*100,
       kick: cr&&base ? (cr.length-base.length)/rc*180/Math.PI : null,
@@ -1073,6 +1132,18 @@ function sweep(g,cfg,n=61){
   });
   const a0=out[0].stayAngle;
   out.forEach(f=>f.flex=(f.stayAngle-a0)*180/Math.PI);
+  /* Bearing rotation of each body from its top-out angle, in degrees. A turns
+     about MP, so its angle is phi; C and R are read along their own links. */
+  const angOf=(f,X)=> X==='A' ? f.phi
+    : !f.LP ? 0
+    : X==='C' ? Math.atan2(f.LP.y-f.FP.y, f.LP.x-f.FP.x)
+    : Math.atan2(f.LP.y-g.SP.y, f.LP.x-g.SP.x);
+  const r0={A:angOf(out[0],'A'), C:angOf(out[0],'C'), R:angOf(out[0],'R')};
+  out.forEach(f=>{
+    f.rotA=(angOf(f,'A')-r0.A)*180/Math.PI;
+    f.rotC=(angOf(f,'C')-r0.C)*180/Math.PI;
+    f.rotR=(angOf(f,'R')-r0.R)*180/Math.PI;
+  });
   /* Leverage is d(rise)/d(stroke), by the derivative of the quadratic through
      three frames -- not a plain central difference, because a central
      difference has nowhere to reach at the two ends of the sweep and used to
@@ -1109,39 +1180,63 @@ function sweep(g,cfg,n=61){
   return {frames:out, error:null, links};
 }
 
-// Static equilibrium. Unknowns: shock force, link force, flex-pivot force, main-pivot force.
-function pivotForces(g,f,Fw){
-  const uS=unit(sub(f.SE,g.SG)), uL=unit(sub(f.LP,g.SP));
-  const A=[],b=[];
-  const row=(c,r)=>{A.push(c);b.push(r)};
-  // body B: shock at SE, link at LP, reaction from A at FP
-  row([uS.x,uL.x,1,0,0,0],0);
-  row([uS.y,uL.y,0,1,0,0],0);
-  row([cross(sub(f.SE,f.FP),uS), cross(sub(f.LP,f.FP),uL),0,0,0,0],0);
-  // body A: wheel load at contact patch, -FP reaction, main pivot reaction
-  row([0,0,-1,0,1,0],0);
-  row([0,0,0,-1,0,1],Fw);
-  row([0,0,-cross(sub(f.FP,g.MP),{x:1,y:0}),-cross(sub(f.FP,g.MP),{x:0,y:1}),0,0],
-      -cross(sub(f.CP,g.MP),{x:0,y:-Fw}));
-  // Gaussian elimination
-  const M=A.map((r,i)=>[...r,b[i]]), n=6;
-  for(let c=0;c<n;c++){
-    let p=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+/* Static equilibrium of the moving bodies: A, C and R (just A when linkless).
+   Unknowns: the shock force S along SG->SE, acting equal and opposite on the two
+   shock bodies (a shock end on the frame contributes nothing), and a free 2D
+   reaction at each joint: MP frame->A, FP A->C, LP R->C, SP frame->R. Each body
+   gives Fx, Fy and a moment about its own pivot, so 9 unknowns and 9 rows (3x3
+   linkless). The wheel load acts vertically at the contact patch on the axle body.
+   Nothing here assumes which body carries the shock, which is why the rocker case
+   and the seat-stay case solve the same way. */
+function pivotForces(g,f,Fw,cfg){
+  const B=bodiesOf(cfg), LL=B.linkless, N=LL?3:9;
+  const MOV=LL?['A']:['A','C','R'];
+  const ref={A:g.MP, C:f.FP, R:g.SP};          // each body's own pivot, for its moment
+  const blank=()=>Array(N+1).fill(0);
+  const rows={}; MOV.forEach(X=>rows[X]=[blank(),blank(),blank()]);
+  // unknown k times the constant direction v, acting at p on body X
+  const onK=(X,p,k,v)=>{ const R=rows[X]; if(!R) return;   // frame or fixed body: no row
+    const r=sub(p,ref[X]);
+    R[0][k]+=v.x; R[1][k]+=v.y; R[2][k]+=r.x*v.y-r.y*v.x };
+  // a known force F acting at p on body X, moved to the right-hand side
+  const onF=(X,p,F)=>{ const R=rows[X]; if(!R) return;
+    const r=sub(p,ref[X]);
+    R[0][N]-=F.x; R[1][N]-=F.y; R[2][N]-=r.x*F.y-r.y*F.x };
+  const ex={x:1,y:0}, ey={x:0,y:1}, neg=v=>({x:-v.x,y:-v.y});
+  // a joint at p, unknown reaction (k,k+1) on X and its opposite on Y
+  const joint=(X,Y,p,k)=>{ onK(X,p,k,ex); onK(X,p,k+1,ey); onK(Y,p,k,neg(ex)); onK(Y,p,k+1,neg(ey)) };
+  const uS=unit(sub(f.SE, f.SG||g.SG));
+  onK(B.se, f.SE, 0, uS);
+  onK(B.sg, f.SG||g.SG, 0, neg(uS));
+  joint('A','F',g.MP,1);                        // frame -> A at the main pivot
+  if(!LL){
+    joint('C','A',f.FP,3);                      // A -> C at the flex pivot
+    joint('C','R',f.LP,5);                      // R -> C at the link pivot
+    joint('R','F',g.SP,7);                      // frame -> R at the second pivot
+  }
+  onF(B.axle, f.CP, {x:0,y:-Fw});               // wheel load at the contact patch
+  // Gauss-Jordan with partial pivoting
+  const M=[]; MOV.forEach(X=>rows[X].forEach(r=>M.push(r)));
+  for(let c=0;c<N;c++){
+    let p=c; for(let r=c+1;r<N;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
     if(Math.abs(M[p][c])<1e-12) return null;
     [M[c],M[p]]=[M[p],M[c]];
-    for(let r=0;r<n;r++){ if(r===c) continue;
-      const k=M[r][c]/M[c][c]; for(let j=c;j<=n;j++) M[r][j]-=k*M[c][j]; }
+    for(let r=0;r<N;r++){ if(r===c) continue;
+      const k=M[r][c]/M[c][c]; for(let j=c;j<=N;j++) M[r][j]-=k*M[c][j]; }
   }
-  const x=M.map((r,i)=>r[n]/M[i][i]);
+  const x=M.map((r,i)=>r[N]/M[i][i]);
   // The wheel load above is applied downward, which is the negative of the real
   // ground reaction, so the arrow vectors are flipped once here to point the way
   // the force actually acts. Magnitudes and fp keep their original convention.
   const V=(vx,vy)=>({x:-vx,y:-vy});
-  return {shock:Math.abs(x[0]), link:Math.abs(x[1]),
-    flexPivot:Math.hypot(x[2],x[3]), mainPivot:Math.hypot(x[4],x[5]),
-    fp:{x:x[2], y:x[3]},         // signed, so it can be resolved along the stay
-    vec:{shock:V(x[0]*uS.x,x[0]*uS.y), link:V(x[1]*uL.x,x[1]*uL.y),
-         flex:V(x[2],x[3]), main:V(x[4],x[5])}};
+  const z=k=>LL?0:x[k];                         // linkless has no joints past MP
+  const mv={x:x[1],y:x[2]}, fv={x:z(3),y:z(4)}, lv={x:z(5),y:z(6)}, sv={x:z(7),y:z(8)};
+  return {shock:Math.abs(x[0]), link:Math.hypot(lv.x,lv.y),
+    flexPivot:Math.hypot(fv.x,fv.y), mainPivot:Math.hypot(mv.x,mv.y),
+    secondPivot:Math.hypot(sv.x,sv.y), linkPivot:Math.hypot(lv.x,lv.y),
+    fp:fv,                                      // signed force on C from A, so it resolves along the stay
+    vec:{shock:V(x[0]*uS.x,x[0]*uS.y), link:V(lv.x,lv.y),
+         flex:V(fv.x,fv.y), main:V(mv.x,mv.y)}};
 }
 
 
@@ -1447,7 +1542,7 @@ function recompute(quick){
   const m=document.getElementById('msg');
   try{
     C.fax=frame(0).FA.x;   // anti-squat referenced to the fork at full extension
-    G.FP={...G.AX};                      // flex pivot is always the rear axle
+    if(bodiesOf(C).flex) G.FP={...G.AX}; // flex-stay: flex pivot is always the rear axle
     // locked, the idler sits on the main pivot: every write path lands here in the end
     if(C.idlerOn&&C.idlerLock) G.ID={...G.MP};
     /* The shock mount and the link pivot are welded-on parts, so what they own is
@@ -2352,7 +2447,7 @@ function draw(){
   function drawForceVectors(){
     if(showForces && !C.shockMount){
       const Fw=sprungLoad();
-      const P=pivotForces(G,f,Fw);
+      const P=pivotForces(G,f,Fw,C);
       if(P){
         const FSCALE=0.22;                       // 1 kN reads as 220 mm on the drawing
         const arrow=(p,v,col)=>{
@@ -2603,7 +2698,7 @@ function readouts(){
     const stayGeo=stayPath(G.FP,G.SE);
     const stayU=unit(sub(G.SE,G.AX));
     const axialAt=mult=>{
-      const P=pivotForces(G,sagFr,W*mult);
+      const P=pivotForces(G,sagFr,W*mult,C);
       if(!P) return 0;
       return -(P.fp.x*stayU.x+P.fp.y*stayU.y)/2;      // per stay, compression positive
     };
@@ -2657,7 +2752,7 @@ function readouts(){
   // running either way (it's cheap, and its own correctness is untouched
   // by this feature) but its numbers only reach the screen when they mean
   // what they say.
-  const P2=pivotForces(G,sagFr,W);
+  const P2=pivotForces(G,sagFr,W,C);
   R('out-force').innerHTML = C.shockMount
     ? row('Pivot loads','not modeled for a linkage-driven shock yet','warn')
     : (P2 ?
