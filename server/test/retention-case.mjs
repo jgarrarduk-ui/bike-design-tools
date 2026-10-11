@@ -178,7 +178,7 @@ const cases = {
     insert({
       id: 'paid-no-stamp',
       status: 'in_review',
-      createdSql: "datetime('now', '-2558 days')",
+      createdSql: "datetime('now', '-2556 days')",
     });
     const result = await retention.run();
     assert.deepEqual(result.designIds, ['paid-old']);
@@ -245,6 +245,7 @@ const cases = {
       assert.match(blob, /dry-run would-anonymise paid 1: dry-paid/);
       assert.match(blob, /dry-run skipped as paid-signals/);
       assert.match(blob, /dry-run skipped as Woo unknown/);
+      assert.match(blob, /dry-run unresolved past 365d/);
       assert.match(blob, /dry-run skipped as still payable/);
       assert.equal(blob.includes(SAMPLE), false);
       assert.equal(blob.includes('Jane'), false);
@@ -750,6 +751,143 @@ const cases = {
     }
   },
 
+  async 'unresolved-cutoff'() {
+    insert({
+      id: 'hold-364',
+      status: 'pending',
+      createdSql: "datetime('now', '-364 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88364',
+    });
+    insert({
+      id: 'hold-366',
+      status: 'pending',
+      createdSql: "datetime('now', '-366 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88366',
+    });
+    insert({
+      id: 'hold-live',
+      status: 'pending',
+      createdSql: "datetime('now', '-366 days')",
+      expiresSql: "datetime('now', '+10 days')",
+      wcOrderId: '88367',
+    });
+    insert({
+      id: 'invalid-366',
+      status: 'expired',
+      createdSql: "datetime('now', '-366 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88404',
+    });
+    insert({
+      id: 'paid-366',
+      status: 'paid',
+      createdSql: "datetime('now', '-366 days')",
+      paidSql: "datetime('now', '-10 days')",
+      wcOrderId: '88370',
+    });
+    insert({
+      id: 'woo-paid-366',
+      status: 'pending',
+      createdSql: "datetime('now', '-366 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88371',
+    });
+    insert({
+      id: 'hold-race',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88372',
+    });
+    const result = await retention.run(woo(async (orderId) => {
+      const id = String(orderId);
+      if (id === '88404') return null;
+      if (id === '88372') {
+        db.prepare(`
+          UPDATE designs SET status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE id = 'hold-race'
+        `).run();
+        return { id: orderId, status: 'on-hold' };
+      }
+      if (id === '88371') {
+        return { id: orderId, status: 'on-hold', date_paid: '2026-09-01T12:00:00' };
+      }
+      return { id: orderId, status: 'on-hold' };
+    }));
+    assert.equal(result.aborted, false);
+    assert.deepEqual(result.designIds, ['hold-366', 'invalid-366']);
+    assert.ok(result.wouldAnonymiseUnresolved.includes('hold-366'));
+    assert.ok(result.wouldAnonymiseUnresolved.includes('invalid-366'));
+    assert.equal(row('hold-364').customer_email, SAMPLE);
+    assert.equal(row('hold-364').anonymised_at, null);
+    assert.ok(result.skippedStillPayable.includes('hold-364'));
+    assert.equal(row('hold-366').customer_email, 'redacted+hold-366@invalid');
+    assert.equal(row('hold-live').customer_email, SAMPLE);
+    assert.equal(row('hold-live').resume_token, 'resume-hold-live');
+    assert.ok(result.skippedStillPayable.includes('hold-live'));
+    assert.equal(row('invalid-366').customer_email, 'redacted+invalid-366@invalid');
+    assert.equal(row('paid-366').customer_email, SAMPLE);
+    assert.equal(row('paid-366').anonymised_at, null);
+    assert.equal(row('woo-paid-366').customer_email, SAMPLE);
+    assert.equal(row('woo-paid-366').anonymised_at, null);
+    assert.ok(result.skippedPaidSignals.includes('woo-paid-366'));
+    assert.equal(row('hold-race').status, 'paid');
+    assert.equal(row('hold-race').customer_email, SAMPLE);
+    assert.equal(row('hold-race').anonymised_at, null);
+  },
+
+  async 'paid-status-no-stamp'() {
+    insert({
+      id: 'stamp-young',
+      status: 'paid',
+      createdSql: "datetime('now', '-2556 days')",
+    });
+    insert({
+      id: 'stamp-old',
+      status: 'in_review',
+      createdSql: "datetime('now', '-2558 days')",
+    });
+    const result = await retention.run();
+    assert.equal(result.aborted, false);
+    assert.deepEqual(result.designIds, ['stamp-old']);
+    assert.equal(row('stamp-young').customer_email, SAMPLE);
+    assert.equal(row('stamp-young').anonymised_at, null);
+    assert.ok(result.skippedPaidSignals.includes('stamp-young'));
+    assert.equal(row('stamp-old').customer_email, 'redacted+stamp-old@invalid');
+    assert.ok(row('stamp-old').anonymised_at);
+    assert.equal(row('stamp-old').status, 'in_review');
+  },
+
+  async 'unresolved-batch'() {
+    process.env.RETENTION_PURGE_MAX = '20';
+    for (let i = 0; i < 25; i += 1) {
+      const n = String(i).padStart(2, '0');
+      insert({
+        id: `u-${n}`,
+        status: 'pending',
+        createdSql: "datetime('now', '-400 days')",
+        expiresSql: RESUME_DONE,
+        wcOrderId: String(89000 + i),
+      });
+    }
+    const getOrder = async (orderId) => ({ id: orderId, status: 'on-hold' });
+    const first = await retention.run(woo(getOrder));
+    assert.equal(first.aborted, false);
+    assert.equal(first.reason, null);
+    assert.equal(first.designIds.length, 20);
+    assert.equal(first.deferredIds.length, 5);
+    assert.equal(first.wouldAnonymiseUnresolved.length, 20);
+    const second = await retention.run(woo(getOrder));
+    assert.equal(second.aborted, false);
+    assert.equal(second.designIds.length, 5);
+    assert.deepEqual(second.deferredIds, []);
+    for (let i = 0; i < 25; i += 1) {
+      const id = `u-${String(i).padStart(2, '0')}`;
+      assert.equal(row(id).customer_email, `redacted+${id}@invalid`);
+    }
+  },
+
   async 'circuit-max'() {
     process.env.RETENTION_PURGE_MAX = '1';
     insert({ id: 'a', status: 'expired', createdSql: "datetime('now', '-120 days')", expiresSql: RESUME_DONE });
@@ -997,10 +1135,12 @@ const cases = {
     console.warn = (...args) => warnings.push(args.map(String).join(' '));
     try {
       delete process.env.RETENTION_UNPAID_DAYS;
+      delete process.env.RETENTION_UNRESOLVED_DAYS;
       delete process.env.RETENTION_PAID_DAYS;
       delete process.env.RETENTION_PURGE_INTERVAL_HOURS;
       delete process.env.RETENTION_PURGE_DRY_RUN;
       assert.equal(retention.unpaidDays(), 90);
+      assert.equal(retention.unresolvedDays(), 365);
       assert.equal(retention.paidDays(), 2557);
       assert.equal(retention.intervalHours(), 24);
       assert.equal(retention.dryRun(), true);
@@ -1018,6 +1158,16 @@ const cases = {
       assert.equal(retention.paidDays(), 2557);
       process.env.RETENTION_PAID_DAYS = 'nope';
       assert.equal(retention.paidDays(), 2557);
+      delete process.env.RETENTION_UNPAID_DAYS;
+      process.env.RETENTION_UNRESOLVED_DAYS = '100';
+      assert.equal(retention.unresolvedDays(), 365);
+      process.env.RETENTION_UNRESOLVED_DAYS = 'nope';
+      assert.equal(retention.unresolvedDays(), 365);
+      process.env.RETENTION_UNPAID_DAYS = '400';
+      process.env.RETENTION_UNRESOLVED_DAYS = '365';
+      assert.equal(retention.unresolvedDays(), 400);
+      delete process.env.RETENTION_UNPAID_DAYS;
+      delete process.env.RETENTION_UNRESOLVED_DAYS;
 
       process.env.RETENTION_PURGE_INTERVAL_HOURS = '0';
       assert.equal(retention.intervalHours(), 0);
@@ -1047,6 +1197,9 @@ const cases = {
     assert.match(blob, /RETENTION_UNPAID_DAYS=10 is below 30; using 30/);
     assert.match(blob, /RETENTION_UNPAID_DAYS=abc is not a number; using 90/);
     assert.match(blob, /RETENTION_PAID_DAYS=2192 is below 2557; using 2557/);
+    assert.match(blob, /RETENTION_UNRESOLVED_DAYS=100 is below 365; using 365/);
+    assert.match(blob, /RETENTION_UNRESOLVED_DAYS=nope is not a number; using 365/);
+    assert.match(blob, /RETENTION_UNRESOLVED_DAYS=365 is below 400; using 400/);
     assert.match(blob, /RETENTION_PURGE_INTERVAL_HOURS=abc is not a number; using 24/);
     assert.match(blob, /RETENTION_PURGE_INTERVAL_HOURS=1000 exceeds 168; using 168/);
     assert.match(blob, /RETENTION_PURGE_INTERVAL_HOURS=0.5 is below 1; using 1/);

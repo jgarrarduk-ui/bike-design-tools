@@ -28,6 +28,9 @@ const names = [
   'expired-resume-without-order-purged',
   'expired-purged',
   'cancelled-backlog-drains',
+  'unresolved-cutoff',
+  'paid-status-no-stamp',
+  'unresolved-batch',
   'circuit-max',
   'race-recheck',
   'overlap-lock',
@@ -76,5 +79,5 @@ for (const name of names) {
 }
 
 test('retention cases are listed', () => {
-  assert.equal(names.length, 34);
+  assert.equal(names.length, 37);
 });

@@ -15,15 +15,18 @@
  *
  * The paid clock is the latest of paid_at, review_sent_at, accepted_at,
  * delivered_at, and Woo date_paid_gmt. created_at is not a payment time.
- * With no such timestamp the row is kept.
+ * A paid signal with no such timestamp is kept for RETENTION_PAID_DAYS from
+ * created_at, then anonymised.
  *
- * An unpaid row is anonymised only when it is past RETENTION_UNPAID_DAYS,
- * the resume link has expired, and either:
- *   - it has a Woo order whose status is exactly cancelled or trash, or
- *   - it never had a wc_order_id
- * A resume link that is still valid keeps the row even when that Woo order
- * is cancelled or trash. pending, on-hold, and failed Woo orders are still
- * payable and are never anonymised. A confirmed invalid order id is kept.
+ * An unpaid row is anonymised when the resume link has expired and either:
+ *   - it is past RETENTION_UNPAID_DAYS and its Woo order is cancelled or
+ *     trash, or it never had a wc_order_id, or
+ *   - it is past RETENTION_UNRESOLVED_DAYS (default 365, and never shorter
+ *     than RETENTION_UNPAID_DAYS) with no paid signal, whatever the Woo
+ *     status. That covers pending, on-hold, and failed orders, an invalid
+ *     order id, and an orphan.
+ * A resume link that is still valid keeps the row. Woo date_paid or
+ * date_paid_gmt means the row is paid and stays on the seven-year clock.
  *
  * Each run writes at most RETENTION_PURGE_MAX eligible rows (default 20)
  * and leaves the rest for the next run. That cap does not abort the run.
@@ -60,8 +63,10 @@ const db = require('../db');
 const cleanup = require('./unpaid-cleanup');
 
 const DEFAULT_UNPAID_DAYS = 90;
+const DEFAULT_UNRESOLVED_DAYS = 365;
 const DEFAULT_PAID_DAYS = 2557;
 const MIN_UNPAID_DAYS = 30;
+const MIN_UNRESOLVED_DAYS = 365;
 const MIN_PAID_DAYS = 2557;
 const DEFAULT_INTERVAL_HOURS = 24;
 const MIN_INTERVAL_HOURS = 1;
@@ -139,6 +144,18 @@ function paidDays() {
     DEFAULT_PAID_DAYS,
     MIN_PAID_DAYS,
     'RETENTION_PAID_DAYS',
+  );
+}
+
+function unresolvedDays() {
+  const unpaid = unpaidDays();
+  const floor = Math.max(MIN_UNRESOLVED_DAYS, unpaid);
+  const fallback = Math.max(DEFAULT_UNRESOLVED_DAYS, unpaid);
+  return configuredDays(
+    process.env.RETENTION_UNRESOLVED_DAYS,
+    fallback,
+    floor,
+    'RETENTION_UNRESOLVED_DAYS',
   );
 }
 
@@ -359,6 +376,30 @@ const anonymiseUnpaid = db.prepare(`
     )
 `);
 
+const anonymisePaidFromCreated = db.prepare(`
+  UPDATE designs
+  SET customer_name = ?,
+      customer_email = ?,
+      design_name = NULL,
+      pdf_base64 = NULL,
+      review_pdf_base64 = NULL,
+      resume_token = NULL,
+      download_token = NULL,
+      review_token = NULL,
+      resume_expires_at = NULL,
+      download_expires_at = NULL,
+      wc_checkout_url = NULL,
+      anonymised_at = CURRENT_TIMESTAMP
+  WHERE id = ?
+    AND anonymised_at IS NULL
+    AND status = ?
+    AND paid_at IS NULL
+    AND accepted_at IS NULL
+    AND delivered_at IS NULL
+    AND review_sent_at IS NULL
+    AND datetime(created_at, '+' || ? || ' days') < datetime('now')
+`);
+
 const anonymisePaid = db.prepare(`
   UPDATE designs
   SET customer_name = ?,
@@ -423,35 +464,40 @@ function emptyResult(extra) {
     aborted: false,
     reason: null,
     unpaidDays: unpaidDays(),
+    unresolvedDays: unresolvedDays(),
     paidDays: paidDays(),
     count: 0,
     designIds: [],
     writtenIds: [],
     deferredIds: [],
     wouldAnonymiseUnpaid: [],
+    wouldAnonymiseUnresolved: [],
     wouldAnonymisePaid: [],
     skippedPaidSignals: [],
     skippedWooUnknown: [],
     skippedWooError: [],
     skippedStillPayable: [],
-    keptIndefinitely: { invalidOrderId: 0, paidWithoutTimestamp: 0, payableWooOrder: 0 },
     ...extra,
   };
 }
 
-function takeBatch(unpaidTargets, paidIds, limit) {
-  const unpaid = unpaidTargets.slice(0, limit);
-  const paid = paidIds.slice(0, Math.max(0, limit - unpaid.length));
-  const deferred = [
-    ...unpaidTargets.slice(unpaid.length).map((item) => item.id),
-    ...paidIds.slice(paid.length),
-  ];
-  return { unpaid, paid, deferred };
+function takeBatch(groups, limit) {
+  const chosen = [];
+  let room = limit;
+  const deferred = [];
+  for (const group of groups) {
+    const take = room > 0 ? group.slice(0, room) : [];
+    chosen.push(...take);
+    deferred.push(...group.slice(take.length).map((item) => item.id));
+    room -= take.length;
+  }
+  return { chosen, deferred };
 }
 
 async function runLocked(options, owner) {
   const preview = dryRun();
   const unpaidWindow = unpaidDays();
+  const unresolvedWindow = unresolvedDays();
   const paidWindow = paidDays();
   const limit = purgeMax();
   const resumeTtl = String(cleanup.resumeTtlDays());
@@ -479,7 +525,7 @@ async function runLocked(options, owner) {
       streak = 0;
       if (order == null) {
         lookups.set(row.id, { gone: true, order: null });
-        console.warn(`[retention] design ${row.id} kept; Woo order ${row.wc_order_id} is not a valid order id`);
+        console.warn(`[retention] design ${row.id} Woo order ${row.wc_order_id} is not a valid order id`);
       } else {
         lookups.set(row.id, { gone: false, order });
       }
@@ -487,7 +533,7 @@ async function runLocked(options, owner) {
       if (isInvalidOrder(err)) {
         streak = 0;
         lookups.set(row.id, { gone: true, order: null });
-        console.warn(`[retention] design ${row.id} kept; Woo order ${row.wc_order_id} is not a valid order id`);
+        console.warn(`[retention] design ${row.id} Woo order ${row.wc_order_id} is not a valid order id`);
         continue;
       }
       if (isAuthError(err)) {
@@ -507,15 +553,18 @@ async function runLocked(options, owner) {
   }
 
   const unpaidTargets = [];
-  const paidIds = [];
+  const unresolvedTargets = [];
+  const paidTargets = [];
+  const paidFromCreated = [];
   const skippedPaid = [];
   const skippedWoo = [];
   const skippedWooError = [];
   const skippedPayable = [];
-  const keptInvalid = [];
-  const keptNoStamp = [];
-  const keptPayableOrder = [];
   const gmtStamps = [];
+
+  function target(row) {
+    return { id: row.id, status: row.status, wcOrderId: row.wc_order_id || null };
+  }
 
   for (const row of rows) {
     if (wooErrors.has(row.id)) {
@@ -525,6 +574,7 @@ async function runLocked(options, owner) {
     const lookup = lookups.get(row.id);
     const localPaid = hasLocalPaidSignal(row);
     const unpaidDue = olderThan(row.created_at, unpaidWindow);
+    const unresolvedDue = olderThan(row.created_at, unresolvedWindow);
     const order = lookup && lookup.order ? lookup.order : null;
     const gmt = order && nonEmpty(order.date_paid_gmt) ? order.date_paid_gmt : null;
     const wooStatus = order ? String(order.status || '').toLowerCase() : '';
@@ -534,28 +584,27 @@ async function runLocked(options, owner) {
       || WOO_PAID_STATUSES.has(wooStatus)
     );
 
-    if (lookup && lookup.gone) {
-      if (unpaidDue || localPaid) {
-        skippedWoo.push(row.id);
-        keptInvalid.push(row.id);
-      }
-      continue;
-    }
-
     const isPaid = localPaid || wooPaid;
     if (isPaid) {
       const stamp = clockStamp(row, gmt);
       if (gmt && !row.paid_at && !preview) gmtStamps.push({ id: row.id, stamp: paidAtFromWoo(gmt) });
-      if (stamp && olderThan(stamp, paidWindow)) paidIds.push(row.id);
-      else if (unpaidDue || !stamp) skippedPaid.push(row.id);
-      if (!stamp) keptNoStamp.push(row.id);
+      if (stamp && olderThan(stamp, paidWindow)) paidTargets.push({ id: row.id, kind: 'paid' });
+      else if (!stamp && olderThan(row.created_at, paidWindow)) {
+        paidFromCreated.push({ id: row.id, status: row.status, kind: 'paid-created' });
+      } else skippedPaid.push(row.id);
       continue;
     }
 
-    if (!unpaidDue) continue;
+    if (!unpaidDue && !unresolvedDue) continue;
 
     if (resumeStillValid(row)) {
       skippedPayable.push(row.id);
+      continue;
+    }
+
+    if (lookup && lookup.gone) {
+      if (unresolvedDue) unresolvedTargets.push({ ...target(row), kind: 'unresolved' });
+      else skippedWoo.push(row.id);
       continue;
     }
 
@@ -564,34 +613,38 @@ async function runLocked(options, owner) {
         skippedWoo.push(row.id);
         continue;
       }
-      if (DEAD_ORDER_STATUSES.has(wooStatus)) {
-        unpaidTargets.push({ id: row.id, status: row.status, wcOrderId: row.wc_order_id });
+      if (unpaidDue && DEAD_ORDER_STATUSES.has(wooStatus)) {
+        unpaidTargets.push({ ...target(row), kind: 'unpaid' });
+        continue;
+      }
+      if (unresolvedDue) {
+        unresolvedTargets.push({ ...target(row), kind: 'unresolved' });
         continue;
       }
       skippedPayable.push(row.id);
-      keptPayableOrder.push(row.id);
       continue;
     }
 
-    unpaidTargets.push({ id: row.id, status: row.status, wcOrderId: row.wc_order_id });
+    unpaidTargets.push({ ...target(row), kind: 'unpaid' });
   }
 
-  unpaidTargets.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  paidIds.sort();
-  const keptIndefinitely = {
-    invalidOrderId: keptInvalid.length,
-    paidWithoutTimestamp: keptNoStamp.length,
-    payableWooOrder: keptPayableOrder.length,
-  };
-  const keptMode = preview ? 'dry-run ' : '';
-  console.log(`[retention] ${keptMode}kept with no end date: invalid-order ${keptInvalid.length}, paid-without-timestamp ${keptNoStamp.length}, payable-order ${keptPayableOrder.length}`);
+  const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  unpaidTargets.sort(byId);
+  unresolvedTargets.sort(byId);
+  paidTargets.sort(byId);
+  paidFromCreated.sort(byId);
 
-  const batch = takeBatch(unpaidTargets, paidIds, limit);
+  const batch = takeBatch([unpaidTargets, unresolvedTargets, paidTargets, paidFromCreated], limit);
+  const idsOf = (kind) => batch.chosen.filter((item) => item.kind === kind).map((item) => item.id);
+  const batchUnpaid = idsOf('unpaid');
+  const batchUnresolved = idsOf('unresolved');
+  const batchPaid = [...idsOf('paid'), ...idsOf('paid-created')];
   if (preview) {
-    logBucket(true, 'would-anonymise unpaid', batch.unpaid.map((item) => item.id));
-    logBucket(true, 'would-anonymise paid', batch.paid);
+    logBucket(true, 'would-anonymise unpaid', batchUnpaid);
+    logBucket(true, 'would-anonymise paid', batchPaid);
     logBucket(true, 'deferred', batch.deferred);
   }
+  if (preview) logBucket(true, `unresolved past ${unresolvedWindow}d`, batchUnresolved);
   logBucket(preview, 'skipped as paid-signals', skippedPaid);
   logBucket(preview, 'skipped as Woo unknown', skippedWoo);
   logBucket(preview, 'skipped as Woo error', skippedWooError);
@@ -599,6 +652,7 @@ async function runLocked(options, owner) {
   if (!preview && batch.deferred.length) logBucket(false, 'deferred', batch.deferred);
 
   let writtenUnpaid = [];
+  let writtenUnresolved = [];
   let writtenPaid = [];
   if (!preview) {
     if (!heartbeat(owner)) {
@@ -611,53 +665,69 @@ async function runLocked(options, owner) {
       }
       backfillLocalPaidAt.run();
       const didUnpaid = [];
-      for (const item of batch.unpaid) {
-        const result = anonymiseUnpaid.run(
-          REDACTED_NAME,
-          redactedEmail(item.id),
-          item.id,
-          item.status,
-          item.wcOrderId,
-          resumeTtl,
-        );
-        if (result.changes === 1) didUnpaid.push(item.id);
-      }
+      const didUnresolved = [];
       const didPaid = [];
-      for (const id of batch.paid) {
-        const result = anonymisePaid.run(REDACTED_NAME, redactedEmail(id), id, String(paidWindow));
-        if (result.changes === 1) didPaid.push(id);
+      for (const item of batch.chosen) {
+        if (item.kind === 'unpaid' || item.kind === 'unresolved') {
+          const result = anonymiseUnpaid.run(
+            REDACTED_NAME,
+            redactedEmail(item.id),
+            item.id,
+            item.status,
+            item.wcOrderId,
+            resumeTtl,
+          );
+          if (result.changes !== 1) continue;
+          if (item.kind === 'unpaid') didUnpaid.push(item.id);
+          else didUnresolved.push(item.id);
+        } else if (item.kind === 'paid') {
+          const result = anonymisePaid.run(REDACTED_NAME, redactedEmail(item.id), item.id, String(paidWindow));
+          if (result.changes === 1) didPaid.push(item.id);
+        } else {
+          const result = anonymisePaidFromCreated.run(
+            REDACTED_NAME,
+            redactedEmail(item.id),
+            item.id,
+            item.status,
+            String(paidWindow),
+          );
+          if (result.changes === 1) didPaid.push(item.id);
+        }
       }
-      return { didUnpaid, didPaid };
+      return { didUnpaid, didUnresolved, didPaid };
     });
     const written = apply();
     writtenUnpaid = written.didUnpaid;
+    writtenUnresolved = written.didUnresolved;
     writtenPaid = written.didPaid;
-    if (writtenUnpaid.length + writtenPaid.length > 0) checkpointWal();
+    if (writtenUnpaid.length + writtenUnresolved.length + writtenPaid.length > 0) checkpointWal();
   }
 
   const designIds = (preview
-    ? [...batch.unpaid.map((item) => item.id), ...batch.paid].sort()
-    : [...writtenUnpaid, ...writtenPaid].sort());
+    ? [...batchUnpaid, ...batchUnresolved, ...batchPaid].sort()
+    : [...writtenUnpaid, ...writtenUnresolved, ...writtenPaid].sort());
   if (!preview) {
     logBucket(false, 'anonymised unpaid', writtenUnpaid);
     logBucket(false, 'anonymised paid', writtenPaid);
+    logBucket(false, `unresolved past ${unresolvedWindow}d`, writtenUnresolved);
   }
 
   return emptyResult({
     dryRun: preview,
     unpaidDays: unpaidWindow,
+    unresolvedDays: unresolvedWindow,
     paidDays: paidWindow,
     count: designIds.length,
     designIds,
     writtenIds: preview ? [] : designIds,
     deferredIds: batch.deferred,
-    wouldAnonymiseUnpaid: preview ? batch.unpaid.map((item) => item.id) : writtenUnpaid,
-    wouldAnonymisePaid: preview ? batch.paid : writtenPaid,
+    wouldAnonymiseUnpaid: preview ? batchUnpaid : writtenUnpaid,
+    wouldAnonymiseUnresolved: preview ? batchUnresolved : writtenUnresolved,
+    wouldAnonymisePaid: preview ? batchPaid : writtenPaid,
     skippedPaidSignals: skippedPaid,
     skippedWooUnknown: skippedWoo,
     skippedWooError,
     skippedStillPayable: skippedPayable,
-    keptIndefinitely,
   });
 }
 
@@ -711,13 +781,15 @@ function scheduleRetentionPurge() {
   setTimeout(tick, 30 * 1000);
   setInterval(tick, ms);
   const mode = dryRun() ? 'dry-run' : 'live';
-  console.log(`  Retention purge : every ${hours}h, unpaid ${unpaidDays()}d, paid ${paidDays()}d, ${mode}`);
+  console.log(`  Retention purge : every ${hours}h, unpaid ${unpaidDays()}d, unresolved ${unresolvedDays()}d, paid ${paidDays()}d, ${mode}`);
 }
 
 module.exports = {
   DEFAULT_UNPAID_DAYS,
+  DEFAULT_UNRESOLVED_DAYS,
   DEFAULT_PAID_DAYS,
   MIN_UNPAID_DAYS,
+  MIN_UNRESOLVED_DAYS,
   MIN_PAID_DAYS,
   MIN_INTERVAL_HOURS,
   MAX_INTERVAL_HOURS,
@@ -727,6 +799,7 @@ module.exports = {
   DEAD_ORDER_STATUSES,
   REDACTED_NAME,
   unpaidDays,
+  unresolvedDays,
   paidDays,
   purgeMax,
   intervalHours,

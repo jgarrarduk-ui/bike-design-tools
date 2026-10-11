@@ -202,21 +202,27 @@ when any paid signal is set: `paid_at`, `accepted_at`, `delivered_at`,
 `delivered`, `refunded`), or `date_paid_gmt` / `date_paid` on the linked Woo
 order. The clock is the latest of `paid_at`, `review_sent_at`, `accepted_at`,
 `delivered_at`, and Woo `date_paid_gmt`. It is not `created_at`. A paid
-signal with no timestamp is kept. A design marked `failed` after accept, and
+signal with no timestamp is kept for `RETENTION_PAID_DAYS` from `created_at`,
+then anonymised. A design marked `failed` after accept, and
 a paid order later cancelled or refunded, stay on that clock. `paid_at` is
 stamped when the order-updated webhook marks a design paid, and cancel or
 refund does not clear it. 2557 days is seven years from payment. A setting
-below 2557 is raised to 2557.
+below 2557 is raised to 2557. Woo `date_paid` or `date_paid_gmt` means the
+row is paid and is not wiped by the one-year cutoff.
 
-An unpaid design is anonymised only when it is past `RETENTION_UNPAID_DAYS`
-(default `90`), the resume link has expired, and the Woo order is exactly
-`cancelled` or `trash`, or the design never had a `wc_order_id`. A resume
+An unpaid design is anonymised when the resume link has expired and it is
+past `RETENTION_UNPAID_DAYS` (default `90`) with a Woo order of exactly
+`cancelled` or `trash`, or it never had a `wc_order_id`. A resume
 link that is still valid (`resume_expires_at` in the future, or `created_at`
 plus the resume TTL when that column is empty) keeps the row even if the
-Woo order is `cancelled` or `trash`. `pending`, `on-hold`, and `failed` Woo
-orders are still payable and are kept. A Woo 404 is not "missing" unless
-the code is `woocommerce_rest_shop_order_invalid_id` and `GET /system_status`
-succeeded, and that row is still kept.
+Woo order is `cancelled` or `trash`. Past `RETENTION_UNRESOLVED_DAYS`
+(default `365`, never shorter than `RETENTION_UNPAID_DAYS`) a row with no
+paid signal is anonymised whatever the Woo status. That includes `pending`,
+`on-hold`, and `failed` orders, a confirmed invalid order id, and an orphan.
+A value below 365, or below `RETENTION_UNPAID_DAYS`, is raised, with a
+warning. A Woo 404 is not "missing" unless the code is
+`woocommerce_rest_shop_order_invalid_id` and `GET /system_status`
+succeeded. Before the unresolved cutoff that row is kept.
 
 Each run anonymises at most `RETENTION_PURGE_MAX` eligible rows (default
 20) and leaves the rest for the next run. The cap does not abort the run.
@@ -239,13 +245,9 @@ can be taken over, and a run clears only its own lock.
 An order-updated webhook for an anonymised design does not change the row
 and does not email the redacted address. It logs the design id and Woo
 order id. A payment status (`processing` or `completed`) emails
-info@creaturecycles.co.uk once per design. Later webhooks for that design
+info@creaturecycles.co.uk once per design, including a late payment for an
+on-hold order wiped at the one-year cutoff. Later webhooks for that design
 are logged only.
-
-Three classes of row have no end date: a Woo id Woo says is invalid, a paid
-signal with no timestamp, and a `pending`, `on-hold`, or `failed` order
-whose resume link has already expired. They are kept, and each run logs how
-many of each it saw. A cutoff for them is not set.
 
 Values of `RETENTION_UNPAID_DAYS` below 30 are raised to 30, and values of
 `RETENTION_PAID_DAYS` below 2557 are raised to 2557, each with a warning.
@@ -258,8 +260,8 @@ the timer off). The purge writes only when `RETENTION_PURGE_DRY_RUN` is
 exactly `0`. Unset, empty, and any other value are a dry run. A dry run
 logs a breakdown and the design ids and writes nothing, including the
 `paid_at` backfill: would-anonymise unpaid, would-anonymise paid, deferred,
-skipped as paid-signals, skipped as Woo unknown, skipped as Woo error,
-skipped as still payable, and kept with no end date. Logs do
+unresolved past 365d, skipped as paid-signals, skipped as Woo unknown,
+skipped as Woo error, and skipped as still payable. Logs do
 not include names, email addresses, or resume, checkout, accept, or
 download links. `POST /api/admin/retention-purge` runs the same job.
 
