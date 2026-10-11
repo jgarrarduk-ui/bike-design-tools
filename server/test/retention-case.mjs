@@ -160,13 +160,13 @@ const cases = {
       id: 'paid-young',
       status: 'paid',
       createdSql: "datetime('now', '-3000 days')",
-      paidSql: "datetime('now', '-2191 days')",
+      paidSql: "datetime('now', '-2556 days')",
     });
     insert({
       id: 'paid-old',
       status: 'delivered',
       createdSql: "datetime('now', '-10 days')",
-      paidSql: "datetime('now', '-2193 days')",
+      paidSql: "datetime('now', '-2558 days')",
     });
     insert({
       id: 'refunded-recent',
@@ -177,7 +177,7 @@ const cases = {
     insert({
       id: 'paid-no-stamp',
       status: 'in_review',
-      createdSql: "datetime('now', '-2193 days')",
+      createdSql: "datetime('now', '-2558 days')",
     });
     const result = await retention.run();
     assert.deepEqual(result.designIds, ['paid-old']);
@@ -194,7 +194,7 @@ const cases = {
       id: 'accepted-old',
       status: 'failed',
       createdSql: "datetime('now', '-10 days')",
-      acceptedSql: "datetime('now', '-2193 days')",
+      acceptedSql: "datetime('now', '-2558 days')",
     });
     insert({
       id: 'accepted-young',
@@ -215,7 +215,7 @@ const cases = {
       id: 'dry-paid',
       status: 'delivered',
       createdSql: "datetime('now', '-10 days')",
-      paidSql: "datetime('now', '-2193 days')",
+      paidSql: "datetime('now', '-2558 days')",
     });
     insert({
       id: 'dry-backfill',
@@ -261,7 +261,7 @@ const cases = {
       id: 'files-old',
       status: 'delivered',
       createdSql: "datetime('now', '-10 days')",
-      paidSql: "datetime('now', '-2193 days')",
+      paidSql: "datetime('now', '-2558 days')",
       downloadToken: 'dl-files-old',
       reviewToken: 'rv-files-old',
       reviewPdf: 'cGRm',
@@ -830,7 +830,7 @@ const cases = {
       delete process.env.RETENTION_PURGE_INTERVAL_HOURS;
       delete process.env.RETENTION_PURGE_DRY_RUN;
       assert.equal(retention.unpaidDays(), 90);
-      assert.equal(retention.paidDays(), 2192);
+      assert.equal(retention.paidDays(), 2557);
       assert.equal(retention.intervalHours(), 24);
       assert.equal(retention.dryRun(), true);
       assert.equal(retention.purgeMax(), 20);
@@ -843,10 +843,10 @@ const cases = {
       assert.equal(retention.unpaidDays(), 90);
       process.env.RETENTION_UNPAID_DAYS = '-5';
       assert.equal(retention.unpaidDays(), 90);
-      process.env.RETENTION_PAID_DAYS = '100';
-      assert.equal(retention.paidDays(), 2192);
+      process.env.RETENTION_PAID_DAYS = '2192';
+      assert.equal(retention.paidDays(), 2557);
       process.env.RETENTION_PAID_DAYS = 'nope';
-      assert.equal(retention.paidDays(), 2192);
+      assert.equal(retention.paidDays(), 2557);
 
       process.env.RETENTION_PURGE_INTERVAL_HOURS = '0';
       assert.equal(retention.intervalHours(), 0);
@@ -875,7 +875,7 @@ const cases = {
     assert.match(blob, /RETENTION_UNPAID_DAYS=0 is below 30; using 30/);
     assert.match(blob, /RETENTION_UNPAID_DAYS=10 is below 30; using 30/);
     assert.match(blob, /RETENTION_UNPAID_DAYS=abc is not a number; using 90/);
-    assert.match(blob, /RETENTION_PAID_DAYS=100 is below 2192; using 2192/);
+    assert.match(blob, /RETENTION_PAID_DAYS=2192 is below 2557; using 2557/);
     assert.match(blob, /RETENTION_PURGE_INTERVAL_HOURS=abc is not a number; using 24/);
     assert.match(blob, /RETENTION_PURGE_INTERVAL_HOURS=1000 exceeds 168; using 168/);
     assert.match(blob, /RETENTION_PURGE_INTERVAL_HOURS=0.5 is below 1; using 1/);

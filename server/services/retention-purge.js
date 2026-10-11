@@ -3,7 +3,7 @@
 /**
  * Data-retention purge. When a check is uncertain, the row is kept.
  *
- * A design is paid, and stays on the six-year clock, when any paid signal is
+ * A design is paid, and stays on the seven-year clock, when any paid signal is
  * present. Paid signals:
  *   - paid_at
  *   - accepted_at, delivered_at, review_sent_at
@@ -53,9 +53,9 @@ const db = require('../db');
 const cleanup = require('./unpaid-cleanup');
 
 const DEFAULT_UNPAID_DAYS = 90;
-const DEFAULT_PAID_DAYS = 2192;
+const DEFAULT_PAID_DAYS = 2557;
 const MIN_UNPAID_DAYS = 30;
-const MIN_PAID_DAYS = 2192;
+const MIN_PAID_DAYS = 2557;
 const DEFAULT_INTERVAL_HOURS = 24;
 const MIN_INTERVAL_HOURS = 1;
 const MAX_INTERVAL_HOURS = 168;

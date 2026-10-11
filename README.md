@@ -192,7 +192,7 @@ answer 404, the same as an unknown token. SQLite `secure_delete` is on, and
 a live run that anonymised a row runs `VACUUM`. The linked Woo order still
 holds the customer's billing details. This job does not change Woo.
 
-A design is kept for `RETENTION_PAID_DAYS` (default `2192`, about six years)
+A design is kept for `RETENTION_PAID_DAYS` (default `2557`, seven years)
 when any paid signal is set: `paid_at`, `accepted_at`, `delivered_at`,
 `review_sent_at`, a review PDF or `review_token`, a `download_token` or
 `download_expires_at`, a paid-family status (`paid`, `in_review`, `accepted`,
@@ -202,9 +202,8 @@ order. The clock is the latest of `paid_at`, `review_sent_at`, `accepted_at`,
 signal with no timestamp is kept. A design marked `failed` after accept, and
 a paid order later cancelled or refunded, stay on that clock. `paid_at` is
 stamped when the order-updated webhook marks a design paid, and cancel or
-refund does not clear it. 2192 days is about six years from payment. HMRC's
-six years run from the end of the accounting period, so this floor can be
-up to about a year short. It stays at 2192 until that is signed off.
+refund does not clear it. 2557 days is seven years from payment. A setting
+below 2557 is raised to 2557.
 
 An unpaid design is anonymised only when it is past `RETENTION_UNPAID_DAYS`
 (default `90`) and the Woo order is exactly `cancelled` or `trash`, or the
@@ -226,9 +225,9 @@ and does not email the redacted address. It logs the design id and Woo
 order id and emails info@creaturecycles.co.uk.
 
 Values of `RETENTION_UNPAID_DAYS` below 30 are raised to 30, and values of
-`RETENTION_PAID_DAYS` below 2192 are raised to 2192, each with a warning.
-A value that is not a number logs an error and uses 90 or 2192. Unset stays
-90 and 2192.
+`RETENTION_PAID_DAYS` below 2557 are raised to 2557, each with a warning.
+A value that is not a number logs an error and uses 90 or 2557. Unset stays
+90 and 2557.
 
 The job starts about 30 seconds after boot and then every
 `RETENTION_PURGE_INTERVAL_HOURS` (default `24`, clamped to 1–168; `0` turns
