@@ -166,10 +166,12 @@ tools-api order and the order-pay link; that path is not a basket add.
 Copy `creature-fd-order-experience.php` as well: it replaces the order-pay
 guest warning on those orders, hides `design_id` from customers, and prints
 the delivery lead time. On those order-pay pages it also requires the
-straight-away cancellation checkbox before payment, and the customer
-processing email confirms that consent. The processing and on-hold emails
-also include a Request a change link for 24 hours after payment
-(`creature_fd_change_window_hours`), or until the order is marked In design.
+straight-away cancellation checkbox before payment, and a separate terms
+checkbox for the Terms & Conditions, Design File Licence, and Required
+Build Specification. The customer processing email confirms that consent.
+The processing and on-hold emails also include a Request a change link
+for 24 hours after payment (`creature_fd_change_window_hours`), or until
+the order is marked In design.
 Filter `creature_fd_lead_time` (default
 `5 working days`). Filter `creature_fd_cancellation_waiver_text` to follow
 the final T&Cs. The save-design email and the payment email use
