@@ -35,7 +35,9 @@ db.exec(`
     product_ids          TEXT,                   -- JSON array from resolveProductIds at save
     design_name          TEXT,                   -- optional frame name for the save email
     resume_expires_at    DATETIME,               -- unpaid resume links last RESUME_TOKEN_TTL_DAYS (default 90)
-    deleted_at           DATETIME                -- set when an unpaid design is expired; row is kept
+    deleted_at           DATETIME,               -- set when an unpaid design is expired; row is kept
+    paid_at              DATETIME,               -- stamped when a payment webhook marks the design paid
+    anonymised_at        DATETIME                -- set by the retention purge; row is kept
   );
 
   CREATE INDEX IF NOT EXISTS idx_designs_email        ON designs (customer_email);
@@ -75,6 +77,12 @@ if (!existingCols.includes('resume_expires_at')) {
 }
 if (!existingCols.includes('deleted_at')) {
   db.exec('ALTER TABLE designs ADD COLUMN deleted_at DATETIME');
+}
+if (!existingCols.includes('paid_at')) {
+  db.exec('ALTER TABLE designs ADD COLUMN paid_at DATETIME');
+}
+if (!existingCols.includes('anonymised_at')) {
+  db.exec('ALTER TABLE designs ADD COLUMN anonymised_at DATETIME');
 }
 if (!existingCols.includes('revision')) {
   db.exec('ALTER TABLE designs ADD COLUMN revision INTEGER NOT NULL DEFAULT 0');

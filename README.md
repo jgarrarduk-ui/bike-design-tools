@@ -155,7 +155,9 @@ Cleanup of those scrapped pending orders is two hooks, both defaulting to 90
 days. Set `UNPAID_CLEANUP_INTERVAL_HOURS` (for example `24`) and the tools-api
 expires the resume token, sets the design to `expired` with `deleted_at` (the
 row stays), and cancels the Woo order when it is still pending.
-`POST /api/admin/cleanup-unpaid` runs the same job. On the shop, copy
+`POST /api/admin/cleanup-unpaid` runs the same job. A separate retention
+purge anonymises the design row itself once it is past the window below.
+On the shop, copy
 `wordpress-plugins/mu-plugins/creature-unpaid-design-orders.php` into
 `wp-content/mu-plugins/` so WP-Cron cancels the same pending orders if the
 API timer is off. Layout installs that file. Paid orders are not cancelled.
@@ -176,6 +178,34 @@ the final T&Cs. The save-design email and the payment email use
 `FD_LEAD_TIME` with the same default. If `REVIEW_LEAD_TIME_DAYS` is still
 `7` on Railway and `FD_LEAD_TIME` is unset, those emails say “7 working
 days”; delete the old variable or set it to `5`.
+
+### Data retention
+
+The tools-api anonymises a design in place. It does not delete the row.
+`customer_name` becomes `redacted` and `customer_email` becomes
+`redacted+<id>@invalid` (the columns are `NOT NULL`, and rewriting the table
+would copy every stored PDF). `pdf_base64`, the review PDF, `resume_token`,
+`download_token`, `review_token`, their expiries, and `wc_checkout_url` are
+cleared. Geometry `params` and `design_revisions` stay. `anonymised_at` is
+stamped so a later run skips the row. Resume, checkout, and download then
+answer 404, the same as an unknown token.
+
+Unpaid designs (`pending`, `checkout_created`, `failed`, `expired`,
+`cancelled`, and any other status that was never paid) are anonymised once
+`created_at` is older than `RETENTION_UNPAID_DAYS` (default `90`). Paid
+designs (`paid`, `in_review`, `accepted`, `delivered`, `refunded`) are kept
+for `RETENTION_PAID_DAYS` (default `2192`, about six years) from `paid_at`,
+or from `created_at` when payment was never stamped.
+
+The job starts about 30 seconds after boot and then every
+`RETENTION_PURGE_INTERVAL_HOURS` (default `24`), the same shape as unpaid
+cleanup. `0` turns the timer off. `RETENTION_PURGE_DRY_RUN=1` logs the count
+and the design ids and writes nothing. Logs do not include names or email
+addresses. `POST /api/admin/retention-purge` runs the same job.
+
+On the first Railway deploy, set `RETENTION_PURGE_DRY_RUN=1`, deploy, and
+read the `[retention] dry-run would anonymise` line before turning the dry
+run off.
 
 The save email is Cadence's draft, which James approved: subject "Your Creature Cycles design is
 saved", buttons "Edit design" and "Take me to checkout", dropouts still

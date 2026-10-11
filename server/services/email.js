@@ -18,6 +18,8 @@
  *   4. sendDesignAccepted      — auto-triggered when customer accepts: sends final download link
  */
 
+const { maskEmail, redactText } = require('./redact');
+
 const RESEND_EMAILS_URL = 'https://api.resend.com/emails';
 const RESEND_TIMEOUT_MS = 8000;
 
@@ -64,7 +66,7 @@ async function postResend({ to, subject, text, html }) {
     if (!res.ok) {
       let detail = '';
       try { detail = await res.text(); } catch { /* ignore a closed body */ }
-      const snippet = detail.replace(/\s+/g, ' ').trim().slice(0, 300);
+      const snippet = redactText(detail.replace(/\s+/g, ' ').trim().slice(0, 300));
       throw new Error(`Resend API ${res.status}${snippet ? `: ${snippet}` : ''}`);
     }
 
@@ -269,7 +271,7 @@ info@creaturecycles.co.uk`;
 // ── 1. Design saved (pre-payment) — edit link and checkout link ──────────────
 async function sendOrderConfirmation({ to, customerName, designName, designId, editUrl, checkoutUrl }) {
   if (!isConfigured()) {
-    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping design saved email to', to);
+    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping design saved email to', maskEmail(to));
     return;
   }
 
@@ -282,13 +284,13 @@ async function sendOrderConfirmation({ to, customerName, designName, designId, e
     html:    message.html,
   });
 
-  console.log(`[email] Sent design saved email to ${to} for design ${designId}`);
+  console.log(`[email] Sent design saved email to ${maskEmail(to)} for design ${designId}`);
 }
 
 // ── 2. Payment confirmation (post-payment, design under review) ───────────────
 async function sendPaymentConfirmation({ to, customerName, designId }) {
   if (!isConfigured()) {
-    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping payment confirmation to', to);
+    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping payment confirmation to', maskEmail(to));
     return;
   }
 
@@ -345,13 +347,13 @@ Questions? Just reply to this email.
     html,
   });
 
-  console.log(`[email] Sent payment confirmation to ${to} for design ${designId}`);
+  console.log(`[email] Sent payment confirmation to ${maskEmail(to)} for design ${designId}`);
 }
 
 // ── 3. Design review (admin-triggered, customer reviews + can accept) ─────────
 async function sendDesignReview({ to, customerName, designId, previewUrl, acceptUrl }) {
   if (!isConfigured()) {
-    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping review email to', to);
+    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping review email to', maskEmail(to));
     console.info('[email] Accept URL would have been:', acceptUrl);
     return;
   }
@@ -417,13 +419,13 @@ Design ID: ${shortId}
     html,
   });
 
-  console.log(`[email] Sent design review to ${to} for design ${designId}`);
+  console.log(`[email] Sent design review to ${maskEmail(to)} for design ${designId}`);
 }
 
 // ── 4. Design accepted — final download email ─────────────────────────────────
 async function sendDesignAccepted({ to, customerName, designId, downloadUrl, expiresAt }) {
   if (!isConfigured()) {
-    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping accepted email to', to);
+    console.warn('[email] Resend API key not set (SMTP_PASS or RESEND_API_KEY) — skipping accepted email to', maskEmail(to));
     console.info('[email] Download URL would have been:', downloadUrl);
     return;
   }
@@ -482,7 +484,7 @@ Thank you for choosing Creature Cycles!
     html,
   });
 
-  console.log(`[email] Sent final files to ${to} for design ${designId}`);
+  console.log(`[email] Sent final files to ${maskEmail(to)} for design ${designId}`);
 }
 
 const CHANGE_NOTIFY_TO = 'info@creaturecycles.co.uk';
@@ -544,7 +546,7 @@ async function sendChangeNotice(details) {
     text: message.text,
     html: message.html,
   });
-  console.log(`[email] Sent geometry change notice to ${message.to} for order ${details && details.orderId}`);
+  console.log(`[email] Sent geometry change notice to ${maskEmail(message.to)} for order ${details && details.orderId}`);
   return { sent: true, message };
 }
 

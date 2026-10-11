@@ -11,6 +11,7 @@ const express  = require('express');
 const { v4: uuidv4 } = require('uuid');
 const db       = require('../db');
 const email    = require('../services/email');
+const { maskEmail } = require('../services/redact');
 
 const router = express.Router();
 
@@ -83,7 +84,7 @@ router.get('/accept/:token', async (req, res) => {
     db.prepare(`UPDATE designs SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP WHERE id = ?`)
       .run(design.id);
 
-    console.log(`[review] Design ${design.id} accepted — sent final files to ${design.customer_email}`);
+    console.log(`[review] Design ${design.id} accepted — sent final files to ${maskEmail(design.customer_email)}`);
   } catch (err) {
     console.error(`[review] Failed to send final files for design ${design.id}:`, err.message);
     db.prepare(`UPDATE designs SET status = 'failed' WHERE id = ?`).run(design.id);

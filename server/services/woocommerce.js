@@ -25,6 +25,7 @@
  */
 
 const crypto = require('crypto');
+const { redactText } = require('./redact');
 
 const WC_API_VERSION = process.env.WC_API_VERSION || 'v3';
 let loggedConfigError = '';
@@ -69,8 +70,9 @@ async function wcFetch(path, method = 'GET', body = null) {
   const res = await fetch(apiUrl(path), opts);
   const data = await res.json();
   if (!res.ok) {
-    const msg = JSON.stringify(data.message || data);
-    throw new Error(`WooCommerce ${method} ${path} → ${res.status}: ${msg}`);
+    let msg = data && typeof data === 'object' ? (data.message || data.code || 'request failed') : data;
+    if (msg && typeof msg === 'object') msg = 'request failed';
+    throw new Error(`WooCommerce ${method} ${path} → ${res.status}: ${redactText(msg)}`);
   }
   return data;
 }

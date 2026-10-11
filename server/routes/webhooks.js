@@ -28,6 +28,7 @@ const crypto   = require('crypto');
 const db         = require('../db');
 const email      = require('../services/email');
 const woocommerce = require('../services/woocommerce');
+const { maskEmail } = require('../services/redact');
 
 const router = express.Router();
 
@@ -127,7 +128,12 @@ router.post(
     }
 
     // ── Mark as paid ─────────────────────────────────────────────────────────
-    db.prepare(`UPDATE designs SET status = 'paid' WHERE id = ?`).run(design.id);
+    db.prepare(`
+      UPDATE designs
+      SET status = 'paid',
+          paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP)
+      WHERE id = ?
+    `).run(design.id);
 
     // ── Send payment confirmation (design now in review queue) ───────────────
     try {
@@ -136,7 +142,7 @@ router.post(
         customerName: design.customer_name,
         designId:     design.id,
       });
-      console.log(`[webhook] Payment confirmed for design ${design.id} — sent review queue email to ${design.customer_email}`);
+      console.log(`[webhook] Payment confirmed for design ${design.id} — sent review queue email to ${maskEmail(design.customer_email)}`);
     } catch (err) {
       console.error(`[webhook] Failed to send payment confirmation for design ${design.id}:`, err.message);
     }

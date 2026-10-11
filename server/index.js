@@ -13,6 +13,7 @@ const reviewRouter    = require('./routes/review');
 const adminRouter     = require('./routes/admin');
 const email           = require('./services/email');
 const { scheduleUnpaidCleanup } = require('./services/unpaid-cleanup');
+const { scheduleRetentionPurge } = require('./services/retention-purge');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -88,4 +89,5 @@ app.listen(PORT, () => {
   console.log(`  Email       : ${email.isConfigured() ? 'Resend API' : '(SMTP_PASS / RESEND_API_KEY not set)'}`);
   console.log(`  DB          : ${process.env.DB_PATH   || './data/designs.db'}`);
   scheduleUnpaidCleanup();
+  scheduleRetentionPurge();
 });
