@@ -1,0 +1,60 @@
+{
+ "key": "moto-prolink",
+ "family": "moto",
+ "name": "Moto — rocker on swingarm, dogbone (Pro-Link)",
+ "note": "A rocker hangs from the underside of the swingarm and a short dogbone ties it to a bracket low on the frame by the bottom bracket, with the shock running from the rocker up to the seat tube, the layout Honda uses on its CRF motocross bikes.",
+ "geom": {
+  "MP": {
+   "x": 39.6,
+   "y": 59.3
+  },
+  "SP": {
+   "x": -66,
+   "y": -76.6
+  },
+  "FP": {
+   "x": -164.4,
+   "y": -17.6
+  },
+  "LP": {
+   "x": 86.4,
+   "y": -64.3
+  },
+  "SE": {
+   "x": -132.3,
+   "y": 142.3
+  },
+  "SG": {
+   "x": -91.9,
+   "y": 368.7
+  }
+ },
+ "cfg": {
+  "axleBody": "A",
+  "brakeBody": "A",
+  "seBody": "C",
+  "sgBody": "F",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "moto"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Swingarm pivot",
+  "SP": "Dogbone to frame",
+  "FP": "Rocker pivot on swingarm",
+  "LP": "Dogbone to rocker",
+  "SE": "Shock eye",
+  "SG": "Shock to seat tube"
+ },
+ "mounts": {
+  "SG": "st",
+  "SP": "free"
+ },
+ "targets": {
+  "prog": [
+   10,
+   45
+  ]
+ }
+}

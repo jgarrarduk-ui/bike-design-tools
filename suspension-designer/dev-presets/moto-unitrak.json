@@ -1,0 +1,60 @@
+{
+ "key": "moto-unitrak",
+ "family": "moto",
+ "name": "Moto — rocker on frame, pull rod (Uni-Trak)",
+ "note": "The swingarm pivots on the frame above the bottom bracket, a pull rod runs from underneath the arm to a rocker pivoted low behind the BB, and the rocker drives the shock up to the seat tube, the Kawasaki Uni-Trak layout seen on KX and KLX motocross bikes.",
+ "geom": {
+  "MP": {
+   "x": 40,
+   "y": 72.5
+  },
+  "SP": {
+   "x": -58.2,
+   "y": -65.4
+  },
+  "FP": {
+   "x": 3.7,
+   "y": -106.7
+  },
+  "LP": {
+   "x": -76.7,
+   "y": -200.8
+  },
+  "SE": {
+   "x": -234.7,
+   "y": 18.4
+  },
+  "SG": {
+   "x": -46.5,
+   "y": 150.7
+  }
+ },
+ "cfg": {
+  "axleBody": "A",
+  "brakeBody": "A",
+  "seBody": "R",
+  "sgBody": "F",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "moto"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Swingarm pivot",
+  "SP": "Rocker pivot on frame",
+  "FP": "Pull rod to swingarm",
+  "LP": "Pull rod to rocker",
+  "SE": "Shock eye",
+  "SG": "Shock to seat tube"
+ },
+ "mounts": {
+  "SG": "st",
+  "SP": "free"
+ },
+ "targets": {
+  "prog": [
+   10,
+   45
+  ]
+ }
+}

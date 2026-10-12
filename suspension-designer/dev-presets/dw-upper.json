@@ -1,0 +1,64 @@
+{
+ "key": "dw-upper",
+ "family": "shortlink",
+ "name": "Short link, co-rotating — upper link drives",
+ "note": "The rear wheel hangs from a short lower link near the bottom bracket and a longer upper link on the seat tube that also carries the shock, and both links swing the same way, as on Giant’s Maestro DW-link bikes.",
+ "geom": {
+  "MP": {
+   "x": -11.6,
+   "y": 66.8
+  },
+  "SP": {
+   "x": -47.5,
+   "y": 205
+  },
+  "FP": {
+   "x": -60,
+   "y": 52.4
+  },
+  "LP": {
+   "x": -213.8,
+   "y": 350
+  },
+  "SE": {
+   "x": -44.6,
+   "y": 330
+  },
+  "SG": {
+   "x": 173.3,
+   "y": 256.4
+  }
+ },
+ "cfg": {
+  "axleBody": "C",
+  "brakeBody": "C",
+  "seBody": "R",
+  "sgBody": "F",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "shortlink"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Lower link to frame",
+  "SP": "Upper link to seat tube",
+  "FP": "Lower link to rear triangle",
+  "LP": "Upper link to rear triangle",
+  "SE": "Shock eye",
+  "SG": "Shock to down tube"
+ },
+ "mounts": {
+  "SG": "dt",
+  "SP": "st"
+ },
+ "targets": {
+  "prog": [
+   5,
+   35
+  ],
+  "as": [
+   90,
+   140
+  ]
+ }
+}

@@ -1,0 +1,64 @@
+{
+ "key": "vpp-upper",
+ "family": "shortlink",
+ "name": "Short link, counter-rotating — upper link drives",
+ "note": "The rear triangle is one rigid piece held by a short lower link low at the bottom bracket and a short upper link on the seat tube; the upper link also carries the shock, as on Santa Cruz's early VPP bikes such as the Nomad, giving a firm, rising feel under pedalling.",
+ "geom": {
+  "MP": {
+   "x": -74,
+   "y": 67.2
+  },
+  "SP": {
+   "x": -52.4,
+   "y": 210.1
+  },
+  "FP": {
+   "x": -138.3,
+   "y": 91.9
+  },
+  "LP": {
+   "x": -77.4,
+   "y": 142.4
+  },
+  "SE": {
+   "x": 42.7,
+   "y": 86
+  },
+  "SG": {
+   "x": 187,
+   "y": 265.2
+  }
+ },
+ "cfg": {
+  "axleBody": "C",
+  "brakeBody": "C",
+  "seBody": "R",
+  "sgBody": "F",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "shortlink"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Lower link to frame",
+  "SP": "Upper link to seat tube",
+  "FP": "Lower link to rear triangle",
+  "LP": "Upper link to rear triangle",
+  "SE": "Shock eye",
+  "SG": "Shock to down tube"
+ },
+ "mounts": {
+  "SG": "dt",
+  "SP": "st"
+ },
+ "targets": {
+  "prog": [
+   5,
+   35
+  ],
+  "as": [
+   90,
+   150
+  ]
+ }
+}

@@ -1,0 +1,60 @@
+{
+ "key": "moto-floater",
+ "family": "moto",
+ "name": "Moto — Full-Floater",
+ "note": "Both ends of the shock float: the shock's top eye hangs off a rocker that is pivoted on the frame and pulled by a rod from underneath the swingarm, and its bottom eye sits on the swingarm itself, as on Suzuki's RM motocross bikes (RM125, RM250).",
+ "geom": {
+  "MP": {
+   "x": 39.8,
+   "y": 67.4
+  },
+  "SP": {
+   "x": -66.3,
+   "y": 177.4
+  },
+  "FP": {
+   "x": -190.1,
+   "y": 1.5
+  },
+  "LP": {
+   "x": -3.4,
+   "y": 110.6
+  },
+  "SE": {
+   "x": -10.5,
+   "y": 239.3
+  },
+  "SG": {
+   "x": -203.9,
+   "y": 114.9
+  }
+ },
+ "cfg": {
+  "axleBody": "A",
+  "brakeBody": "A",
+  "seBody": "R",
+  "sgBody": "A",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "moto"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Swingarm pivot",
+  "SP": "Rocker pivot on frame",
+  "FP": "Pull rod to swingarm",
+  "LP": "Pull rod to rocker",
+  "SE": "Shock eye",
+  "SG": "Shock to swingarm"
+ },
+ "mounts": {
+  "SG": "free",
+  "SP": "st"
+ },
+ "targets": {
+  "prog": [
+   10,
+   45
+  ]
+ }
+}

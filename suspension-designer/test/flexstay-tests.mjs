@@ -3,7 +3,7 @@ const src=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==ENGINE-END==')[0];
 const m=new Function(eng+'\nreturn {solve,sweep,pivotForces,stayLoads,dist,circles,chainRun,'+
   'routeIdler,beltRun,idlerAt,chainPath,CAGE_LO,CAGE_HI,cageRun,wrapSense,RJ,'+
-  'alongOf,standoffOf,onTube,segDist,unit,sub};')();
+  'alongOf,standoffOf,onTube,segDist,unit,sub,bodiesOf};')();
 const defs=src.split('const DEF=')[1].split('};')[0]+'}';
 const DEF=new Function('return '+defs)();
 
@@ -199,6 +199,10 @@ ok('every preset is named and described',
 PRESETS.forEach((p,i)=>{
   const g=Object.assign(structuredClone(DEF.geom), structuredClone(p.geom));
   const c=Object.assign(structuredClone(DEF.cfg),  structuredClone(p.cfg));
+  // The app's recompute() does exactly this: a flex-stay's flex pivot is always
+  // the rear axle. Mirrored here so a non-flex preset (FP is a real pivot the
+  // preset places, and it is not on the axle) is swept with its own FP.
+  if(m.bodiesOf(c).flex) g.FP={...g.AX};
   const r=m.sweep(g,c);
   const last=r.frames&&r.frames.length?r.frames[r.frames.length-1]:null;
   ok('preset '+i+' sweeps without jamming', !r.error, p.name+(r.error?': '+r.error:''));

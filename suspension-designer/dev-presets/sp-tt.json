@@ -1,0 +1,7 @@
+{"key":"sp-tt","family":"single","name":"Single pivot — shock under top tube","note":"The shock lies roughly flat beneath the top tube and is pushed by a swingarm extension that rises just ahead of the seat tube, much like the shock-under-the-top-rail layout of a classic motocross bike.",
+ "geom":{"MP":{"x":24.9,"y":72.8},"SP":{"x":74.0,"y":162.7},"FP":{"x":-450.0,"y":19.0},"LP":{"x":6.9,"y":271.8},"SE":{"x":-36.6,"y":285.4},"SG":{"x":190.1,"y":324.1}},
+ "cfg":{"axleBody":"A","brakeBody":"A","seBody":"A","sgBody":"F","linkless":1,"flexStay":0,"family":"single"},
+ "axleRel":[],
+ "labels":{"MP":"Swingarm pivot","SE":"Shock eye","SG":"Shock frame mount"},
+ "mounts":{"SG":"free","SP":"free"},
+ "targets":{"prog":[-5,18]}}

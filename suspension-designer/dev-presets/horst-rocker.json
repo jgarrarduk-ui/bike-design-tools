@@ -1,0 +1,7 @@
+{"key":"horst-rocker","family":"horst","name":"Horst link — rocker drives shock","note":"The rear wheel hangs from a Horst link: a chainstay pivots near the bottom bracket, a Horst pivot sits just ahead of the axle, and a rocker on the seat tube pushes the shock down to the down tube, the same idea as the Horst layout on Specialized's FSR Stumpjumper.",
+ "geom":{"MP":{"x":-16.3,"y":65.8},"SP":{"x":-39.8,"y":159.7},"FP":{"x":-388.9,"y":7.3},"LP":{"x":-105.5,"y":321.4},"SE":{"x":49.6,"y":326.9},"SG":{"x":79.9,"y":98.9}},
+ "cfg":{"axleBody":"C","brakeBody":"C","seBody":"R","sgBody":"F","linkless":0,"flexStay":0,"family":"horst"},
+ "axleRel":["FP"],
+ "labels":{"MP":"Chainstay pivot","SP":"Rocker pivot on seat tube","FP":"Horst pivot","LP":"Seat stay to rocker","SE":"Shock eye","SG":"Shock to down tube"},
+ "mounts":{"SG":"dt","SP":"st"},
+ "targets":{"prog":[10,35]}}

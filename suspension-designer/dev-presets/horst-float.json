@@ -1,0 +1,62 @@
+{
+ "key": "horst-float",
+ "family": "horst",
+ "name": "Horst link — floating shock",
+ "note": "The rear wheel hangs from a Horst link: a stay pivots on the chainstay just ahead of the axle, a rocker on the seat tube drives the shock, and the shock's lower end floats on a bracket forward of the bottom bracket so both ends move, the same family as Specialized's Demo and older FSR downhill bikes.",
+ "geom": {
+  "MP": {
+   "x": 9.9,
+   "y": 67.8
+  },
+  "SP": {
+   "x": -41.8,
+   "y": 155.9
+  },
+  "FP": {
+   "x": -419.7,
+   "y": 47.5
+  },
+  "LP": {
+   "x": -115.5,
+   "y": 227
+  },
+  "SE": {
+   "x": 64.3,
+   "y": 308.1
+  },
+  "SG": {
+   "x": 116.8,
+   "y": 84.1
+  }
+ },
+ "cfg": {
+  "axleBody": "C",
+  "brakeBody": "C",
+  "seBody": "R",
+  "sgBody": "A",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "horst"
+ },
+ "axleRel": [
+  "FP"
+ ],
+ "labels": {
+  "MP": "Chainstay pivot",
+  "SP": "Rocker pivot on seat tube",
+  "FP": "Horst pivot",
+  "LP": "Seat stay to rocker",
+  "SE": "Shock eye",
+  "SG": "Shock to chainstay bracket"
+ },
+ "mounts": {
+  "SG": "free",
+  "SP": "st"
+ },
+ "targets": {
+  "prog": [
+   10,
+   35
+  ]
+ }
+}

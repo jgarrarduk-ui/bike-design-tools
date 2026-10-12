@@ -193,6 +193,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
 .cfgopt+.cfgopt{border-top:1px solid var(--rule)}
 .cfgopt button{width:100%;text-align:left}
 .cfgopt .note{margin:4px 0 0}
+.cfgfam{margin:14px 12px 0;font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft)}
 h1{font-size:14px;margin:0 0 2px;font-weight:650;letter-spacing:.2px}
 .sub{color:var(--ink-soft);font-size:11px;margin:0 0 14px}
 /* Page chrome, above the three columns, so it is the viewport's top-left
@@ -236,6 +237,7 @@ h3{font-size:10px;font-weight:650;color:var(--ink-soft);text-transform:uppercase
 .tabs{margin-top:14px;padding-top:2px;border-top:1px solid var(--rule)}
 .tabbar{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 10px}
 .tabbtn{flex:1 1 auto;min-width:58px}
+.tabbtn[hidden]{display:none}   /* a configuration without a seat stay hides its stay tabs */
 .tabbtn[aria-selected=true]{background:var(--rear);border-color:var(--rear);color:var(--on-accent)}
 .tabpanel[hidden]{display:none}
 /* The seat-stay-stress "Workings" breakdown used to be a nested fold inside
@@ -421,7 +423,7 @@ svg text{font-family:var(--mono)}
        is setup, folded away until it is wanted. -->
   <h2>Pivots and mounts<button id="resetPoints">Reset</button></h2>
   <div id="points"></div>
-  <label id="sgStandRow"><span>Shock mount off down tube</span><input type="number" id="sgStand" step="1">
+  <label id="sgStandRow"><span id="sgStandLabel">Shock mount off down tube</span><input type="number" id="sgStand" step="1">
     <button class="iconbtn" id="sgLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock shock mount standoff">🔒</button></label>
   <label id="spStandRow"><span id="spStandLabel">Link pivot off down tube</span><input type="number" id="spStand" step="1">
     <button class="iconbtn" id="spLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock link pivot standoff">🔒</button></label>
@@ -1236,7 +1238,7 @@ function pivotForces(g,f,Fw,cfg){
     secondPivot:Math.hypot(sv.x,sv.y), linkPivot:Math.hypot(lv.x,lv.y),
     fp:fv,                                      // signed force on C from A, so it resolves along the stay
     vec:{shock:V(x[0]*uS.x,x[0]*uS.y), link:V(lv.x,lv.y),
-         flex:V(fv.x,fv.y), main:V(mv.x,mv.y)}};
+         flex:V(fv.x,fv.y), main:V(mv.x,mv.y), second:V(sv.x,sv.y)}};
 }
 
 
@@ -1329,12 +1331,174 @@ const DEF={
 const PRESETS=[
   { name:'Flex-stay 4-bar — Downtube mounted',
     note:'Shock and link pivot both bracketed off the down tube.',
+    family:'flex',
     geom:{}, cfg:{} },
   { name:'Flex-stay 4-bar — Rocker',
     note:'Link pivots off the seat tube and drives the shock.',
+    family:'flex',
     geom:{ SP:{x:-38,y:260.8}, LP:{x:-138.4,y:319.3},
            SE:{x:28.7,y:308.9}, SG:{x:57.4,y:80.7} },
-    cfg:{ shockMount:1, sgStand:12, sgLock:0, spStand:26.2, spLock:1 } }
+    cfg:{ shockMount:1, sgStand:12, sgLock:0, spStand:26.2, spLock:1 } },
+  { name:'Single pivot — shock to down tube',
+    note:'A simple single-pivot frame where the swingarm pivots up near the bottom bracket and the shock runs forward from a boss at the seat tube junction to the down tube, like classic Orange Five and Starling single-pivot bikes.',
+    family:'single',
+    geom:{MP:{x:0,y:65},SP:{x:74,y:162.7},FP:{x:-450,y:19},LP:{x:6.9,y:271.8},SE:{x:-65,y:260},SG:{x:163.5,y:234.1}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'A',sgBody:'F',linkless:1,flexStay:0,family:'single'},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'free'} },
+  { name:'Single pivot — shock under top tube',
+    note:'The shock lies roughly flat beneath the top tube and is pushed by a swingarm extension that rises just ahead of the seat tube, much like the shock-under-the-top-rail layout of a classic motocross bike.',
+    family:'single',
+    geom:{MP:{x:24.9,y:72.8},SP:{x:74,y:162.7},FP:{x:-450,y:19},LP:{x:6.9,y:271.8},SE:{x:-36.6,y:285.4},SG:{x:190.1,y:324.1}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'A',sgBody:'F',linkless:1,flexStay:0,family:'single'},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SE:'Shock eye',SG:'Shock frame mount'},
+    mounts:{SG:'free',SP:'free'} },
+  { name:'Single pivot — high pivot + idler',
+    note:'The swingarm pivots high up beside the seat tube and a small idler pulley under it routes the chain, with the shock running from a forward extension of the swingarm down to the down tube, similar in spirit to older single-pivot trail bikes such as the Ibis Tranny.',
+    family:'single',
+    geom:{MP:{x:5.8,y:237.4},SP:{x:74,y:162.7},FP:{x:-450,y:19},LP:{x:6.9,y:271.8},SE:{x:89.7,y:448.8},SG:{x:225.4,y:263.1},ID:{x:0.6,y:215.8}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'A',sgBody:'F',linkless:1,flexStay:0,family:'single',idlerOn:1,idlerMount:0,idlerTeeth:16},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'free'} },
+  { name:'Linkage-driven single pivot — seat-stay pivot, rocker on seat tube',
+    note:'A short faux-bar link runs from the chainstay near the axle up to a rocker pivoted on the seat tube, and the rocker pushes the shock down to the down tube, similar in principle to Kona Process bikes.',
+    family:'ldsp',
+    geom:{MP:{x:-12.3,y:64.6},SP:{x:-66.1,y:265},FP:{x:-425,y:51.9},LP:{x:-213.7,y:399.3},SE:{x:22.6,y:316.5},SG:{x:101.3,y:100.3}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'ldsp'},
+    axleRel:[],
+    labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Faux bar to chainstay',LP:'Faux bar to rocker',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'st'} },
+  { name:'Linkage-driven single pivot — link under top tube',
+    note:'A short link from the swingarm drives a rocker pinned to the top tube near the seat tube, and the shock lies flat under the top tube toward the head tube, much like the layout of Commencal\'s Meta.',
+    family:'ldsp',
+    geom:{MP:{x:24.1,y:66.3},SP:{x:-2.3,y:354.8},FP:{x:-30.5,y:265.4},LP:{x:78.9,y:194.4},SE:{x:58.5,y:279},SG:{x:222.8,y:440.1}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'ldsp'},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SP:'Rocker pivot',FP:'Coupler to swingarm',LP:'Coupler to rocker',SE:'Shock eye',SG:'Shock to top tube'},
+    mounts:{SG:'tt',SP:'tt'} },
+  { name:'Linkage-driven single pivot — high pivot + idler',
+    note:'A swingarm pivot set well up the frame with a chain idler and a rocker on the seat tube that drives the shock, in the spirit of high-pivot bikes such as the Commencal Supreme and Deviate.',
+    family:'ldsp',
+    geom:{MP:{x:28.4,y:152.5},SP:{x:-25.5,y:180.7},FP:{x:-175.3,y:91.8},LP:{x:-100,y:473},SE:{x:55.5,y:314.4},SG:{x:162.9,y:111.1},ID:{x:33.4,y:117.5}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'ldsp',idlerOn:1,idlerMount:0,idlerTeeth:16},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SP:'Rocker pivot',FP:'Coupler to swingarm',LP:'Coupler to rocker',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'st'} },
+  { name:'Split pivot / ABP',
+    note:'The chainstay pivots low by the bottom bracket while the seat stay, which carries the rear brake, runs from the axle up to a small rocker on the seat tube, and that rocker drives the shock down to the down tube, as on Trek\'s ABP bikes such as the Fuel EX.',
+    family:'ldsp',
+    geom:{MP:{x:12.4,y:63.3},SP:{x:-49.7,y:199.4},FP:{x:-450,y:19},LP:{x:-118.4,y:366.1},SE:{x:30.1,y:269.8},SG:{x:111.4,y:54.6}},
+    cfg:{axleBody:'A',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'ldsp'},
+    axleRel:['FP'],
+    labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Axle (seat stay end)',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'st'} },
+  { name:'Split pivot — floating shock',
+    note:'The rear axle hangs off a link that pivots at the bottom bracket, while the shock\'s lower end rides on a bracket that projects forward from that link, so both ends of the shock move as the bike rides, much like Trek\'s Full Floater on the Fuel EX.',
+    family:'ldsp',
+    geom:{MP:{x:22.3,y:59.3},SP:{x:-65.2,y:261.7},FP:{x:-450,y:18.96},LP:{x:-159,y:313.4},SE:{x:-6.2,y:326.7},SG:{x:57.5,y:105.7}},
+    cfg:{axleBody:'A',brakeBody:'C',seBody:'R',sgBody:'A',linkless:0,flexStay:0,family:'ldsp'},
+    axleRel:['FP'],
+    labels:{MP:'Main pivot near BB',SP:'Rocker pivot on seat tube',FP:'Axle pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to chainstay bracket'},
+    mounts:{SG:'free',SP:'st'} },
+  { name:'Horst link — rocker drives shock',
+    note:'The rear wheel hangs from a Horst link: a chainstay pivots near the bottom bracket, a Horst pivot sits just ahead of the axle, and a rocker on the seat tube pushes the shock down to the down tube, the same idea as the Horst layout on Specialized\'s FSR Stumpjumper.',
+    family:'horst',
+    geom:{MP:{x:-16.3,y:65.8},SP:{x:-39.8,y:159.7},FP:{x:-388.9,y:7.3},LP:{x:-105.5,y:321.4},SE:{x:49.6,y:326.9},SG:{x:79.9,y:98.9}},
+    cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'horst'},
+    axleRel:['FP'],
+    labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Horst pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'st'} },
+  { name:'Horst link — seat stay drives shock',
+    note:'The seat stay carries the rear axle and pivots on the chainstay at a Horst pivot just ahead of the wheel, with a short rocker on the seat tube and the shock hung off the seat stay\'s extension to the down tube, as on Specialized FSR-style Horst bikes.',
+    family:'horst',
+    geom:{MP:{x:-19.9,y:73.5},SP:{x:-51,y:220.8},FP:{x:-409.4,y:68.6},LP:{x:-108.7,y:269.9},SE:{x:1.1,y:273.2},SG:{x:230.8,y:285.5}},
+    cfg:{axleBody:'C',brakeBody:'C',seBody:'C',sgBody:'F',linkless:0,flexStay:0,family:'horst'},
+    axleRel:['FP'],
+    labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Horst pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'st'} },
+  { name:'Horst link — floating shock',
+    note:'The rear wheel hangs from a Horst link: a stay pivots on the chainstay just ahead of the axle, a rocker on the seat tube drives the shock, and the shock\'s lower end floats on a bracket forward of the bottom bracket so both ends move, the same family as Specialized\'s Demo and older FSR downhill bikes.',
+    family:'horst',
+    geom:{MP:{x:9.9,y:67.8},SP:{x:-41.8,y:155.9},FP:{x:-419.7,y:47.5},LP:{x:-115.5,y:227},SE:{x:64.3,y:308.1},SG:{x:116.8,y:84.1}},
+    cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'A',linkless:0,flexStay:0,family:'horst'},
+    axleRel:['FP'],
+    labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Horst pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to chainstay bracket'},
+    mounts:{SG:'free',SP:'st'} },
+  { name:'Horst link — high pivot + idler',
+    note:'The main pivot sits high on the seat tube and a Horst link ahead of the rear axle ties the wheel to a rocker that drives the shock down to the down tube, with an idler to route the chain, much like the high-pivot Norco Range.',
+    family:'horst',
+    geom:{MP:{x:-66.6,y:220.7},SP:{x:-89.2,y:259.4},FP:{x:-359,y:-9.9},LP:{x:-66.6,y:374.6},SE:{x:-7.2,y:305.7},SG:{x:97.1,y:100.7},ID:{x:-61.6,y:185.7}},
+    cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'horst',idlerOn:1,idlerMount:0,idlerTeeth:16},
+    axleRel:['FP'],
+    labels:{MP:'Main pivot (high)',SP:'Rocker pivot on seat tube',FP:'Horst pivot',LP:'Horst link to rocker',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'st'} },
+  { name:'Short link, counter-rotating — upper link drives',
+    note:'The rear triangle is one rigid piece held by a short lower link low at the bottom bracket and a short upper link on the seat tube; the upper link also carries the shock, as on Santa Cruz\'s early VPP bikes such as the Nomad, giving a firm, rising feel under pedalling.',
+    family:'shortlink',
+    geom:{MP:{x:-74,y:67.2},SP:{x:-52.4,y:210.1},FP:{x:-138.3,y:91.9},LP:{x:-77.4,y:142.4},SE:{x:42.7,y:86},SG:{x:187,y:265.2}},
+    cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'shortlink'},
+    axleRel:[],
+    labels:{MP:'Lower link to frame',SP:'Upper link to seat tube',FP:'Lower link to rear triangle',LP:'Upper link to rear triangle',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'st'} },
+  { name:'Short link, co-rotating — upper link drives',
+    note:'The rear wheel hangs from a short lower link near the bottom bracket and a longer upper link on the seat tube that also carries the shock, and both links swing the same way, as on Giant’s Maestro DW-link bikes.',
+    family:'shortlink',
+    geom:{MP:{x:-11.6,y:66.8},SP:{x:-47.5,y:205},FP:{x:-60,y:52.4},LP:{x:-213.8,y:350},SE:{x:-44.6,y:330},SG:{x:173.3,y:256.4}},
+    cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'shortlink'},
+    axleRel:[],
+    labels:{MP:'Lower link to frame',SP:'Upper link to seat tube',FP:'Lower link to rear triangle',LP:'Upper link to rear triangle',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'st'} },
+  { name:'Short link, co-rotating — lower link drives',
+    note:'Both short links swing the same way and the lower one carries the shock eye forward, pushing the shock up to the down tube, as in Dave Weagle\'s DW-link layout on Ibis Mojo bikes.',
+    family:'shortlink',
+    geom:{MP:{x:5.3,y:93.9},SP:{x:-45.4,y:251.7},FP:{x:-53.3,y:80.2},LP:{x:-210.2,y:311.9},SE:{x:-30.5,y:143.1},SG:{x:183.9,y:226.4}},
+    cfg:{axleBody:'C',brakeBody:'C',seBody:'A',sgBody:'F',linkless:0,flexStay:0,family:'shortlink'},
+    axleRel:[],
+    labels:{MP:'Lower link to frame',SP:'Upper link to seat tube',FP:'Lower link to rear triangle',LP:'Upper link to rear triangle',SE:'Shock eye',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'st'} },
+  { name:'Short link — shock between the links',
+    note:'The shock is squeezed between a short upper link and a short lower link, low behind the seat tube, rather than bolted to the frame, so the bike sits calmly under pedalling and the spring gets stiffer as it compresses; the same layout as the Mondraker Zero.',
+    family:'shortlink',
+    geom:{MP:{x:-5.4,y:58.3},SP:{x:-73.6,y:301.2},FP:{x:-124.1,y:20.7},LP:{x:-41.5,y:226.2},SE:{x:-114.6,y:258.9},SG:{x:-69.4,y:33.4}},
+    cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'A',linkless:0,flexStay:0,family:'shortlink'},
+    axleRel:['FP'],
+    labels:{MP:'Lower link to frame',SP:'Upper link to seat tube',FP:'Lower link to rear triangle',LP:'Upper link to rear triangle',SE:'Shock eye',SG:'Shock to lower link'},
+    mounts:{SG:'free',SP:'st'} },
+  { name:'Moto — rocker on frame, pull rod (Uni-Trak)',
+    note:'The swingarm pivots on the frame above the bottom bracket, a pull rod runs from underneath the arm to a rocker pivoted low behind the BB, and the rocker drives the shock up to the seat tube, the Kawasaki Uni-Trak layout seen on KX and KLX motocross bikes.',
+    family:'moto',
+    geom:{MP:{x:40,y:72.5},SP:{x:-58.2,y:-65.4},FP:{x:3.7,y:-106.7},LP:{x:-76.7,y:-200.8},SE:{x:-234.7,y:18.4},SG:{x:-46.5,y:150.7}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'moto'},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SP:'Rocker pivot on frame',FP:'Pull rod to swingarm',LP:'Pull rod to rocker',SE:'Shock eye',SG:'Shock to seat tube'},
+    mounts:{SG:'st',SP:'free'} },
+  { name:'Moto — rocker on swingarm, dogbone (Pro-Link)',
+    note:'A rocker hangs from the underside of the swingarm and a short dogbone ties it to a bracket low on the frame by the bottom bracket, with the shock running from the rocker up to the seat tube, the layout Honda uses on its CRF motocross bikes.',
+    family:'moto',
+    geom:{MP:{x:39.6,y:59.3},SP:{x:-66,y:-76.6},FP:{x:-164.4,y:-17.6},LP:{x:86.4,y:-64.3},SE:{x:-132.3,y:142.3},SG:{x:-91.9,y:368.7}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'C',sgBody:'F',linkless:0,flexStay:0,family:'moto'},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SP:'Dogbone to frame',FP:'Rocker pivot on swingarm',LP:'Dogbone to rocker',SE:'Shock eye',SG:'Shock to seat tube'},
+    mounts:{SG:'st',SP:'free'} },
+  { name:'Moto — Full-Floater',
+    note:'Both ends of the shock float: the shock\'s top eye hangs off a rocker that is pivoted on the frame and pulled by a rod from underneath the swingarm, and its bottom eye sits on the swingarm itself, as on Suzuki\'s RM motocross bikes (RM125, RM250).',
+    family:'moto',
+    geom:{MP:{x:39.8,y:67.4},SP:{x:-66.3,y:177.4},FP:{x:-190.1,y:1.5},LP:{x:-3.4,y:110.6},SE:{x:-10.5,y:239.3},SG:{x:-203.9,y:114.9}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'A',linkless:0,flexStay:0,family:'moto'},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SP:'Rocker pivot on frame',FP:'Pull rod to swingarm',LP:'Pull rod to rocker',SE:'Shock eye',SG:'Shock to swingarm'},
+    mounts:{SG:'free',SP:'st'} },
+  { name:'Moto — Unit Pro-Link',
+    note:'The rear swingarm is driven by a rocker pivoted on the swingarm underside and a dogbone link tied to the frame, with the shock hung between the swingarm and the rocker, as on Honda CRF450R and CR250R motocross bikes.',
+    family:'moto',
+    geom:{MP:{x:53.9,y:71.1},SP:{x:141.8,y:238.8},FP:{x:-59,y:-0.3},LP:{x:-29,y:118},SE:{x:-62.5,y:225.2},SG:{x:-238.7,y:77.3}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'C',sgBody:'A',linkless:0,flexStay:0,family:'moto'},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SP:'Dogbone to frame',FP:'Rocker pivot on swingarm',LP:'Rocker to dogbone',SE:'Shock eye',SG:'Shock to swingarm'},
+    mounts:{SG:'free',SP:'dt'} }
 ];
 /* The design a given config means by "back to square one" -- what every reset
    button restores, now that "the defaults" depends on which architecture you
@@ -1353,8 +1517,11 @@ let result=null, posT=0, playing=false, holdSag=false;
 // which would permanently NaN-reject a name the moment it looks up the box.
 let META={name:'', designer:''};
 
+// A configuration's own name for a point, or the generic one.
+const labelFor=(k,fallback)=>{const p=PRESETS[C.config]; return (p&&p.labels&&p.labels[k])||fallback;};
 const PTS=[
-  ['MP','Main pivot','var(--rear)'], ['SP','Link to frame','var(--link)'],
+  ['MP','Main pivot','var(--rear)'], ['FP','Flex pivot','var(--flex)'],
+  ['SP','Link to frame','var(--link)'],
   ['LP','Link to stay','var(--link)'],
   ['SE','Shock eye','var(--shock)'], ['SG','Shock mount','var(--shock)'],
   ['AX','Rear axle','var(--rear)'],
@@ -1530,10 +1697,34 @@ function frontTriangle(){
 
    FT is passed in wherever the caller already has one -- frontTriangle() runs a
    four-pass mitre solve and is not free. */
+/* Which tube a welded-on mount answers to, and how it is measured. A preset names
+   each mount in `mounts`; one that names none (the two flex-stay configs) keeps the
+   old rule: the link pivot rides the seat tube on the rocker config, the rest the
+   down tube.
+     dt    down tube   measured from the BB; sgn +1
+     st    seat tube   measured from the BB; sgn -1, as the rocker's link pivot always was
+     tt    top tube    its own axis, measured from where it leaves the seat tube (the
+                       top tube does not start at the BB); sgn -1, so a mount under the
+                       tube reads positive
+     free  nothing     no lock and no standoff row. Callers skip it; the axis returned is
+                       only so every kind has the same shape
+   `o` is the point the along and standoff are measured from, `sgn` the side that reads
+   positive. The three helpers below are the only place either is applied. */
+function mountKind(k){
+  const p=PRESETS[C.config], m=p&&p.mounts;
+  if(m&&m[k]) return m[k];
+  return (k==='SP' && C.config===1) ? 'st' : 'dt';
+}
 function mountAxis(k, FT){
   FT=FT||frontTriangle();
-  return (k==='SP' && C.config===1) ? {u:FT.stU, sgn:-1} : {u:FT.dtU, sgn:1};
+  const kind=mountKind(k), BB={x:0,y:0};
+  if(kind==='tt') return {kind, u:unit(sub(FT.tt[2],FT.tt[1])), o:FT.tt[1], sgn:-1};
+  if(kind==='st') return {kind, u:FT.stU, o:BB, sgn:-1};
+  return {kind, u:FT.dtU, o:BB, sgn:1};
 }
+const mountAlong =(M,p)=>alongOf(M.u, sub(p,M.o));
+const mountOff   =(M,p)=>M.sgn*standoffOf(M.u, sub(p,M.o));
+const mountPlace =(M,along,off)=>add(M.o, onTube(M.u, along, M.sgn*off));
 
 // Arc length of the drawn seat stay, dropout to wherever it physically ends
 // (the shock eye, or the link pivot in linkage mode -- see drawRearAssembly).
@@ -1557,11 +1748,12 @@ function recompute(quick){
        each mount answers to is mountAxis()'s job, since the link pivot sits on
        the seat tube on the rocker config; FT is fetched once and shared rather
        than re-solved per mount. */
-    const FT=frontTriangle();
+    const FT=frontTriangle(), B=bodiesOf(C);
     for(const [k,lock,off] of [['SG','sgLock','sgStand'],['SP','spLock','spStand']]){
-      const {u,sgn}=mountAxis(k,FT);
-      if(C[lock]) G[k]=onTube(u, alongOf(u,G[k]), sgn*C[off]);
-      else        C[off]=Math.round(sgn*standoffOf(u,G[k])*10)/10;
+      const M=mountAxis(k,FT);
+      if(M.kind==='free' || (k==='SP' && B.linkless)) continue;   // nothing holds it
+      if(C[lock]) G[k]=mountPlace(M, mountAlong(M,G[k]), C[off]);
+      else        C[off]=Math.round(mountOff(M,G[k])*10)/10;
     }
     // Vestigial, kept on purpose: a leftover field from the old flex-zone
     // overlay (bending always spans the whole seat stay now, so nothing
@@ -1782,7 +1974,7 @@ function toMM(evt,svg){
 // The geometry exactly as drawn, used when the linkage will not solve so the
 // canvas still shows what you are dragging instead of going blank.
 function topFrame(){
-  return {phi:0, FP:G.FP, AX:G.AX, LP:G.LP, SE:G.SE, stroke:0, rise:0,
+  return {phi:0, FP:G.FP, AX:G.AX, LP:G.LP, SE:G.SE, SG:G.SG, stroke:0, rise:0,
           shock:dist(G.SE,G.SG), CP:{x:G.AX.x, y:G.AX.y-(C.rw/2+C.tyreR)},
           as:null, ar:null, ifc:null, asH:null, arH:null, kick:null, flex:0, lr:null};
 }
@@ -2098,20 +2290,24 @@ function draw(){
      the head tube so their outlines still land in the same outline pass and
      leave no seam across the tube they sit on. */
   function drawFrontTriangle(){
-    const FT=frontTriangle(), dtU=FT.dtU;
-    // Each stub grows out of whichever tube its own mount is measured from, so
-    // on the rocker config the link pivot's boss runs off the seat tube. Both
-    // stay inside the single tubes() call below: it paints every outline before
-    // any fill, which is what lets a stub merge seamlessly into its tube --
-    // split into its own call it would draw a visible seam across it.
-    const spU=mountAxis('SP',FT).u;
-    const foot=mul(dtU, Math.max(60,alongOf(dtU,G.SG)));   // shock mount brace
-    const boss=mul(spU, Math.max(50,alongOf(spU,G.SP)));   // second pivot boss
+    const FT=frontTriangle(), B=bodiesOf(C);
+    // Each stub grows out of whichever tube its own mount is measured from, so a
+    // link pivot on the rocker config, or a top tube mount, runs off that tube. A
+    // free mount is on no tube, so it gets no stub. All stubs stay inside the single
+    // tubes() call below: it paints every outline before any fill, which is what lets
+    // a stub merge seamlessly into its tube -- split into its own call it would draw
+    // a visible seam across it.
+    const MG=mountAxis('SG',FT), MS=mountAxis('SP',FT), stubs=[];
+    // A shock end that floats on a moving body is not on the frame, so it gets no brace
+    if(MG.kind!=='free' && B.sg==='F')         // shock mount brace
+      stubs.push([mountPlace(MG, Math.max(60,mountAlong(MG,G.SG)), 0), G.SG, 26]);
+    if(!B.linkless && MS.kind!=='free')        // second pivot boss
+      stubs.push([mountPlace(MS, Math.max(50,mountAlong(MS,G.SP)), 0), G.SP, 30]);
     tubes([[FT.dt[1],FT.dtTip,FT.dt[3],'butt'],
            [FT.tt[1],FT.ttTip,FT.tt[3],'butt'],
            [FT.st[1],FT.st[2],  FT.st[3],'butt'],
            [FT.ht[1],FT.ht[2],  FT.ht[3],'butt'],
-           [foot,G.SG,26],[boss,G.SP,30]],'var(--art-frame-fill)','var(--art-frame-stroke)');
+           ...stubs],'var(--art-frame-fill)','var(--art-frame-stroke)');
     /* The bottom bracket shell caps the square-cut ends of the down and seat
        tubes, which otherwise leave a notch between them where a round cap used to
        cover. 38.1mm is the shell, and the same diameter as the down tube, so it
@@ -2151,6 +2347,7 @@ function draw(){
 
   /* ---- rear assembly ---- */
   function drawRearAssembly(){
+    if(!bodiesOf(C).flex){ drawLinkageBodies(); return; }
     /* The stay's own physical tube reaches to SE by default (shock bolted
        straight to the seat stay); in linkage mode it stops at LP instead --
        SE now belongs to the link/rocker, drawn separately in drawShock(),
@@ -2195,22 +2392,79 @@ function draw(){
     tubes([[foot,braceTarget,22]],'var(--art-link-fill)','var(--art-link-stroke)');
   }
 
+  /* ---- moving bodies, every configuration that is not flex-stay ----
+     bodiesOf() says which rigid body carries each point. Each moving body is drawn
+     as tubes between its own points at its current pose: A from the main pivot to
+     the flex pivot, C from the flex pivot to the link pivot, R from the second pivot
+     to the link pivot. A point a body carries (the axle, the shock eye, a shock end
+     on a moving body) is tied to whichever of that body's own pivots is nearest.
+     The shock itself is drawn by drawShock(). Flex-stay keeps its own path above. */
+  function drawLinkageBodies(){
+    const B=bodiesOf(C), fam=(PRESETS[C.config]||{}).family;
+    const STAY=['var(--art-stay-fill)','var(--art-stay-stroke)'];
+    const LINK=['var(--art-link-fill)','var(--art-link-stroke)'];
+    const seg={A:[], C:[], R:[]};
+    /* Body A is the swingarm / chainstay, or on a short-link config the lower link
+       pinned at MP. Body C carries the axle only on Horst and short-link configs,
+       where it is the rear triangle; otherwise it is a pure coupler or rocker. */
+    const shortLink = fam==='shortlink';
+    const rearC = B.axle==='C';
+    const A = shortLink ? LINK : STAY;
+    const aArm = shortLink ? 22 : 30;
+    if(B.axle==='A') seg.A.push([G.MP, f.AX, 40]);      // chainstay, 40/33 as it always was
+    if(!B.linkless){
+      seg.A.push([G.MP, f.FP, aArm]);                   // the pivot the coupler hangs from
+      seg.C.push([f.FP, f.LP, rearC?30:22]);            // coupler, or the rear triangle's base
+    }
+    if(rearC){
+      seg.C.push([f.AX, f.LP, 30]);                     // seat stay
+      seg.C.push([f.AX, f.FP, 30]);                     // dropout piece, or the chainstay member
+    }
+    // A shock end on a moving body rides the nearest of that body's own pivots;
+    // the swingarm arm starts at MP and the rocker arm at its fixed SP.
+    const armFrom=X=>{
+      if(X==='A') return G.MP;
+      if(X==='R') return G.SP;
+      if(B.linkless) return null;
+      const cands = rearC ? [f.FP,f.LP,f.AX] : [f.FP,f.LP];
+      let best=null, bd=Infinity;
+      for(const q of cands){ const d=dist(q,f.SE); if(d<bd){ bd=d; best=q; } }
+      return best;
+    };
+    const shockEnds=[[B.se,f.SE],[B.sg,f.SG]].filter(([X])=>X!=='F');
+    shockEnds.forEach(([X,p])=>{
+      const from=armFrom(X), arm=X==='A'?(shortLink?16:22):16;
+      if(from) seg[X].push([from, p, arm]);
+    });
+    if(!B.linkless){
+      seg.R.push([G.SP, f.LP, 22]);                     // the rocker, or the pull rod / dogbone
+      if(B.se==='R') seg.R.push([f.LP, f.SE, 22]);      // closes the bell-crank to the shock eye
+    }
+    const tubesFor=(X,S)=>{ if(seg[X].length) tubes(seg[X], S[0], S[1]); };
+    tubesFor('A', A);
+    tubesFor('C', rearC?STAY:LINK);
+    tubesFor('R', LINK);
+  }
+
   /* ---- shock link and shock ---- */
   function drawShock(){
-    tubes([[G.SP,f.LP,22]],'var(--art-link-fill)','var(--art-link-stroke)');
+    // Flex-stay keeps its own rocker tubes here. Other configurations draw their
+    // moving bodies in drawLinkageBodies(), so for them this is the shock alone.
+    const flex=bodiesOf(C).flex;
+    if(flex) tubes([[G.SP,f.LP,22]],'var(--art-link-fill)','var(--art-link-stroke)');
     // Linkage mode: the same rigid part also carries the shock -- a second
     // arm from the same fixed pivot SP out to SE, so it reads as one
     // two-armed rocker/bell-crank rather than the shock floating unattached
     // to anything drawn. Narrower than the LP arm (16 vs 22mm) as a first
     // pass -- a secondary arm, not the link's main member; adjust by eye if
     // it reads too heavy or too thin once rendered.
-    if(C.shockMount) tubes([[G.SP,f.SE,16]],'var(--art-link-fill)','var(--art-link-stroke)');
+    if(flex && C.shockMount) tubes([[G.SP,f.SE,16]],'var(--art-link-fill)','var(--art-link-stroke)');
 
     /* Shock artwork. The body and the eyelet ends keep their proportions; only the
        spring section is stretched, so compressing the shock closes the coils up
        rather than squashing the damper. */
     if(showShock){
-      const sU=unit(sub(G.SG,f.SE)), sL=dist(f.SE,G.SG);
+      const sU=unit(sub(f.SG,f.SE)), sL=dist(f.SE,f.SG);
       const A=SHOCKART, sc=A.mmPerPx;
       const dpx=(sL-230)/sc;                       // spring section grows or shrinks
       const mtx=[sc*sU.x, sc*sU.y, sc*sU.y, -sc*sU.x,
@@ -2392,16 +2646,30 @@ function draw(){
     const HIT_PX=18;
     const top = !result.frames.length || f===result.frames[0];
     const locked=C.idlerOn&&C.idlerLock;
-    const marks=[[G.MP,'var(--rear)','MP'],[G.SP,'var(--link)','SP'],[G.SG,'var(--shock)','SG'],
-                 [f.LP,'var(--link)',top?'LP':null],[f.SE,'var(--shock)',top?'SE':null],
-                 [f.AX,'var(--rear)',top?'AX':null]];
+    const B=bodiesOf(C);
+    // A point on a moving body is drawn where it is now. Its grab key only works at
+    // top out, since a drag writes the top-out coordinate back; off top out its rest
+    // position is a ghost you grab instead. A configuration without a link or a flex
+    // joint gets no marker for those points.
+    const sgMoves=B.sg!=='F';
+    // in the order flex-stay has always painted them, so its drawing is unchanged
+    const marks=[[G.MP,'var(--rear)','MP']];
+    if(!B.linkless) marks.push([G.SP,'var(--link)','SP']);
+    marks.push([f.SG,'var(--shock)',(top||!sgMoves)?'SG':null]);
+    if(!B.linkless) marks.push([f.LP,'var(--link)',top?'LP':null]);
+    marks.push([f.SE,'var(--shock)',top?'SE':null],[f.AX,'var(--rear)',top?'AX':null]);
+    if(!B.flex && !B.linkless) marks.push([f.FP,'var(--flex)',top?'FP':null]);
     /* G.ID holds the top-out position, so a swingarm idler is only grabbable at top
        out — dragging the rotated marker would write rotated coordinates back. Bolted
        to the frame it never moves, so it is always grabbable. */
     // locked they are one point, so it gets one marker — the main pivot's, since
     // that is the one that stays put and the idler is only along for the ride
     if(IDp&&!locked) marks.push([IDp,'var(--ok)',(C.idlerMount&&!top)?null:'ID']);
-    const ghosts = top?[] : [['LP','var(--link)'],['SE','var(--shock)'],['AX','var(--rear)']];
+    const ghosts = [];
+    if(!top && !B.linkless) ghosts.push(['LP','var(--link)']);
+    if(!top) ghosts.push(['SE','var(--shock)'],['AX','var(--rear)']);
+    if(!top && sgMoves) ghosts.push(['SG','var(--shock)']);
+    if(!top && !B.flex && !B.linkless) ghosts.push(['FP','var(--flex)']);
     if(IDp&&C.idlerMount&&!top) ghosts.push(['ID','var(--ok)']);
     const grabPts=[...marks.filter(m=>m[2]).map(m=>m[0]), ...ghosts.map(([k])=>G[k])];
     // Each target is capped at half the gap to its own nearest neighbour, so a
@@ -2439,13 +2707,10 @@ function draw(){
      Resolved for the frame being drawn, so they grow, shrink and swing round as
      the suspension cycles. Fixed scale in mm per newton, so the lengths stay
      comparable between positions instead of being renormalised each frame.
-     Suppressed entirely (not just the shock/link arrows) in linkage mode:
-     pivotForces solves one linear system for all four vectors under an
-     assumption that's false in that mode, so the main-pivot/flex-pivot
-     arrows it also returns are equally suspect, not just the two most
-     directly tied to the shock. */
+     pivotForces solves every moving body at once, whatever carries the shock, so
+     the arrows mean the same thing in every configuration. */
   function drawForceVectors(){
-    if(showForces && !C.shockMount){
+    if(showForces){
       const Fw=sprungLoad();
       const P=pivotForces(G,f,Fw,C);
       if(P){
@@ -2465,10 +2730,16 @@ function draw(){
             fill:col,'pointer-events':'none'},g);
         };
         arrow(f.CP,{x:0,y:Fw},'var(--art-force-ground)');          // ground reaction under the tyre
+        // one arrow per pivot pivotForces resolves; a linkless config has only MP and the shock
+        const B=bodiesOf(C);
         arrow(G.MP,P.vec.main, 'var(--rear)');
-        arrow(f.FP,P.vec.flex, 'var(--flex)');
+        if(!B.linkless){
+          arrow(f.FP,P.vec.flex, 'var(--flex)');
+          // SP repeats the link arrow unless the shock eye sits on R (the rocker configs)
+          if(!B.flex || B.se==='R' || B.sg==='R') arrow(G.SP,P.vec.second,'var(--link)');   // flex-stay's overlay is unchanged
+          arrow(f.LP,P.vec.link, 'var(--link)');
+        }
         arrow(f.SE,P.vec.shock,'var(--shock)');
-        arrow(f.LP,P.vec.link, 'var(--link)');
       }
     }
   }
@@ -2518,15 +2789,14 @@ function initDrag(){
     // that later snap becomes a no-op confirmation rather than a clobber.
     if(lockLen && (dragKey==='SE'||dragKey==='SG')){
       if(C.sgLock){
-        // sgLock only, and SG is a down-tube mount on every config (only the
-        // LINK pivot moves to the seat tube on the rocker), so dtU is still the
-        // right axis here -- no mountAxis() lookup needed.
-        const dtU=frontTriangle().dtU;
+        // sgLock only: the mount's own tube, which the preset names. mountAxis()
+        // reads it, and for a top tube measures from where that tube starts.
+        const M=mountAxis('SG',frontTriangle());
         if(dragKey==='SG'){
           // dragging the mount can only ever slide it along the tube -- match
           // what recompute() is about to do to it, then hold the eye length
           // off THAT, not off the raw off-tube drop point.
-          G.SG=onTube(dtU, alongOf(dtU,G.SG), C.sgStand);
+          G.SG=mountPlace(M, mountAlong(M,G.SG), C.sgStand);
           const d=sub(G.SE,G.SG);
           if(len(d)>1e-6){
             const q=add(G.SG, mul(unit(d), C.eye));
@@ -2537,11 +2807,11 @@ function initDrag(){
           // where along the tube -- so intersect the tube's offset line with
           // the circle of radius C.eye around the new SE, instead of moving
           // SG somewhere recompute() will not honour.
-          const base=onTube(dtU,0,C.sgStand), w=sub(base,G.SE);
-          const b=2*alongOf(dtU,w), c=alongOf(w,w)-C.eye*C.eye, disc=b*b-4*c;
+          const base=mountPlace(M,0,C.sgStand), w=sub(base,G.SE);
+          const b=2*alongOf(M.u,w), c=alongOf(w,w)-C.eye*C.eye, disc=b*b-4*c;
           if(disc>=0){
             const s=Math.sqrt(disc), t1=(-b+s)/2, t2=(-b-s)/2;
-            const p1=onTube(dtU,t1,C.sgStand), p2=onTube(dtU,t2,C.sgStand);
+            const p1=mountPlace(M,t1,C.sgStand), p2=mountPlace(M,t2,C.sgStand);
             const p=dist(p1,G.SG)<=dist(p2,G.SG) ? p1 : p2;  // nearer root: no side-flip mid-drag
             G.SG={x:Math.round(p.x*10)/10, y:Math.round(p.y*10)/10};
           }
@@ -2614,10 +2884,20 @@ function tubeReadout(){
   const host=document.getElementById('out-tubes');
   if(!host) return;
   const FT=frontTriangle(), r=C.pivotOD/2;
-  const pts=[['Main pivot',G.MP],['Link pivot',G.SP],['Shock mount',G.SG]];
-  if(C.idlerOn && !C.idlerMount) pts.push(['Idler',G.ID]);
+  // A linkless configuration has no link pivot: SP is not a point on that bike, so it
+  // gets no clearance row (it would report a number for a pivot that does not exist).
+  // A pivot has a tube to clear only if it is fixed to the frame. A shock end on a moving
+  // body (the chainstay bracket, a swingarm mount) or a mount the preset leaves free moves
+  // or floats, so it is named rather than measured: a clearance to a tube it never touches
+  // would read as a real number.
+  const B=bodiesOf(C);
+  const pts=[['Main pivot',G.MP,true]];
+  if(!B.linkless) pts.push(['Link pivot',G.SP,mountKind('SP')!=='free']);
+  pts.push(['Shock mount',G.SG,B.sg==='F' && mountKind('SG')!=='free']);
+  if(C.idlerOn && !C.idlerMount) pts.push(['Idler',G.ID,true]);
   let html='';
-  for(const [name,p] of pts){
+  for(const [name,p,fixed] of pts){
+    if(!fixed){ html+=row(name,'not on a fixed tube'); continue; }
     let best=Infinity, at='';
     for(const [tube,a,b,od] of FT.all){
       const gap=segDist(p,a,b)-od/2-r;               // wall to wall, not centre to centre
@@ -2687,7 +2967,11 @@ function readouts(){
      about forces was hiding the one number here that is still known. */
   const flPeak=f.map(k=>k.flex).reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a,0);
   const flexRow=row('Flex pivot rotation', flPeak.toFixed(2)+'°');
-  if(C.shockMount){
+  if(!bodiesOf(C).flex){
+    // no seat stay in this configuration, so nothing to stress (its tab is hidden)
+    R('out-flex').innerHTML=row('Seat stay stress','not applicable: no seat stay here');
+    R('out-flexdetail').innerHTML=row('Workings','not applicable: no seat stay here');
+  } else if(C.shockMount){
     R('out-flex').innerHTML=flexRow+
       row('Seat stay stress','not modeled for a linkage-driven shock yet','warn');
     R('out-flexdetail').innerHTML=flexRow+
@@ -2747,20 +3031,34 @@ function readouts(){
     row('Coil rate', rate===null ? '—' :
         rate.toFixed(1)+' N/mm · '+(rate*5.7101).toFixed(0)+' lb/in');
 
-  // Same reason as the stress panel above: pivotForces' moment balance
-  // assumes the shock reacts on the seat stay, false in linkage mode. Left
-  // running either way (it's cheap, and its own correctness is untouched
-  // by this feature) but its numbers only reach the screen when they mean
-  // what they say.
-  const P2=pivotForces(G,sagFr,W,C);
-  R('out-force').innerHTML = C.shockMount
-    ? row('Pivot loads','not modeled for a linkage-driven shock yet','warn')
-    : (P2 ?
-        row('Main pivot', (P2.mainPivot/1000).toFixed(2)+' kN')+
-        row('Flex pivot', (P2.flexPivot/1000).toFixed(2)+' kN')+
-        row('Shock link', (P2.link/1000).toFixed(2)+' kN')+
-        row('Shock', (P2.shock/1000).toFixed(2)+' kN')
-      : row('Solver','no solution','warn'));
+  // pivotForces solves every moving body at once, so these loads and the bearing
+  // rotations are real numbers in every configuration, whatever carries the shock.
+  const P2=pivotForces(G,sagFr,W,C), B=bodiesOf(C);
+  if(!P2){ R('out-force').innerHTML=row('Solver','no solution','warn'); }
+  else {
+    const kN=v=>(v/1000).toFixed(2)+' kN', deg=v=>v.toFixed(1)+'°';
+    let h=row(labelFor('MP','Main pivot'), kN(P2.mainPivot));
+    if(!B.linkless){
+      h+=row(labelFor('FP','Flex pivot'), kN(P2.flexPivot))+
+         row(labelFor('LP','Shock link'), kN(P2.link));
+      // The second pivot load only repeats the link load while R carries nothing but the
+      // link. Once the shock eye sits on R (the rocker configs, flex or not) it differs
+      // and gets its own row.
+      if(!B.flex || B.se==='R' || B.sg==='R') h+=row(labelFor('SP','Second pivot'), kN(P2.secondPivot));
+    }
+    h+=row('Shock', kN(P2.shock));
+    // each body's own turn at full travel, from top out
+    const fullTravel=f[f.length-1];
+    h+='<p class="note">Bearing rotation, top out to full travel</p>'+
+       row(labelFor('MP','Main pivot'), deg(fullTravel.rotA));
+    /* The FP bearing joins A to C, so its turn is C's turn relative to A -- the
+       same number as "Flex pivot rotation" in the stress panel. C's angle in the
+       frame (rotC alone) is not the bearing's rotation. */
+    if(!B.linkless)
+      h+=row(labelFor('FP','Flex pivot'), deg(fullTravel.rotC-fullTravel.rotA))+
+         row(labelFor('SP','Link to frame'), deg(fullTravel.rotR));
+    R('out-force').innerHTML=h;
+  }
 }
 function at(f,t){return f[Math.min(f.length-1,Math.max(0,Math.round(t*(f.length-1))))]}
 // the frame at the sag position -- `at(f,C.sag/100)`, used everywhere a
@@ -2971,17 +3269,17 @@ function datumOffset(){
 function fillPoints(){
   const host=document.getElementById('points');
   const o=datumOffset();
-  if(host.dataset.built){
-    // the idler only has a row when there is an idler
-    host.querySelector('[data-k="ID"]').hidden=!C.idlerOn;
-    PTS.forEach(([k])=>{
-      host.querySelector(`[data-f="${k}-x"]`).value=(G[k].x-o.x).toFixed(1);
-      host.querySelector(`[data-f="${k}-y"]`).value=(G[k].y-o.y).toFixed(1);
-    });
-    return;
-  }
+  const B=bodiesOf(C);
+  // Which rows a configuration owns. The idler has one only when there is an idler.
+  // The flex pivot has one only where it is a joint of its own: on flex-stay it is
+  // the rear axle. The link and second pivot have none when there is no link.
+  const rowOn=k=> k==='ID' ? !!C.idlerOn
+                : k==='FP' ? (!B.flex && !B.linkless)
+                : (k==='SP'||k==='LP') ? !B.linkless
+                : true;
+  if(!host.dataset.built){
   host.innerHTML=PTS.map(([k,label,col])=>
-    `<div class="pt" data-k="${k}"><span><i class="sw" style="background:${col}"></i>${label}</span>
+    `<div class="pt" data-k="${k}"><span><i class="sw" style="background:${col}"></i><span class="ptl">${label}</span></span>
      <input type="number" step="1" data-f="${k}-x"><input type="number" step="1" data-f="${k}-y">
      <button class="iconbtn" data-lockrow="${k}" aria-pressed="false" title="Lock this point" aria-label="Lock ${label}">🔓</button></div>`
   ).join('');
@@ -3009,7 +3307,17 @@ function fillPoints(){
       host.querySelectorAll(`[data-f="${k}-x"],[data-f="${k}-y"]`).forEach(inp=>inp.disabled=ptLocked[k]);
     };
   });
-  fillPoints();
+  }
+  // Names and rows follow the configuration, so they are set on every call.
+  const names=(PRESETS[C.config]||{}).labels||{};
+  PTS.forEach(([k,label])=>{
+    const r=host.querySelector(`[data-k="${k}"]`), name=names[k]||label;
+    r.hidden=!rowOn(k);
+    r.querySelector('.ptl').textContent=name;
+    r.querySelector('button[data-lockrow]').setAttribute('aria-label','Lock '+name);
+    host.querySelector(`[data-f="${k}-x"]`).value=(G[k].x-o.x).toFixed(1);
+    host.querySelector(`[data-f="${k}-y"]`).value=(G[k].y-o.y).toFixed(1);
+  });
 }
 /* The parts of the UI a configuration owns. Kept separate from fillCfg()
    because it hides and relabels controls rather than filling them, and has to
@@ -3022,13 +3330,29 @@ function fillPoints(){
    turn it back on is hidden, and recompute()'s mount-lock glue would otherwise
    keep dragging SG onto the down tube with no way to stop it. */
 function applyConfigUI(){
-  const rocker = C.config===1;
+  const B=bodiesOf(C), rocker = C.config===1;
   if(rocker){ C.shockMount=1; C.sgLock=0; }
+  // A mount that no tube holds has nothing to lock to, so it is never locked
+  if(mountKind('SG')==='free') C.sgLock=0;
+  if(mountKind('SP')==='free') C.spLock=0;
   const hide=(id,yes)=>{const e=document.getElementById(id); if(e) e.hidden=yes;};
-  hide('shockMountRow', rocker);
-  hide('sgStandRow',    rocker);
-  const lab=document.getElementById('spStandLabel');
-  if(lab) lab.textContent = rocker ? 'Link pivot off seat tube' : 'Link pivot off down tube';
+  hide('shockMountRow', rocker || !B.flex);
+  hide('sgStandRow',    rocker || mountKind('SG')==='free');
+  hide('spStandRow',    B.linkless || mountKind('SP')==='free');
+  // The standoff rows name the tube each mount is on, as the configuration says.
+  const tubeName={dt:'down tube', st:'seat tube', tt:'top tube'};
+  const sgl=document.getElementById('sgStandLabel');
+  if(sgl) sgl.textContent='Shock mount off '+(tubeName[mountKind('SG')]||'tube');
+  const spl=document.getElementById('spStandLabel');
+  if(spl) spl.textContent='Link pivot off '+(tubeName[mountKind('SP')]||'tube');
+  // The stay section and the stay stress tab only mean something with a seat stay.
+  // If the tab showing is one that just went away, move to the first one left.
+  document.querySelectorAll('.tabs').forEach(tabs=>{
+    const btns=[...tabs.querySelectorAll('.tabbtn')];
+    btns.forEach(b=>{ if(b.dataset.tab==='stay'||b.dataset.tab==='flex') b.hidden=!B.flex; });
+    const cur=btns.find(b=>b.getAttribute('aria-selected')==='true');
+    if(!cur||cur.hidden){ const first=btns.find(b=>!b.hidden); if(first) selectTab(tabs, first.dataset.tab); }
+  });
 }
 /* Write the solved-back side of each two-way pair into its box, but never the box
    being typed in — that would fight the cursor. */
@@ -3115,7 +3439,7 @@ function fillCfg(){
     if(!btn) continue;
     // Names the tube this particular mount actually answers to -- the link
     // pivot's is the seat tube on the rocker config.
-    const tube=(k==='spLock' && C.config===1) ? 'seat tube' : 'down tube';
+    const tube={dt:'down tube', st:'seat tube', tt:'top tube'}[mountKind(k)]||'down tube';
     const titles=['Unlock from the '+tube,'Lock to the '+tube];
     paintLock(btn, !!C[k], titles);
     btn.onclick=()=>{
@@ -3139,9 +3463,9 @@ function fillCfg(){
     const commit=()=>{
       const v=parseFloat(inp.value); if(isNaN(v)) return;
       C[off]=v;
-      if(!C[lock]){
-        const {u,sgn}=mountAxis(k);
-        G[k]=onTube(u, alongOf(u,G[k]), sgn*v);
+      if(!C[lock] && mountKind(k)!=='free'){
+        const M=mountAxis(k);
+        G[k]=mountPlace(M, mountAlong(M,G[k]), v);
       }
       refreshDerived(off); fillPoints();
       recompute(false);
@@ -3204,12 +3528,14 @@ function syncPos(){
   // Padded to the width of the totals so the text never changes width mid-cycle.
   const pad=(v,w)=>v.padStart(w);
   const maxTxt=wheelMax!=null?wheelMax.toFixed(0):null, strokeTxt=C.stroke.toFixed(1);
-  const wheelTxt=maxTxt!=null?`${pad(f.rise.toFixed(0),maxTxt.length)}/${maxTxt}mm`:`${f.rise.toFixed(0)}mm`;
+  // (Math.round(v)||0): a rise of -1e-15 at top-out is float residue, not travel, and must not print "-0".
+  const riseTxt=(Math.round(f.rise)||0).toFixed(0);
+  const wheelTxt=maxTxt!=null?`${pad(riseTxt,maxTxt.length)}/${maxTxt}mm`:`${riseTxt}mm`;
   const shockTxt=`${pad(f.stroke.toFixed(1),strokeTxt.length)}/${strokeTxt}mm`;
   lbl.textContent=`${wheelTxt} wheel · ${shockTxt} shock`;
   lbl.title=wheelMax!=null
-    ? `${f.rise.toFixed(0)} of ${wheelMax.toFixed(0)}mm wheel travel · ${f.stroke.toFixed(1)} of ${C.stroke.toFixed(1)}mm shock stroke`
-    : `${f.rise.toFixed(0)}mm wheel travel · ${f.stroke.toFixed(1)} of ${C.stroke.toFixed(1)}mm shock stroke`;
+    ? `${riseTxt} of ${maxTxt}mm wheel travel · ${f.stroke.toFixed(1)} of ${C.stroke.toFixed(1)}mm shock stroke`
+    : `${riseTxt}mm wheel travel · ${f.stroke.toFixed(1)} of ${C.stroke.toFixed(1)}mm shock stroke`;
 }
 
 document.getElementById('pos').oninput=e=>{
@@ -3255,38 +3581,29 @@ document.getElementById('resetGeom').onclick=()=>{
   GEOM_KEYS.forEach(k=>C[k]=d[k]);
   refillAll(); recompute(false);
 };
-// The four-bar's own points: main pivot, link, shock eye/mount — the levers
-// you actually drag while watching the graph. AX and FP are excluded: AX is
-// derived from rear centre and BB height (frame geometry, reset above), and
-// FP is set to wherever AX currently is so the flex pivot lands back on the
-// axle — concentric by default — rather than at a coordinate frozen at
-// shipped frame geometry that might not be current.
-const POINT_KEYS=['MP','SP','LP','SE','SG','ID'];
+/* The pivots and mounts, as the Reset button beside them restores them. The points
+   are the active configuration's own, shifted with the axle where its preset says
+   (axleRel), so a Horst pivot stays the same distance ahead of the axle whatever
+   rear centre is set. A flex-stay's flex pivot is the axle itself. */
 document.getElementById('resetPoints').onclick=()=>{
-  const D=presetDesign(C.config);       // the active config's own defaults
-  POINT_KEYS.forEach(k=>G[k]=structuredClone(D.geom[k]));
-  G.FP={...G.AX};
-  // recompute()'s mount-lock glue re-derives SG/SP from a FIXED standoff every
-  // call, so restoring the raw default coordinate alone isn't enough -- the
-  // shipped SG coordinate genuinely isn't 55mm off the down tube (it's 67.1mm;
-  // see "Both locks default on, at 55mm"), and only ever reads as 55 because
-  // the lock forces it there. Reset the standoff config and the lock flags too
-  // -- matching how resetGeom resets a2cAuto alongside a2c -- then re-place
-  // SG/SP at exactly the default standoff so the result is correct whichever
-  // way the lock ends up: locked, recompute() re-derives the identical point
-  // (a no-op); unlocked, its readout branch reads the standoff back off a
-  // point already sitting at exactly that distance.
+  const i=C.config, D=presetDesign(i), p=PRESETS[i]||PRESETS[0];
+  Object.assign(G, presetPoints(i, axleShift()));
+  G.ID=structuredClone(D.geom.ID);       // the idler goes back to its own default
   C.sgLock=D.cfg.sgLock;   C.spLock=D.cfg.spLock;
   C.sgStand=D.cfg.sgStand; C.spStand=D.cfg.spStand;
   // applyConfigUI before the re-placement below and before fillCfg: it can
-  // clear sgLock on the rocker config, which the line above just restored from
-  // that config's own defaults. This path doesn't go through refillAll().
+  // clear a lock (the rocker, a free mount), which the line above just restored
+  // from that config's own defaults. This path doesn't go through refillAll().
   applyConfigUI();
   syncGeom();
-  const FT=frontTriangle();
-  for(const [k,off] of [['SG','sgStand'],['SP','spStand']]){
-    const {u,sgn}=mountAxis(k,FT);
-    G[k]=onTube(u, alongOf(u,G[k]), sgn*C[off]);
+  settleStands(p);
+  if(bodiesOf(C).flex){
+    // flex-stay re-places each mount on its own standoff, locked or not, as it always has
+    const FT=frontTriangle();
+    for(const [k,off] of [['SG','sgStand'],['SP','spStand']]){
+      const M=mountAxis(k,FT);
+      G[k]=mountPlace(M, mountAlong(M,G[k]), C[off]);
+    }
   }
   fillPoints(); fillCfg(); recompute(false);
 };
@@ -3347,33 +3664,87 @@ document.getElementById('importJson').onclick=importJSON;
    A preset IS a design file that happens to live in the source, so loading one
    takes importJSON's identical tail: layered over DEF by presetDesign(), back
    to top-out, refillAll(), recompute(). */
-function applyPreset(i){
-  const d=presetDesign(i);
-  G=d.geom; C=d.cfg;
+/* How far the axle has moved from where the defaults put it. A preset's axleRel points
+   move by this, so they keep their place relative to the axle. */
+const axleShift=()=>({x:G.AX.x-DEF.geom.AX.x, y:G.AX.y-DEF.geom.AX.y});
+/* The kinematic points a preset places (MP SP FP LP SE SG), in the frame it is given
+   in. Any point it lists in axleRel moves with the axle by `shift`. A flex-stay's flex
+   pivot is the rear axle itself, so it is placed there. */
+function presetPoints(i, shift){
+  const d=presetDesign(i), out={};
+  const flex=bodiesOf(d.cfg).flex, p=PRESETS[i]||PRESETS[0];
+  for(const k of ['MP','SP','FP','LP','SE','SG']){
+    if(k==='FP' && flex){ out.FP={x:d.geom.AX.x+shift.x, y:d.geom.AX.y+shift.y}; continue; }
+    const q=d.geom[k], moves=(p.axleRel||[]).includes(k);
+    out[k]={x:q.x+(moves?shift.x:0), y:q.y+(moves?shift.y:0)};
+  }
+  return out;
+}
+/* A non-flex configuration reads each mount's standoff off the point its preset puts
+   there, so a locked mount does not jump to a generic 55mm on load. A preset that names
+   its own standoff keeps it, and the lock holds that. Flex-stay is left to
+   recompute()'s mount-lock glue, which has always placed its mounts. */
+function settleStands(p){
+  if(bodiesOf(C).flex) return;
+  const FT=frontTriangle(), B=bodiesOf(C);
+  for(const [k,off] of [['SG','sgStand'],['SP','spStand']]){
+    if(p.cfg && p.cfg[off]!==undefined) continue;
+    const M=mountAxis(k,FT);
+    if(M.kind==='free' || (k==='SP' && B.linkless)) continue;
+    C[off]=Math.round(mountOff(M,G[k])*10)/10;
+  }
+}
+/* A configuration is its frame plus its own points and topology. Switching keeps the
+   frame: every GEOM_KEYS field, rider, wheels and tyres, drivetrain, shock, tube sizes
+   and the current axle. Replaced: the kinematic points and the topology fields. Idler
+   fields come with a preset that sets them, and are kept otherwise. Without keepFrame
+   the whole preset loads, as a reset does. */
+const TOPO_KEYS=['config','axleBody','brakeBody','seBody','sgBody','linkless','flexStay','family',
+                 'shockMount','sgLock','spLock','sgStand','spStand'];
+const IDLER_KEYS=['idlerOn','idlerMount','idlerTeeth'];
+function applyPreset(i, keepFrame){
+  const p=PRESETS[i]||PRESETS[0], d=presetDesign(i);
+  if(keepFrame){
+    const nG=structuredClone(G), nC=structuredClone(C);
+    Object.assign(nG, presetPoints(i, axleShift()));
+    if(p.geom.ID!==undefined) nG.ID=structuredClone(d.geom.ID);
+    TOPO_KEYS.forEach(k=>{ if(d.cfg[k]===undefined) delete nC[k]; else nC[k]=d.cfg[k]; });
+    IDLER_KEYS.forEach(k=>{ if(p.cfg && p.cfg[k]!==undefined) nC[k]=d.cfg[k]; });
+    G=nG; C=nC;
+  } else {
+    G=d.geom; C=d.cfg;
+  }
+  settleStands(p);
   posT=0; holdSag=false;
   refillAll(); recompute();
 }
-/* The menu is built from PRESETS rather than written out in the markup, so a
-   third configuration later needs a PRESETS entry and nothing else. Rebuilt on
-   each open so the active one can carry aria-pressed -- reusing the blue this
-   UI already means by "the current one" everywhere else, rather than adding a
-   separate name label to the canvas. */
+/* Family headings for the configuration menu. */
+const FAMILY_NAMES={flex:'Flex-stay', single:'Single pivot', ldsp:'Linkage-driven single pivot',
+                    horst:'Horst link', shortlink:'Short link', moto:'Moto-style'};
+/* The menu is built from PRESETS rather than written out in the markup, so a new
+   configuration needs a PRESETS entry and nothing else. Grouped by family, each group
+   under a small heading, in the order the families first appear. Rebuilt on each open
+   so the active one can carry aria-pressed -- reusing the blue this UI already means by
+   "the current one" rather than adding a separate name label to the canvas. */
 document.getElementById('configOpen').onclick=()=>{
-  document.getElementById('configList').innerHTML=PRESETS.map((p,i)=>
-    `<div class="cfgopt"><button data-preset="${i}" aria-pressed="${i===C.config}">${p.name}</button>
-     <p class="note">${p.note}</p></div>`).join('');
+  const groups=new Map();
+  PRESETS.forEach((p,i)=>{ const f=p.family||'flex'; if(!groups.has(f)) groups.set(f,[]); groups.get(f).push(i); });
+  document.getElementById('configList').innerHTML=[...groups].map(([f,ids])=>
+    `<h3 class="cfgfam">${FAMILY_NAMES[f]||f}</h3>`+ids.map(i=>
+    `<div class="cfgopt"><button data-preset="${i}" aria-pressed="${i===C.config}">${PRESETS[i].name}</button>
+     <p class="note">${PRESETS[i].note}</p></div>`).join('')).join('');
   document.getElementById('configMenu').showModal();
 };
 document.getElementById('configClose').onclick=()=>document.getElementById('configMenu').close();
 document.getElementById('configList').addEventListener('click',e=>{
   const b=e.target.closest('button[data-preset]'); if(!b) return;
   const i=+b.dataset.preset;
-  // Loading a preset replaces the whole design and there is no autosave, so it
-  // asks first -- including when you pick the config you are already on, since
-  // that is itself "put me back to this preset" and discards just as much.
-  if(!confirm('Load '+PRESETS[i].name+'?\nThis replaces the current design.')) return;
+  // Switching replaces the pivots, mounts and linkage, and there is no autosave, so it
+  // asks first -- including when you pick the config you are already on. It keeps the
+  // frame, and the wording says so.
+  if(!confirm('Switch to '+PRESETS[i].name+'?\nYour frame geometry is kept. The pivots, mounts and linkage are replaced.')) return;
   document.getElementById('configMenu').close();
-  applyPreset(i);
+  applyPreset(i,true);
 });
 let raf=null, dir=1, animSpeed=100;
 document.getElementById('animSpeed').onchange=document.getElementById('animSpeed').oninput=e=>{
@@ -3425,14 +3796,16 @@ document.getElementById('cnext').onclick=()=>pageCharts(1);
    data-tab/data-panel, so a third one needs no new wiring. One listener per
    tab bar rather than per button, since a fixed set of tabs never changes
    after boot. */
+/* Shows one tab of a .tabs block and hides the rest. The click handler below uses it,
+   and applyConfigUI() uses it to move off a tab the configuration hides. */
+function selectTab(tabs,k){
+  tabs.querySelectorAll('.tabbtn').forEach(x=>x.setAttribute('aria-selected', String(x.dataset.tab===k)));
+  tabs.querySelectorAll('.tabpanel').forEach(p=>p.hidden = p.dataset.panel!==k);
+}
 document.querySelectorAll('.tabs').forEach(tabs=>{
-  const bar=tabs.querySelector('.tabbar');
-  const btns=[...tabs.querySelectorAll('.tabbtn')], panels=[...tabs.querySelectorAll('.tabpanel')];
-  bar.addEventListener('click',e=>{
+  tabs.querySelector('.tabbar').addEventListener('click',e=>{
     const b=e.target.closest('.tabbtn'); if(!b) return;
-    const k=b.dataset.tab;
-    btns.forEach(x=>x.setAttribute('aria-selected', String(x===b)));
-    panels.forEach(p=>p.hidden = p.dataset.panel!==k);
+    selectTab(tabs,b.dataset.tab);
   });
 });
 // Seat stay stress' twelve intermediate numbers are dense enough to want their

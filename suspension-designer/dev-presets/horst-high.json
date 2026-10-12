@@ -1,0 +1,73 @@
+{
+ "key": "horst-high",
+ "family": "horst",
+ "name": "Horst link — high pivot + idler",
+ "note": "The main pivot sits high on the seat tube and a Horst link ahead of the rear axle ties the wheel to a rocker that drives the shock down to the down tube, with an idler to route the chain, much like the high-pivot Norco Range.",
+ "geom": {
+  "MP": {
+   "x": -66.6,
+   "y": 220.7
+  },
+  "SP": {
+   "x": -89.2,
+   "y": 259.4
+  },
+  "FP": {
+   "x": -359,
+   "y": -9.9
+  },
+  "LP": {
+   "x": -66.6,
+   "y": 374.6
+  },
+  "SE": {
+   "x": -7.2,
+   "y": 305.7
+  },
+  "SG": {
+   "x": 97.1,
+   "y": 100.7
+  },
+  "ID": {
+   "x": -61.6,
+   "y": 185.7
+  }
+ },
+ "cfg": {
+  "axleBody": "C",
+  "brakeBody": "C",
+  "seBody": "R",
+  "sgBody": "F",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "horst",
+  "idlerOn": 1,
+  "idlerMount": 0,
+  "idlerTeeth": 16
+ },
+ "axleRel": [
+  "FP"
+ ],
+ "labels": {
+  "MP": "Main pivot (high)",
+  "SP": "Rocker pivot on seat tube",
+  "FP": "Horst pivot",
+  "LP": "Horst link to rocker",
+  "SE": "Shock eye",
+  "SG": "Shock to down tube"
+ },
+ "mounts": {
+  "SG": "dt",
+  "SP": "st"
+ },
+ "targets": {
+  "prog": [
+   10,
+   35
+  ],
+  "as": [
+   70,
+   140
+  ]
+ }
+}
