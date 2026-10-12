@@ -1,0 +1,54 @@
+{
+ "key": "vpp-lower",
+ "family": "shortlink",
+ "name": "Short link, counter-rotating — lower link drives",
+ "note": "Counter-rotating pair: the lower link (MP-FP) carries the shock eye SE on an extension and the upper link (SP-LP) turns the other way. Solver-found; the link lengths are far from the short-link intent (see doubts in the report).",
+ "geom": {
+  "MP": {
+   "x": -81.16,
+   "y": -18.58
+  },
+  "FP": {
+   "x": -58.23,
+   "y": 27.01
+  },
+  "LP": {
+   "x": -221.76,
+   "y": 420.43
+  },
+  "SP": {
+   "x": -71.35,
+   "y": 141.14
+  },
+  "SE": {
+   "x": 73.85,
+   "y": 119.57
+  },
+  "SG": {
+   "x": -14.93,
+   "y": 331.74
+  }
+ },
+ "cfg": {
+  "axleBody": "C",
+  "brakeBody": "C",
+  "seBody": "A",
+  "sgBody": "F",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "shortlink"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Lower link to frame",
+  "SP": "Upper link to seat tube",
+  "FP": "Lower link to rear triangle",
+  "LP": "Upper link to rear triangle",
+  "SE": "Shock eye (lower link)",
+  "SG": "Shock to top tube"
+ },
+ "mounts": {
+  "SP": "st",
+  "SG": "tt"
+ }
+}

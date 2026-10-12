@@ -1340,9 +1340,9 @@ const PRESETS=[
            SE:{x:28.7,y:308.9}, SG:{x:57.4,y:80.7} },
     cfg:{ shockMount:1, sgStand:12, sgLock:0, spStand:26.2, spLock:1 } },
   { name:'Single pivot — shock to down tube',
-    note:'A simple single-pivot frame where the swingarm pivots up near the bottom bracket and the shock runs forward from a boss at the seat tube junction to the down tube, like classic Orange Five and Starling single-pivot bikes.',
+    note:'A simple single-pivot frame where the swingarm pivots up near the bottom bracket and the shock eye sits on the swingarm just ahead of the seat tube, running forward to a cross-tube boss on the down tube, like classic Orange Five and Starling single-pivot bikes.',
     family:'single',
-    geom:{MP:{x:0,y:65},SP:{x:74,y:162.7},FP:{x:-450,y:19},LP:{x:6.9,y:271.8},SE:{x:-65,y:260},SG:{x:163.5,y:234.1}},
+    geom:{MP:{x:0,y:65},SP:{x:74,y:162.7},FP:{x:-450,y:19},LP:{x:6.9,y:271.8},SE:{x:-6.98,y:264.88},SG:{x:222,y:243.3}},
     cfg:{axleBody:'A',brakeBody:'A',seBody:'A',sgBody:'F',linkless:1,flexStay:0,family:'single'},
     axleRel:[],
     labels:{MP:'Swingarm pivot',SE:'Shock eye',SG:'Shock to down tube'},
@@ -1355,10 +1355,18 @@ const PRESETS=[
     axleRel:[],
     labels:{MP:'Swingarm pivot',SE:'Shock eye',SG:'Shock frame mount'},
     mounts:{SG:'free',SP:'free'} },
-  { name:'Single pivot — high pivot + idler',
+  { name:'Single pivot — swingarm extension drives shock',
+    note:'Single pivot with the swingarm pivot just above and slightly ahead of the bottom bracket. The swingarm carries an extension that rises above the pivot to the shock eye, and the shock runs forward and down to a cross-tube boss centred on the down tube, so the swingarm extension drives the shock. The extension rises up and slightly rearward of the pivot rather than forward, because a forward extension cannot give positive progression without the shock crossing the down tube.',
+    family:'single',
+    geom:{MP:{x:23.5,y:73.4},SP:{x:74,y:162.7},FP:{x:-450,y:18.96},LP:{x:6.9,y:271.8},SE:{x:-15.8,y:291.1},SG:{x:204.1,y:223.7}},
+    cfg:{axleBody:'A',brakeBody:'A',seBody:'A',sgBody:'F',linkless:1,flexStay:0,family:'single'},
+    axleRel:[],
+    labels:{MP:'Swingarm pivot',SE:'Shock eye (yoke)',SG:'Shock to down tube'},
+    mounts:{SG:'dt',SP:'free'} },
+  { name:'Single pivot — high pivot + idler (draft)',
     note:'The swingarm pivots high up beside the seat tube and a small idler pulley under it routes the chain, with the shock running from a forward extension of the swingarm down to the down tube, similar in spirit to older single-pivot trail bikes such as the Ibis Tranny.',
     family:'single',
-    geom:{MP:{x:5.8,y:237.4},SP:{x:74,y:162.7},FP:{x:-450,y:19},LP:{x:6.9,y:271.8},SE:{x:89.7,y:448.8},SG:{x:225.4,y:263.1},ID:{x:0.6,y:215.8}},
+    geom:{MP:{x:5.8,y:237.4},SP:{x:74,y:162.7},FP:{x:-450,y:19},LP:{x:6.9,y:271.8},SE:{x:170,y:430},SG:{x:204.5,y:202.6},ID:{x:0.6,y:215.8}},
     cfg:{axleBody:'A',brakeBody:'A',seBody:'A',sgBody:'F',linkless:1,flexStay:0,family:'single',idlerOn:1,idlerMount:0,idlerTeeth:16},
     axleRel:[],
     labels:{MP:'Swingarm pivot',SE:'Shock eye',SG:'Shock to down tube'},
@@ -1366,7 +1374,7 @@ const PRESETS=[
   { name:'Linkage-driven single pivot — seat-stay pivot, rocker on seat tube',
     note:'A short faux-bar link runs from the chainstay near the axle up to a rocker pivoted on the seat tube, and the rocker pushes the shock down to the down tube, similar in principle to Kona Process bikes.',
     family:'ldsp',
-    geom:{MP:{x:-12.3,y:64.6},SP:{x:-66.1,y:265},FP:{x:-425,y:51.9},LP:{x:-213.7,y:399.3},SE:{x:22.6,y:316.5},SG:{x:101.3,y:100.3}},
+    geom:{MP:{x:-12.3,y:64.6},SP:{x:-66.1,y:265},FP:{x:-425,y:51.9},LP:{x:-213.7,y:399.3},SE:{x:22.6,y:316.5},SG:{x:87.4,y:95.8}},
     cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'ldsp'},
     axleRel:[],
     labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Faux bar to chainstay',LP:'Faux bar to rocker',SE:'Shock eye',SG:'Shock to down tube'},
@@ -1374,7 +1382,7 @@ const PRESETS=[
   { name:'Linkage-driven single pivot — link under top tube',
     note:'A short link from the swingarm drives a rocker pinned to the top tube near the seat tube, and the shock lies flat under the top tube toward the head tube, much like the layout of Commencal\'s Meta.',
     family:'ldsp',
-    geom:{MP:{x:24.1,y:66.3},SP:{x:-2.3,y:354.8},FP:{x:-30.5,y:265.4},LP:{x:78.9,y:194.4},SE:{x:58.5,y:279},SG:{x:222.8,y:440.1}},
+    geom:{MP:{x:29.2,y:64.9},SP:{x:-13.4,y:367.3},FP:{x:-30.6,y:254},LP:{x:77.5,y:183.7},SE:{x:82.3,y:278.5},SG:{x:247.7,y:438.4}},
     cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'ldsp'},
     axleRel:[],
     labels:{MP:'Swingarm pivot',SP:'Rocker pivot',FP:'Coupler to swingarm',LP:'Coupler to rocker',SE:'Shock eye',SG:'Shock to top tube'},
@@ -1382,7 +1390,7 @@ const PRESETS=[
   { name:'Linkage-driven single pivot — high pivot + idler',
     note:'A swingarm pivot set well up the frame with a chain idler and a rocker on the seat tube that drives the shock, in the spirit of high-pivot bikes such as the Commencal Supreme and Deviate.',
     family:'ldsp',
-    geom:{MP:{x:28.4,y:152.5},SP:{x:-25.5,y:180.7},FP:{x:-175.3,y:91.8},LP:{x:-100,y:473},SE:{x:55.5,y:314.4},SG:{x:162.9,y:111.1},ID:{x:33.4,y:117.5}},
+    geom:{MP:{x:21.73,y:148.73},SP:{x:-44.76,y:179.52},FP:{x:-186.08,y:89.6},LP:{x:-105.97,y:473.48},SE:{x:41.12,y:294.64},SG:{x:131.02,y:82.94},ID:{x:33.4,y:117.5}},
     cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'ldsp',idlerOn:1,idlerMount:0,idlerTeeth:16},
     axleRel:[],
     labels:{MP:'Swingarm pivot',SP:'Rocker pivot',FP:'Coupler to swingarm',LP:'Coupler to rocker',SE:'Shock eye',SG:'Shock to down tube'},
@@ -1390,23 +1398,23 @@ const PRESETS=[
   { name:'Split pivot / ABP',
     note:'The chainstay pivots low by the bottom bracket while the seat stay, which carries the rear brake, runs from the axle up to a small rocker on the seat tube, and that rocker drives the shock down to the down tube, as on Trek\'s ABP bikes such as the Fuel EX.',
     family:'ldsp',
-    geom:{MP:{x:12.4,y:63.3},SP:{x:-49.7,y:199.4},FP:{x:-450,y:19},LP:{x:-118.4,y:366.1},SE:{x:30.1,y:269.8},SG:{x:111.4,y:54.6}},
+    geom:{MP:{x:41.21,y:64.62},SP:{x:-58.88,y:223.87},FP:{x:-438.64,y:32.64},LP:{x:-118.98,y:445.88},SE:{x:32,y:278.89},SG:{x:49.72,y:49.57}},
     cfg:{axleBody:'A',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'ldsp'},
     axleRel:['FP'],
     labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Axle (seat stay end)',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to down tube'},
     mounts:{SG:'dt',SP:'st'} },
-  { name:'Split pivot — floating shock',
+  { name:'Split pivot — floating shock (draft)',
     note:'The rear axle hangs off a link that pivots at the bottom bracket, while the shock\'s lower end rides on a bracket that projects forward from that link, so both ends of the shock move as the bike rides, much like Trek\'s Full Floater on the Fuel EX.',
     family:'ldsp',
     geom:{MP:{x:22.3,y:59.3},SP:{x:-65.2,y:261.7},FP:{x:-450,y:18.96},LP:{x:-159,y:313.4},SE:{x:-6.2,y:326.7},SG:{x:57.5,y:105.7}},
     cfg:{axleBody:'A',brakeBody:'C',seBody:'R',sgBody:'A',linkless:0,flexStay:0,family:'ldsp'},
     axleRel:['FP'],
-    labels:{MP:'Main pivot near BB',SP:'Rocker pivot on seat tube',FP:'Axle pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to chainstay bracket'},
+    labels:{MP:'Main pivot at BB',SP:'Rocker pivot on seat tube',FP:'Axle pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to chainstay bracket'},
     mounts:{SG:'free',SP:'st'} },
   { name:'Horst link — rocker drives shock',
-    note:'The rear wheel hangs from a Horst link: a chainstay pivots near the bottom bracket, a Horst pivot sits just ahead of the axle, and a rocker on the seat tube pushes the shock down to the down tube, the same idea as the Horst layout on Specialized\'s FSR Stumpjumper.',
+    note:'The rear wheel hangs from a Horst link: a chainstay pivots near the bottom bracket, a Horst pivot sits just ahead of the axle, and a rocker on the seat tube, in front of it, pushes the shock down to the down tube.',
     family:'horst',
-    geom:{MP:{x:-16.3,y:65.8},SP:{x:-39.8,y:159.7},FP:{x:-388.9,y:7.3},LP:{x:-105.5,y:321.4},SE:{x:49.6,y:326.9},SG:{x:79.9,y:98.9}},
+    geom:{MP:{x:11.8,y:65.4},SP:{x:-32.8,y:131.5},FP:{x:-349.8,y:35.6},LP:{x:-4.4,y:315.7},SE:{x:55.6,y:277.8},SG:{x:108.6,y:54}},
     cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'horst'},
     axleRel:['FP'],
     labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Horst pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to down tube'},
@@ -1414,55 +1422,63 @@ const PRESETS=[
   { name:'Horst link — seat stay drives shock',
     note:'The seat stay carries the rear axle and pivots on the chainstay at a Horst pivot just ahead of the wheel, with a short rocker on the seat tube and the shock hung off the seat stay\'s extension to the down tube, as on Specialized FSR-style Horst bikes.',
     family:'horst',
-    geom:{MP:{x:-19.9,y:73.5},SP:{x:-51,y:220.8},FP:{x:-409.4,y:68.6},LP:{x:-108.7,y:269.9},SE:{x:1.1,y:273.2},SG:{x:230.8,y:285.5}},
+    geom:{MP:{x:-21.38,y:65.8},SP:{x:-44.8,y:190.15},FP:{x:-428,y:44.26},LP:{x:-169.95,y:259.53},SE:{x:15.59,y:295.74},SG:{x:241.03,y:341.31}},
     cfg:{axleBody:'C',brakeBody:'C',seBody:'C',sgBody:'F',linkless:0,flexStay:0,family:'horst'},
     axleRel:['FP'],
     labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Horst pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to down tube'},
     mounts:{SG:'dt',SP:'st'} },
-  { name:'Horst link — floating shock',
-    note:'The rear wheel hangs from a Horst link: a stay pivots on the chainstay just ahead of the axle, a rocker on the seat tube drives the shock, and the shock\'s lower end floats on a bracket forward of the bottom bracket so both ends move, the same family as Specialized\'s Demo and older FSR downhill bikes.',
+  { name:'Horst link — floating shock (draft)',
+    note:'The rear wheel hangs from a Horst link: a stay pivots on the chainstay just ahead of the axle, a rocker hangs off a seat-tube bracket and drives the shock, and the shock\'s lower end floats on a bracket on the chainstay so both ends move, the same family as Specialized\'s Demo and older FSR downhill bikes.',
     family:'horst',
-    geom:{MP:{x:9.9,y:67.8},SP:{x:-41.8,y:155.9},FP:{x:-419.7,y:47.5},LP:{x:-115.5,y:227},SE:{x:64.3,y:308.1},SG:{x:116.8,y:84.1}},
+    geom:{MP:{x:6.9,y:72.1},SP:{x:-77.5,y:161.8},FP:{x:-387.2,y:54.6},LP:{x:-188.7,y:278.9},SE:{x:63.6,y:381.7},SG:{x:58,y:151.7}},
     cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'A',linkless:0,flexStay:0,family:'horst'},
     axleRel:['FP'],
-    labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat tube',FP:'Horst pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to chainstay bracket'},
+    labels:{MP:'Chainstay pivot',SP:'Rocker pivot on seat-tube bracket',FP:'Horst pivot',LP:'Seat stay to rocker',SE:'Shock eye',SG:'Shock to chainstay bracket'},
     mounts:{SG:'free',SP:'st'} },
   { name:'Horst link — high pivot + idler',
     note:'The main pivot sits high on the seat tube and a Horst link ahead of the rear axle ties the wheel to a rocker that drives the shock down to the down tube, with an idler to route the chain, much like the high-pivot Norco Range.',
     family:'horst',
-    geom:{MP:{x:-66.6,y:220.7},SP:{x:-89.2,y:259.4},FP:{x:-359,y:-9.9},LP:{x:-66.6,y:374.6},SE:{x:-7.2,y:305.7},SG:{x:97.1,y:100.7},ID:{x:-61.6,y:185.7}},
+    geom:{MP:{x:-51.19,y:200.6},FP:{x:-369.96,y:-27.19},SP:{x:-53.23,y:213.5},LP:{x:14.82,y:335.02},SE:{x:50.82,y:331.7},SG:{x:97.1,y:106.4},ID:{x:-75.56,y:166.9}},
     cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'horst',idlerOn:1,idlerMount:0,idlerTeeth:16},
     axleRel:['FP'],
     labels:{MP:'Main pivot (high)',SP:'Rocker pivot on seat tube',FP:'Horst pivot',LP:'Horst link to rocker',SE:'Shock eye',SG:'Shock to down tube'},
     mounts:{SG:'dt',SP:'st'} },
-  { name:'Short link, counter-rotating — upper link drives',
+  { name:'Short link, counter-rotating — upper link drives (draft)',
     note:'The rear triangle is one rigid piece held by a short lower link low at the bottom bracket and a short upper link on the seat tube; the upper link also carries the shock, as on Santa Cruz\'s early VPP bikes such as the Nomad, giving a firm, rising feel under pedalling.',
     family:'shortlink',
-    geom:{MP:{x:-74,y:67.2},SP:{x:-52.4,y:210.1},FP:{x:-138.3,y:91.9},LP:{x:-77.4,y:142.4},SE:{x:42.7,y:86},SG:{x:187,y:265.2}},
+    geom:{MP:{x:-77.99,y:50.58},FP:{x:-150.86,y:89.4},LP:{x:-93.72,y:145.95},SP:{x:-57.61,y:211.17},SE:{x:31.66,y:79.61},SG:{x:154.15,y:274.28}},
     cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'shortlink'},
     axleRel:[],
     labels:{MP:'Lower link to frame',SP:'Upper link to seat tube',FP:'Lower link to rear triangle',LP:'Upper link to rear triangle',SE:'Shock eye',SG:'Shock to down tube'},
-    mounts:{SG:'dt',SP:'st'} },
+    mounts:{SP:'st',SG:'dt'} },
+  { name:'Short link, counter-rotating — lower link drives (draft)',
+    note:'Counter-rotating pair: the lower link (MP-FP) carries the shock eye SE on an extension and the upper link (SP-LP) turns the other way. Solver-found; the link lengths are far from the short-link intent (see doubts in the report).',
+    family:'shortlink',
+    geom:{MP:{x:-81.16,y:-18.58},FP:{x:-58.23,y:27.01},LP:{x:-221.76,y:420.43},SP:{x:-71.35,y:141.14},SE:{x:73.85,y:119.57},SG:{x:-14.93,y:331.74}},
+    cfg:{axleBody:'C',brakeBody:'C',seBody:'A',sgBody:'F',linkless:0,flexStay:0,family:'shortlink'},
+    axleRel:[],
+    labels:{MP:'Lower link to frame',SP:'Upper link to seat tube',FP:'Lower link to rear triangle',LP:'Upper link to rear triangle',SE:'Shock eye (lower link)',SG:'Shock to top tube'},
+    mounts:{SP:'st',SG:'tt'} },
   { name:'Short link, co-rotating — upper link drives',
     note:'The rear wheel hangs from a short lower link near the bottom bracket and a longer upper link on the seat tube that also carries the shock, and both links swing the same way, as on Giant’s Maestro DW-link bikes.',
     family:'shortlink',
-    geom:{MP:{x:-11.6,y:66.8},SP:{x:-47.5,y:205},FP:{x:-60,y:52.4},LP:{x:-213.8,y:350},SE:{x:-44.6,y:330},SG:{x:173.3,y:256.4}},
+    geom:{MP:{x:-20.6,y:42.9},SP:{x:-39.4,y:179.1},FP:{x:-85.1,y:-9.1},LP:{x:-213.9,y:406.1},SE:{x:-33.8,y:316.7},SG:{x:188.3,y:256.9}},
     cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'shortlink'},
     axleRel:[],
     labels:{MP:'Lower link to frame',SP:'Upper link to seat tube',FP:'Lower link to rear triangle',LP:'Upper link to rear triangle',SE:'Shock eye',SG:'Shock to down tube'},
     mounts:{SG:'dt',SP:'st'} },
   { name:'Short link, co-rotating — lower link drives',
-    note:'Both short links swing the same way and the lower one carries the shock eye forward, pushing the shock up to the down tube, as in Dave Weagle\'s DW-link layout on Ibis Mojo bikes.',
+    note:'Both short links swing the same way and the lower one carries the shock eye up in front of the seat tube to a cross-tube mount on the down tube, as in Dave Weagle\'s DW-link layout on Ibis Mojo bikes.',
     family:'shortlink',
-    geom:{MP:{x:5.3,y:93.9},SP:{x:-45.4,y:251.7},FP:{x:-53.3,y:80.2},LP:{x:-210.2,y:311.9},SE:{x:-30.5,y:143.1},SG:{x:183.9,y:226.4}},
+    geom:{MP:{x:16.4,y:106.5},SP:{x:-10.4,y:263.3},FP:{x:-97,y:87.7},LP:{x:-206.6,y:303.6},SE:{x:-13.6,y:186.4},SG:{x:216.4,y:186.7}},
     cfg:{axleBody:'C',brakeBody:'C',seBody:'A',sgBody:'F',linkless:0,flexStay:0,family:'shortlink'},
     axleRel:[],
     labels:{MP:'Lower link to frame',SP:'Upper link to seat tube',FP:'Lower link to rear triangle',LP:'Upper link to rear triangle',SE:'Shock eye',SG:'Shock to down tube'},
-    mounts:{SG:'dt',SP:'st'} },
+    mounts:{SP:'st',SG:'dt'} },
   { name:'Short link — shock between the links',
     note:'The shock is squeezed between a short upper link and a short lower link, low behind the seat tube, rather than bolted to the frame, so the bike sits calmly under pedalling and the spring gets stiffer as it compresses; the same layout as the Mondraker Zero.',
     family:'shortlink',
-    geom:{MP:{x:-5.4,y:58.3},SP:{x:-73.6,y:301.2},FP:{x:-124.1,y:20.7},LP:{x:-41.5,y:226.2},SE:{x:-114.6,y:258.9},SG:{x:-69.4,y:33.4}},
+    geom:{MP:{x:7.8,y:49.9},SP:{x:-72.2,y:299.9},FP:{x:-134.6,y:-3.3},LP:{x:-16.5,y:216.1},SE:{x:-132.6,y:243.1},SG:{x:-51.1,y:28}},
     cfg:{axleBody:'C',brakeBody:'C',seBody:'R',sgBody:'A',linkless:0,flexStay:0,family:'shortlink'},
     axleRel:['FP'],
     labels:{MP:'Lower link to frame',SP:'Upper link to seat tube',FP:'Lower link to rear triangle',LP:'Upper link to rear triangle',SE:'Shock eye',SG:'Shock to lower link'},
@@ -1470,7 +1486,7 @@ const PRESETS=[
   { name:'Moto — rocker on frame, pull rod (Uni-Trak)',
     note:'The swingarm pivots on the frame above the bottom bracket, a pull rod runs from underneath the arm to a rocker pivoted low behind the BB, and the rocker drives the shock up to the seat tube, the Kawasaki Uni-Trak layout seen on KX and KLX motocross bikes.',
     family:'moto',
-    geom:{MP:{x:40,y:72.5},SP:{x:-58.2,y:-65.4},FP:{x:3.7,y:-106.7},LP:{x:-76.7,y:-200.8},SE:{x:-234.7,y:18.4},SG:{x:-46.5,y:150.7}},
+    geom:{MP:{x:40,y:72.5},SP:{x:-58.2,y:-30.6},FP:{x:3.7,y:-142.3},LP:{x:-76.7,y:-200.8},SE:{x:-215.7,y:36.3},SG:{x:-48.4,y:194.1}},
     cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'F',linkless:0,flexStay:0,family:'moto'},
     axleRel:[],
     labels:{MP:'Swingarm pivot',SP:'Rocker pivot on frame',FP:'Pull rod to swingarm',LP:'Pull rod to rocker',SE:'Shock eye',SG:'Shock to seat tube'},
@@ -1478,7 +1494,7 @@ const PRESETS=[
   { name:'Moto — rocker on swingarm, dogbone (Pro-Link)',
     note:'A rocker hangs from the underside of the swingarm and a short dogbone ties it to a bracket low on the frame by the bottom bracket, with the shock running from the rocker up to the seat tube, the layout Honda uses on its CRF motocross bikes.',
     family:'moto',
-    geom:{MP:{x:39.6,y:59.3},SP:{x:-66,y:-76.6},FP:{x:-164.4,y:-17.6},LP:{x:86.4,y:-64.3},SE:{x:-132.3,y:142.3},SG:{x:-91.9,y:368.7}},
+    geom:{MP:{x:39.6,y:59.3},SP:{x:-50,y:-70},FP:{x:-164.4,y:-17.6},LP:{x:86.4,y:-64.3},SE:{x:-132.3,y:142.3},SG:{x:-91.9,y:368.7}},
     cfg:{axleBody:'A',brakeBody:'A',seBody:'C',sgBody:'F',linkless:0,flexStay:0,family:'moto'},
     axleRel:[],
     labels:{MP:'Swingarm pivot',SP:'Dogbone to frame',FP:'Rocker pivot on swingarm',LP:'Dogbone to rocker',SE:'Shock eye',SG:'Shock to seat tube'},
@@ -1486,7 +1502,7 @@ const PRESETS=[
   { name:'Moto — Full-Floater',
     note:'Both ends of the shock float: the shock\'s top eye hangs off a rocker that is pivoted on the frame and pulled by a rod from underneath the swingarm, and its bottom eye sits on the swingarm itself, as on Suzuki\'s RM motocross bikes (RM125, RM250).',
     family:'moto',
-    geom:{MP:{x:39.8,y:67.4},SP:{x:-66.3,y:177.4},FP:{x:-190.1,y:1.5},LP:{x:-3.4,y:110.6},SE:{x:-10.5,y:239.3},SG:{x:-203.9,y:114.9}},
+    geom:{MP:{x:39.8,y:67.4},SP:{x:-57.4,y:225},FP:{x:-191.6,y:1.3},LP:{x:-174.7,y:283.8},SE:{x:-10.7,y:243.1},SG:{x:-135.3,y:49.8}},
     cfg:{axleBody:'A',brakeBody:'A',seBody:'R',sgBody:'A',linkless:0,flexStay:0,family:'moto'},
     axleRel:[],
     labels:{MP:'Swingarm pivot',SP:'Rocker pivot on frame',FP:'Pull rod to swingarm',LP:'Pull rod to rocker',SE:'Shock eye',SG:'Shock to swingarm'},
@@ -1494,7 +1510,7 @@ const PRESETS=[
   { name:'Moto — Unit Pro-Link',
     note:'The rear swingarm is driven by a rocker pivoted on the swingarm underside and a dogbone link tied to the frame, with the shock hung between the swingarm and the rocker, as on Honda CRF450R and CR250R motocross bikes.',
     family:'moto',
-    geom:{MP:{x:53.9,y:71.1},SP:{x:141.8,y:238.8},FP:{x:-59,y:-0.3},LP:{x:-29,y:118},SE:{x:-62.5,y:225.2},SG:{x:-238.7,y:77.3}},
+    geom:{MP:{x:59.9,y:68.1},SP:{x:148.7,y:241.8},FP:{x:-62.2,y:-5.6},LP:{x:-0.3,y:157.2},SE:{x:-88.2,y:224.9},SG:{x:-278,y:95}},
     cfg:{axleBody:'A',brakeBody:'A',seBody:'C',sgBody:'A',linkless:0,flexStay:0,family:'moto'},
     axleRel:[],
     labels:{MP:'Swingarm pivot',SP:'Dogbone to frame',FP:'Rocker pivot on swingarm',LP:'Rocker to dogbone',SE:'Shock eye',SG:'Shock to swingarm'},
@@ -2298,11 +2314,38 @@ function draw(){
     // a stub merge seamlessly into its tube -- split into its own call it would draw
     // a visible seam across it.
     const MG=mountAxis('SG',FT), MS=mountAxis('SP',FT), stubs=[];
+    const BB_SHELL=38.1;
+    /* A free mount on the frame has no lock, so it can sit anywhere: a short bracket
+       ties it to the nearest frame part, the same tubes() stub a locked mount uses. The
+       bracket starts on that part's centreline (under its fill, so it merges in), or on
+       the BB shell's rim when the shell is nearer than any tube. */
+    const freeBrace=(p,w)=>{
+      let best={d:Infinity,foot:null};
+      for(const [,a,b,od] of FT.all){
+        const abx=b.x-a.x, aby=b.y-a.y, L2=abx*abx+aby*aby;
+        const t=Math.max(0,Math.min(1,((p.x-a.x)*abx+(p.y-a.y)*aby)/L2));
+        const foot={x:a.x+abx*t, y:a.y+aby*t};
+        const d=Math.hypot(p.x-foot.x, p.y-foot.y)-od/2;
+        if(d<best.d) best={d, foot};
+      }
+      const rs=Math.hypot(p.x,p.y);                       // BB is the origin
+      if(rs-BB_SHELL/2<best.d) best={d:rs-BB_SHELL/2, foot:mul(unit(p),BB_SHELL/2)};
+      return [best.foot, p, w];
+    };
     // A shock end that floats on a moving body is not on the frame, so it gets no brace
     if(MG.kind!=='free' && B.sg==='F')         // shock mount brace
       stubs.push([mountPlace(MG, Math.max(60,mountAlong(MG,G.SG)), 0), G.SG, 26]);
+    else if(MG.kind==='free' && B.sg==='F')    // free on the frame: bracket to nearest part
+      stubs.push(freeBrace(G.SG, 26));
     if(!B.linkless && MS.kind!=='free')        // second pivot boss
       stubs.push([mountPlace(MS, Math.max(50,mountAlong(MS,G.SP)), 0), G.SP, 30]);
+    else if(!B.linkless && MS.kind==='free')   // link pivot free on the frame
+      stubs.push(freeBrace(G.SP, 30));
+    // A frame-mounted idler is bolted to the frame, so it gets the same bracket to the
+    // nearest frame part. Not on a concentric idler (it shares the main pivot, already
+    // part of the frame) and not on flex-stay, whose drawing is left exactly as it was.
+    if(C.idlerOn && !C.idlerMount && !C.idlerLock && !B.flex && G.ID)
+      stubs.push(freeBrace(G.ID, 16));
     tubes([[FT.dt[1],FT.dtTip,FT.dt[3],'butt'],
            [FT.tt[1],FT.ttTip,FT.tt[3],'butt'],
            [FT.st[1],FT.st[2],  FT.st[3],'butt'],
@@ -2313,7 +2356,6 @@ function draw(){
        cover. 38.1mm is the shell, and the same diameter as the down tube, so it
        lands flush on the down tube's sides and its edge reads as the shell face
        across the seat tube. Above the tubes, in the tube colours. */
-    const BB_SHELL=38.1;
     el('circle',{cx:0,cy:0,r:BB_SHELL/2,    fill:'var(--art-frame-stroke)'},g);
     el('circle',{cx:0,cy:0,r:BB_SHELL/2-3.5,fill:'var(--art-frame-fill)'},g);
     /* Square where it meets the frame -- a real post is a cut cylinder plunging
@@ -2715,10 +2757,28 @@ function draw(){
       const P=pivotForces(G,f,Fw,C);
       if(P){
         const FSCALE=0.22;                       // 1 kN reads as 220 mm on the drawing
+        // Every arrow for this frame, collected first so a configuration that needs it
+        // can scale them all by one factor. Flex-stay keeps the shipped scale exactly.
+        const B=bodiesOf(C);
+        const items=[[f.CP,{x:0,y:Fw},'var(--art-force-ground)']];   // ground reaction under the tyre
+        // one arrow per pivot pivotForces resolves; a linkless config has only MP and the shock
+        items.push([G.MP,P.vec.main,'var(--rear)']);
+        if(!B.linkless){
+          items.push([f.FP,P.vec.flex,'var(--flex)']);
+          // SP repeats the link arrow unless the shock eye sits on R (the rocker configs)
+          if(!B.flex || B.se==='R' || B.sg==='R') items.push([G.SP,P.vec.second,'var(--link)']);   // flex-stay's overlay is unchanged
+          items.push([f.LP,P.vec.link,'var(--link)']);
+        }
+        items.push([f.SE,P.vec.shock,'var(--shock)']);
+        // Non-flex configurations cap the longest arrow at 250mm, scaling the frame's
+        // arrows together so their relative sizes still read true.
+        const ARROW_MAX=250;
+        const longest=Math.max(0,...items.map(([,v])=>Math.hypot(v.x,v.y)*FSCALE).filter(Number.isFinite));
+        const K=(B.flex||longest<=ARROW_MAX)?1:ARROW_MAX/longest;
         const arrow=(p,v,col)=>{
           const m=Math.hypot(v.x,v.y);
           if(!(m>1)) return;
-          const L=m*FSCALE;
+          const L=m*FSCALE*K;
           const u={x:v.x/m,y:v.y/m}, nrm={x:-u.y,y:u.x};
           const head=Math.min(L*0.42, Math.max(16,11*mmPerPx));
           const tip=add(p,mul(u,L)), base=sub(tip,mul(u,head));
@@ -2729,17 +2789,7 @@ function draw(){
               .map(q=>`${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(' '),
             fill:col,'pointer-events':'none'},g);
         };
-        arrow(f.CP,{x:0,y:Fw},'var(--art-force-ground)');          // ground reaction under the tyre
-        // one arrow per pivot pivotForces resolves; a linkless config has only MP and the shock
-        const B=bodiesOf(C);
-        arrow(G.MP,P.vec.main, 'var(--rear)');
-        if(!B.linkless){
-          arrow(f.FP,P.vec.flex, 'var(--flex)');
-          // SP repeats the link arrow unless the shock eye sits on R (the rocker configs)
-          if(!B.flex || B.se==='R' || B.sg==='R') arrow(G.SP,P.vec.second,'var(--link)');   // flex-stay's overlay is unchanged
-          arrow(f.LP,P.vec.link, 'var(--link)');
-        }
-        arrow(f.SE,P.vec.shock,'var(--shock)');
+        items.forEach(([p,v,col])=>arrow(p,v,col));
       }
     }
   }
@@ -2898,6 +2948,11 @@ function tubeReadout(){
   let html='';
   for(const [name,p,fixed] of pts){
     if(!fixed){ html+=row(name,'not on a fixed tube'); continue; }
+    /* A pivot centred within 6mm of a tube's centreline is a boss bored straight through
+       that tube, not one standing off its wall. A wall-to-wall clearance is meaningless
+       for it (it reads as a large negative), so it is named as what it is. */
+    const across=FT.all.find(([,a,b])=>segDist(p,a,b)<6);
+    if(across){ html+=row(name+' to '+across[0], 'cross-tube boss'); continue; }
     let best=Infinity, at='';
     for(const [tube,a,b,od] of FT.all){
       const gap=segDist(p,a,b)-od/2-r;               // wall to wall, not centre to centre
@@ -3459,7 +3514,7 @@ function fillCfg(){
   for(const [k,lock,off] of [['SG','sgLock','sgStand'],['SP','spLock','spStand']]){
     const inp=document.getElementById(off);
     if(!inp) continue;
-    inp.value=C[off];
+    inp.value=Math.round(C[off]*10)/10;   // exact underneath (see settleStands), rounded on screen
     const commit=()=>{
       const v=parseFloat(inp.value); if(isNaN(v)) return;
       C[off]=v;
@@ -3691,7 +3746,10 @@ function settleStands(p){
     if(p.cfg && p.cfg[off]!==undefined) continue;
     const M=mountAxis(k,FT);
     if(M.kind==='free' || (k==='SP' && B.linkless)) continue;
-    C[off]=Math.round(mountOff(M,G[k])*10)/10;
+    // Kept exact, not rounded to 0.1: a locked mount is placed from this number, so a
+    // rounded one would move the point by up to 0.05mm on load. A boss centred on its tube
+    // (a cross-tube boss) is the case where that would matter most. The box rounds for display.
+    C[off]=mountOff(M,G[k]);
   }
 }
 /* A configuration is its frame plus its own points and topology. Switching keeps the
@@ -3710,6 +3768,10 @@ function applyPreset(i, keepFrame){
     if(p.geom.ID!==undefined) nG.ID=structuredClone(d.geom.ID);
     TOPO_KEYS.forEach(k=>{ if(d.cfg[k]===undefined) delete nC[k]; else nC[k]=d.cfg[k]; });
     IDLER_KEYS.forEach(k=>{ if(p.cfg && p.cfg[k]!==undefined) nC[k]=d.cfg[k]; });
+    // The idler belongs to the preset: one that sets idlerOn carries it, and every
+    // other non-flex preset switches it off rather than keeping the last one's idler.
+    // Flex-stay keeps today's behaviour (it never sets idlerOn, and is left alone).
+    if(!bodiesOf(d.cfg).flex && !(p.cfg && p.cfg.idlerOn!==undefined)) nC.idlerOn=0;
     G=nG; C=nC;
   } else {
     G=d.geom; C=d.cfg;

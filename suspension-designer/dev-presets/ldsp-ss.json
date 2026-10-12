@@ -1,1 +1,60 @@
-{"key":"ldsp-ss","family":"ldsp","name":"Linkage-driven single pivot — seat-stay pivot, rocker on seat tube","note":"A short faux-bar link runs from the chainstay near the axle up to a rocker pivoted on the seat tube, and the rocker pushes the shock down to the down tube, similar in principle to Kona Process bikes.","geom":{"MP":{"x":-12.3,"y":64.6},"SP":{"x":-66.1,"y":265},"FP":{"x":-425,"y":51.9},"LP":{"x":-213.7,"y":399.3},"SE":{"x":22.6,"y":316.5},"SG":{"x":101.3,"y":100.3}},"cfg":{"axleBody":"A","brakeBody":"A","seBody":"R","sgBody":"F","linkless":0,"flexStay":0,"family":"ldsp"},"axleRel":[],"labels":{"MP":"Chainstay pivot","SP":"Rocker pivot on seat tube","FP":"Faux bar to chainstay","LP":"Faux bar to rocker","SE":"Shock eye","SG":"Shock to down tube"},"mounts":{"SG":"dt","SP":"st"},"targets":{"prog":[5,35]}}
+{
+ "key": "ldsp-ss",
+ "family": "ldsp",
+ "name": "Linkage-driven single pivot — seat-stay pivot, rocker on seat tube",
+ "note": "A short faux-bar link runs from the chainstay near the axle up to a rocker pivoted on the seat tube, and the rocker pushes the shock down to the down tube, similar in principle to Kona Process bikes.",
+ "geom": {
+  "MP": {
+   "x": -12.3,
+   "y": 64.6
+  },
+  "SP": {
+   "x": -66.1,
+   "y": 265
+  },
+  "FP": {
+   "x": -425,
+   "y": 51.9
+  },
+  "LP": {
+   "x": -213.7,
+   "y": 399.3
+  },
+  "SE": {
+   "x": 22.6,
+   "y": 316.5
+  },
+  "SG": {
+   "x": 87.4,
+   "y": 95.8
+  }
+ },
+ "cfg": {
+  "axleBody": "A",
+  "brakeBody": "A",
+  "seBody": "R",
+  "sgBody": "F",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "ldsp"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Chainstay pivot",
+  "SP": "Rocker pivot on seat tube",
+  "FP": "Faux bar to chainstay",
+  "LP": "Faux bar to rocker",
+  "SE": "Shock eye",
+  "SG": "Shock to down tube"
+ },
+ "mounts": {
+  "SG": "dt",
+  "SP": "st"
+ },
+ "targets": {
+  "prog": [
+   5,
+   35
+  ]
+ }
+}

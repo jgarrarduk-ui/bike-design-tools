@@ -1,0 +1,51 @@
+{
+ "key": "sp-yoke",
+ "family": "single",
+ "name": "Single pivot — swingarm extension drives shock",
+ "note": "Single pivot with the swingarm pivot just above and slightly ahead of the bottom bracket. The swingarm carries an extension that rises above the pivot to the shock eye, and the shock runs forward and down to a cross-tube boss centred on the down tube, so the swingarm extension drives the shock. The extension rises up and slightly rearward of the pivot rather than forward, because a forward extension cannot give positive progression without the shock crossing the down tube.",
+ "geom": {
+  "MP": {
+   "x": 23.5,
+   "y": 73.4
+  },
+  "SP": {
+   "x": 74,
+   "y": 162.7
+  },
+  "FP": {
+   "x": -450,
+   "y": 18.96
+  },
+  "LP": {
+   "x": 6.9,
+   "y": 271.8
+  },
+  "SE": {
+   "x": -15.8,
+   "y": 291.1
+  },
+  "SG": {
+   "x": 204.1,
+   "y": 223.7
+  }
+ },
+ "cfg": {
+  "axleBody": "A",
+  "brakeBody": "A",
+  "seBody": "A",
+  "sgBody": "F",
+  "linkless": 1,
+  "flexStay": 0,
+  "family": "single"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Swingarm pivot",
+  "SE": "Shock eye (yoke)",
+  "SG": "Shock to down tube"
+ },
+ "mounts": {
+  "SG": "dt",
+  "SP": "free"
+ }
+}

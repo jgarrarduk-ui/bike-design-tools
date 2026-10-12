@@ -1,10 +1,14 @@
 # Suspension Designer (flex-stay) — working notes
 
-Single-file browser tool for a flex-stay full-suspension MTB — the flex-stay
-variant of a planned Suspension Designer family (other linkage types are on
-the roadmap; nothing about that is built yet, so everything below is
-flex-stay-specific unless it says otherwise). No build step, no dependencies.
-`index.html` plus the PNGs in `img/`.
+Single-file browser tool for planar suspension linkages on a mountain bike. It
+started as the flex-stay design (the seat stay carries the compliance) and is
+now the engine for a wider Suspension Designer family. On `dev` the same engine
+also runs single-pivot, linkage-driven single-pivot, Horst, short-link and
+moto-style layouts as presets (see "Configurations" and LINKAGE-PLAN.md).
+Flex-stay is still the default configuration and the regression baseline:
+anything below that says flex-stay, or is gated on `bodiesOf(C).flex`, applies
+only to that case. No build step, no dependencies. `index.html` plus the PNGs
+in `img/`, and the dev presets in `dev-presets/`.
 
 ## Run it
 
@@ -14,13 +18,32 @@ Open `index.html`, or serve the folder. It is deployed to GitHub Pages alongside
 ## Test it
 
 ```
-cd test && node flexstay-tests.mjs
+cd test && node flexstay-tests.mjs                            # 130 checks, flex-stay baseline
+cd test && node linkage-tests.mjs                             # 36 checks, generic engine
+cd test && node preset-check.mjs ../dev-presets/<key>.json    # one dev preset
 ```
 
-64 checks, no install required. The engine sits between the `// ==ENGINE-START==`
-and `// ==ENGINE-END==` markers and contains **no DOM references**, so the test
+No install required. The engine sits between the `// ==ENGINE-START==`
+and `// ==ENGINE-END==` markers and contains **no DOM references**, so each test
 file extracts that block with `new Function()` and runs it headlessly. Keep it
 that way — if DOM code leaks into the engine block the tests stop working.
+
+- `flexstay-tests.mjs` is the flex-stay regression: the Linkage X3 numbers,
+  shipped-default checks (`DEF` is re-extracted from the source, not pinned),
+  stay stress, idler, chain and cage. If it moves, the change is wrong unless
+  the flex numbers were meant to move.
+- `linkage-tests.mjs` covers the generic path on small hand-built geometries:
+  `bodiesOf` defaults, backward compatibility with the legacy boolean, identity
+  at top-out, every shipped configuration solving, and each family's special
+  cases (parallel short link with a null instant centre, linkless, Horst
+  collapse, mirrored linkless, split brake).
+- `preset-check.mjs` sweeps one dev preset JSON and prints travel, progression,
+  anti-squat and anti-rise, eye-to-eye, and clearance and cross-tube checks.
+  Exit 1 on any failure. It is a plausibility gate, **not a copy of the app's
+  model**: it runs the down tube from BB to the raw head-tube bottom, while the
+  app draws it to the weld-mitre point about 3° away. Six presets pass here and
+  read as overlaps in the app. LINKAGE-PLAN.md Status has the list and the open
+  decision; do not treat a pass here as the app being right about a mount.
 
 For anything touching the drawing, render it and look at it before shipping.
 `jsdom` + `cairosvg` will rasterise the SVG offline; several bugs in this tool
@@ -227,13 +250,29 @@ stays roughly 1.6 wide instead of a tall strip.
 
 ## The model
 
-Four-bar, one degree of freedom.
+One degree of freedom, four bodies. Every configuration is the same planar
+mechanism with a different body tag on each point. `bodiesOf(cfg)` in the engine
+block turns a config into `{axle, brake, se, sg, linkless, flex}`:
 
 | Body | Contains | Constraint |
 |---|---|---|
-| A | chainstay, rear axle, flex pivot | pinned to frame at main pivot |
-| B | upper stay, link pivot, shock eye | pinned to A at flex pivot |
-| shock link | link pivot to second pivot | pinned to frame at second pivot |
+| F | frame (ground) | — |
+| A | chainstay / swingarm / lower link: `MP`, and `AX` unless `axleBody` says otherwise | pinned to frame at `MP` |
+| C | coupler / seat stay: `FP` joins it to A, `LP` to R | pinned to A at `FP` |
+| R | shock link / rocker / upper link: `SP`, `LP` | pinned to frame at `SP` |
+
+`seBody` and `sgBody` choose the body carrying the shock's upper eye `SE` and
+its lower end `SG`. `brakeBody` chooses which body's instant centre anti-rise is
+measured against. `linkless` drops C and R, leaving a single pivot. `flexStay`
+locks `FP` to `AX`, which is what enables the seat-stay stress panel. The solver
+entry points (`solve`, `atCompression`, `sweep`, `pivotForces`) all take that
+object; a legacy boolean is converted, and a missing field takes the flex-stay
+value. At `phi=0` every body map is the identity, so every point sits on its
+rest value in every configuration.
+
+Below, the flex-stay names are kept: body A is the chainstay, body B is the seat
+stay (`FP` to `LP`, carrying the shock eye), and the shock link is R. In the
+engine that is A, C and R.
 
 The flex pivot is fixed at the rear axle. The seat stay is drawn from its real
 bend geometry: a straight run out of the dropout, a fixed radius bend, then a
@@ -832,10 +871,13 @@ checks (below) track it automatically.
 
 ## Configurations
 
-The tool used to model exactly one frame architecture. It now ships two, picked
-from a `config` button overlaid on the canvas' top-left corner, and the
-mechanism is built to take more — "this will be the first of the set" was the
-brief, so the shape of `PRESETS` matters more than the one preset in it.
+The tool used to model exactly one frame architecture. The `config` menu, a
+button overlaid on the canvas' top-left corner, is built from `PRESETS`. On `dev`
+it holds 24 entries in six families: flex (2), single pivot (4), linkage-driven
+single pivot (5), Horst (4), short link (5) and moto-style (4). Each non-flex
+entry is a copy of its `dev-presets/<key>.json`. When a JSON changes, the JSON is
+the source and the `PRESETS` entry is re-synced by hand to match. The table
+below is the flex pair only.
 
 | `C.config` | name | what is different |
 |---|---|---|
@@ -934,6 +976,47 @@ to this preset" and discards just as much. The menu itself is built from
 `PRESETS` entry and no HTML; it is rebuilt on each open so the active entry can
 carry `aria-pressed`, reusing the blue this UI already means by "the current
 one" rather than adding a separate name label to the canvas.
+
+**Switching configuration keeps the frame (`applyPreset(i, true)`).** Choosing a
+preset from the menu keeps every `GEOM_KEYS` field, the rider, wheels, drivetrain,
+shock eye and stroke, and the tube sizes. It replaces only the kinematic points and
+the `TOPO_KEYS` fields. `TOPO_KEYS` are taken from the preset's full design, and a
+key the preset does not set is **deleted, not kept**. That is what stops
+`shockMount`, `sgLock` or `seBody` from the previous configuration leaking into
+the next one. Idler fields (`IDLER_KEYS`) follow the preset only if it sets them,
+and a non-flex preset that does not set `idlerOn` switches the idler off, so the
+last configuration's idler does not carry over. Flex-stay never sets `idlerOn`
+and is left alone. Points named in `axleRel` (`FP` on the presets with a coupler)
+shift by `G.AX - DEF.geom.AX`, so a Horst pivot keeps its distance ahead of
+whatever rear centre is set. A full reset still loads the preset whole.
+
+**Mounts (`mounts:{SG, SP}`).** Each is `dt`, `st`, `tt` or `free`, naming the
+tube the point answers to. `free` means no tube holds it: no lock, no standoff
+box, and `sgLock`/`spLock` are forced off. It still gets a bracket, from the
+nearest tube centreline (or the BB shell rim if that is nearer), drawn with the
+same `tubes()` stub as the SG brace, so it is not left floating. A frame-mounted
+idler gets a 16 mm bracket from `ID` to the nearest frame part, drawn in
+`drawFrontTriangle`. That is skipped for flex-stay, for a concentric idler
+(`idlerLock`) and when the idler is off. Settled standoffs are stored exact, not
+rounded to 0.1 mm, so loading a preset moves nothing. The readout reports a
+pivot within 6 mm of a drawn tube centreline as a **cross-tube boss**. Anything
+further inside the tube reads as negative clearance, which is an overlap the tool
+is flagging on purpose.
+
+**Labels (`labels:{…}`).** A preset may name the points it relabels, and the rest
+fall back to the `PTS` labels. Only the on-screen text changes. The internal point
+names stay put, so saved files and the Fusion importer keep working.
+
+**Short-link presets: which link drives the shock.** That is `seBody`: `'R'` for
+the upper link (SP to LP), `'A'` for the lower link (MP to FP, which carries SE on
+an extension). It is not the "Shock connected to" toggle. That row is hidden on
+every non-flex preset (`applyConfigUI`), and `bodiesOf` reads `seBody` before
+`shockMount`, so a `shockMount=1` left in a file cannot flip a short-link design.
+The rocker config (`C.config===1`) is the one flex case that forces `shockMount`.
+
+**Brake bodies are provisional.** Every non-flex `brakeBody` is a placeholder for
+James to decide. They are listed in LINKAGE-PLAN.md Status. They only change the
+anti-rise reference, and the flex configs keep `A`.
 
 ## Save / load
 
@@ -1325,15 +1408,13 @@ one construction block: the front axle vertical and the 100% of centre-of-mass
 -height mark are drawn for either, the chain run and axle-to-instant-centre lines
 only for anti-squat since braking does not involve the chain.
 
-**Force vectors are suppressed entirely in linkage mode (`C.shockMount=1`),
-not just the shock/link arrows.** `pivotForces` solves one linear system for
-all four vectors under a moment balance that assumes the shock reacts on the
-seat stay — false once it reacts on the link/rocker instead. That makes the
-main-pivot/flex-pivot arrows just as unreliable as the shock/link ones, since
-they all fall out of the same solve; suppressing only the two most obviously
-shock-related arrows would leave the other two looking authoritative while
-resting on the same wrong assumption. See "Not done" for the properly-
-rederived version this defers.
+**Force vectors are drawn in every configuration, from the general
+`pivotForces`.** That solve covers every moving body at once, whatever carries
+the shock, so the arrows mean the same thing on a single pivot as on flex-stay.
+Non-flex frames scale all the arrows by one factor so the longest is at most
+250 mm. Scaling them together, rather than capping each one, keeps their
+ratios. Flex keeps its shipped scale exactly (0.22 mm per N), so flex config 1
+still reaches 263.6 mm and is not capped.
 
 **Centre of gravity marker (`showCog`, off by default).** Drawn at
 `(cgx, ground+C.cogh)` — the same height `drawASARConstruction`'s "100% of CoG
@@ -2048,15 +2129,28 @@ how far the cage swings, which is what the drawing depends on.
 - Anti-squat referenced to the fully extended front axle rather than the current
   one. Linkage recalculates it; this does not.
 - Save/load and URL sharing.
-- Pivot-force and stay-stress rederivation for a linkage-driven shock
-  (`C.shockMount=1`). `pivotForces`'s force balance assumes the shock and
-  link both react on the seat-stay body pinned at the flex pivot, which is
-  false once the shock reacts on the link/rocker instead — a genuinely
-  different two-body mechanics problem (seat stay: link load and flex-pivot
-  reaction only; link: shock load, the link's own reaction, and the second
-  pivot's reaction), not a parameter change. Both readouts show a "not
-  modeled" message in that mode rather than a number that would look exactly
-  as authoritative as a correct one.
+- Seat-stay stress for a linkage-driven flex shock (`C.config===1`, which sets
+  `C.shockMount=1`). Pivot loads are no longer on this list: `pivotForces` now
+  solves every configuration as one system, so the pivot-load and force-vector
+  readouts are real numbers in linkage mode. What is still gated is the stay
+  stress and its Workings. Those need a seat-stay force balance that does not
+  assume the shock reacts through the stay, which is a different two-body
+  problem (seat stay: link load and flex-pivot reaction only; link: shock load,
+  the link's own reaction, and the second pivot's reaction), not a parameter
+  change. Both panels say "not modeled for a linkage-driven shock yet" rather
+  than show a number that would look as authoritative as a correct one.
+- Six-bar linkages (a second coupler, or a Watt or Stephenson chain) are not
+  modelled. The engine is one degree of freedom: four bodies, or a single pivot.
+- Dev presets are not validated against Linkage X3. Each passes `preset-check`,
+  but none has been compared with a reference model. James supplies those
+  references. Until then the presets stay on `dev`, outside the Linkage X3
+  regression.
+- The down-tube model in `preset-check` disagrees with the drawn tube. The
+  decision is open; LINKAGE-PLAN.md Status has the detail.
+- The frame-mounted idler still floats on a flex-stay design. The bracket is
+  excluded there so flex drawing stays byte-identical.
+- A swingarm-mounted idler (`idlerMount 1`) has no bracket to the swingarm. No
+  preset uses it.
 
   **The flex ANGLE is not part of this gap and is reported in both modes.**
   It was hidden along with the rest of the panel at first, which was wrong.

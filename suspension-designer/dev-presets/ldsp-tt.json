@@ -1,7 +1,60 @@
-{"key":"ldsp-tt","family":"ldsp","name":"Linkage-driven single pivot — link under top tube","note":"A short link from the swingarm drives a rocker pinned to the top tube near the seat tube, and the shock lies flat under the top tube toward the head tube, much like the layout of Commencal's Meta.",
- "geom":{"MP":{"x":24.1,"y":66.3},"SP":{"x":-2.3,"y":354.8},"FP":{"x":-30.5,"y":265.4},"LP":{"x":78.9,"y":194.4},"SE":{"x":58.5,"y":279.0},"SG":{"x":222.8,"y":440.1}},
- "cfg":{"axleBody":"A","brakeBody":"A","seBody":"R","sgBody":"F","linkless":0,"flexStay":0,"family":"ldsp"},
- "axleRel":[],
- "labels":{"MP":"Swingarm pivot","SP":"Rocker pivot","FP":"Coupler to swingarm","LP":"Coupler to rocker","SE":"Shock eye","SG":"Shock to top tube"},
- "mounts":{"SG":"tt","SP":"tt"},
- "targets":{"prog":[10,35]}}
+{
+ "key": "ldsp-tt",
+ "family": "ldsp",
+ "name": "Linkage-driven single pivot \u2014 link under top tube",
+ "note": "A short link from the swingarm drives a rocker pinned to the top tube near the seat tube, and the shock lies flat under the top tube toward the head tube, much like the layout of Commencal's Meta.",
+ "geom": {
+  "MP": {
+   "x": 29.2,
+   "y": 64.9
+  },
+  "SP": {
+   "x": -13.4,
+   "y": 367.3
+  },
+  "FP": {
+   "x": -30.6,
+   "y": 254.0
+  },
+  "LP": {
+   "x": 77.5,
+   "y": 183.7
+  },
+  "SE": {
+   "x": 82.3,
+   "y": 278.5
+  },
+  "SG": {
+   "x": 247.7,
+   "y": 438.4
+  }
+ },
+ "cfg": {
+  "axleBody": "A",
+  "brakeBody": "A",
+  "seBody": "R",
+  "sgBody": "F",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "ldsp"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Swingarm pivot",
+  "SP": "Rocker pivot",
+  "FP": "Coupler to swingarm",
+  "LP": "Coupler to rocker",
+  "SE": "Shock eye",
+  "SG": "Shock to top tube"
+ },
+ "mounts": {
+  "SG": "tt",
+  "SP": "tt"
+ },
+ "targets": {
+  "prog": [
+   10,
+   35
+  ]
+ }
+}

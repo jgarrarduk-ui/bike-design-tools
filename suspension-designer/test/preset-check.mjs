@@ -5,6 +5,11 @@ import fs from 'node:fs';
 const src=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==ENGINE-END==')[0];
 const m=new Function(eng+'\nreturn {sweep,pivotForces,bodiesOf,dist};')();
+// The app's own tube layout (frame() and frontTriangle(), weld mitres included), so a
+// boss this checker passes is one the app draws clear of the tube, not 3 degrees off it.
+const fnSrc=name=>{const a=src.indexOf('function '+name+'(');let i=src.indexOf('{',a),d=0;
+  for(;i<src.length;i++){if(src[i]==='{')d++;else if(src[i]==='}'&&--d===0)break}return src.slice(a,i+1)};
+const appTubes=new Function('C',eng+'\n'+fnSrc('frame')+'\n'+fnSrc('frontTriangle')+'\nreturn frontTriangle();');
 const DEF=new Function('return '+src.split('const DEF=')[1].split('};')[0]+'}')();
 
 const P=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
@@ -44,14 +49,9 @@ else {
     const pts=[k.SE,k.SG,k.LP,k.FP].filter(Boolean);
     if(pts.some(p=>p.y<ground+120)) { fails.push('a pivot or shock end drops within 120mm of the ground'); }
   }
-  // Frame tubes, approximated from the shipped geometry the same way frame() builds them.
-  const ha=c.ha*Math.PI/180, sa=c.sa*Math.PI/180;
-  const htTop={x:c.reach,y:c.stack}, ax={x:Math.cos(ha),y:-Math.sin(ha)};
-  const htBot={x:htTop.x+ax.x*c.htl,y:htTop.y+ax.y*c.htl};
-  const stTop={x:-Math.cos(sa)*c.st,y:Math.sin(sa)*c.st};
-  const ttStart={x:stTop.x*(c.st-c.ttDrop)/c.st,y:stTop.y*(c.st-c.ttDrop)/c.st};
-  const BB={x:0,y:0};
-  const TUBES={dt:[BB,htBot,c.dtOD],st:[BB,stTop,c.stOD],tt:[ttStart,htTop,c.ttOD]};
+  // Frame tubes, exactly as the app draws them.
+  const FT=appTubes(c);
+  const TUBES={dt:FT.dt.slice(1),st:FT.st.slice(1),tt:FT.tt.slice(1)};
   const segD=(p,a,b)=>{const abx=b.x-a.x,aby=b.y-a.y,L2=abx*abx+aby*aby;
     const t=Math.max(0,Math.min(1,((p.x-a.x)*abx+(p.y-a.y)*aby)/L2));return Math.hypot(p.x-a.x-abx*t,p.y-a.y-aby*t)};
   const clear=(p,k)=>segD(p,TUBES[k][0],TUBES[k][1])-TUBES[k][2]/2-11;   // boss radius 11

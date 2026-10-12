@@ -2,31 +2,31 @@
  "key": "dw-lower",
  "family": "shortlink",
  "name": "Short link, co-rotating — lower link drives",
- "note": "Both short links swing the same way and the lower one carries the shock eye forward, pushing the shock up to the down tube, as in Dave Weagle's DW-link layout on Ibis Mojo bikes.",
+ "note": "Both short links swing the same way and the lower one carries the shock eye up in front of the seat tube to a cross-tube mount on the down tube, as in Dave Weagle's DW-link layout on Ibis Mojo bikes.",
  "geom": {
   "MP": {
-   "x": 5.3,
-   "y": 93.9
+   "x": 16.4,
+   "y": 106.5
   },
   "SP": {
-   "x": -45.4,
-   "y": 251.7
+   "x": -10.4,
+   "y": 263.3
   },
   "FP": {
-   "x": -53.3,
-   "y": 80.2
+   "x": -97,
+   "y": 87.7
   },
   "LP": {
-   "x": -210.2,
-   "y": 311.9
+   "x": -206.6,
+   "y": 303.6
   },
   "SE": {
-   "x": -30.5,
-   "y": 143.1
+   "x": -13.6,
+   "y": 186.4
   },
   "SG": {
-   "x": 183.9,
-   "y": 226.4
+   "x": 216.4,
+   "y": 186.7
   }
  },
  "cfg": {
@@ -48,8 +48,8 @@
   "SG": "Shock to down tube"
  },
  "mounts": {
-  "SG": "dt",
-  "SP": "st"
+  "SP": "st",
+  "SG": "dt"
  },
  "targets": {
   "prog": [

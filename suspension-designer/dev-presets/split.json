@@ -1,7 +1,62 @@
-{"key":"split","family":"ldsp","name":"Split pivot / ABP","note":"The chainstay pivots low by the bottom bracket while the seat stay, which carries the rear brake, runs from the axle up to a small rocker on the seat tube, and that rocker drives the shock down to the down tube, as on Trek's ABP bikes such as the Fuel EX.",
- "geom":{"MP":{"x":12.4,"y":63.3},"SP":{"x":-49.7,"y":199.4},"FP":{"x":-450.0,"y":19.0},"LP":{"x":-118.4,"y":366.1},"SE":{"x":30.1,"y":269.8},"SG":{"x":111.4,"y":54.6}},
- "cfg":{"axleBody":"A","brakeBody":"C","seBody":"R","sgBody":"F","linkless":0,"flexStay":0,"family":"ldsp"},
- "axleRel":["FP"],
- "labels":{"MP":"Chainstay pivot","SP":"Rocker pivot on seat tube","FP":"Axle (seat stay end)","LP":"Seat stay to rocker","SE":"Shock eye","SG":"Shock to down tube"},
- "mounts":{"SG":"dt","SP":"st"},
- "targets":{"prog":[10,35]}}
+{
+ "key": "split",
+ "family": "ldsp",
+ "name": "Split pivot / ABP",
+ "note": "The chainstay pivots low by the bottom bracket while the seat stay, which carries the rear brake, runs from the axle up to a small rocker on the seat tube, and that rocker drives the shock down to the down tube, as on Trek's ABP bikes such as the Fuel EX.",
+ "geom": {
+  "MP": {
+   "x": 41.21,
+   "y": 64.62
+  },
+  "SP": {
+   "x": -58.88,
+   "y": 223.87
+  },
+  "FP": {
+   "x": -438.64,
+   "y": 32.64
+  },
+  "LP": {
+   "x": -118.98,
+   "y": 445.88
+  },
+  "SE": {
+   "x": 32,
+   "y": 278.89
+  },
+  "SG": {
+   "x": 49.72,
+   "y": 49.57
+  }
+ },
+ "cfg": {
+  "axleBody": "A",
+  "brakeBody": "C",
+  "seBody": "R",
+  "sgBody": "F",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "ldsp"
+ },
+ "axleRel": [
+  "FP"
+ ],
+ "labels": {
+  "MP": "Chainstay pivot",
+  "SP": "Rocker pivot on seat tube",
+  "FP": "Axle (seat stay end)",
+  "LP": "Seat stay to rocker",
+  "SE": "Shock eye",
+  "SG": "Shock to down tube"
+ },
+ "mounts": {
+  "SG": "dt",
+  "SP": "st"
+ },
+ "targets": {
+  "prog": [
+   10,
+   35
+  ]
+ }
+}

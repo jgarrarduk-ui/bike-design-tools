@@ -5,28 +5,28 @@
  "note": "The rear wheel hangs from a short lower link near the bottom bracket and a longer upper link on the seat tube that also carries the shock, and both links swing the same way, as on Giant’s Maestro DW-link bikes.",
  "geom": {
   "MP": {
-   "x": -11.6,
-   "y": 66.8
+   "x": -20.6,
+   "y": 42.9
   },
   "SP": {
-   "x": -47.5,
-   "y": 205
+   "x": -39.4,
+   "y": 179.1
   },
   "FP": {
-   "x": -60,
-   "y": 52.4
+   "x": -85.1,
+   "y": -9.1
   },
   "LP": {
-   "x": -213.8,
-   "y": 350
+   "x": -213.9,
+   "y": 406.1
   },
   "SE": {
-   "x": -44.6,
-   "y": 330
+   "x": -33.8,
+   "y": 316.7
   },
   "SG": {
-   "x": 173.3,
-   "y": 256.4
+   "x": 188.3,
+   "y": 256.9
   }
  },
  "cfg": {

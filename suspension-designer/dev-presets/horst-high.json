@@ -5,32 +5,32 @@
  "note": "The main pivot sits high on the seat tube and a Horst link ahead of the rear axle ties the wheel to a rocker that drives the shock down to the down tube, with an idler to route the chain, much like the high-pivot Norco Range.",
  "geom": {
   "MP": {
-   "x": -66.6,
-   "y": 220.7
-  },
-  "SP": {
-   "x": -89.2,
-   "y": 259.4
+   "x": -51.19,
+   "y": 200.6
   },
   "FP": {
-   "x": -359,
-   "y": -9.9
+   "x": -369.96,
+   "y": -27.19
+  },
+  "SP": {
+   "x": -53.23,
+   "y": 213.5
   },
   "LP": {
-   "x": -66.6,
-   "y": 374.6
+   "x": 14.82,
+   "y": 335.02
   },
   "SE": {
-   "x": -7.2,
-   "y": 305.7
+   "x": 50.82,
+   "y": 331.7
   },
   "SG": {
    "x": 97.1,
-   "y": 100.7
+   "y": 106.4
   },
   "ID": {
-   "x": -61.6,
-   "y": 185.7
+   "x": -75.56,
+   "y": 166.9
   }
  },
  "cfg": {
