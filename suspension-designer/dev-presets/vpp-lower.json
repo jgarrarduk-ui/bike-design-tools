@@ -5,28 +5,28 @@
  "note": "Counter-rotating pair: the lower link (MP-FP) carries the shock eye SE on an extension and the upper link (SP-LP) turns the other way. Solver-found; the link lengths are far from the short-link intent (see doubts in the report).",
  "geom": {
   "MP": {
-   "x": -81.16,
-   "y": -18.58
+   "x": -81.59,
+   "y": -16.67
   },
   "FP": {
-   "x": -58.23,
-   "y": 27.01
+   "x": -58.98,
+   "y": 23.9
   },
   "LP": {
-   "x": -221.76,
-   "y": 420.43
+   "x": -221.77,
+   "y": 420.41
   },
   "SP": {
-   "x": -71.35,
-   "y": 141.14
+   "x": -71.33,
+   "y": 141.21
   },
   "SE": {
-   "x": 73.85,
-   "y": 119.57
+   "x": 61.07,
+   "y": 111.59
   },
   "SG": {
-   "x": -14.93,
-   "y": 331.74
+   "x": -31.68,
+   "y": 322.06
   }
  },
  "cfg": {
