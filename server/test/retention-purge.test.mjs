@@ -47,6 +47,8 @@ const names = [
   'race-recheck',
   'overlap-lock',
   'anonymised-webhook',
+  'anonymised-own-cancel-no-alert',
+  'anonymised-foreign-cancel-alerts',
   'admin-route',
   'admin-overlap',
   'migration',
@@ -91,5 +93,5 @@ for (const name of names) {
 }
 
 test('retention cases are listed', () => {
-  assert.equal(names.length, 49);
+  assert.equal(names.length, 51);
 });

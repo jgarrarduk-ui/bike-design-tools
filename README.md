@@ -261,10 +261,11 @@ can be taken over, and a run clears only its own lock.
 
 An order-updated webhook for an anonymised design does not change the row
 and does not email the redacted address. It logs the design id and Woo
-order id. A payment status (`processing` or `completed`) emails
+order id. A payment status (`processing`, `completed`, or `paid`) emails
 info@creaturecycles.co.uk once per design, including a late payment for an
-on-hold order wiped at the one-year cutoff. Later webhooks for that design
-are logged only.
+on-hold order wiped at the one-year cutoff. A `cancelled` event also alerts
+once, except when that order id is the one this purge cancelled
+(`purge_cancelled_order_id`). Later webhooks for that design are logged only.
 
 Values of `RETENTION_UNPAID_DAYS` below 30 are raised to 30, and values of
 `RETENTION_PAID_DAYS` below 2557 are raised to 2557, each with a warning.

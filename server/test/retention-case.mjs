@@ -1159,7 +1159,7 @@ const cases = {
     assert.equal(legacy.customer_email, SAMPLE);
     assert.equal(legacy.pdf_base64, 'cGRm');
     const cols = db.pragma('table_info(designs)').map((col) => col.name);
-    for (const name of ['paid_at', 'anonymised_at', 'accepted_at', 'design_name', 'revision', 'retention_alerted_at']) {
+    for (const name of ['paid_at', 'anonymised_at', 'accepted_at', 'design_name', 'revision', 'retention_alerted_at', 'purge_cancelled_order_id']) {
       assert.ok(cols.includes(name), name);
     }
     assert.equal(db.pragma('secure_delete', { simple: true }), 1);
@@ -1948,6 +1948,134 @@ const cases = {
     assert.match(blob, /Payment confirmed for design pay-hook/);
     assert.equal(blob.includes('retention purge is cancelling this order'), false);
     assert.equal(blob.includes(SAMPLE), false);
+  },
+
+  async 'anonymised-own-cancel-no-alert'() {
+    insert({
+      id: 'own-cancel',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88900',
+    });
+    let lookups = 0;
+    const purged = await retention.run({
+      checkApi: async () => true,
+      cancelOrder: async () => ({ status: 'cancelled' }),
+      getOrder: async (orderId) => {
+        lookups += 1;
+        if (lookups < 3) return taggedOrder(orderId, 'own-cancel', 'on-hold');
+        return taggedOrder(orderId, 'own-cancel', 'cancelled');
+      },
+    });
+    assert.equal(purged.aborted, false);
+    assert.deepEqual(purged.designIds, ['own-cancel']);
+    assert.equal(row('own-cancel').purge_cancelled_order_id, '88900');
+    assert.ok(row('own-cancel').anonymised_at);
+    assert.equal(row('own-cancel').retention_alerted_at, null);
+
+    const lines = [];
+    const error = console.error;
+    const info = console.info;
+    const push = (...args) => lines.push(args.map(String).join(' '));
+    console.error = push;
+    console.info = push;
+    let fetches = 0;
+    const previous = global.fetch;
+    global.fetch = async () => {
+      fetches += 1;
+      throw new Error('resend should not be called');
+    };
+    const webhooks = require('../routes/webhooks');
+    const app = express();
+    app.use('/api/webhooks', webhooks);
+    const server = await listen(app);
+    try {
+      const cancelled = await request(server, '/api/webhooks/woocommerce/order-updated', {
+        method: 'POST',
+        json: { id: 88900, status: 'cancelled' },
+      });
+      assert.equal(cancelled.status, 200);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(row('own-cancel').retention_alerted_at, null);
+      assert.equal(row('own-cancel').status, 'pending');
+      assert.equal(row('own-cancel').customer_email, 'redacted+own-cancel@invalid');
+      assert.equal(fetches, 0);
+
+      const paid = await request(server, '/api/webhooks/woocommerce/order-updated', {
+        method: 'POST',
+        json: { id: 88900, status: 'processing', date_paid_gmt: '2026-10-14T08:00:00' },
+      });
+      assert.equal(paid.status, 200);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.ok(row('own-cancel').retention_alerted_at);
+      assert.equal(row('own-cancel').status, 'pending');
+      assert.equal(row('own-cancel').customer_email, 'redacted+own-cancel@invalid');
+      assert.equal(fetches, 0);
+    } finally {
+      console.error = error;
+      console.info = info;
+      global.fetch = previous;
+      await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+    const blob = lines.join('\n');
+    assert.match(blob, /design own-cancel order 88900 status cancelled ignored; retention purge cancelled this order/);
+    assert.equal((blob.match(/retention alert not sent \(no API key\)/g) || []).length, 1);
+    assert.match(blob, /retention alert not sent \(no API key\) design own-cancel order 88900 status processing/);
+    assert.equal(blob.includes(SAMPLE), false);
+    assert.equal(blob.includes('http'), false);
+  },
+
+  async 'anonymised-foreign-cancel-alerts'() {
+    insert({
+      id: 'shop-cancel',
+      status: 'expired',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88910',
+      anonymisedSql: "datetime('now', '-1 day')",
+    });
+    assert.equal(row('shop-cancel').purge_cancelled_order_id, null);
+    const lines = [];
+    const error = console.error;
+    console.error = (...args) => lines.push(args.map(String).join(' '));
+    let fetches = 0;
+    const previous = global.fetch;
+    global.fetch = async () => {
+      fetches += 1;
+      throw new Error('resend should not be called');
+    };
+    const webhooks = require('../routes/webhooks');
+    const app = express();
+    app.use('/api/webhooks', webhooks);
+    const server = await listen(app);
+    try {
+      const cancelled = await request(server, '/api/webhooks/woocommerce/order-updated', {
+        method: 'POST',
+        json: { id: 88910, status: 'cancelled' },
+      });
+      assert.equal(cancelled.status, 200);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.ok(row('shop-cancel').retention_alerted_at);
+      assert.equal(row('shop-cancel').status, 'expired');
+      assert.equal(row('shop-cancel').customer_email, SAMPLE);
+      const again = await request(server, '/api/webhooks/woocommerce/order-updated', {
+        method: 'POST',
+        json: { id: 88910, status: 'cancelled' },
+      });
+      assert.equal(again.status, 200);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(fetches, 0);
+    } finally {
+      console.error = error;
+      global.fetch = previous;
+      await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+    const blob = lines.join('\n');
+    assert.equal((blob.match(/retention alert not sent \(no API key\) design shop-cancel order 88910 status cancelled/g) || []).length, 1);
+    assert.equal(blob.includes('retention purge cancelled this order'), false);
+    assert.equal(blob.includes(SAMPLE), false);
+    assert.equal(blob.includes('http'), false);
   },
 };
 

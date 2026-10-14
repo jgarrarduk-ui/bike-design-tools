@@ -114,7 +114,15 @@ router.post(
 
     if (design.anonymised_at) {
       console.error(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; design is anonymised`);
-      if (PAID_STATUSES.has(status)) await alertAnonymisedPayment(design, wcOrderId, status);
+      const normalised = String(status).toLowerCase();
+      const ownCancel = normalised === 'cancelled'
+        && design.purge_cancelled_order_id
+        && String(design.purge_cancelled_order_id) === wcOrderId;
+      if (ownCancel) {
+        console.info(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; retention purge cancelled this order`);
+      } else if (PAID_STATUSES.has(normalised) || normalised === 'cancelled' || normalised === 'paid') {
+        await alertAnonymisedPayment(design, wcOrderId, status);
+      }
       return;
     }
 

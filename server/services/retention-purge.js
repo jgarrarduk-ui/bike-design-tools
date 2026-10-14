@@ -800,6 +800,12 @@ async function runLocked(options, owner) {
         const again = await getOrder(item.wcOrderId);
         const status = again ? String(again.status || '').toLowerCase() : '';
         if (status === 'cancelled' && !orderHasPaidDate(again)) {
+          db.prepare(`
+            UPDATE designs
+            SET purge_cancelled_order_id = ?
+            WHERE id = ?
+              AND anonymised_at IS NULL
+          `).run(String(item.wcOrderId), item.id);
           confirmed.push(item.id);
           cancelStreak = 0;
           continue;

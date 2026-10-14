@@ -89,6 +89,9 @@ if (!existingCols.includes('anonymised_at')) {
 if (!existingCols.includes('retention_alerted_at')) {
   db.exec('ALTER TABLE designs ADD COLUMN retention_alerted_at DATETIME');
 }
+if (!existingCols.includes('purge_cancelled_order_id')) {
+  db.exec('ALTER TABLE designs ADD COLUMN purge_cancelled_order_id TEXT');
+}
 if (!existingCols.includes('revision')) {
   db.exec('ALTER TABLE designs ADD COLUMN revision INTEGER NOT NULL DEFAULT 0');
 }
