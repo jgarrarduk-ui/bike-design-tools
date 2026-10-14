@@ -28,6 +28,7 @@ const crypto   = require('crypto');
 const db         = require('../db');
 const email      = require('../services/email');
 const woocommerce = require('../services/woocommerce');
+const retention  = require('../services/retention-purge');
 const { maskEmail } = require('../services/redact');
 
 const router = express.Router();
@@ -114,6 +115,13 @@ router.post(
     if (design.anonymised_at) {
       console.error(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; design is anonymised`);
       if (PAID_STATUSES.has(status)) await alertAnonymisedPayment(design, wcOrderId, status);
+      return;
+    }
+
+    // Our own retention cancel. Leave the design row alone so the purge can
+    // still match status and order id, and do not email the customer.
+    if (retention.isRetentionCancel(wcOrderId)) {
+      console.info(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; retention purge is cancelling this order`);
       return;
     }
 

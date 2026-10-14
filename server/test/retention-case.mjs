@@ -16,6 +16,8 @@ delete process.env.RETENTION_UNPAID_DAYS;
 delete process.env.RETENTION_PAID_DAYS;
 delete process.env.RETENTION_PURGE_INTERVAL_HOURS;
 delete process.env.RETENTION_PURGE_MAX;
+delete process.env.RETENTION_INVALID_ID_STREAK;
+delete process.env.RETENTION_INVALID_ID_FRACTION;
 delete process.env.ADMIN_PASSWORD;
 delete process.env.WC_WEBHOOK_SECRET;
 if (workerData.dryRun === null) delete process.env.RETENTION_PURGE_DRY_RUN;
@@ -94,6 +96,28 @@ function row(id) {
 
 function woo(getOrder, checkApi = async () => true) {
   return { getOrder, checkApi };
+}
+
+function withCancel(getOrder) {
+  const cancelled = new Set();
+  const calls = [];
+  return {
+    calls,
+    options: {
+      checkApi: async () => true,
+      cancelOrder: async (orderId) => {
+        calls.push(String(orderId));
+        cancelled.add(String(orderId));
+        return { id: orderId, status: 'cancelled' };
+      },
+      getOrder: async (orderId) => {
+        if (cancelled.has(String(orderId))) {
+          return { id: orderId, status: 'cancelled', date_paid_gmt: null };
+        }
+        return getOrder(orderId);
+      },
+    },
+  };
 }
 
 function listen(app) {
@@ -801,7 +825,7 @@ const cases = {
       expiresSql: RESUME_DONE,
       wcOrderId: '88372',
     });
-    const result = await retention.run(woo(async (orderId) => {
+    const shop = withCancel(async (orderId) => {
       const id = String(orderId);
       if (id === '88404') return null;
       if (id === '88372') {
@@ -814,7 +838,8 @@ const cases = {
         return { id: orderId, status: 'on-hold', date_paid: '2026-09-01T12:00:00' };
       }
       return { id: orderId, status: 'on-hold' };
-    }));
+    });
+    const result = await retention.run(shop.options);
     assert.equal(result.aborted, false);
     assert.deepEqual(result.designIds, ['hold-366', 'invalid-366']);
     assert.ok(result.wouldAnonymiseUnresolved.includes('hold-366'));
@@ -835,6 +860,8 @@ const cases = {
     assert.equal(row('hold-race').status, 'paid');
     assert.equal(row('hold-race').customer_email, SAMPLE);
     assert.equal(row('hold-race').anonymised_at, null);
+    assert.deepEqual(shop.calls, ['88366']);
+    assert.deepEqual(result.cancelledOrderIds, ['hold-366']);
   },
 
   async 'paid-status-no-stamp'() {
@@ -871,14 +898,14 @@ const cases = {
         wcOrderId: String(89000 + i),
       });
     }
-    const getOrder = async (orderId) => ({ id: orderId, status: 'on-hold' });
-    const first = await retention.run(woo(getOrder));
+    const shop = withCancel(async (orderId) => ({ id: orderId, status: 'on-hold' }));
+    const first = await retention.run(shop.options);
     assert.equal(first.aborted, false);
     assert.equal(first.reason, null);
     assert.equal(first.designIds.length, 20);
     assert.equal(first.deferredIds.length, 5);
     assert.equal(first.wouldAnonymiseUnresolved.length, 20);
-    const second = await retention.run(woo(getOrder));
+    const second = await retention.run(shop.options);
     assert.equal(second.aborted, false);
     assert.equal(second.designIds.length, 5);
     assert.deepEqual(second.deferredIds, []);
@@ -1169,6 +1196,23 @@ const cases = {
       delete process.env.RETENTION_UNPAID_DAYS;
       delete process.env.RETENTION_UNRESOLVED_DAYS;
 
+      delete process.env.RETENTION_INVALID_ID_STREAK;
+      delete process.env.RETENTION_INVALID_ID_FRACTION;
+      assert.equal(retention.invalidIdStreak(), 3);
+      assert.equal(retention.invalidIdFraction(), 0.2);
+      process.env.RETENTION_INVALID_ID_STREAK = '5';
+      assert.equal(retention.invalidIdStreak(), 5);
+      process.env.RETENTION_INVALID_ID_STREAK = 'nope';
+      assert.equal(retention.invalidIdStreak(), 3);
+      process.env.RETENTION_INVALID_ID_FRACTION = '0.5';
+      assert.equal(retention.invalidIdFraction(), 0.5);
+      process.env.RETENTION_INVALID_ID_FRACTION = '2';
+      assert.equal(retention.invalidIdFraction(), 0.2);
+      process.env.RETENTION_INVALID_ID_FRACTION = 'nope';
+      assert.equal(retention.invalidIdFraction(), 0.2);
+      delete process.env.RETENTION_INVALID_ID_STREAK;
+      delete process.env.RETENTION_INVALID_ID_FRACTION;
+
       process.env.RETENTION_PURGE_INTERVAL_HOURS = '0';
       assert.equal(retention.intervalHours(), 0);
       process.env.RETENTION_PURGE_INTERVAL_HOURS = 'abc';
@@ -1203,6 +1247,9 @@ const cases = {
     assert.match(blob, /RETENTION_PURGE_INTERVAL_HOURS=abc is not a number; using 24/);
     assert.match(blob, /RETENTION_PURGE_INTERVAL_HOURS=1000 exceeds 168; using 168/);
     assert.match(blob, /RETENTION_PURGE_INTERVAL_HOURS=0.5 is below 1; using 1/);
+    assert.match(blob, /RETENTION_INVALID_ID_STREAK=nope is not a number; using 3/);
+    assert.match(blob, /RETENTION_INVALID_ID_FRACTION=2 is not a fraction from 0 to 1; using 0.2/);
+    assert.match(blob, /RETENTION_INVALID_ID_FRACTION=nope is not a fraction from 0 to 1; using 0.2/);
   },
 
   async 'dry-run-default-on'() {
@@ -1291,6 +1338,353 @@ const cases = {
       assert.equal(revise.body.includes(SAMPLE), false);
     } finally {
       await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+  },
+
+  async 'cancel-order-puts-cancelled'() {
+    process.env.WC_URL = 'https://shop.example';
+    process.env.WC_CONSUMER_KEY = 'ck_test';
+    process.env.WC_CONSUMER_SECRET = 'cs_test';
+    process.env.WC_PRODUCT_ID = '8634';
+    const woocommerce = require('../services/woocommerce');
+    const calls = [];
+    const previous = global.fetch;
+    global.fetch = async (url, opts) => {
+      calls.push({ url: String(url), method: opts.method, body: opts.body });
+      return new Response(JSON.stringify({ id: 55, status: 'cancelled' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    try {
+      const order = await woocommerce.cancelOrder('55');
+      assert.equal(order.status, 'cancelled');
+      assert.equal(calls.length, 1);
+      assert.match(calls[0].url, /\/wp-json\/wc\/v3\/orders\/55$/);
+      assert.equal(calls[0].method, 'PUT');
+      assert.deepEqual(JSON.parse(calls[0].body), { status: 'cancelled' });
+    } finally {
+      global.fetch = previous;
+    }
+  },
+
+  async 'cancel-then-wipe'() {
+    for (const [id, wooStatus] of [
+      ['pend-old', 'pending'],
+      ['hold-old', 'on-hold'],
+      ['fail-old', 'failed'],
+    ]) {
+      insert({
+        id,
+        status: wooStatus === 'failed' ? 'failed' : 'pending',
+        createdSql: "datetime('now', '-400 days')",
+        expiresSql: RESUME_DONE,
+        wcOrderId: id,
+      });
+    }
+    const shop = withCancel(async (orderId) => ({
+      id: orderId,
+      status: orderId === 'hold-old' ? 'on-hold' : orderId === 'fail-old' ? 'failed' : 'pending',
+    }));
+    const result = await retention.run(shop.options);
+    assert.equal(result.aborted, false);
+    assert.deepEqual(result.designIds, ['fail-old', 'hold-old', 'pend-old']);
+    assert.deepEqual(result.cancelledOrderIds, ['fail-old', 'hold-old', 'pend-old']);
+    assert.deepEqual(shop.calls, ['fail-old', 'hold-old', 'pend-old']);
+    for (const id of ['pend-old', 'hold-old', 'fail-old']) {
+      assert.equal(row(id).customer_email, `redacted+${id}@invalid`);
+      assert.ok(row(id).anonymised_at);
+    }
+  },
+
+  async 'cancel-fails-skips'() {
+    insert({
+      id: 'cancel-me',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88200',
+      email: SAMPLE,
+    });
+    insert({
+      id: 'orphan-old',
+      status: 'expired',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+    });
+    const lines = [];
+    const error = console.error;
+    const log = console.log;
+    const push = (...args) => lines.push(args.map(String).join(' '));
+    console.error = push;
+    console.log = push;
+    let cancels = 0;
+    try {
+      const result = await retention.run({
+        checkApi: async () => true,
+        cancelOrder: async () => {
+          cancels += 1;
+          return { status: 'cancelled' };
+        },
+        getOrder: async (orderId) => ({ id: orderId, status: 'on-hold' }),
+      });
+      assert.equal(cancels, 1);
+      assert.equal(result.aborted, false);
+      assert.equal(result.reason, null);
+      assert.deepEqual(result.designIds, ['orphan-old']);
+      assert.deepEqual(result.cancelledOrderIds, []);
+      assert.ok(result.skippedWooError.includes('cancel-me'));
+      assert.equal(row('cancel-me').customer_email, SAMPLE);
+      assert.equal(row('cancel-me').anonymised_at, null);
+      assert.equal(row('cancel-me').wc_checkout_url, 'https://shop.example/checkout');
+      assert.equal(row('orphan-old').customer_email, 'redacted+orphan-old@invalid');
+    } finally {
+      console.error = error;
+      console.log = log;
+    }
+    const blob = lines.join('\n');
+    assert.match(blob, /skipped design cancel-me; Woo cancel failed for order 88200 \(409\) j\*\*\*@e\*\*\*\.com/);
+    assert.equal(blob.includes(SAMPLE), false);
+    assert.equal(blob.includes('http'), false);
+    assert.equal(blob.includes('shop.example'), false);
+  },
+
+  async 'cancel-error-aborts'() {
+    for (let i = 0; i < 20; i += 1) {
+      const n = String(i).padStart(2, '0');
+      insert({
+        id: `bad-${n}`,
+        status: 'pending',
+        createdSql: "datetime('now', '-400 days')",
+        expiresSql: RESUME_DONE,
+        wcOrderId: `883${n}`,
+      });
+    }
+    insert({
+      id: 'orphan-old',
+      status: 'expired',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+    });
+    let cancels = 0;
+    const result = await retention.run({
+      checkApi: async () => true,
+      cancelOrder: async () => {
+        cancels += 1;
+        const err = new Error('cancel failed');
+        err.status = 500;
+        throw err;
+      },
+      getOrder: async (orderId) => ({ id: orderId, status: 'pending' }),
+    });
+    assert.equal(result.aborted, true);
+    assert.equal(result.reason, 'woo-error');
+    assert.equal(cancels, 4);
+    assert.deepEqual(result.designIds, []);
+    assert.equal(row('orphan-old').customer_email, SAMPLE);
+    assert.equal(row('orphan-old').anonymised_at, null);
+    assert.equal(row('bad-00').anonymised_at, null);
+    assert.equal(row('bad-19').customer_email, SAMPLE);
+  },
+
+  async 'cancel-dry-run'() {
+    insert({
+      id: 'dry-hold',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88400',
+    });
+    const lines = [];
+    const log = console.log;
+    console.log = (...args) => lines.push(args.map(String).join(' '));
+    let cancels = 0;
+    try {
+      const result = await retention.run({
+        checkApi: async () => true,
+        cancelOrder: async () => {
+          cancels += 1;
+          throw new Error('dry run must not cancel');
+        },
+        getOrder: async (orderId) => ({ id: orderId, status: 'on-hold' }),
+      });
+      assert.equal(result.dryRun, true);
+      assert.equal(result.aborted, false);
+      assert.equal(cancels, 0);
+      assert.deepEqual(result.wouldCancel, ['dry-hold']);
+      assert.deepEqual(result.cancelledOrderIds, []);
+      assert.deepEqual(result.wouldAnonymiseUnresolved, ['dry-hold']);
+      assert.deepEqual(result.designIds, ['dry-hold']);
+      assert.deepEqual(result.writtenIds, []);
+    } finally {
+      console.log = log;
+    }
+    assert.equal(row('dry-hold').customer_email, SAMPLE);
+    assert.equal(row('dry-hold').anonymised_at, null);
+    const blob = lines.join('\n');
+    assert.match(blob, /dry-run would-cancel 1: dry-hold/);
+    assert.equal(blob.includes(SAMPLE), false);
+    assert.equal(blob.includes('http'), false);
+  },
+
+  async 'cancel-webhook-harmless'() {
+    insert({
+      id: 'fail-old',
+      status: 'failed',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88100',
+    });
+    insert({
+      id: 'pend-old',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88101',
+    });
+    const lines = [];
+    const info = console.info;
+    const error = console.error;
+    const log = console.log;
+    const push = (...args) => lines.push(args.map(String).join(' '));
+    console.info = push;
+    console.error = push;
+    console.log = push;
+    const fetches = [];
+    const previous = global.fetch;
+    process.env.SMTP_PASS = 're_test_key';
+    global.fetch = async () => {
+      fetches.push('resend');
+      return { ok: true, status: 200, text: async () => '{}', json: async () => ({}) };
+    };
+    const webhooks = require('../routes/webhooks');
+    const app = express();
+    app.use('/api/webhooks', webhooks);
+    const server = await listen(app);
+    const seen = [];
+    const cancelled = new Set();
+    const designFor = { 88100: 'fail-old', 88101: 'pend-old' };
+    try {
+      const result = await retention.run({
+        checkApi: async () => true,
+        cancelOrder: async (orderId) => {
+          const posted = await request(server, '/api/webhooks/woocommerce/order-updated', {
+            method: 'POST',
+            json: { id: Number(orderId), status: 'cancelled' },
+          });
+          assert.equal(posted.status, 200);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          const id = designFor[String(orderId)];
+          seen.push({ id, status: row(id).status, email: row(id).customer_email });
+          cancelled.add(String(orderId));
+          return { id: orderId, status: 'cancelled' };
+        },
+        getOrder: async (orderId) => {
+          if (cancelled.has(String(orderId))) return { id: orderId, status: 'cancelled' };
+          if (String(orderId) === '88100') return { id: orderId, status: 'failed' };
+          return { id: orderId, status: 'on-hold' };
+        },
+      });
+      assert.equal(result.aborted, false);
+      assert.deepEqual(result.designIds, ['fail-old', 'pend-old']);
+      assert.deepEqual(seen, [
+        { id: 'fail-old', status: 'failed', email: SAMPLE },
+        { id: 'pend-old', status: 'pending', email: SAMPLE },
+      ]);
+      assert.equal(fetches.length, 0);
+      const stamped = row('fail-old').anonymised_at;
+      const again = await request(server, '/api/webhooks/woocommerce/order-updated', {
+        method: 'POST',
+        json: { id: 88100, status: 'cancelled' },
+      });
+      assert.equal(again.status, 200);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(row('fail-old').status, 'failed');
+      assert.equal(row('fail-old').customer_email, 'redacted+fail-old@invalid');
+      assert.equal(row('fail-old').anonymised_at, stamped);
+      assert.equal(row('pend-old').status, 'pending');
+      assert.equal(row('pend-old').customer_email, 'redacted+pend-old@invalid');
+      assert.equal(fetches.length, 0);
+    } finally {
+      console.info = info;
+      console.error = error;
+      console.log = log;
+      global.fetch = previous;
+      delete process.env.SMTP_PASS;
+      await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+    const blob = lines.join('\n');
+    assert.match(blob, /design fail-old order 88100 status cancelled ignored; retention purge is cancelling this order/);
+    assert.match(blob, /design pend-old order 88101 status cancelled ignored; retention purge is cancelling this order/);
+    assert.match(blob, /design fail-old order 88100 status cancelled ignored; design is anonymised/);
+    assert.equal(blob.includes('Payment confirmed'), false);
+    assert.equal(blob.includes(SAMPLE), false);
+    assert.equal(blob.includes('http'), false);
+  },
+
+  async 'invalid-id-aborts'() {
+    for (let i = 0; i < 20; i += 1) {
+      const n = String(i).padStart(2, '0');
+      insert({
+        id: `gone-${n}`,
+        status: 'expired',
+        createdSql: "datetime('now', '-400 days')",
+        expiresSql: RESUME_DONE,
+        wcOrderId: `885${n}`,
+      });
+    }
+    insert({
+      id: 'orphan-old',
+      status: 'expired',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+    });
+    let calls = 0;
+    const result = await retention.run(woo(async (orderId) => {
+      calls += 1;
+      const n = String(orderId).slice(-2);
+      if (Number(n) < 4) return null;
+      return { id: orderId, status: 'cancelled' };
+    }));
+    assert.equal(result.aborted, true);
+    assert.equal(result.reason, 'invalid-id');
+    assert.equal(calls, 4);
+    assert.deepEqual(result.designIds, []);
+    assert.equal(row('orphan-old').customer_email, SAMPLE);
+    assert.equal(row('orphan-old').anonymised_at, null);
+    assert.equal(row('gone-00').anonymised_at, null);
+    assert.equal(row('gone-19').customer_email, SAMPLE);
+  },
+
+  async 'invalid-id-fraction-aborts'() {
+    for (const id of ['a-gone', 'b-real', 'c-gone', 'd-real']) {
+      insert({
+        id,
+        status: 'expired',
+        createdSql: "datetime('now', '-120 days')",
+        expiresSql: RESUME_DONE,
+        wcOrderId: id,
+      });
+    }
+    insert({
+      id: 'orphan-old',
+      status: 'expired',
+      createdSql: "datetime('now', '-120 days')",
+      expiresSql: RESUME_DONE,
+    });
+    let calls = 0;
+    const result = await retention.run(woo(async (orderId) => {
+      calls += 1;
+      if (String(orderId) === 'a-gone' || String(orderId) === 'c-gone') return null;
+      return { id: orderId, status: 'cancelled' };
+    }));
+    assert.equal(result.aborted, true);
+    assert.equal(result.reason, 'invalid-id');
+    assert.equal(calls, 3);
+    assert.deepEqual(result.designIds, []);
+    for (const id of ['a-gone', 'b-real', 'c-gone', 'd-real', 'orphan-old']) {
+      assert.equal(row(id).customer_email, SAMPLE);
+      assert.equal(row(id).anonymised_at, null);
     }
   },
 };

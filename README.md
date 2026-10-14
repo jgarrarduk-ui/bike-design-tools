@@ -193,7 +193,14 @@ live run that anonymised a row checkpoints the WAL
 (`wal_checkpoint(TRUNCATE)`) when the database is in WAL mode, which drops
 the old frames. It does not `VACUUM`: that would rewrite every stored PDF
 and lock the database. The linked Woo order still
-holds the customer's billing details. This job does not change Woo.
+holds the customer's billing details. Before the one-year wipe of an order
+that is still `pending`, `on-hold`, or `failed`, the purge cancels that
+order (`PUT` status `cancelled`) and reads it back. The row is anonymised
+only after that read-back is `cancelled`. A failed cancel skips the row,
+logs a masked email and no links, and counts toward the same error breaker.
+A dry run cancels nothing and logs `would-cancel`. The order-updated
+webhook from that cancel does not email the customer and does not change
+the design row.
 
 A design is kept for `RETENTION_PAID_DAYS` (default `2557`, seven years)
 when any paid signal is set: `paid_at`, `accepted_at`, `delivered_at`,
@@ -230,8 +237,15 @@ A large set of `cancelled` orders is the normal result of the unpaid
 cleanup, so that backlog drains over later runs. The run aborts with no
 writes when `GET /system_status` fails, when Woo returns 401 or 403, when
 more than three lookups fail in a row, or when more than 20% of the lookups
-fail (and at least two fail). Any other single-order failure, including a
-timeout or a 404, skips that row only.
+fail (and at least two fail). The same rule applies to invalid order ids
+(`404` with `woocommerce_rest_shop_order_invalid_id`): more than
+`RETENTION_INVALID_ID_STREAK` in a row (default 3) or more than
+`RETENTION_INVALID_ID_FRACTION` of the Woo lookups in that run (default
+0.2, and at least two) aborts with no writes. That is the guard for a
+wrong `WC_URL`. Cancel failures use the same streak and fraction against
+the orders this run tried to cancel. Any other single-order failure,
+including a timeout or a 404 that is not an invalid id, skips that row
+only.
 
 The anonymise statement repeats the decision: same status, same
 `wc_order_id`, resume link still expired, and the paid clock uses the
@@ -259,9 +273,10 @@ The job starts about 30 seconds after boot and then every
 the timer off). The purge writes only when `RETENTION_PURGE_DRY_RUN` is
 exactly `0`. Unset, empty, and any other value are a dry run. A dry run
 logs a breakdown and the design ids and writes nothing, including the
-`paid_at` backfill: would-anonymise unpaid, would-anonymise paid, deferred,
-unresolved past 365d, skipped as paid-signals, skipped as Woo unknown,
-skipped as Woo error, and skipped as still payable. Logs do
+`paid_at` backfill and any Woo cancel: would-anonymise unpaid,
+would-anonymise paid, would-cancel, deferred, unresolved past 365d,
+skipped as paid-signals, skipped as Woo unknown, skipped as Woo error,
+and skipped as still payable. Logs do
 not include names, email addresses, or resume, checkout, accept, or
 download links. `POST /api/admin/retention-purge` runs the same job.
 

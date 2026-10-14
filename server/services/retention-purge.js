@@ -34,8 +34,9 @@
  * cancelled backlog is drained in batches rather than aborted. The run
  * aborts with no writes when the Woo API check fails, Woo returns 401 or
  * 403, more than three lookups fail in a row, or more than 20% of the
- * lookups fail (at least two). Any other single-order failure skips that
- * row only.
+ * lookups fail (at least two). The same streak and fraction apply to
+ * invalid order ids (RETENTION_INVALID_ID_STREAK / _FRACTION) and to
+ * cancel failures. Any other single-order failure skips that row only.
  *
  * The anonymise UPDATE repeats the selection: same status, same wc_order_id,
  * resume link still expired, and the paid clock uses the latest timestamp.
@@ -50,7 +51,10 @@
  * customer_name and customer_email are NOT NULL, so the purge writes
  * "redacted" and "redacted+<id>@invalid". design_name and the PDFs and
  * tokens are cleared. params and design_revisions stay. The Woo order still
- * holds billing details; this job does not touch it.
+ * holds billing details. Before a one-year unresolved wipe of a payable
+ * order (pending, on-hold, or failed), this job cancels that order and
+ * reads it back as cancelled. A dry run does not cancel. A cancel failure
+ * skips that row. Too many invalid order ids abort the run with no writes.
  *
  * RETENTION_PURGE_DRY_RUN writes nothing unless the value is exactly "0".
  * Unset, empty, and any other string are a dry run.
@@ -61,6 +65,7 @@
 const crypto = require('crypto');
 const db = require('../db');
 const cleanup = require('./unpaid-cleanup');
+const { maskEmail } = require('./redact');
 
 const DEFAULT_UNPAID_DAYS = 90;
 const DEFAULT_UNRESOLVED_DAYS = 365;
@@ -74,6 +79,8 @@ const MAX_INTERVAL_HOURS = 168;
 const DEFAULT_PURGE_MAX = 20;
 const ERROR_FRACTION = 0.2;
 const ERROR_STREAK_MAX = 3;
+const DEFAULT_INVALID_ID_STREAK = 3;
+const DEFAULT_INVALID_ID_FRACTION = 0.2;
 const LOCK_STALE_MS = 30 * 60 * 1000;
 const HEARTBEAT_MS = 60 * 1000;
 
@@ -90,8 +97,10 @@ const PAID_SIGNAL_COLUMNS = [
 ];
 const WOO_PAID_STATUSES = new Set(['processing', 'completed', 'refunded']);
 const DEAD_ORDER_STATUSES = new Set(['cancelled', 'trash']);
+const PAYABLE_ORDER_STATUSES = new Set(['pending', 'on-hold', 'failed']);
 const REDACTED_NAME = 'redacted';
 const INVALID_ORDER_CODE = 'woocommerce_rest_shop_order_invalid_id';
+const cancellingOrders = new Set();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS retention_lock (
@@ -166,6 +175,36 @@ function purgeMax() {
     0,
     'RETENTION_PURGE_MAX',
   );
+}
+
+function invalidIdStreak() {
+  return configuredDays(
+    process.env.RETENTION_INVALID_ID_STREAK,
+    DEFAULT_INVALID_ID_STREAK,
+    0,
+    'RETENTION_INVALID_ID_STREAK',
+  );
+}
+
+function invalidIdFraction() {
+  const parsed = parseEnvNumber(process.env.RETENTION_INVALID_ID_FRACTION);
+  if (parsed.empty) return DEFAULT_INVALID_ID_FRACTION;
+  if (!parsed.ok || parsed.n > 1) {
+    console.error(`[retention] RETENTION_INVALID_ID_FRACTION=${parsed.text} is not a fraction from 0 to 1; using ${DEFAULT_INVALID_ID_FRACTION}`);
+    return DEFAULT_INVALID_ID_FRACTION;
+  }
+  return parsed.n;
+}
+
+function overThreshold(count, streak, total, streakMax, fractionMax) {
+  if (streak > streakMax) return true;
+  if (count <= 1) return false;
+  const fraction = total > 0 ? count / total : 1;
+  return fraction > fractionMax;
+}
+
+function isRetentionCancel(wcOrderId) {
+  return cancellingOrders.has(String(wcOrderId || ''));
 }
 
 function intervalHours() {
@@ -249,7 +288,8 @@ function loadRows() {
     SELECT id, status, created_at, resume_expires_at, paid_at, accepted_at, delivered_at,
            review_sent_at,
            CASE WHEN review_pdf_base64 IS NOT NULL THEN 1 ELSE 0 END AS has_review_pdf,
-           review_token, download_token, download_expires_at, wc_order_id
+           review_token, download_token, download_expires_at, wc_order_id,
+           customer_email
     FROM designs
     WHERE anonymised_at IS NULL
     ORDER BY id
@@ -273,6 +313,28 @@ async function defaultGetOrder(wcOrderId) {
 async function defaultCheckApi() {
   const woocommerce = require('./woocommerce');
   return woocommerce.checkApi();
+}
+
+async function defaultCancelOrder(wcOrderId) {
+  const woocommerce = require('./woocommerce');
+  return woocommerce.cancelOrder(wcOrderId);
+}
+
+function unpaidStillEligible(item) {
+  const fresh = db.prepare(`
+    SELECT status, created_at, resume_expires_at, paid_at, accepted_at, delivered_at,
+           review_sent_at,
+           CASE WHEN review_pdf_base64 IS NOT NULL THEN 1 ELSE 0 END AS has_review_pdf,
+           review_token, download_token, download_expires_at, wc_order_id, anonymised_at
+    FROM designs
+    WHERE id = ?
+  `).get(item.id);
+  if (!fresh || fresh.anonymised_at) return false;
+  if (fresh.status !== item.status) return false;
+  if (String(fresh.wc_order_id || '') !== String(item.wcOrderId || '')) return false;
+  if (hasLocalPaidSignal(fresh)) return false;
+  if (resumeStillValid(fresh)) return false;
+  return true;
 }
 
 function abortError(reason) {
@@ -477,6 +539,8 @@ function emptyResult(extra) {
     skippedWooUnknown: [],
     skippedWooError: [],
     skippedStillPayable: [],
+    wouldCancel: [],
+    cancelledOrderIds: [],
     ...extra,
   };
 }
@@ -519,23 +583,40 @@ async function runLocked(options, owner) {
 
   let errorCount = 0;
   let streak = 0;
+  let invalidCount = 0;
+  let invalidStreak = 0;
+  const invalidStreakLimit = invalidIdStreak();
+  const invalidFractionLimit = invalidIdFraction();
+
+  function noteInvalid(row) {
+    invalidCount += 1;
+    invalidStreak += 1;
+    streak = 0;
+    lookups.set(row.id, { gone: true, order: null });
+    console.warn(`[retention] design ${row.id} Woo order ${row.wc_order_id} is not a valid order id`);
+    if (overThreshold(invalidCount, invalidStreak, wooRows.length, invalidStreakLimit, invalidFractionLimit)) {
+      console.error(`[retention] aborted; invalid order ids ${invalidCount} of ${wooRows.length} (streak ${invalidStreak})`);
+      throw abortError('invalid-id');
+    }
+  }
+
   for (const row of wooRows) {
     try {
       const order = await getOrder(row.wc_order_id);
-      streak = 0;
       if (order == null) {
-        lookups.set(row.id, { gone: true, order: null });
-        console.warn(`[retention] design ${row.id} Woo order ${row.wc_order_id} is not a valid order id`);
-      } else {
-        lookups.set(row.id, { gone: false, order });
-      }
-    } catch (err) {
-      if (isInvalidOrder(err)) {
-        streak = 0;
-        lookups.set(row.id, { gone: true, order: null });
-        console.warn(`[retention] design ${row.id} Woo order ${row.wc_order_id} is not a valid order id`);
+        noteInvalid(row);
         continue;
       }
+      streak = 0;
+      invalidStreak = 0;
+      lookups.set(row.id, { gone: false, order });
+    } catch (err) {
+      if (err && err.code === 'RETENTION_ABORT') throw err;
+      if (isInvalidOrder(err)) {
+        noteInvalid(row);
+        continue;
+      }
+      invalidStreak = 0;
       if (isAuthError(err)) {
         console.error(`[retention] aborted; Woo auth failed for order ${row.wc_order_id} (${wooFailureStatus(err)})`);
         throw abortError('woo-auth');
@@ -544,8 +625,7 @@ async function runLocked(options, owner) {
       streak += 1;
       wooErrors.add(row.id);
       console.error(`[retention] skipped design ${row.id}; Woo request failed for order ${row.wc_order_id} (${wooFailureStatus(err)})`);
-      const errorFraction = wooRows.length ? errorCount / wooRows.length : 1;
-      if (streak > ERROR_STREAK_MAX || (errorCount > 1 && errorFraction > ERROR_FRACTION)) {
+      if (overThreshold(errorCount, streak, wooRows.length, ERROR_STREAK_MAX, ERROR_FRACTION)) {
         console.error(`[retention] aborted; Woo errors ${errorCount} of ${wooRows.length} (streak ${streak})`);
         throw abortError('woo-error');
       }
@@ -618,7 +698,12 @@ async function runLocked(options, owner) {
         continue;
       }
       if (unresolvedDue) {
-        unresolvedTargets.push({ ...target(row), kind: 'unresolved' });
+        unresolvedTargets.push({
+          ...target(row),
+          kind: 'unresolved',
+          needsCancel: PAYABLE_ORDER_STATUSES.has(wooStatus),
+          email: row.customer_email,
+        });
         continue;
       }
       skippedPayable.push(row.id);
@@ -635,13 +720,64 @@ async function runLocked(options, owner) {
   paidFromCreated.sort(byId);
 
   const batch = takeBatch([unpaidTargets, unresolvedTargets, paidTargets, paidFromCreated], limit);
-  const idsOf = (kind) => batch.chosen.filter((item) => item.kind === kind).map((item) => item.id);
+  let chosen = batch.chosen;
+  const cancelOrder = options.cancelOrder || defaultCancelOrder;
+  if (!preview) {
+    if (!heartbeat(owner)) {
+      console.error('[retention] skipped; lock lost');
+      return emptyResult({ ok: false, aborted: true, reason: 'overlap' });
+    }
+    chosen = chosen.filter((item) => !item.needsCancel || unpaidStillEligible(item));
+  }
+  const cancelCandidates = chosen.filter((item) => item.needsCancel);
+  const confirmed = [];
+  if (!preview && cancelCandidates.length) {
+    let cancelErrors = 0;
+    let cancelStreak = 0;
+    for (const item of cancelCandidates) {
+      const orderKey = String(item.wcOrderId);
+      cancellingOrders.add(orderKey);
+      try {
+        await cancelOrder(item.wcOrderId);
+        const again = await getOrder(item.wcOrderId);
+        const status = again ? String(again.status || '').toLowerCase() : '';
+        if (status !== 'cancelled') {
+          const err = new Error('Woo order did not read back as cancelled');
+          err.status = again == null ? 404 : 409;
+          throw err;
+        }
+        confirmed.push(item.id);
+        cancelStreak = 0;
+      } catch (err) {
+        cancellingOrders.delete(orderKey);
+        if (err && err.code === 'RETENTION_ABORT') throw err;
+        if (isAuthError(err)) {
+          console.error(`[retention] aborted; Woo auth failed cancelling order ${item.wcOrderId} (${wooFailureStatus(err)})`);
+          throw abortError('woo-auth');
+        }
+        cancelErrors += 1;
+        cancelStreak += 1;
+        skippedWooError.push(item.id);
+        console.error(`[retention] skipped design ${item.id}; Woo cancel failed for order ${item.wcOrderId} (${wooFailureStatus(err)}) ${maskEmail(item.email)}`);
+        if (overThreshold(cancelErrors, cancelStreak, cancelCandidates.length, ERROR_STREAK_MAX, ERROR_FRACTION)) {
+          console.error(`[retention] aborted; Woo cancel errors ${cancelErrors} of ${cancelCandidates.length} (streak ${cancelStreak})`);
+          throw abortError('woo-error');
+        }
+      }
+    }
+    const confirmedSet = new Set(confirmed);
+    chosen = chosen.filter((item) => !item.needsCancel || confirmedSet.has(item.id));
+  }
+
+  const idsOf = (kind) => chosen.filter((item) => item.kind === kind).map((item) => item.id);
   const batchUnpaid = idsOf('unpaid');
   const batchUnresolved = idsOf('unresolved');
   const batchPaid = [...idsOf('paid'), ...idsOf('paid-created')];
+  const wouldCancel = cancelCandidates.map((item) => item.id);
   if (preview) {
     logBucket(true, 'would-anonymise unpaid', batchUnpaid);
     logBucket(true, 'would-anonymise paid', batchPaid);
+    logBucket(true, 'would-cancel', wouldCancel);
     logBucket(true, 'deferred', batch.deferred);
   }
   if (preview) logBucket(true, `unresolved past ${unresolvedWindow}d`, batchUnresolved);
@@ -650,15 +786,12 @@ async function runLocked(options, owner) {
   logBucket(preview, 'skipped as Woo error', skippedWooError);
   logBucket(preview, 'skipped as still payable', skippedPayable);
   if (!preview && batch.deferred.length) logBucket(false, 'deferred', batch.deferred);
+  if (!preview && confirmed.length) logBucket(false, 'cancelled before wipe', confirmed);
 
   let writtenUnpaid = [];
   let writtenUnresolved = [];
   let writtenPaid = [];
   if (!preview) {
-    if (!heartbeat(owner)) {
-      console.error('[retention] skipped; lock lost');
-      return emptyResult({ ok: false, aborted: true, reason: 'overlap' });
-    }
     const apply = db.transaction(() => {
       for (const item of gmtStamps) {
         if (item.stamp) stampPaidAt.run(item.stamp, item.id);
@@ -667,7 +800,7 @@ async function runLocked(options, owner) {
       const didUnpaid = [];
       const didUnresolved = [];
       const didPaid = [];
-      for (const item of batch.chosen) {
+      for (const item of chosen) {
         if (item.kind === 'unpaid' || item.kind === 'unresolved') {
           const result = anonymiseUnpaid.run(
             REDACTED_NAME,
@@ -728,6 +861,8 @@ async function runLocked(options, owner) {
     skippedWooUnknown: skippedWoo,
     skippedWooError,
     skippedStillPayable: skippedPayable,
+    wouldCancel: preview ? wouldCancel : [],
+    cancelledOrderIds: preview ? [] : confirmed,
   });
 }
 
@@ -759,6 +894,7 @@ async function run(options = {}) {
     }
     throw err;
   } finally {
+    cancellingOrders.clear();
     clearInterval(beat);
     try { releaseLock(owner); } catch { /* the connection may already be closed */ }
   }
@@ -802,9 +938,12 @@ module.exports = {
   unresolvedDays,
   paidDays,
   purgeMax,
+  invalidIdStreak,
+  invalidIdFraction,
   intervalHours,
   dryRun,
   redactedEmail,
+  isRetentionCancel,
   run,
   scheduleRetentionPurge,
 };

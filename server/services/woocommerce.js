@@ -381,7 +381,7 @@ async function checkApi() {
  * Read one Woo order. null only when Woo says that order id does not exist
  * (`woocommerce_rest_shop_order_invalid_id`). Any other 404, and every
  * auth or server failure, throws. The retention purge skips one bad order
- * and aborts only on auth failures or a run of errors.
+ * and aborts on auth failures, a run of errors, or too many invalid ids.
  *
  * @param {string|number} wcOrderId
  * @returns {Promise<object|null>}
@@ -410,6 +410,24 @@ async function cancelPendingOrder(wcOrderId) {
   if (status !== 'pending') return { skipped: status };
   await wcFetch(`/orders/${encodeURIComponent(String(wcOrderId))}`, 'PUT', { status: 'cancelled' });
   return { cancelled: true };
+}
+
+/**
+ * Cancel a Woo order without checking its current status. The retention
+ * purge uses this for a payable order (pending, on-hold, or failed) that
+ * has passed the one-year cutoff, then reads the order back. The caller
+ * decides whether a cancel is appropriate.
+ *
+ * @param {string|number} wcOrderId
+ * @returns {Promise<object>}
+ */
+async function cancelOrder(wcOrderId) {
+  if (!wcOrderId) {
+    const err = new Error('WooCommerce order id is missing');
+    err.status = 400;
+    throw err;
+  }
+  return wcFetch(`/orders/${encodeURIComponent(String(wcOrderId))}`, 'PUT', { status: 'cancelled' });
 }
 
 /**
@@ -483,5 +501,6 @@ module.exports = {
   checkApi,
   getOrder,
   cancelPendingOrder,
+  cancelOrder,
   requestChange,
 };

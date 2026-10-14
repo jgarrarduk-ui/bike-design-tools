@@ -29,6 +29,14 @@ const names = [
   'expired-purged',
   'cancelled-backlog-drains',
   'unresolved-cutoff',
+  'cancel-order-puts-cancelled',
+  'cancel-then-wipe',
+  'cancel-fails-skips',
+  'cancel-error-aborts',
+  'cancel-dry-run',
+  'cancel-webhook-harmless',
+  'invalid-id-aborts',
+  'invalid-id-fraction-aborts',
   'paid-status-no-stamp',
   'unresolved-batch',
   'circuit-max',
@@ -72,12 +80,12 @@ function runCase(name, dryRun) {
 }
 
 for (const name of names) {
-  const dryRun = name === 'dry-run' ? '1' : name === 'dry-run-default-on' ? null : '0';
+  const dryRun = name === 'dry-run' || name === 'cancel-dry-run' ? '1' : name === 'dry-run-default-on' ? null : '0';
   test(name, async () => {
     await runCase(name, dryRun);
   });
 }
 
 test('retention cases are listed', () => {
-  assert.equal(names.length, 37);
+  assert.equal(names.length, 45);
 });
