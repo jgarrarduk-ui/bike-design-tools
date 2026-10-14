@@ -118,9 +118,10 @@ router.post(
       return;
     }
 
-    // Our own retention cancel. Leave the design row alone so the purge can
-    // still match status and order id, and do not email the customer.
-    if (retention.isRetentionCancel(wcOrderId)) {
+    // Our own retention cancel. Ignore only the cancelled event, so the
+    // purge can still match status and order id. A payment that lands in
+    // the same window is processed below and sets paid_at.
+    if (retention.isRetentionCancel(wcOrderId) && String(status).toLowerCase() === 'cancelled') {
       console.info(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; retention purge is cancelling this order`);
       return;
     }

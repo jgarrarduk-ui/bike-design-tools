@@ -586,6 +586,45 @@ async function sendRetentionAlert({ designId, wcOrderId, wooStatus }) {
   return { sent: true };
 }
 
+async function sendRetentionCancelAlert({ designId, wcOrderId, wooStatus, customerEmail }) {
+  const to = changeNotifyAddress();
+  const masked = maskEmail(customerEmail);
+  const text = [
+    'Retention purge left a design in place because the Woo order looked paid after cancel.',
+    'The tools-api did not anonymise the design and did not email the customer.',
+    '',
+    `Design: ${designId}`,
+    `Woo order: ${wcOrderId}`,
+    `Woo status: ${wooStatus || ''}`,
+    `Customer: ${masked}`,
+    '',
+    'Check the Woo order before the next retention run.',
+  ].join('\n');
+  const html = [
+    '<p>Retention purge left a design in place because the Woo order looked paid after cancel.',
+    'The tools-api did not anonymise the design and did not email the customer.</p>',
+    '<p>',
+    `Design: ${escapeHtml(designId || '')}<br>`,
+    `Woo order: ${escapeHtml(String(wcOrderId || ''))}<br>`,
+    `Woo status: ${escapeHtml(wooStatus || '')}<br>`,
+    `Customer: ${escapeHtml(masked)}`,
+    '</p>',
+    '<p>Check the Woo order before the next retention run.</p>',
+  ].join('');
+  if (!isConfigured()) {
+    console.error(`[email] retention cancel alert not sent (no API key) design ${designId} order ${wcOrderId} status ${wooStatus} ${masked}`);
+    return { sent: false };
+  }
+  await postResend({
+    to,
+    subject: `Frame Designer kept design ${designId} order ${wcOrderId}`,
+    text,
+    html,
+  });
+  console.error(`[email] retention cancel alert sent for design ${designId} order ${wcOrderId}`);
+  return { sent: true };
+}
+
 module.exports = {
   isConfigured,
   designFileLeadTime,
@@ -598,4 +637,5 @@ module.exports = {
   sendDesignAccepted,
   sendChangeNotice,
   sendRetentionAlert,
+  sendRetentionCancelAlert,
 };

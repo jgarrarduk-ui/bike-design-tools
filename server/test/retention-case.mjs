@@ -98,6 +98,15 @@ function woo(getOrder, checkApi = async () => true) {
   return { getOrder, checkApi };
 }
 
+function taggedOrder(orderId, designId, status, extra = {}) {
+  return {
+    id: orderId,
+    status,
+    meta_data: [{ key: 'design_id', value: designId }],
+    ...extra,
+  };
+}
+
 function withCancel(getOrder) {
   const cancelled = new Set();
   const calls = [];
@@ -832,12 +841,17 @@ const cases = {
         db.prepare(`
           UPDATE designs SET status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE id = 'hold-race'
         `).run();
-        return { id: orderId, status: 'on-hold' };
+        return taggedOrder(orderId, 'hold-race', 'on-hold');
       }
       if (id === '88371') {
-        return { id: orderId, status: 'on-hold', date_paid: '2026-09-01T12:00:00' };
+        return taggedOrder(orderId, 'woo-paid-366', 'on-hold', { date_paid: '2026-09-01T12:00:00' });
       }
-      return { id: orderId, status: 'on-hold' };
+      const designId = {
+        88364: 'hold-364',
+        88366: 'hold-366',
+        88367: 'hold-live',
+      }[id];
+      return taggedOrder(orderId, designId, 'on-hold');
     });
     const result = await retention.run(shop.options);
     assert.equal(result.aborted, false);
@@ -898,7 +912,10 @@ const cases = {
         wcOrderId: String(89000 + i),
       });
     }
-    const shop = withCancel(async (orderId) => ({ id: orderId, status: 'on-hold' }));
+    const shop = withCancel(async (orderId) => {
+      const n = String(Number(orderId) - 89000).padStart(2, '0');
+      return taggedOrder(orderId, `u-${n}`, 'on-hold');
+    });
     const first = await retention.run(shop.options);
     assert.equal(first.aborted, false);
     assert.equal(first.reason, null);
@@ -1382,10 +1399,11 @@ const cases = {
         wcOrderId: id,
       });
     }
-    const shop = withCancel(async (orderId) => ({
-      id: orderId,
-      status: orderId === 'hold-old' ? 'on-hold' : orderId === 'fail-old' ? 'failed' : 'pending',
-    }));
+    const shop = withCancel(async (orderId) => taggedOrder(
+      orderId,
+      String(orderId),
+      orderId === 'hold-old' ? 'on-hold' : orderId === 'fail-old' ? 'failed' : 'pending',
+    ));
     const result = await retention.run(shop.options);
     assert.equal(result.aborted, false);
     assert.deepEqual(result.designIds, ['fail-old', 'hold-old', 'pend-old']);
@@ -1426,7 +1444,7 @@ const cases = {
           cancels += 1;
           return { status: 'cancelled' };
         },
-        getOrder: async (orderId) => ({ id: orderId, status: 'on-hold' }),
+        getOrder: async (orderId) => taggedOrder(orderId, 'cancel-me', 'on-hold'),
       });
       assert.equal(cancels, 1);
       assert.equal(result.aborted, false);
@@ -1475,7 +1493,7 @@ const cases = {
         err.status = 500;
         throw err;
       },
-      getOrder: async (orderId) => ({ id: orderId, status: 'pending' }),
+      getOrder: async (orderId) => taggedOrder(orderId, `bad-${String(orderId).slice(-2)}`, 'pending'),
     });
     assert.equal(result.aborted, true);
     assert.equal(result.reason, 'woo-error');
@@ -1580,9 +1598,10 @@ const cases = {
           return { id: orderId, status: 'cancelled' };
         },
         getOrder: async (orderId) => {
-          if (cancelled.has(String(orderId))) return { id: orderId, status: 'cancelled' };
-          if (String(orderId) === '88100') return { id: orderId, status: 'failed' };
-          return { id: orderId, status: 'on-hold' };
+          const id = String(orderId);
+          if (cancelled.has(id)) return { id: orderId, status: 'cancelled' };
+          if (id === '88100') return taggedOrder(orderId, 'fail-old', 'failed');
+          return taggedOrder(orderId, 'pend-old', 'on-hold');
         },
       });
       assert.equal(result.aborted, false);
@@ -1686,6 +1705,249 @@ const cases = {
       assert.equal(row(id).customer_email, SAMPLE);
       assert.equal(row(id).anonymised_at, null);
     }
+  },
+
+  async 'cancel-readback-paid-alerts'() {
+    insert({
+      id: 'paid-back',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88600',
+    });
+    const fetches = [];
+    const previous = global.fetch;
+    process.env.SMTP_PASS = 're_test_key';
+    global.fetch = async (url, opts) => {
+      fetches.push({ url: String(url), body: opts && opts.body });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => '{}',
+        json: async () => ({}),
+        arrayBuffer: async () => new ArrayBuffer(0),
+      };
+    };
+    const lines = [];
+    const error = console.error;
+    console.error = (...args) => lines.push(args.map(String).join(' '));
+    let calls = 0;
+    let cancels = 0;
+    try {
+      const result = await retention.run({
+        checkApi: async () => true,
+        cancelOrder: async () => {
+          cancels += 1;
+          return { status: 'cancelled' };
+        },
+        getOrder: async (orderId) => {
+          calls += 1;
+          if (calls < 3) return taggedOrder(orderId, 'paid-back', 'pending');
+          return taggedOrder(orderId, 'paid-back', 'cancelled', { date_paid_gmt: '2026-10-14T08:00:00' });
+        },
+      });
+      assert.equal(cancels, 1);
+      assert.equal(result.aborted, false);
+      assert.deepEqual(result.designIds, []);
+      assert.deepEqual(result.cancelledOrderIds, []);
+      assert.equal(row('paid-back').anonymised_at, null);
+      assert.equal(row('paid-back').customer_email, SAMPLE);
+      assert.equal(row('paid-back').status, 'pending');
+      assert.ok(row('paid-back').retention_alerted_at);
+      assert.equal(fetches.length, 1);
+      const payload = JSON.parse(fetches[0].body);
+      assert.deepEqual(payload.to, ['info@creaturecycles.co.uk']);
+      const blob = `${payload.subject}\n${payload.text}\n${payload.html}`;
+      assert.match(blob, /j\*\*\*@e\*\*\*\.com/);
+      assert.equal(blob.includes(SAMPLE), false);
+      assert.equal(/https?:/i.test(blob), false);
+      assert.equal(blob.includes('mailto:'), false);
+      assert.equal(blob.includes('shop.example'), false);
+
+      const again = await retention.run({
+        checkApi: async () => true,
+        cancelOrder: async () => {
+          cancels += 1;
+          throw new Error('second run must not cancel');
+        },
+        getOrder: async (orderId) => taggedOrder(orderId, 'paid-back', 'cancelled', {
+          date_paid_gmt: '2026-10-14T08:00:00',
+        }),
+      });
+      assert.equal(cancels, 1);
+      assert.equal(fetches.length, 1);
+      assert.equal(again.designIds.includes('paid-back'), false);
+      assert.equal(row('paid-back').anonymised_at, null);
+      assert.equal(row('paid-back').customer_email, SAMPLE);
+    } finally {
+      console.error = error;
+      global.fetch = previous;
+      delete process.env.SMTP_PASS;
+    }
+    const log = lines.join('\n');
+    assert.match(log, /read back paid \(cancelled\) j\*\*\*@e\*\*\*\.com/);
+    assert.equal(log.includes(SAMPLE), false);
+    assert.equal(log.includes('http'), false);
+  },
+
+  async 'cancel-refetch-blocks'() {
+    insert({
+      id: 'paid-race',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88701',
+    });
+    insert({
+      id: 'draft-race',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88702',
+    });
+    const seen = {};
+    const cancels = [];
+    const result = await retention.run({
+      checkApi: async () => true,
+      cancelOrder: async (orderId) => {
+        cancels.push(String(orderId));
+        return { status: 'cancelled' };
+      },
+      getOrder: async (orderId) => {
+        const id = String(orderId);
+        seen[id] = (seen[id] || 0) + 1;
+        if (id === '88701') {
+          if (seen[id] === 1) return taggedOrder(orderId, 'paid-race', 'on-hold');
+          return taggedOrder(orderId, 'paid-race', 'processing', { date_paid: '2026-10-01T00:00:00' });
+        }
+        if (seen[id] === 1) return taggedOrder(orderId, 'draft-race', 'pending');
+        return taggedOrder(orderId, 'draft-race', 'checkout-draft');
+      },
+    });
+    assert.deepEqual(cancels, []);
+    assert.equal(result.aborted, false);
+    assert.deepEqual(result.designIds, []);
+    assert.equal(row('paid-race').anonymised_at, null);
+    assert.equal(row('paid-race').customer_email, SAMPLE);
+    assert.equal(row('draft-race').anonymised_at, null);
+    assert.equal(row('draft-race').customer_email, SAMPLE);
+    assert.equal(row('draft-race').wc_checkout_url, 'https://shop.example/checkout');
+  },
+
+  async 'cancel-design-mismatch'() {
+    insert({
+      id: 'mismatch',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88710',
+    });
+    let calls = 0;
+    const cancels = [];
+    const result = await retention.run({
+      checkApi: async () => true,
+      cancelOrder: async () => {
+        cancels.push('called');
+        throw new Error('must not cancel');
+      },
+      getOrder: async (orderId) => {
+        calls += 1;
+        if (calls === 1) return taggedOrder(orderId, 'mismatch', 'pending');
+        return taggedOrder(orderId, 'other-design', 'pending');
+      },
+    });
+    assert.deepEqual(cancels, []);
+    assert.equal(result.aborted, false);
+    assert.deepEqual(result.designIds, []);
+    assert.equal(row('mismatch').anonymised_at, null);
+    assert.equal(row('mismatch').customer_email, SAMPLE);
+    assert.equal(row('mismatch').status, 'pending');
+  },
+
+  async 'cancel-paid-webhook-processed'() {
+    insert({
+      id: 'pay-hook',
+      status: 'pending',
+      createdSql: "datetime('now', '-400 days')",
+      expiresSql: RESUME_DONE,
+      wcOrderId: '88800',
+    });
+    const lines = [];
+    const info = console.info;
+    const error = console.error;
+    const log = console.log;
+    const push = (...args) => lines.push(args.map(String).join(' '));
+    console.info = push;
+    console.error = push;
+    console.log = push;
+    const fetches = [];
+    const previous = global.fetch;
+    process.env.SMTP_PASS = 're_test_key';
+    global.fetch = async (url, opts) => {
+      fetches.push({ url: String(url), body: opts && opts.body });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => '{}',
+        json: async () => ({}),
+        arrayBuffer: async () => new ArrayBuffer(0),
+      };
+    };
+    const webhooks = require('../routes/webhooks');
+    const app = express();
+    app.use('/api/webhooks', webhooks);
+    const server = await listen(app);
+    let phase = 'before';
+    try {
+      const result = await retention.run({
+        checkApi: async () => true,
+        cancelOrder: async () => {
+          const posted = await request(server, '/api/webhooks/woocommerce/order-updated', {
+            method: 'POST',
+            json: { id: 88800, status: 'processing' },
+          });
+          assert.equal(posted.status, 200);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          assert.equal(row('pay-hook').status, 'paid');
+          assert.ok(row('pay-hook').paid_at);
+          assert.equal(row('pay-hook').customer_email, SAMPLE);
+          phase = 'after';
+          return { status: 'cancelled' };
+        },
+        getOrder: async (orderId) => {
+          if (phase === 'after') {
+            return taggedOrder(orderId, 'pay-hook', 'processing', { date_paid: '2026-10-14T08:00:00' });
+          }
+          return taggedOrder(orderId, 'pay-hook', 'pending');
+        },
+      });
+      assert.equal(result.aborted, false);
+      assert.equal(result.designIds.includes('pay-hook'), false);
+      assert.equal(row('pay-hook').status, 'paid');
+      assert.equal(row('pay-hook').anonymised_at, null);
+      assert.equal(row('pay-hook').customer_email, SAMPLE);
+      const bodies = fetches.map((item) => JSON.parse(item.body));
+      const payment = bodies.find((body) => (body.to || []).includes(SAMPLE));
+      assert.ok(payment);
+      const alert = bodies.find((body) => (body.to || []).includes('info@creaturecycles.co.uk'));
+      assert.ok(alert);
+      assert.match(`${alert.text}\n${alert.html}`, /j\*\*\*@e\*\*\*\.com/);
+      assert.equal(alert.text.includes(SAMPLE), false);
+      assert.equal(alert.html.includes(SAMPLE), false);
+      assert.equal(/https?:/i.test(`${alert.text}\n${alert.html}`), false);
+      assert.equal(`${alert.text}\n${alert.html}`.includes('mailto:'), false);
+    } finally {
+      console.info = info;
+      console.error = error;
+      console.log = log;
+      global.fetch = previous;
+      delete process.env.SMTP_PASS;
+      await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+    const blob = lines.join('\n');
+    assert.match(blob, /Payment confirmed for design pay-hook/);
+    assert.equal(blob.includes('retention purge is cancelling this order'), false);
+    assert.equal(blob.includes(SAMPLE), false);
   },
 };
 

@@ -52,9 +52,12 @@
  * "redacted" and "redacted+<id>@invalid". design_name and the PDFs and
  * tokens are cleared. params and design_revisions stay. The Woo order still
  * holds billing details. Before a one-year unresolved wipe of a payable
- * order (pending, on-hold, or failed), this job cancels that order and
- * reads it back as cancelled. A dry run does not cancel. A cancel failure
- * skips that row. Too many invalid order ids abort the run with no writes.
+ * order (pending, on-hold, or failed), this job fetches the order again
+ * and cancels it only when it is still payable, has no paid date, and
+ * carries this design id. The read-back must be cancelled with no paid
+ * date. A paid date skips the row and alerts info@ once. A dry run does
+ * not cancel. A cancel failure skips that row. Too many invalid order ids
+ * abort the run with no writes.
  *
  * RETENTION_PURGE_DRY_RUN writes nothing unless the value is exactly "0".
  * Unset, empty, and any other string are a dry run.
@@ -65,6 +68,7 @@
 const crypto = require('crypto');
 const db = require('../db');
 const cleanup = require('./unpaid-cleanup');
+const email = require('./email');
 const { maskEmail } = require('./redact');
 
 const DEFAULT_UNPAID_DAYS = 90;
@@ -318,6 +322,54 @@ async function defaultCheckApi() {
 async function defaultCancelOrder(wcOrderId) {
   const woocommerce = require('./woocommerce');
   return woocommerce.cancelOrder(wcOrderId);
+}
+
+function orderHasPaidDate(order) {
+  return Boolean(order) && (nonEmpty(order.date_paid) || nonEmpty(order.date_paid_gmt));
+}
+
+function designIdOnOrder(order) {
+  const woocommerce = require('./woocommerce');
+  return woocommerce.designIdFromOrder(order);
+}
+
+function payableForCancel(order, designId) {
+  if (!order) return false;
+  const status = String(order.status || '').toLowerCase();
+  if (!PAYABLE_ORDER_STATUSES.has(status)) return false;
+  if (orderHasPaidDate(order)) return false;
+  return designIdOnOrder(order) === designId;
+}
+
+function cancelBlockReason(order, designId) {
+  if (!order) return 'missing order';
+  const status = String(order.status || '').toLowerCase();
+  if (!PAYABLE_ORDER_STATUSES.has(status)) return `status ${status || 'unknown'}`;
+  if (orderHasPaidDate(order)) return 'paid date';
+  if (designIdOnOrder(order) !== designId) return 'design mismatch';
+  return 'row changed';
+}
+
+async function alertCancelPaid(item, order) {
+  const claim = db.prepare(`
+    UPDATE designs
+    SET retention_alerted_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+      AND retention_alerted_at IS NULL
+      AND anonymised_at IS NULL
+  `).run(item.id);
+  if (claim.changes !== 1) return;
+  try {
+    await email.sendRetentionCancelAlert({
+      designId: item.id,
+      wcOrderId: item.wcOrderId,
+      wooStatus: order && order.status,
+      customerEmail: item.email,
+    });
+  } catch {
+    db.prepare('UPDATE designs SET retention_alerted_at = NULL WHERE id = ?').run(item.id);
+    console.error(`[retention] admin alert failed for design ${item.id} order ${item.wcOrderId}`);
+  }
 }
 
 function unpaidStillEligible(item) {
@@ -738,16 +790,31 @@ async function runLocked(options, owner) {
       const orderKey = String(item.wcOrderId);
       cancellingOrders.add(orderKey);
       try {
+        const latest = await getOrder(item.wcOrderId);
+        if (!payableForCancel(latest, item.id) || !unpaidStillEligible(item)) {
+          cancellingOrders.delete(orderKey);
+          console.error(`[retention] skipped design ${item.id}; Woo order ${item.wcOrderId} not cancelled (${cancelBlockReason(latest, item.id)})`);
+          continue;
+        }
         await cancelOrder(item.wcOrderId);
         const again = await getOrder(item.wcOrderId);
         const status = again ? String(again.status || '').toLowerCase() : '';
-        if (status !== 'cancelled') {
-          const err = new Error('Woo order did not read back as cancelled');
-          err.status = again == null ? 404 : 409;
-          throw err;
+        if (status === 'cancelled' && !orderHasPaidDate(again)) {
+          confirmed.push(item.id);
+          cancelStreak = 0;
+          continue;
         }
-        confirmed.push(item.id);
-        cancelStreak = 0;
+        if (orderHasPaidDate(again) || WOO_PAID_STATUSES.has(status)) {
+          cancellingOrders.delete(orderKey);
+          cancelStreak = 0;
+          skippedPaid.push(item.id);
+          console.error(`[retention] skipped design ${item.id}; Woo order ${item.wcOrderId} read back paid (${status || 'unknown'}) ${maskEmail(item.email)}`);
+          await alertCancelPaid(item, again);
+          continue;
+        }
+        const err = new Error('Woo order did not read back as cancelled');
+        err.status = again == null ? 404 : 409;
+        throw err;
       } catch (err) {
         cancellingOrders.delete(orderKey);
         if (err && err.code === 'RETENTION_ABORT') throw err;

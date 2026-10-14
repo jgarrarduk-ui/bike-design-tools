@@ -35,6 +35,10 @@ const names = [
   'cancel-error-aborts',
   'cancel-dry-run',
   'cancel-webhook-harmless',
+  'cancel-readback-paid-alerts',
+  'cancel-refetch-blocks',
+  'cancel-design-mismatch',
+  'cancel-paid-webhook-processed',
   'invalid-id-aborts',
   'invalid-id-fraction-aborts',
   'paid-status-no-stamp',
@@ -87,5 +91,5 @@ for (const name of names) {
 }
 
 test('retention cases are listed', () => {
-  assert.equal(names.length, 45);
+  assert.equal(names.length, 49);
 });

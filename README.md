@@ -194,13 +194,16 @@ live run that anonymised a row checkpoints the WAL
 the old frames. It does not `VACUUM`: that would rewrite every stored PDF
 and lock the database. The linked Woo order still
 holds the customer's billing details. Before the one-year wipe of an order
-that is still `pending`, `on-hold`, or `failed`, the purge cancels that
-order (`PUT` status `cancelled`) and reads it back. The row is anonymised
-only after that read-back is `cancelled`. A failed cancel skips the row,
-logs a masked email and no links, and counts toward the same error breaker.
-A dry run cancels nothing and logs `would-cancel`. The order-updated
-webhook from that cancel does not email the customer and does not change
-the design row.
+that is still `pending`, `on-hold`, or `failed`, the purge fetches that
+order again and cancels it only when the status is still one of those
+three, it has no `date_paid` or `date_paid_gmt`, and the design id on the
+order is this row. The row is anonymised only after the read-back is
+`cancelled` and still has no paid date. A paid date on that read-back
+skips the row and emails info@ once, with a masked address and no links.
+A failed cancel skips the row, logs a masked email and no links, and
+counts toward the same error breaker. A dry run cancels nothing and logs
+`would-cancel`. The order-updated webhook from that cancel ignores only
+`cancelled`. A payment status in the same window is processed normally.
 
 A design is kept for `RETENTION_PAID_DAYS` (default `2557`, seven years)
 when any paid signal is set: `paid_at`, `accepted_at`, `delivered_at`,
