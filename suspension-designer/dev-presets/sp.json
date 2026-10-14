@@ -5,7 +5,7 @@
  "note": "Classic single pivot: the swingarm pivots just above the bottom bracket and carries the shock eye on its upright, with the shock running forward to a mount on the down tube (Orange, Starling).",
  "geom": {
   "MP": {
-   "x": 0,
+   "x": 40,
    "y": 65
   },
   "SP": {
@@ -21,12 +21,12 @@
    "y": 271.8
   },
   "SE": {
-   "x": -6.98,
-   "y": 264.88
+   "x": -30.3,
+   "y": 270.1
   },
   "SG": {
-   "x": 220.21,
-   "y": 300.71
+   "x": 199.61,
+   "y": 278.13
   }
  },
  "cfg": {

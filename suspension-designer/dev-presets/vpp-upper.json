@@ -5,28 +5,28 @@
  "note": "The rear triangle is one rigid piece held by a short lower link low at the bottom bracket and a short upper link on the seat tube; the upper link also carries the shock, as on Santa Cruz's early VPP bikes such as the Nomad, giving a firm, rising feel under pedalling.",
  "geom": {
   "MP": {
-   "x": -77.99,
-   "y": 50.58
+   "x": -81.38,
+   "y": 48.29
   },
   "FP": {
-   "x": -150.86,
-   "y": 89.4
+   "x": -162.57,
+   "y": 97.54
   },
   "LP": {
-   "x": -93.72,
-   "y": 145.95
+   "x": -95.85,
+   "y": 143.4
   },
   "SP": {
    "x": -57.61,
    "y": 211.17
   },
   "SE": {
-   "x": 34.46,
-   "y": 86.71
+   "x": 29.14,
+   "y": 92.35
   },
   "SG": {
-   "x": 184.22,
-   "y": 261.27
+   "x": 184.68,
+   "y": 261.78
   }
  },
  "cfg": {

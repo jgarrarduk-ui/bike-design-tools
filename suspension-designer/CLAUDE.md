@@ -1003,6 +1003,18 @@ pivot within 6 mm of a drawn tube centreline as a **cross-tube boss**. Anything
 further inside the tube reads as negative clearance, which is an overlap the tool
 is flagging on purpose.
 
+**Down-tube mounts start 40 mm off the centreline, on the shock side** — James's
+rule: clear of the tube, then moved by hand. Never a cross-tube boss on the down
+tube (seat- and top-tube mounts may still be). `preset-check` enforces it, and that
+the shock body never crosses the down tube; a preset whose DT mount moves onto that
+line has to be re-tuned with its other points, not by moving the mount off it.
+
+**The idler is a drivetrain option, never a configuration.** There were three
+"high pivot + idler" presets; they are gone. A high pivot is just where MP sits,
+and the idler follows the flex-stay rules on every family (frame or swingarm mount,
+`idlerLock` onto MP). `applyPreset(i,true)` keeps the idler like the rest of the
+drivetrain. Likewise the four single-pivot variants are one "Single pivot".
+
 **Labels (`labels:{…}`).** A preset may name the points it relabels, and the rest
 fall back to the `PTS` labels. Only the on-screen text changes. The internal point
 names stay put, so saved files and the Fusion importer keep working.

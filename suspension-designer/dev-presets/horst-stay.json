@@ -5,28 +5,28 @@
  "note": "The seat stay carries the rear axle and pivots on the chainstay at a Horst pivot just ahead of the wheel, with a short rocker on the seat tube and the shock hung off the seat stay's extension to the down tube, as on Specialized FSR-style Horst bikes.",
  "geom": {
   "MP": {
-   "x": -21.38,
-   "y": 65.8
+   "x": -28.74,
+   "y": 69.89
   },
   "SP": {
    "x": -44.8,
    "y": 190.15
   },
   "FP": {
-   "x": -428,
-   "y": 44.26
+   "x": -431.33,
+   "y": 39.51
   },
   "LP": {
-   "x": -169.95,
-   "y": 259.53
+   "x": -197.15,
+   "y": 299.41
   },
   "SE": {
-   "x": 15.59,
-   "y": 295.74
+   "x": 24.54,
+   "y": 299.47
   },
   "SG": {
-   "x": 243.55,
-   "y": 326.3
+   "x": 252.57,
+   "y": 336.19
   }
  },
  "cfg": {

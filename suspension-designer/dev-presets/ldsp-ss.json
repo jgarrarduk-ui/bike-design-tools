@@ -5,20 +5,20 @@
  "note": "A short faux-bar link runs from the chainstay near the axle up to a rocker pivoted on the seat tube, and the rocker pushes the shock down to the down tube, similar in principle to Kona Process bikes.",
  "geom": {
   "MP": {
-   "x": -12.3,
-   "y": 64.6
+   "x": 11.44,
+   "y": 71.9
   },
   "SP": {
    "x": -66.1,
    "y": 265
   },
   "FP": {
-   "x": -425,
-   "y": 51.9
+   "x": -504.68,
+   "y": 134.23
   },
   "LP": {
-   "x": -213.7,
-   "y": 399.3
+   "x": -212.43,
+   "y": 397.42
   },
   "SE": {
    "x": 22.6,

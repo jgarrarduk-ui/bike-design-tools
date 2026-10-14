@@ -5,92 +5,51 @@ checked against a Linkage X3 reference model supplied by James.
 
 ## Status
 
-As of 2026-10-12. The work is in the working tree of `dev`; nothing from the
-sync is committed yet.
+As of 2026-10-14, all committed on `dev`.
 
 **Done**
 
-- Engine generalised to four bodies (F/A/C/R) through `bodiesOf`. `solve`,
-  `atCompression`, `sweep` and `pivotForces` all take it. Flex-stay is unchanged:
-  both suites pass (`flexstay-tests` 130 checks, `linkage-tests` 36), and the flex
-  `#draw` is byte-identical to the pre-change capture for configs 0 and 1 at
-  three positions along the sweep.
-- 22 dev presets in `dev-presets/`, mirrored into `PRESETS`, giving 24 menu
-  entries in six families. Every preset loads and lands on its coordinates, with
-  one exception: flex config 1's SP moves 0.02 mm under the flex mount lock.
-- Keep-frame switching between configurations, `axleRel`, and the rule that a
-  non-flex preset which does not set `idlerOn` switches the idler off.
-- Mounts `dt`, `st`, `tt` and `free`. A `free` mount gets a bracket to the nearest
-  tube centreline (or the BB shell rim). A frame-mounted idler gets a bracket to
-  the frame. The readout names a pivot within 6 mm of a tube as a cross-tube boss.
-  Settled standoffs are stored exact.
-- Force vectors come from the general `pivotForces` in every configuration. On
-  non-flex frames the longest arrow is capped at 250 mm; the cap engages on
-  preset 7 (ldsp-tt) over a full sweep.
-- `test/preset-check.mjs` added: sweep and plausibility check for one preset JSON.
+- Engine generalised to four bodies (F/A/C/R) through `bodiesOf`; flex-stay output
+  unchanged (`flexstay-tests` and `linkage-tests` both pass).
+- 17 non-flex presets in `dev-presets/`, written into `PRESETS` by
+  `test/sync-presets.mjs`; 19 menu entries in six families. Every one passes
+  `test/preset-check.mjs`.
+- **One Single pivot**, not four (James, 2026-10-14). Swingarm drawn as a closed
+  triangle (axle to shock eye as well as main pivot to each).
+- **No high-pivot configurations.** A high pivot is just where MP sits; the idler
+  is a drivetrain option on every family, with the flex-stay rules (frame or
+  swingarm mount, lock to the main pivot), and is kept on a config switch.
+- **Down-tube mounts 40 mm off the centreline** on the shock side, never bored
+  through, so they can be moved by hand afterwards. Enforced by `preset-check`,
+  along with: the shock never crosses the down tube. Seat- and top-tube mounts may
+  still be cross-tube bosses (centred within 6 mm).
+- Keep-frame switching, `axleRel`, mounts `dt`/`st`/`tt`/`free`, general pivot
+  loads and bearing rotation, force arrows capped at 250 mm on non-flex.
 
-**Not done, or open**
+**Open**
 
-1. **Decision needed.** `preset-check` runs the down tube from the BB to the raw
-   head-tube bottom. The app draws it to the weld-mitre point, about 3 degrees
-   away. As a result six presets pass the checker as cross-tube bosses, but in the
-   app their SG sits 7 to 15 mm off the drawn down tube and reads -14.6 to
-   -22.8 mm (overlap): sp-direct, sp-high, sp-yoke, ldsp-ss, horst-high, dw-lower.
-   The options are to move SG onto the tube centreline in the preset data, to
-   change the checker to the weld-mitre model (which would fail those six), or to
-   accept the overlap. Nothing has been changed yet; the checker and the drawn
-   geometry are both as they were.
-2. **Main pivots inside a tube, by the app's own readout.** Preset data, not
-   changed: ldsp-tt, split, split-float, horst-rocker, horst-float, dw-upper,
-   sl-float, moto-unitrak, moto-prolink, moto-floater. ldsp-ss's MP is 3.7 mm off
-   the seat tube, so it reads as a cross-tube boss on the seat tube; that may not
-   be intended.
-3. **sp-high's idler** sits about 22 mm below MP, so the 32 mm pulley overlaps the
-   swingarm pivot. Preset coordinate, not changed.
-4. **Idler on flex-stay still floats.** A frame-mounted idler switched on for a
-   flex design has no bracket to the frame, because the bracket is excluded there
-   to keep flex drawing byte-identical. Needs a decision.
-5. **Swingarm-mounted idler** (`idlerMount 1`) has no bracket to the swingarm.
-   No preset uses it.
-6. **Flex config 1 SG** reads -18.1 mm (12 mm off the down-tube centreline).
-   Pre-existing flex geometry, out of scope; flex drawing must not move.
-7. **Seat-stay stress** is still gated on a linkage-driven flex shock (config 1).
-   Pivot loads are not gated.
-8. **Six-bar linkages** are not modelled.
-9. **Linkage X3 references.** None of the 22 presets has been compared with a
-   reference model. James to supply them. `split-float` is marked as a draft.
-10. **Short-link note.** The preset 16 note no longer carries the "see doubts in
-    the report" tag; that reference was to a report the user does not see.
-11. **Brake bodies** are provisional for every non-flex preset (table below).
+1. **Linkage X3 references** for one bike per family, from James. Until then the
+   presets are plausible starting points found by search, not designs.
+2. **Brake bodies** are provisional (table below).
+3. Main pivots on several presets overlap a tube by the app's readout (allowed, as
+   on flex-stay, since the MP housing ties ST to DT).
+4. A frame idler on flex-stay has no bracket (kept so flex drawing is unchanged);
+   a swingarm idler has none on any family.
+5. Seat-stay stress still gated on the flex rocker config. Six-bar not modelled.
 
 **Provisional brake bodies (for James to confirm)**
 
 | Preset | Family | brakeBody |
 |---|---|---|
-| sp-direct | single | A |
-| sp-tt | single | A |
-| sp-yoke | single | A |
-| sp-high | single | A |
-| ldsp-ss | ldsp | A |
-| ldsp-tt | ldsp | A |
-| ldsp-high | ldsp | A |
-| split | ldsp | C |
-| split-float | ldsp | C |
-| horst-rocker | horst | C |
-| horst-stay | horst | C |
-| horst-float | horst | C |
-| horst-high | horst | C |
-| vpp-upper | shortlink | C |
-| vpp-lower | shortlink | C |
-| dw-upper | shortlink | C |
-| dw-lower | shortlink | C |
-| sl-float | shortlink | C |
-| moto-unitrak | moto | A |
-| moto-prolink | moto | A |
-| moto-floater | moto | A |
-| moto-unit | moto | A |
+| sp | single | A |
+| ldsp-ss, ldsp-tt | ldsp | A |
+| split, split-float | ldsp | C |
+| horst-rocker, horst-stay, horst-float | horst | C |
+| vpp-upper, vpp-lower, dw-upper, dw-lower, sl-float | shortlink | C |
+| moto-unitrak, moto-prolink, moto-floater, moto-unit | moto | A |
 
-The flex configs keep `A` and are not provisional.
+The flex configs keep `A` and are not provisional. The preset table further down
+is the original plan and still lists the variants that were later folded away.
 
 ## The idea
 
