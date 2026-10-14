@@ -155,7 +155,9 @@ Cleanup of those scrapped pending orders is two hooks, both defaulting to 90
 days. Set `UNPAID_CLEANUP_INTERVAL_HOURS` (for example `24`) and the tools-api
 expires the resume token, sets the design to `expired` with `deleted_at` (the
 row stays), and cancels the Woo order when it is still pending.
-`POST /api/admin/cleanup-unpaid` runs the same job. On the shop, copy
+`POST /api/admin/cleanup-unpaid` runs the same job. A separate retention
+purge anonymises the design row itself once it is past the window below.
+On the shop, copy
 `wordpress-plugins/mu-plugins/creature-unpaid-design-orders.php` into
 `wp-content/mu-plugins/` so WP-Cron cancels the same pending orders if the
 API timer is off. Layout installs that file. Paid orders are not cancelled.
@@ -178,6 +180,117 @@ the final T&Cs. The save-design email and the payment email use
 `FD_LEAD_TIME` with the same default. If `REVIEW_LEAD_TIME_DAYS` is still
 `7` on Railway and `FD_LEAD_TIME` is unset, those emails say “7 working
 days”; delete the old variable or set it to `5`.
+
+### Data retention
+
+The tools-api anonymises a design in place. It does not delete the row.
+`customer_name` becomes `redacted` and `customer_email` becomes
+`redacted+<id>@invalid` (the columns are `NOT NULL`, and rewriting the table
+would copy every stored PDF). `design_name`, `pdf_base64`, the review PDF, `resume_token`,
+`download_token`, `review_token`, their expiries, and `wc_checkout_url` are
+cleared. Geometry `params` and `design_revisions` stay. `anonymised_at` is
+stamped so a later run skips the row. Resume, checkout, and download then
+answer 404, the same as an unknown token. SQLite `secure_delete` is on. A
+live run that anonymised a row checkpoints the WAL
+(`wal_checkpoint(TRUNCATE)`) when the database is in WAL mode, which drops
+the old frames. It does not `VACUUM`: that would rewrite every stored PDF
+and lock the database. The linked Woo order still
+holds the customer's billing details. Before the one-year wipe of an order
+that is still `pending`, `on-hold`, or `failed`, the purge fetches that
+order again and cancels it only when the status is still one of those
+three, it has no `date_paid` or `date_paid_gmt`, and the design id on the
+order is this row. The row is anonymised only after the read-back is
+`cancelled` and still has no paid date. A paid date on that read-back
+skips the row and emails info@ once, with a masked address and no links.
+A failed cancel skips the row, logs a masked email and no links, and
+counts toward the same error breaker. A dry run cancels nothing and logs
+`would-cancel`. The order-updated webhook from that cancel ignores only
+`cancelled`. A payment status in the same window is processed normally.
+
+A design is kept for `RETENTION_PAID_DAYS` (default `2557`, seven years)
+when any paid signal is set: `paid_at`, `accepted_at`, `delivered_at`,
+`review_sent_at`, a review PDF or `review_token`, a `download_token` or
+`download_expires_at`, a paid-family status (`paid`, `in_review`, `accepted`,
+`delivered`, `refunded`), or `date_paid_gmt` / `date_paid` on the linked Woo
+order. The clock is the latest of `paid_at`, `review_sent_at`, `accepted_at`,
+`delivered_at`, and Woo `date_paid_gmt`. It is not `created_at`. A paid
+signal with no timestamp is kept for `RETENTION_PAID_DAYS` from `created_at`,
+then anonymised. A design marked `failed` after accept, and
+a paid order later cancelled or refunded, stay on that clock. `paid_at` is
+stamped when the order-updated webhook marks a design paid, and cancel or
+refund does not clear it. 2557 days is seven years from payment. A setting
+below 2557 is raised to 2557. Woo `date_paid` or `date_paid_gmt` means the
+row is paid and is not wiped by the one-year cutoff.
+
+An unpaid design is anonymised when the resume link has expired and it is
+past `RETENTION_UNPAID_DAYS` (default `90`) with a Woo order of exactly
+`cancelled` or `trash`, or it never had a `wc_order_id`. A resume
+link that is still valid (`resume_expires_at` in the future, or `created_at`
+plus the resume TTL when that column is empty) keeps the row even if the
+Woo order is `cancelled` or `trash`. Past `RETENTION_UNRESOLVED_DAYS`
+(default `365`, never shorter than `RETENTION_UNPAID_DAYS`) a row with no
+paid signal is anonymised whatever the Woo status. That includes `pending`,
+`on-hold`, and `failed` orders, a confirmed invalid order id, and an orphan.
+A value below 365, or below `RETENTION_UNPAID_DAYS`, is raised, with a
+warning. A Woo 404 is not "missing" unless the code is
+`woocommerce_rest_shop_order_invalid_id` and `GET /system_status`
+succeeded. Before the unresolved cutoff that row is kept.
+
+Each run anonymises at most `RETENTION_PURGE_MAX` eligible rows (default
+20) and leaves the rest for the next run. The cap does not abort the run.
+A large set of `cancelled` orders is the normal result of the unpaid
+cleanup, so that backlog drains over later runs. The run aborts with no
+writes when `GET /system_status` fails, when Woo returns 401 or 403, when
+more than three lookups fail in a row, or when more than 20% of the lookups
+fail (and at least two fail). The same rule applies to invalid order ids
+(`404` with `woocommerce_rest_shop_order_invalid_id`): more than
+`RETENTION_INVALID_ID_STREAK` in a row (default 3) or more than
+`RETENTION_INVALID_ID_FRACTION` of the Woo lookups in that run (default
+0.2, and at least two) aborts with no writes. That is the guard for a
+wrong `WC_URL`. Cancel failures use the same streak and fraction against
+the orders this run tried to cancel. Any other single-order failure,
+including a timeout or a 404 that is not an invalid id, skips that row
+only.
+
+The anonymise statement repeats the decision: same status, same
+`wc_order_id`, resume link still expired, and the paid clock uses the
+latest of `paid_at`, `review_sent_at`, `accepted_at`, and `delivered_at`.
+`paid_at` filled in by that backfill is the latest of those local signals,
+compared as SQLite datetime text. The timer and
+`POST /api/admin/retention-purge` share a database lock with an owner id.
+The owner refreshes it while the run works. A lock older than 30 minutes
+can be taken over, and a run clears only its own lock.
+
+An order-updated webhook for an anonymised design does not change the row
+and does not email the redacted address. It logs the design id and Woo
+order id. A payment status (`processing`, `completed`, or `paid`) emails
+info@creaturecycles.co.uk once per design, including a late payment for an
+on-hold order wiped at the one-year cutoff. A `cancelled` event also alerts
+once, except when that order id is the one this purge cancelled
+(`purge_cancelled_order_id`). Later webhooks for that design are logged only.
+
+Values of `RETENTION_UNPAID_DAYS` below 30 are raised to 30, and values of
+`RETENTION_PAID_DAYS` below 2557 are raised to 2557, each with a warning.
+A value that is not a number logs an error and uses 90 or 2557. Unset stays
+90 and 2557.
+
+The job starts about 30 seconds after boot and then every
+`RETENTION_PURGE_INTERVAL_HOURS` (default `24`, clamped to 1–168; `0` turns
+the timer off). The purge writes only when `RETENTION_PURGE_DRY_RUN` is
+exactly `0`. Unset, empty, and any other value are a dry run. A dry run
+logs a breakdown and the design ids and writes nothing, including the
+`paid_at` backfill and any Woo cancel: would-anonymise unpaid,
+would-anonymise paid, would-cancel, deferred, unresolved past 365d,
+skipped as paid-signals, skipped as Woo unknown, skipped as Woo error,
+and skipped as still payable. Logs do
+not include names, email addresses, or resume, checkout, accept, or
+download links. `POST /api/admin/retention-purge` runs the same job.
+
+On the first Railway deploy, leave `RETENTION_PURGE_DRY_RUN` unset or `1`,
+deploy, and read the `[retention] dry-run` lines. Set it to exactly `0`
+only after those counts look right. A failed API check or a Woo auth
+failure aborts that run. One bad order does not. A backlog larger than
+`RETENTION_PURGE_MAX` drains over later runs.
 
 The save email is Cadence's draft, which James approved: subject "Your Creature Cycles design is
 saved", buttons "Edit design" and "Take me to checkout", dropouts still

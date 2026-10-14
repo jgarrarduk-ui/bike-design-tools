@@ -28,6 +28,8 @@ const crypto   = require('crypto');
 const db         = require('../db');
 const email      = require('../services/email');
 const woocommerce = require('../services/woocommerce');
+const retention  = require('../services/retention-purge');
+const { maskEmail } = require('../services/redact');
 
 const router = express.Router();
 
@@ -110,6 +112,28 @@ router.post(
       return;
     }
 
+    if (design.anonymised_at) {
+      console.error(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; design is anonymised`);
+      const normalised = String(status).toLowerCase();
+      const ownCancel = normalised === 'cancelled'
+        && design.purge_cancelled_order_id
+        && String(design.purge_cancelled_order_id) === wcOrderId;
+      if (ownCancel) {
+        console.info(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; retention purge cancelled this order`);
+      } else if (PAID_STATUSES.has(normalised) || normalised === 'cancelled' || normalised === 'paid') {
+        await alertAnonymisedPayment(design, wcOrderId, status);
+      }
+      return;
+    }
+
+    // Our own retention cancel. Ignore only the cancelled event, so the
+    // purge can still match status and order id. A payment that lands in
+    // the same window is processed below and sets paid_at.
+    if (retention.isRetentionCancel(wcOrderId) && String(status).toLowerCase() === 'cancelled') {
+      console.info(`[webhook] design ${design.id} order ${wcOrderId} status ${status} ignored; retention purge is cancelling this order`);
+      return;
+    }
+
     if (Object.prototype.hasOwnProperty.call(CLOSED_STATUSES, status)) {
       applyClosedStatus(design, status);
       return;
@@ -127,7 +151,12 @@ router.post(
     }
 
     // ── Mark as paid ─────────────────────────────────────────────────────────
-    db.prepare(`UPDATE designs SET status = 'paid' WHERE id = ?`).run(design.id);
+    db.prepare(`
+      UPDATE designs
+      SET status = 'paid',
+          paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP)
+      WHERE id = ?
+    `).run(design.id);
 
     // ── Send payment confirmation (design now in review queue) ───────────────
     try {
@@ -136,12 +165,28 @@ router.post(
         customerName: design.customer_name,
         designId:     design.id,
       });
-      console.log(`[webhook] Payment confirmed for design ${design.id} — sent review queue email to ${design.customer_email}`);
+      console.log(`[webhook] Payment confirmed for design ${design.id} — sent review queue email to ${maskEmail(design.customer_email)}`);
     } catch (err) {
       console.error(`[webhook] Failed to send payment confirmation for design ${design.id}:`, err.message);
     }
   },
 );
+
+async function alertAnonymisedPayment(design, wcOrderId, status) {
+  const claim = db.prepare(`
+    UPDATE designs
+    SET retention_alerted_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+      AND retention_alerted_at IS NULL
+  `).run(design.id);
+  if (claim.changes !== 1) return;
+  try {
+    await email.sendRetentionAlert({ designId: design.id, wcOrderId, wooStatus: status });
+  } catch {
+    db.prepare('UPDATE designs SET retention_alerted_at = NULL WHERE id = ?').run(design.id);
+    console.error(`[webhook] admin alert failed for design ${design.id} order ${wcOrderId}`);
+  }
+}
 
 async function findDesign(order, wcOrderId) {
   let design = db.prepare('SELECT * FROM designs WHERE wc_order_id = ?').get(wcOrderId);
@@ -167,6 +212,7 @@ function applyClosedStatus(design, wooStatus) {
     console.info(`[webhook] Design ${design.id} status '${design.status}' — leaving it on Woo status '${wooStatus}'`);
     return;
   }
+  // Status only. paid_at is left set, including on cancel and refund.
   db.prepare('UPDATE designs SET status = ? WHERE id = ?').run(next, design.id);
   console.info(`[webhook] Design ${design.id} status '${design.status}' → '${next}'`);
 }

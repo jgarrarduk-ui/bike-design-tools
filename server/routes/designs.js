@@ -247,7 +247,7 @@ router.post('/', async (req, res) => {
     const reason = woocommerce.isConfigured()
       ? 'WooCommerce order was not created'
       : 'WooCommerce not configured';
-    console.warn(`[designs] ${reason} — using placeholder checkout URL:`, checkoutUrl);
+    console.warn(`[designs] ${reason} — using a placeholder checkout path`);
   }
 
   // Do not await. A slow or failed Resend call must not hold the save

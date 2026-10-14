@@ -10,6 +10,7 @@
  *   GET  /api/admin/orders                    — list all orders
  *   POST /api/admin/orders/:id/send-review    — upload reviewed PDF and send review email
  *   POST /api/admin/cleanup-unpaid            — expire resume tokens past TTL and cancel scrapped pending Woo orders
+ *   POST /api/admin/retention-purge           — anonymise designs past the retention window
  */
 
 const express  = require('express');
@@ -18,6 +19,8 @@ const { v4: uuidv4 } = require('uuid');
 const db       = require('../db');
 const email    = require('../services/email');
 const cleanup  = require('../services/unpaid-cleanup');
+const retention = require('../services/retention-purge');
+const { maskEmail } = require('../services/redact');
 
 const router = express.Router();
 
@@ -117,7 +120,7 @@ router.post('/orders/:id/send-review', upload.single('pdf'), async (req, res) =>
       acceptUrl,
     });
 
-    console.log(`[admin] Sent design review for ${id} to ${design.customer_email}`);
+    console.log(`[admin] Sent design review for ${id} to ${maskEmail(design.customer_email)}`);
     res.json({ ok: true, message: 'Review email sent' });
   } catch (err) {
     console.error(`[admin] Failed to send review email for ${id}:`, err.message);
@@ -135,6 +138,22 @@ router.post('/cleanup-unpaid', async (_req, res) => {
   } catch (err) {
     console.error('[admin] unpaid cleanup failed:', err.message);
     res.status(500).json({ error: 'Cleanup failed', detail: err.message });
+  }
+});
+
+// POST /api/admin/retention-purge
+// Same job as the in-process timer. The purge runs live only when
+// RETENTION_PURGE_DRY_RUN is exactly "0". The DB lock is shared with the timer.
+router.post('/retention-purge', async (_req, res) => {
+  try {
+    const result = await retention.run();
+    if (result.reason === 'overlap') {
+      return res.status(409).json({ ok: false, ...result });
+    }
+    res.json({ ok: !result.aborted, ...result });
+  } catch (err) {
+    console.error('[admin] retention purge failed:', err.message);
+    res.status(500).json({ error: 'Retention purge failed' });
   }
 });
 

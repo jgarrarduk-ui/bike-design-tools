@@ -486,7 +486,10 @@ describe('design resume links', { concurrency: false }, () => {
           return wooOrder(id);
         }
         if (mode === 'missing') {
-          return new Response(JSON.stringify({ message: 'Invalid ID.' }), {
+          return new Response(JSON.stringify({
+            code: 'woocommerce_rest_shop_order_invalid_id',
+            message: 'Invalid ID.',
+          }), {
             status: 404,
             headers: { 'content-type': 'application/json' },
           });
