@@ -67,6 +67,11 @@ else {
     const near=Math.min(...Object.keys(TUBES).filter(k=>k!==cross).map(k=>clear(g[p],k)));
     out.tubeClear[p]=cross?'cross-'+cross:+near.toFixed(1);
     if(near<3) fails.push(`${p} boss half-overlaps a frame tube (clearance ${near.toFixed(1)}mm; need >= 3, or centre it on the tube within 6mm as a cross-tube boss)`);
+    // Down-tube mounts start 40mm off the centreline on the shock side (James: clear of
+    // the tube, then moved by hand later) -- never a cross-tube boss on the DT.
+    if(mt==='dt'){ const u=FT.dtU, off=u.x*g[p].y-u.y*g[p].x;
+      out.tubeClear[p+'dtOff']=+off.toFixed(1);
+      if(Math.abs(off-40)>2) fails.push(`${p} is ${off.toFixed(1)}mm off the down tube centreline; down-tube mounts sit 40mm off (+-2) on the upper side`); }
     if(mt!=='free'){ const d=cross===mt?0:clear(g[p],mt); if(d>70) fails.push(`${p} is ${d.toFixed(0)}mm off its "${mt}" tube — too far for a welded bracket (<= 70) or mark it free`); }
     else { const d=Math.min(Math.hypot(g[p].x,g[p].y)-25, ...Object.keys(TUBES).map(k=>clear(g[p],k)));
       if(d>70) fails.push(`${p} is "free" but ${d.toFixed(0)}mm from any tube or the BB shell — nothing could carry it`); }
@@ -77,6 +82,10 @@ else {
     if(p==='FP' && m.dist(k.FP,k.AX)<120) continue;           // dropout area, behind the frame
     const near=Math.min(...Object.keys(TUBES).map(t=>clear(k[p],t)));
     if(near<0){ fails.push(`${p} passes through a frame tube at rise ${k.rise.toFixed(0)} (clearance ${near.toFixed(1)}mm)`); break; } }
+  // The shock body must not pass through the down tube.
+  const segX=(a,b,c2,d)=>{const r={x:b.x-a.x,y:b.y-a.y},q={x:d.x-c2.x,y:d.y-c2.y},den=r.x*q.y-r.y*q.x;if(Math.abs(den)<1e-9)return false;
+    const t=((c2.x-a.x)*q.y-(c2.y-a.y)*q.x)/den,v=((c2.x-a.x)*r.y-(c2.y-a.y)*r.x)/den;return t>0.02&&t<0.98&&v>0&&v<1};
+  if(f.some(k=>segX(k.SE,k.SG||g.SG,TUBES.dt[0],TUBES.dt[1]))) fails.push('the shock crosses the down tube somewhere in travel');
   // Bearings and links must be buildable.
   for(const [r,n] of [[out.rotA,'A'],[out.rotC,'C'],[out.rotR,'R']]) if(Math.abs(r)>60) fails.push(`body ${n} rotates ${r}deg over travel (> 60 is not a sensible bearing)`);
   if(!B.linkless){ const ll=[['MP','FP'],['FP','LP'],['SP','LP']].map(([a,b])=>m.dist(g[a],g[b]));

@@ -5,8 +5,8 @@
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 const here=new URL('.',import.meta.url).pathname, root=here+'../';
-const ORDER=['sp-direct','sp-tt','sp-yoke','sp-high','ldsp-ss','ldsp-tt','ldsp-high','split','split-float',
-  'horst-rocker','horst-stay','horst-float','horst-high','vpp-upper','vpp-lower','dw-upper','dw-lower','sl-float',
+const ORDER=['sp','ldsp-ss','ldsp-tt','split','split-float',
+  'horst-rocker','horst-stay','horst-float','vpp-upper','vpp-lower','dw-upper','dw-lower','sl-float',
   'moto-unitrak','moto-prolink','moto-floater','moto-unit'];
 const lit=v=>JSON.stringify(v).replace(/"([A-Za-z_]\w*)":/g,'$1:').replace(/"/g,"'");
 const q=s=>"'"+String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+"'";

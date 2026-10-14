@@ -1,1 +1,60 @@
-{"key":"moto-unit","family":"moto","name":"Moto — Unit Pro-Link","note":"The rear swingarm is driven by a rocker pivoted on the swingarm underside and a dogbone link tied to the frame, with the shock hung between the swingarm and the rocker, as on Honda CRF450R and CR250R motocross bikes.","geom":{"MP":{"x":59.9,"y":68.1},"SP":{"x":148.7,"y":241.8},"FP":{"x":-62.2,"y":-5.6},"LP":{"x":-0.3,"y":157.2},"SE":{"x":-88.2,"y":224.9},"SG":{"x":-278,"y":95}},"cfg":{"axleBody":"A","brakeBody":"A","seBody":"C","sgBody":"A","linkless":0,"flexStay":0,"family":"moto"},"axleRel":[],"labels":{"MP":"Swingarm pivot","SP":"Dogbone to frame","FP":"Rocker pivot on swingarm","LP":"Rocker to dogbone","SE":"Shock eye","SG":"Shock to swingarm"},"mounts":{"SG":"free","SP":"dt"},"targets":{"prog":[10,45]}}
+{
+ "key": "moto-unit",
+ "family": "moto",
+ "name": "Moto — Unit Pro-Link",
+ "note": "The rear swingarm is driven by a rocker pivoted on the swingarm underside and a dogbone link tied to the frame, with the shock hung between the swingarm and the rocker, as on Honda CRF450R and CR250R motocross bikes.",
+ "geom": {
+  "MP": {
+   "x": 59.9,
+   "y": 68.1
+  },
+  "SP": {
+   "x": 158.39,
+   "y": 232.96
+  },
+  "FP": {
+   "x": -62.2,
+   "y": -5.6
+  },
+  "LP": {
+   "x": -0.3,
+   "y": 157.2
+  },
+  "SE": {
+   "x": -88.2,
+   "y": 224.9
+  },
+  "SG": {
+   "x": -278,
+   "y": 95
+  }
+ },
+ "cfg": {
+  "axleBody": "A",
+  "brakeBody": "A",
+  "seBody": "C",
+  "sgBody": "A",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "moto"
+ },
+ "axleRel": [],
+ "labels": {
+  "MP": "Swingarm pivot",
+  "SP": "Dogbone to frame",
+  "FP": "Rocker pivot on swingarm",
+  "LP": "Rocker to dogbone",
+  "SE": "Shock eye",
+  "SG": "Shock to swingarm"
+ },
+ "mounts": {
+  "SG": "free",
+  "SP": "dt"
+ },
+ "targets": {
+  "prog": [
+   10,
+   45
+  ]
+ }
+}

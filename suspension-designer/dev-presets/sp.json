@@ -1,8 +1,8 @@
 {
- "key": "sp-direct",
+ "key": "sp",
  "family": "single",
- "name": "Single pivot — shock to down tube",
- "note": "A simple single-pivot frame where the swingarm pivots up near the bottom bracket and the shock eye sits on the swingarm just ahead of the seat tube, running forward to a cross-tube boss on the down tube, like classic Orange Five and Starling single-pivot bikes.",
+ "name": "Single pivot",
+ "note": "Classic single pivot: the swingarm pivots just above the bottom bracket and carries the shock eye on its upright, with the shock running forward to a mount on the down tube (Orange, Starling).",
  "geom": {
   "MP": {
    "x": 0,
@@ -25,8 +25,8 @@
    "y": 264.88
   },
   "SG": {
-   "x": 222,
-   "y": 243.3
+   "x": 220.21,
+   "y": 300.71
   }
  },
  "cfg": {
@@ -40,9 +40,9 @@
  },
  "axleRel": [],
  "labels": {
-  "MP": "Swingarm pivot",
+  "MP": "Main pivot",
   "SE": "Shock eye",
-  "SG": "Shock to down tube"
+  "SG": "Shock mount on down tube"
  },
  "mounts": {
   "SG": "dt",
