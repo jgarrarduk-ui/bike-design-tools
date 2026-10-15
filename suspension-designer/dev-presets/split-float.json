@@ -1,7 +1,65 @@
-{"key":"split-float","family":"ldsp","name":"Split pivot — floating shock","note":"The rear axle hangs off a link that pivots at the bottom bracket, while the shock's lower end rides on a bracket that projects forward from that link, so both ends of the shock move as the bike rides, much like Trek's Full Floater on the Fuel EX.",
- "geom":{"MP":{"x":22.3,"y":59.3},"SP":{"x":-65.2,"y":261.7},"FP":{"x":-450,"y":18.96},"LP":{"x":-177.28,"y":283.64},"SE":{"x":-10.41,"y":336.14},"SG":{"x":39.4,"y":111.6}},
- "cfg":{"axleBody":"A","brakeBody":"C","seBody":"R","sgBody":"A","linkless":0,"flexStay":0,"family":"ldsp"},
- "axleRel":["FP"],
- "labels":{"MP":"Main pivot at BB","SP":"Rocker pivot on seat tube","FP":"Axle pivot","LP":"Seat stay to rocker","SE":"Shock eye","SG":"Shock to chainstay bracket"},
- "mounts":{"SG":"free","SP":"st"},
- "targets":{"prog":[10,35]}}
+{
+ "key": "split-float",
+ "family": "ldsp",
+ "name": "Split pivot \u2014 floating shock",
+ "note": "The rear axle hangs off a link that pivots at the bottom bracket, while the shock's lower end rides on a bracket that projects forward from that link, so both ends of the shock move as the bike rides, much like Trek's Full Floater on the Fuel EX.",
+ "geom": {
+  "MP": {
+   "x": 22.3,
+   "y": 59.3
+  },
+  "SP": {
+   "x": -65.2,
+   "y": 261.7
+  },
+  "FP": {
+   "x": -450,
+   "y": 18.96
+  },
+  "LP": {
+   "x": -177.28,
+   "y": 283.64
+  },
+  "SE": {
+   "x": -10.41,
+   "y": 336.14
+  },
+  "SG": {
+   "x": 39.4,
+   "y": 111.6
+  }
+ },
+ "cfg": {
+  "axleBody": "A",
+  "brakeBody": "C",
+  "seBody": "R",
+  "sgBody": "A",
+  "linkless": 0,
+  "flexStay": 0,
+  "family": "ldsp",
+  "eye": 210,
+  "stroke": 65
+ },
+ "axleRel": [
+  "FP"
+ ],
+ "labels": {
+  "MP": "Main pivot at BB",
+  "SP": "Rocker pivot on seat tube",
+  "FP": "Axle pivot",
+  "LP": "Seat stay to rocker",
+  "SE": "Shock eye",
+  "SG": "Shock to chainstay bracket"
+ },
+ "mounts": {
+  "SG": "free",
+  "SP": "st"
+ },
+ "targets": {
+  "prog": [
+   10,
+   35
+  ]
+ },
+ "axlePivot": "FP"
+}

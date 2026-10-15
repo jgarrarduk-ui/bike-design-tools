@@ -36,7 +36,9 @@
   "sgBody": "A",
   "linkless": 0,
   "flexStay": 0,
-  "family": "horst"
+  "family": "horst",
+  "eye": 210,
+  "stroke": 65
  },
  "axleRel": [
   "FP"
@@ -58,5 +60,6 @@
    10,
    35
   ]
- }
+ },
+ "axlePivot": "FP"
 }

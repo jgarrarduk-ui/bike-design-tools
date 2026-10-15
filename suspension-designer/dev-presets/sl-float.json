@@ -1,7 +1,7 @@
 {
  "key": "sl-float",
  "family": "shortlink",
- "name": "Short link — shock between the links",
+ "name": "Short link \u2014 shock between the links",
  "note": "The shock is squeezed between a short upper link and a short lower link, low behind the seat tube, rather than bolted to the frame, so the bike sits calmly under pedalling and the spring gets stiffer as it compresses; the same layout as the Mondraker Zero.",
  "geom": {
   "MP": {
@@ -36,7 +36,9 @@
   "sgBody": "A",
   "linkless": 0,
   "flexStay": 0,
-  "family": "shortlink"
+  "family": "shortlink",
+  "eye": 210,
+  "stroke": 65
  },
  "axleRel": [
   "FP"

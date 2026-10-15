@@ -1,7 +1,7 @@
 {
  "key": "vpp-lower",
  "family": "shortlink",
- "name": "Short link, counter-rotating — lower link drives",
+ "name": "Short link, counter-rotating \u2014 lower link drives",
  "note": "Counter-rotating pair: the lower link (MP-FP) carries the shock eye SE on an extension and the upper link (SP-LP) turns the other way. Solver-found; the link lengths are far from the short-link intent (see doubts in the report).",
  "geom": {
   "MP": {

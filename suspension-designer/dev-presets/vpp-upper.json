@@ -1,7 +1,7 @@
 {
  "key": "vpp-upper",
  "family": "shortlink",
- "name": "Short link, counter-rotating — upper link drives",
+ "name": "Short link, counter-rotating \u2014 upper link drives",
  "note": "The rear triangle is one rigid piece held by a short lower link low at the bottom bracket and a short upper link on the seat tube; the upper link also carries the shock, as on Santa Cruz's early VPP bikes such as the Nomad, giving a firm, rising feel under pedalling.",
  "geom": {
   "MP": {
@@ -36,7 +36,9 @@
   "sgBody": "F",
   "linkless": 0,
   "flexStay": 0,
-  "family": "shortlink"
+  "family": "shortlink",
+  "eye": 210,
+  "stroke": 65
  },
  "axleRel": [],
  "labels": {

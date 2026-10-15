@@ -36,7 +36,9 @@
   "sgBody": "F",
   "linkless": 0,
   "flexStay": 0,
-  "family": "ldsp"
+  "family": "ldsp",
+  "eye": 210,
+  "stroke": 65
  },
  "axleRel": [],
  "labels": {
