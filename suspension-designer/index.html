@@ -1337,8 +1337,9 @@ const PRESETS=[
     note:'Link pivots off the seat tube and drives the shock.',
     family:'flex',
     geom:{ SP:{x:-38,y:260.8}, LP:{x:-138.4,y:319.3},
-           SE:{x:28.7,y:308.9}, SG:{x:57.4,y:80.7} },
-    cfg:{ shockMount:1, sgStand:12, sgLock:0, spStand:26.2, spLock:1 } },
+           SE:{x:28.7,y:308.9}, SG:{x:36.21,y:99.03} },
+    // 210x65 trunnion, as every rocker-driven layout defaults to; SG 40mm off the DT
+    cfg:{ shockMount:1, eye:210, stroke:65, sgStand:40, sgLock:0, spStand:26.2, spLock:1 } },
   { name:'Single pivot',
     note:'Classic single pivot: the swingarm pivots just above the bottom bracket and carries the shock eye on its upright, with the shock running forward to a mount on the down tube (Orange, Starling).',
     family:'single',
@@ -1757,7 +1758,11 @@ function recompute(quick){
   if(result.error){m.textContent=result.error;m.className='on'}
   else if(clamp){m.textContent='Mech cage runs out of range: '+clamp.cageClamp+
     '. Adjust the chain links.'; m.className='on'}
-  else {m.className=''}
+  else { const sp=seatPostClash();
+    if(sp.length){ m.textContent=sp.join(', ')+(sp.length>1?' axles cross':' axle crosses')+
+      ' the seat tube, which would stop the seat post going in. Move it clear (15mm axle assumed).';
+      m.className='on' }
+    else m.className='' }
   // each stage is isolated so a failure in one panel cannot blank the canvas
   for(const [stage,fn] of [['draw',draw],['readouts',readouts],
                            ['charts',quick?()=>{}:charts]]){
@@ -2893,6 +2898,21 @@ const wheelODtext=od=>od.toFixed(1)+' mm ('+(od/25.4).toFixed(1)+' in)';
 /* Where the pivots sit relative to the real tubes. Pure frame geometry, so it runs
    before the no-solution bail-out below and keeps reporting even when the linkage
    will not solve — which is exactly when you are moving a pivot about. */
+/* A frame pivot whose axle crosses the seat tube stops the seat post going in. Any
+   pivot fixed to the frame counts (main pivot, link/rocker pivot, a frame shock mount,
+   a frame idler); the axle is taken as 15mm, the smallest anyone would use, and only
+   the seat tube above the BB shell is checked. Returns the names that clash. */
+const MIN_PIVOT_AXLE=15;
+function seatPostClash(FT){
+  FT=FT||frontTriangle();
+  const B=bodiesOf(C), u=FT.stU, top=alongOf(u,FT.seatTop), lim=C.stOD/2+MIN_PIVOT_AXLE/2;
+  const pts=[['Main pivot',G.MP]];
+  if(!B.linkless) pts.push(['Link pivot',G.SP]);
+  if(B.sg==='F') pts.push(['Shock mount',G.SG]);
+  if(C.idlerOn && !C.idlerMount && G.ID) pts.push(['Idler',G.ID]);
+  return pts.filter(([,p])=>{ const a=alongOf(u,p);
+    return a>19.05 && a<top && Math.abs(standoffOf(u,p))<lim; }).map(([n])=>n);
+}
 function tubeReadout(){
   const host=document.getElementById('out-tubes');
   if(!host) return;
@@ -2924,6 +2944,8 @@ function tubeReadout(){
     html+=row(name+' to '+at, best.toFixed(1)+' mm',
               best<=0?'warn':(best>=5?'good':''));
   }
+  for(const n of seatPostClash(FT))
+    html+=row(n+' axle', 'crosses seat tube — blocks seat post','warn');
   /* The main pivot's printed housing is bespoke to each frame, so these are the
      three numbers it gets made to rather than anything the tool should pin. */
   const dot=FT.dtU.x*FT.stU.x+FT.dtU.y*FT.stU.y;
@@ -3722,7 +3744,10 @@ function settleStands(p){
    you put MP), so it is kept like the rest of the drivetrain, on every family. Without
    keepFrame the whole preset loads, as a reset does. */
 const TOPO_KEYS=['config','axleBody','brakeBody','seBody','sgBody','linkless','flexStay','family',
-                 'shockMount','sgLock','spLock','sgStand','spStand'];
+                 'shockMount','sgLock','spLock','sgStand','spStand',
+                 // the shock follows the configuration: a rocker-driven layout defaults to a
+                 // 210x65 trunnion, anything else to 230x65 (James, 2026-10-15)
+                 'eye','stroke'];
 function applyPreset(i, keepFrame){
   const p=PRESETS[i]||PRESETS[0], d=presetDesign(i);
   if(keepFrame){

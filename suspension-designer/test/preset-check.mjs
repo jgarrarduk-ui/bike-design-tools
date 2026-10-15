@@ -86,6 +86,30 @@ else {
   const segX=(a,b,c2,d)=>{const r={x:b.x-a.x,y:b.y-a.y},q={x:d.x-c2.x,y:d.y-c2.y},den=r.x*q.y-r.y*q.x;if(Math.abs(den)<1e-9)return false;
     const t=((c2.x-a.x)*q.y-(c2.y-a.y)*q.x)/den,v=((c2.x-a.x)*r.y-(c2.y-a.y)*r.x)/den;return t>0.02&&t<0.98&&v>0&&v<1};
   if(f.some(k=>segX(k.SE,k.SG||g.SG,TUBES.dt[0],TUBES.dt[1]))) fails.push('the shock crosses the down tube somewhere in travel');
+  // James, 2026-10-15 (moto layouts exempt until they are reworked):
+  if(P.family!=='moto'){
+    const stU=FT.stU, stR=c.stOD/2, AXLE=7.5;                 // 15mm minimum pivot axle
+    const stAlong=p=>p.x*stU.x+p.y*stU.y, stSide=p=>stU.y*p.x-stU.x*p.y;  // + is forward of the ST (toward the front wheel)
+    // No frame pivot's axle may cross the seat tube above the BB shell: it would stop the
+    // seat post going in.
+    const frameP=['MP'].concat(B.linkless?[]:['SP']).concat(B.sg==='F'?['SG']:[]).concat(c.idlerOn&&!c.idlerMount&&g.ID?['ID']:[]);
+    for(const p of frameP){ const a=stAlong(g[p]), d=Math.abs(stSide(g[p]));
+      if(a>19 && a<FT.st[2].x*stU.x+FT.st[2].y*stU.y && d<stR+AXLE)
+        fails.push(`${p} axle crosses the seat tube (${d.toFixed(1)}mm from its centreline, need >= ${(stR+AXLE).toFixed(1)}) -- blocks the seat post`); }
+    // A rocker pivots outside the seat tube, ahead of it by default.
+    if(!B.linkless && (mounts.SP==='st' || !mounts.SP)){
+      if(stSide(g.SP)<stR+AXLE) fails.push(`rocker pivot SP must sit ahead of the seat tube, clear of it (side offset ${stSide(g.SP).toFixed(1)}, need >= ${(stR+AXLE).toFixed(1)})`); }
+    // Rockers as small as possible: reported, and capped.
+    if(!B.linkless){ const pts=['SP','LP'].concat(B.se==='R'?['SE']:[]).map(k=>g[k]);
+      let big=0; for(const a of pts) for(const b2 of pts) big=Math.max(big,m.dist(a,b2));
+      out.rockerSize=+big.toFixed(1);
+      if(big>(P.rockerMax||140)) fails.push(`rocker spans ${big.toFixed(0)}mm (keep it as small as possible; cap ${(P.rockerMax||140)})`); }
+    // The chainstay/seat-stay pivot sits close to the axle.
+    if(P.axlePivot){ const d=m.dist(g[P.axlePivot],g.AX); out.axlePivotDist=+d.toFixed(1);
+      if(d>60) fails.push(`${P.axlePivot} is ${d.toFixed(0)}mm from the axle (keep it within 60)`); }
+    // Rocker-driven layouts run a trunnion shock.
+    if(B.se==='R' && c.eye!==210) fails.push(`rocker-driven shock should default to a 210x65 trunnion (cfg.eye is ${c.eye})`);
+  }
   // Bearings and links must be buildable.
   for(const [r,n] of [[out.rotA,'A'],[out.rotC,'C'],[out.rotR,'R']]) if(Math.abs(r)>60) fails.push(`body ${n} rotates ${r}deg over travel (> 60 is not a sensible bearing)`);
   if(!B.linkless){ const ll=[['MP','FP'],['FP','LP'],['SP','LP']].map(([a,b])=>m.dist(g[a],g[b]));
