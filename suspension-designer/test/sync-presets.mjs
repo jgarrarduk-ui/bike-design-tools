@@ -16,7 +16,9 @@ for(const key of ORDER){
   if(!fs.existsSync(f)){ console.log('missing',key); continue; }
   const P=JSON.parse(fs.readFileSync(f,'utf8'));
   let pass=true; try{ execFileSync('node',[here+'preset-check.mjs',f]); }catch{ pass=false; }
-  const name=P.name.replace(/ \(draft\)$/,'')+(pass?'':' (draft)');
+  // a preset can also be held as a draft by hand (P.draft = the reason) when it passes the
+  // checker but is not yet the design its name says
+  const name=P.name.replace(/ \(draft\)$/,'')+(pass&&!P.draft?'':' (draft)');
   entries.push(`  { name:${q(name)},
     note:${q(P.note||'')},
     family:${q(P.family)},
@@ -25,7 +27,7 @@ for(const key of ORDER){
     axleRel:${lit(P.axleRel||[])},
     labels:${lit(P.labels||{})},
     mounts:${lit(P.mounts||{})} }`);
-  console.log((pass?'ok    ':'DRAFT ')+key);
+  console.log((pass&&!P.draft?'ok    ':'DRAFT ')+key+(P.draft?'  ('+P.draft+')':''));
 }
 const html=fs.readFileSync(root+'index.html','utf8');
 const start=html.indexOf('const PRESETS=[');

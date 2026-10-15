@@ -1,32 +1,32 @@
 {
  "key": "split-float",
  "family": "ldsp",
- "name": "Split pivot — floating shock",
- "note": "The rear axle hangs off a link that pivots at the bottom bracket. The rocker pivots on a bracket off the front of the seat tube, and the shock runs from the rocker's eye down to a bracket on the chainstay link just above the bottom bracket, so both ends of the shock move as the bike rides, much like Trek's Full Floater on the Fuel EX.",
+ "name": "Split pivot \u2014 floating shock",
+ "note": "Split pivot with a floating shock. Body A is the chainstay: it pivots at the bottom bracket (MP) and carries the rear axle, with FP exactly on the axle, and also carries the shock lower eye SG on an extension ahead of MP. Body C is the seat stay, running from the axle (FP) up to LP. Body R is the rocker: it pivots on a bracket on the front of the seat tube (SP, at least 25mm ahead of it) and carries LP and the shock upper eye SE. The shock stands wholly in front of the seat tube and above the down tube, and crosses neither tube. Known limit: in this layout the seat stay and the chainstay extension both pass across the seat tube (the checker does not test link-to-tube crossings), so the seat tube would need a clearance or a different route before it can be built.",
  "geom": {
   "MP": {
-   "x": 22.3,
-   "y": 59.3
+   "x": -68.392,
+   "y": 64.717
   },
   "SP": {
-   "x": -13.19,
-   "y": 279.85
+   "x": 15.889,
+   "y": 142.355
   },
   "FP": {
    "x": -450,
-   "y": 18.96
+   "y": 18.95999999999998
   },
   "LP": {
-   "x": -24.92,
-   "y": 220.2
+   "x": 27.381,
+   "y": 93.693
   },
   "SE": {
-   "x": -118.75,
-   "y": 270.38
+   "x": 56.637,
+   "y": 122.637
   },
   "SG": {
-   "x": 23.62,
-   "y": 116
+   "x": -30.395,
+   "y": 313.753
   }
  },
  "cfg": {
@@ -45,14 +45,13 @@
  ],
  "labels": {
   "MP": "Main pivot at BB",
-  "SP": "Rocker pivot on seat tube",
+  "SP": "Rocker pivot on seat tube bracket",
   "FP": "Axle pivot",
   "LP": "Seat stay to rocker",
-  "SE": "Shock eye",
-  "SG": "Shock to chainstay bracket"
+  "SE": "Shock eye on rocker",
+  "SG": "Shock to chainstay extension"
  },
  "mounts": {
-  "SG": "free",
   "SP": "st"
  },
  "targets": {
@@ -61,5 +60,6 @@
    35
   ]
  },
- "axlePivot": "FP"
+ "axlePivot": "FP",
+ "draft": "seat stay and chainstay extension both cross the seat tube"
 }

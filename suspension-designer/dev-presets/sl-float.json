@@ -1,32 +1,32 @@
 {
  "key": "sl-float",
  "family": "shortlink",
- "name": "Short link — shock between the links",
- "note": "The shock is squeezed between a short upper link and the lower link, behind the seat tube, rather than bolted to the frame, so the bike sits calmly under pedalling and the spring gets stiffer as it compresses; the same layout as the Mondraker Zero. The upper link pivots on a bracket off the front of the seat tube, and the rocker is kept as small as the linkage allows.",
+ "name": "Short link \u2014 shock between the links",
+ "note": "Short link with the shock squeezed between the two links, in front of the seat tube. The upper link (SP to LP, about 51mm) pivots on a bracket off the front of the seat tube and drives the shock eye SE, the lower link (MP to FP, about 85mm) carries the shock's lower end SG on an arm of its own, and the rear triangle joins AX, FP and LP. The rocker (SP, LP, SE) is kept as small as the upper link allows.",
  "geom": {
   "MP": {
-   "x": 25,
-   "y": 76.4
+   "x": -54.7,
+   "y": 76.2
   },
   "SP": {
-   "x": -9.9,
-   "y": 182.6
+   "x": 19.6,
+   "y": 210.3
   },
   "FP": {
-   "x": -159.9,
-   "y": 96.8
+   "x": -137.5,
+   "y": 95.3
   },
   "LP": {
-   "x": -0.8,
-   "y": 133.4
+   "x": -10.1,
+   "y": 169.2
   },
   "SE": {
-   "x": -87,
-   "y": 143.1
+   "x": 42.7,
+   "y": 158.7
   },
   "SG": {
-   "x": -33.2,
-   "y": -59.8
+   "x": 57.6,
+   "y": 368.2
   }
  },
  "cfg": {
@@ -64,5 +64,6 @@
    80,
    150
   ]
- }
+ },
+ "draft": "shock hangs from a long arm, not squeezed between the links"
 }

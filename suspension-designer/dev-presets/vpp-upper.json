@@ -1,32 +1,32 @@
 {
  "key": "vpp-upper",
  "family": "shortlink",
- "name": "Short link, counter-rotating — upper link drives",
- "note": "The rear triangle is one rigid piece held by a short lower link low at the bottom bracket and a short upper link on the seat tube; the upper link also carries the shock, as on Santa Cruz's early VPP bikes such as the Nomad, giving a firm, rising feel under pedalling.",
+ "name": "Short link, counter-rotating \u2014 upper link drives",
+ "note": "Counter-rotating short-link layout with the shock on the upper link. The rear triangle is one rigid piece joining the axle, FP and LP. A short lower link (MP to FP, about 105mm) runs back from a low main pivot behind the seat tube. A short upper link (SP to LP, about 67mm) sits wholly ahead of the seat tube, pivoting on a bracket welded to its front side; the shock eye SE sits on that upper link just forward of SP and the 210mm shock runs down to a down-tube mount 40mm off the centreline. The lower and upper links rotate in opposite directions over travel.",
  "geom": {
   "MP": {
-   "x": -78.23,
-   "y": -21.88
+   "x": -63.9,
+   "y": 72.3
   },
   "FP": {
-   "x": -212.72,
-   "y": 167.3
+   "x": -168.4,
+   "y": 59.6
   },
   "LP": {
-   "x": -103.13,
-   "y": 144.49
+   "x": -4,
+   "y": 231.9
   },
   "SP": {
-   "x": -55.94,
-   "y": 200.12
+   "x": 17.4,
+   "y": 295.6
   },
   "SE": {
-   "x": 11.98,
-   "y": 94.59
+   "x": 27.7,
+   "y": 217.9
   },
   "SG": {
-   "x": 163.83,
-   "y": 238.92
+   "x": 220.5,
+   "y": 301
   }
  },
  "cfg": {
@@ -62,5 +62,6 @@
    90,
    150
   ]
- }
+ },
+ "draft": "upper link crosses the seat tube line ahead of the brief; rocker rotation at 50deg - needs a hand layout"
 }

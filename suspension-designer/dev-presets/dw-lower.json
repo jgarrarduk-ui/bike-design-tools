@@ -1,32 +1,32 @@
 {
  "key": "dw-lower",
  "family": "shortlink",
- "name": "Short link, co-rotating — lower link drives",
- "note": "Both short links swing the same way and the lower one carries the shock eye up in front of the seat tube to a mount on the down tube, as in Dave Weagle's DW-link layout on Ibis Mojo bikes.",
+ "name": "Short link, co-rotating \u2014 lower link drives",
+ "note": "Two short links on a seat-tube bracket and a mid-frame pivot. The lower link carries the shock eye up and forward of the seat tube, and the shock runs forward to a 40mm-off mount on the down tube's upper side. The two links turn in opposite senses here (rotA and rotR differ in sign), so this is not the co-rotating layout the name describes: co-rotation could not be found with the shock off both tubes.",
  "geom": {
   "MP": {
-   "x": 62.281,
-   "y": 76.805
+   "x": -41.416,
+   "y": 59.615
   },
   "SP": {
-   "x": 33.821,
-   "y": 100.865
+   "x": 30.978,
+   "y": 159.965
   },
   "FP": {
-   "x": -165.232,
-   "y": 48.516
+   "x": -92.955,
+   "y": 27.236
   },
   "LP": {
-   "x": 28.146,
-   "y": 170.668
+   "x": -0.576,
+   "y": 121.179
   },
   "SE": {
-   "x": -28.959,
-   "y": 301.892
+   "x": -26.165,
+   "y": 229.583
   },
   "SG": {
-   "x": 199.836,
-   "y": 278.382
+   "x": 198.834,
+   "y": 277.284
   }
  },
  "cfg": {
@@ -60,5 +60,6 @@
    90,
    140
   ]
- }
+ },
+ "draft": "links do not co-rotate, so it is not the named design"
 }

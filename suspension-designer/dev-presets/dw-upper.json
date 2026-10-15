@@ -1,32 +1,32 @@
 {
  "key": "dw-upper",
  "family": "shortlink",
- "name": "Short link, co-rotating — upper link drives",
- "note": "The rear triangle hangs from a lower link that pivots just ahead of the bottom bracket and an upper link on a bracket off the front of the seat tube, which also carries the shock. Both links swing the same way, as on Giant’s Maestro DW-link bikes.",
+ "name": "Short link, co-rotating \u2014 upper link drives",
+ "note": "Both short links turn the same way through travel, as on Giant\u2019s Maestro and DW-link bikes. The lower link (MP to FP) pivots on the frame just behind the seat tube and reaches the rear triangle; the upper link (SP to LP) pivots on a bracket on the front of the seat tube and reaches the rear triangle ahead of it. The shock eye sits on the upper link and the shock runs forward and down to a mount on the down tube.",
  "geom": {
   "MP": {
-   "x": 42.07,
-   "y": -7.77
+   "x": -58.09,
+   "y": 117.93
   },
   "SP": {
-   "x": -18.36,
-   "y": 207.39
+   "x": 23.64,
+   "y": 159.28
   },
   "FP": {
-   "x": -83.86,
-   "y": -71.05
+   "x": -100.43,
+   "y": 133.58
   },
   "LP": {
-   "x": -138.43,
-   "y": 214.72
+   "x": 15.64,
+   "y": 212.32
   },
   "SE": {
-   "x": -43.41,
-   "y": 298.35
+   "x": -16.8,
+   "y": 211.37
   },
   "SG": {
-   "x": 154.82,
-   "y": 229.05
+   "x": 186.54,
+   "y": 263.81
   }
  },
  "cfg": {
@@ -62,5 +62,6 @@
    90,
    140
   ]
- }
+ },
+ "draft": "rear triangle (FP-LP) crosses the seat tube; upper link rotates 59.7deg"
 }

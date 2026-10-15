@@ -1,32 +1,32 @@
 {
  "key": "vpp-lower",
  "family": "shortlink",
- "name": "Short link, counter-rotating — lower link drives",
- "note": "Counter-rotating four-bar: the lower link (MP-FP) carries the shock eye SE and the upper link (SP-LP) turns the other way. The rocker is 70 mm, held at that floor for a real part (the checker would accept 35 mm but that is not buildable). Lower link and coupler are long (MP-FP about 288 mm), so this is not a true short link.",
+ "name": "Short link, counter-rotating \u2014 lower link drives",
+ "note": "Counter-rotating (VPP) four-bar. The lower link MP-FP (52 mm) carries the shock eye SE on an extension beyond MP. The upper link SP-LP (39 mm) turns the other way (rotA about -42 deg, rotR about +52 deg over travel). The rear triangle (AX, FP, LP) is one rigid body. SG is a top-tube bracket (mount tt) and eye-to-eye is 230 mm. Departures from the brief: no layout found passes the checker with the shock standing in front of the seat tube, so here SG and SE are both behind the seat tube, and SE is on the FP side of MP rather than forward of it. The rocker is 39 mm, close to the 35 mm link floor, and travel (135 mm) sits at the bottom of its window.",
  "geom": {
   "MP": {
-   "x": 76.73,
-   "y": 34.6
+   "x": -71.58633327337346,
+   "y": 40
   },
   "FP": {
-   "x": -202.94,
-   "y": 102.86
+   "x": -110.39857916088758,
+   "y": 5.184024062222086
   },
   "LP": {
-   "x": -44.38,
-   "y": 56.05
+   "x": -13.58264911843966,
+   "y": 180.67239190687422
   },
   "SP": {
-   "x": 20.71,
-   "y": 81.84
+   "x": 5.250796080116563,
+   "y": 215.20718807566462
   },
   "SE": {
-   "x": -35.75,
-   "y": 321.49
+   "x": -184.6293871421817,
+   "y": 118.66337409225397
   },
   "SG": {
-   "x": 184.65,
-   "y": 387.23
+   "x": -117.09830257631322,
+   "y": 338.52595075630904
   }
  },
  "cfg": {
@@ -50,5 +50,6 @@
  "mounts": {
   "SP": "st",
   "SG": "tt"
- }
+ },
+ "draft": "leverage ~6.7 and shock behind the seat tube - not a credible VPP; needs a hand layout"
 }
