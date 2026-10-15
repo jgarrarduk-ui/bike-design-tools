@@ -5,28 +5,28 @@
  "note": "The chainstay pivots low by the bottom bracket while the seat stay, which carries the rear brake, runs from the axle up to a small rocker on the seat tube, and that rocker drives the shock down to the down tube, as on Trek's ABP bikes such as the Fuel EX.",
  "geom": {
   "MP": {
-   "x": 74.5,
-   "y": 65.48
+   "x": 89.9,
+   "y": 58.66
   },
   "SP": {
-   "x": -50.47,
-   "y": 202.44
+   "x": -2.38,
+   "y": 237.37
   },
   "FP": {
-   "x": -425.19,
-   "y": 41.9
+   "x": -450,
+   "y": 18.96
   },
   "LP": {
-   "x": -229.6,
-   "y": 392.99
+   "x": -9.68,
+   "y": 191.19
   },
   "SE": {
-   "x": 72.35,
-   "y": 363.86
+   "x": -6.53,
+   "y": 170.51
   },
   "SG": {
-   "x": 68.02,
-   "y": 133.9
+   "x": 183.32,
+   "y": 260.28
   }
  },
  "cfg": {

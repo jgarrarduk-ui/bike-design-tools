@@ -1,32 +1,32 @@
 {
  "key": "split-float",
  "family": "ldsp",
- "name": "Split pivot \u2014 floating shock",
- "note": "The rear axle hangs off a link that pivots at the bottom bracket, while the shock's lower end rides on a bracket that projects forward from that link, so both ends of the shock move as the bike rides, much like Trek's Full Floater on the Fuel EX.",
+ "name": "Split pivot — floating shock",
+ "note": "The rear axle hangs off a link that pivots at the bottom bracket. The rocker pivots on a bracket off the front of the seat tube, and the shock runs from the rocker's eye down to a bracket on the chainstay link just above the bottom bracket, so both ends of the shock move as the bike rides, much like Trek's Full Floater on the Fuel EX.",
  "geom": {
   "MP": {
    "x": 22.3,
    "y": 59.3
   },
   "SP": {
-   "x": -65.2,
-   "y": 261.7
+   "x": -13.19,
+   "y": 279.85
   },
   "FP": {
    "x": -450,
    "y": 18.96
   },
   "LP": {
-   "x": -177.28,
-   "y": 283.64
+   "x": -24.92,
+   "y": 220.2
   },
   "SE": {
-   "x": -10.41,
-   "y": 336.14
+   "x": -118.75,
+   "y": 270.38
   },
   "SG": {
-   "x": 39.4,
-   "y": 111.6
+   "x": 23.62,
+   "y": 116
   }
  },
  "cfg": {

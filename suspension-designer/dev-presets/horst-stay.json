@@ -1,32 +1,32 @@
 {
  "key": "horst-stay",
  "family": "horst",
- "name": "Horst link \u2014 seat stay drives shock",
- "note": "The seat stay carries the rear axle and pivots on the chainstay at a Horst pivot just ahead of the wheel, with a short rocker on the seat tube and the shock hung off the seat stay's extension to the down tube, as on Specialized FSR-style Horst bikes.",
+ "name": "Horst link — seat stay drives shock",
+ "note": "The seat stay carries the rear axle and pivots on the chainstay at a Horst pivot about 43mm from the axle, just in front of and below it. The chainstay pivot sits forward of the seat tube, and a short rocker (about 41mm, seat-tube bracket to link pivot) drives the shock, which hangs off the seat stay's extension to a down-tube mount, as on Specialized FSR-style Horst bikes.",
  "geom": {
   "MP": {
-   "x": -28.74,
-   "y": 69.89
+   "x": 40,
+   "y": 72.12
   },
   "SP": {
-   "x": -44.8,
-   "y": 190.15
+   "x": 31.7,
+   "y": 177.75
   },
   "FP": {
-   "x": -431.33,
-   "y": 39.51
+   "x": -442.44,
+   "y": -23.13
   },
   "LP": {
-   "x": -197.15,
-   "y": 299.41
+   "x": 1.6,
+   "y": 205.51
   },
   "SE": {
-   "x": 24.54,
-   "y": 299.47
+   "x": 33.69,
+   "y": 319.62
   },
   "SG": {
-   "x": 252.57,
-   "y": 336.19
+   "x": 262.1,
+   "y": 346.63
   }
  },
  "cfg": {

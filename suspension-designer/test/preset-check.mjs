@@ -107,6 +107,15 @@ else {
     // The chainstay/seat-stay pivot sits close to the axle.
     if(P.axlePivot){ const d=m.dist(g[P.axlePivot],g.AX); out.axlePivotDist=+d.toFixed(1);
       if(d>60) fails.push(`${P.axlePivot} is ${d.toFixed(0)}mm from the axle (keep it within 60)`); }
+    // The shock body must not pass through the seat tube either (a rocker shock stands in
+    // front of it; a seat post has to get past).
+    if(f.some(k=>segX(k.SE,k.SG||g.SG,TUBES.st[0],TUBES.st[1]))) fails.push('the shock crosses the seat tube somewhere in travel');
+    // A short-link layout has short links: both the lower (MP-FP) and upper (SP-LP).
+    if(P.family==='shortlink'){ const lo=m.dist(g.MP,g.FP), up=m.dist(g.SP,g.LP);
+      out.lowerLink=+lo.toFixed(1); out.upperLink=+up.toFixed(1);
+      if(lo>120||up>120) fails.push(`short-link links must be short (lower ${lo.toFixed(0)}mm, upper ${up.toFixed(0)}mm; cap 120)`); }
+    // The main pivot sits in the frame, above the BB shell's underside.
+    if(g.MP.y<-10) fails.push(`main pivot at y=${g.MP.y.toFixed(0)} is below the BB -- not where a frame can carry it`);
     // Rocker-driven layouts run a trunnion shock.
     if(B.se==='R' && c.eye!==210) fails.push(`rocker-driven shock should default to a 210x65 trunnion (cfg.eye is ${c.eye})`);
   }

@@ -1,32 +1,32 @@
 {
  "key": "horst-rocker",
  "family": "horst",
- "name": "Horst link \u2014 rocker drives shock",
- "note": "The rear wheel hangs from a Horst link: a chainstay pivots near the bottom bracket, a Horst pivot sits just ahead of the axle, and a rocker on the seat tube, in front of it, pushes the shock down to the down tube.",
+ "name": "Horst link — rocker drives shock",
+ "note": "The rear wheel hangs from a Horst link: a chainstay pivots near the bottom bracket, a Horst pivot sits just ahead of the axle, and a rocker hangs from a bracket welded to the front of the seat tube; the rocker’s shock eye runs forward to a bracket on the down tube.",
  "geom": {
   "MP": {
-   "x": 12.17,
-   "y": 63.43
+   "x": 20.11,
+   "y": 67.65
   },
   "SP": {
-   "x": -35.62,
-   "y": 142.87
+   "x": 14.76,
+   "y": 179.66
   },
   "FP": {
-   "x": -349.97,
-   "y": 35.67
+   "x": -397.99,
+   "y": 24.95
   },
   "LP": {
-   "x": 6.69,
-   "y": 271.8
+   "x": -2.57,
+   "y": 232.72
   },
   "SE": {
-   "x": 45.87,
-   "y": 341.7
+   "x": -23.39,
+   "y": 239.43
   },
   "SG": {
-   "x": 47.77,
-   "y": 111.7
+   "x": 185.34,
+   "y": 262.5
   }
  },
  "cfg": {

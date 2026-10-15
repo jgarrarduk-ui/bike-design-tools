@@ -2,31 +2,31 @@
  "key": "ldsp-tt",
  "family": "ldsp",
  "name": "Linkage-driven single pivot \u2014 link under top tube",
- "note": "A short link from the swingarm drives a rocker pinned to the top tube near the seat tube, and the shock lies flat under the top tube toward the head tube, much like the layout of Commencal's Meta.",
+ "note": "A short link from the swingarm drives a small rocker pivoted on a bracket off the front of the seat tube, well below the top tube. The shock runs forward and up from the rocker to a boss under the top tube, passing above the down tube.",
  "geom": {
   "MP": {
-   "x": 29.2,
-   "y": 64.9
+   "x": 32,
+   "y": 70
   },
   "SP": {
-   "x": -13.4,
-   "y": 367.3
+   "x": -7.5,
+   "y": 264.3
   },
   "FP": {
-   "x": -30.6,
-   "y": 254.0
+   "x": 86.1,
+   "y": 380
   },
   "LP": {
-   "x": 77.5,
-   "y": 183.7
+   "x": 1.2,
+   "y": 226.3
   },
   "SE": {
-   "x": 82.3,
-   "y": 278.5
+   "x": 28,
+   "y": 207.4
   },
   "SG": {
-   "x": 247.7,
-   "y": 438.4
+   "x": 141.6,
+   "y": 384.1
   }
  },
  "cfg": {
@@ -51,7 +51,7 @@
  },
  "mounts": {
   "SG": "tt",
-  "SP": "tt"
+  "SP": "st"
  },
  "targets": {
   "prog": [
