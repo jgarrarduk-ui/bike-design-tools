@@ -15,6 +15,8 @@ const db = new Database(DB_PATH);
 // WAL mode for better concurrent read performance
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+// Zero freed pages so an anonymised name, email, or PDF is not left on disk.
+db.pragma('secure_delete = ON');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS designs (
@@ -35,7 +37,9 @@ db.exec(`
     product_ids          TEXT,                   -- JSON array from resolveProductIds at save
     design_name          TEXT,                   -- optional frame name for the save email
     resume_expires_at    DATETIME,               -- unpaid resume links last RESUME_TOKEN_TTL_DAYS (default 90)
-    deleted_at           DATETIME                -- set when an unpaid design is expired; row is kept
+    deleted_at           DATETIME,               -- set when an unpaid design is expired; row is kept
+    paid_at              DATETIME,               -- stamped when a payment webhook marks the design paid
+    anonymised_at        DATETIME                -- set by the retention purge; row is kept
   );
 
   CREATE INDEX IF NOT EXISTS idx_designs_email        ON designs (customer_email);
@@ -76,10 +80,23 @@ if (!existingCols.includes('resume_expires_at')) {
 if (!existingCols.includes('deleted_at')) {
   db.exec('ALTER TABLE designs ADD COLUMN deleted_at DATETIME');
 }
+if (!existingCols.includes('paid_at')) {
+  db.exec('ALTER TABLE designs ADD COLUMN paid_at DATETIME');
+}
+if (!existingCols.includes('anonymised_at')) {
+  db.exec('ALTER TABLE designs ADD COLUMN anonymised_at DATETIME');
+}
+if (!existingCols.includes('retention_alerted_at')) {
+  db.exec('ALTER TABLE designs ADD COLUMN retention_alerted_at DATETIME');
+}
+if (!existingCols.includes('purge_cancelled_order_id')) {
+  db.exec('ALTER TABLE designs ADD COLUMN purge_cancelled_order_id TEXT');
+}
 if (!existingCols.includes('revision')) {
   db.exec('ALTER TABLE designs ADD COLUMN revision INTEGER NOT NULL DEFAULT 0');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_designs_resume_tok ON designs (resume_token)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_designs_anonymised_at ON designs (anonymised_at)');
 db.exec(`
   CREATE TABLE IF NOT EXISTS design_revisions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

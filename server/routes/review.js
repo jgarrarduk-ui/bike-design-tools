@@ -11,8 +11,19 @@ const express  = require('express');
 const { v4: uuidv4 } = require('uuid');
 const db       = require('../db');
 const email    = require('../services/email');
+const { maskEmail } = require('../services/redact');
 
 const router = express.Router();
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
 
 // ── GET /api/review/preview/:token ────────────────────────────────────────────
 router.get('/preview/:token', (req, res) => {
@@ -83,15 +94,16 @@ router.get('/accept/:token', async (req, res) => {
     db.prepare(`UPDATE designs SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP WHERE id = ?`)
       .run(design.id);
 
-    console.log(`[review] Design ${design.id} accepted — sent final files to ${design.customer_email}`);
+    console.log(`[review] Design ${design.id} accepted — sent final files to ${maskEmail(design.customer_email)}`);
   } catch (err) {
     console.error(`[review] Failed to send final files for design ${design.id}:`, err.message);
     db.prepare(`UPDATE designs SET status = 'failed' WHERE id = ?`).run(design.id);
   }
 
+  const safeEmail = escapeHtml(design.customer_email);
   res.send(acceptPage(
     'Design accepted!',
-    `Thank you! Your final design files have been emailed to <strong>${design.customer_email}</strong>. Please check your inbox — the download link is valid for ${expiryHours} hours.`,
+    `Thank you! Your final design files have been emailed to <strong>${safeEmail}</strong>. Please check your inbox — the download link is valid for ${Number(expiryHours)} hours.`,
     true,
   ));
 });
@@ -105,7 +117,7 @@ function acceptPage(title, message, success) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${title} — Creature Cycles</title>
+  <title>${escapeHtml(title)} — Creature Cycles</title>
   <style>
     body { font-family: monospace; background: #f4f4f4; margin: 0; padding: 40px 20px; }
     .card { max-width: 540px; margin: 60px auto; background: #fff; border-radius: 8px;
