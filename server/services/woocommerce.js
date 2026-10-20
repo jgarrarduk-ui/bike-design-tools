@@ -262,8 +262,8 @@ function buildOrderPayload({
   const lastName  = nameParts.slice(1).join(' ') || '';
 
   return {
-    payment_method:       'bacs',
-    payment_method_title: 'Bank Transfer',
+    payment_method:       SAVED_PAYMENT_METHOD,
+    payment_method_title: SAVED_PAYMENT_TITLE,
     set_paid:             false,
     billing: {
       first_name: firstName,
@@ -277,6 +277,23 @@ function buildOrderPayload({
 
 function designNoteText(designId) {
   return `Bespoke bike design — ID: ${designId}`;
+}
+
+// Admin label for a save that has not been paid. Empty payment_method is a
+// valid Woo REST string: there is no gateway enum. WC_Order::set_payment_method('')
+// also clears the title, and the v2/v3 order schema applies payment_method
+// before payment_method_title, so this title is what remains. set_paid stays
+// false, so payment_complete does not replace it with a gateway title.
+// Order-pay lists every available gateway. It does not filter on the stored
+// method. Preselection of a stored method is for admin-created orders only
+// (Woo 11.3+), and only when that id is still an available gateway. REST
+// creates are created_via rest-api, and '' matches no gateway.
+const SAVED_PAYMENT_METHOD = '';
+const SAVED_PAYMENT_TITLE = 'Saved design, awaiting card payment';
+const SAVED_AWAITING_NOTE = 'Design saved from Frame Designer; no payment attempted yet.';
+
+function savedAwaitingPaymentNote() {
+  return SAVED_AWAITING_NOTE;
 }
 
 /**
@@ -307,6 +324,7 @@ async function createOrder({
   });
   const order = await wcFetch('/orders', 'POST', payload);
   await addPrivateDesignNote(order.id, designId);
+  await addSavedAwaitingNote(order.id);
 
   const checkoutUrl = order.payment_url ||
     `${env('WC_URL').replace(/\/$/, '')}/checkout/order-pay/${order.id}/?pay_for_order=true&key=${order.order_key}`;
@@ -430,6 +448,31 @@ async function cancelOrder(wcOrderId) {
   return wcFetch(`/orders/${encodeURIComponent(String(wcOrderId))}`, 'PUT', { status: 'cancelled' });
 }
 
+async function postPrivateNote(orderId, note) {
+  await wcFetch(`/orders/${encodeURIComponent(String(orderId))}/notes`, 'POST', {
+    note,
+    customer_note: false,
+  });
+}
+
+async function addPrivateDesignNote(orderId, designId) {
+  if (!orderId) return;
+  try {
+    await postPrivateNote(orderId, designNoteText(designId));
+  } catch (err) {
+    console.warn('[woocommerce] Could not store the private design note:', err.message);
+  }
+}
+
+async function addSavedAwaitingNote(orderId) {
+  if (!orderId) return;
+  try {
+    await postPrivateNote(orderId, savedAwaitingPaymentNote());
+  } catch (err) {
+    console.warn('[woocommerce] Could not store the private saved-design note:', err.message);
+  }
+}
+
 /**
  * Ask the shop whether a paid Frame Designer order can still be changed,
  * and write a geometry revision onto that same order.
@@ -439,18 +482,6 @@ async function cancelOrder(wcOrderId) {
  * @param {object} payload
  * @returns {Promise<{status: number, body: object}>}
  */
-async function addPrivateDesignNote(orderId, designId) {
-  if (!orderId) return;
-  try {
-    await wcFetch(`/orders/${encodeURIComponent(String(orderId))}/notes`, 'POST', {
-      note: designNoteText(designId),
-      customer_note: false,
-    });
-  } catch (err) {
-    console.warn('[woocommerce] Could not store the private design note:', err.message);
-  }
-}
-
 async function requestChange(method, payload) {
   if (!env('WC_URL')) {
     const err = new Error('WooCommerce is not configured.');
@@ -495,6 +526,7 @@ module.exports = {
   resolveProductIds,
   buildOrderPayload,
   designNoteText,
+  savedAwaitingPaymentNote,
   designIdFromOrder,
   geometrySummaryFrom,
   configuredProductIds,

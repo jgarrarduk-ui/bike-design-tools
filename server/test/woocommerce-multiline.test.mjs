@@ -212,7 +212,11 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
         productIds: ['8634', 8635, '8634', 8637],
       });
 
+      assert.equal(payload.payment_method, '');
+      assert.equal(payload.payment_method_title, 'Saved design, awaiting card payment');
       assert.equal(payload.set_paid, false);
+      assert.equal(payload.status, undefined);
+      assert.equal(payload.fee_lines, undefined);
       assert.deepEqual(
         payload.line_items.map((line) => line.product_id),
         [8634, 8635, 8637],
@@ -334,9 +338,14 @@ describe('multi-line WooCommerce orders', { concurrency: false }, () => {
         assert.match(result.checkoutUrl, /order-pay\/4242/);
         assert.equal(captured.url, 'https://shop.example/wp-json/wc/v3/orders');
         assert.equal(captured.body.customer_note, undefined);
-        assert.equal(notes.length, 1);
+        assert.equal(captured.body.payment_method, '');
+        assert.equal(captured.body.payment_method_title, 'Saved design, awaiting card payment');
+        assert.equal(captured.body.set_paid, false);
+        assert.equal(notes.length, 2);
         assert.equal(notes[0].customer_note, false);
         assert.equal(notes[0].note, 'Bespoke bike design — ID: design-9');
+        assert.equal(notes[1].customer_note, false);
+        assert.equal(notes[1].note, 'Design saved from Frame Designer; no payment attempted yet.');
         assert.equal(captured.url.includes('/products'), false);
         assert.ok(captured.authorization.startsWith('Basic '), 'sends basic auth');
         assert.deepEqual(
