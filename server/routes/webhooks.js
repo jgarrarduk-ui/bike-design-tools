@@ -150,7 +150,9 @@ router.post(
       return;
     }
 
-    // ── Mark as paid ─────────────────────────────────────────────────────────
+    // Mark paid. payment_method and payment_method_title stay as Woo or the
+    // gateway wrote them on this order. This handler does not call Woo, so it
+    // cannot put the saved-design label back over a card or PayPal payment.
     db.prepare(`
       UPDATE designs
       SET status = 'paid',
