@@ -59,16 +59,17 @@
       ? options.prices
       : undefined;
     const catalog = resolveCatalog(priceOverride);
-    const chosen = selectedIds == null ? defaultProductIds() : productIdsFromSelection(selectedIds);
+    const chosen = selectedIds == null ? defaultProductIds() : productIdsFromSelection(selectedIds, priceOverride);
     const selected = new Set(chosen);
     return PARTS.map(part => {
       const comingSoon = !!part.unavailable;
+      const blocked = !comingSoon && isBlocked(part.id, catalog);
       return {
         id: part.id,
         name: part.name,
-        price: comingSoon ? null : amountFor(part.id, catalog),
-        checked: !comingSoon && selected.has(part.id),
-        disabled: comingSoon || lockParts,
+        price: comingSoon || blocked ? null : amountFor(part.id, catalog),
+        checked: !comingSoon && !blocked && selected.has(part.id),
+        disabled: comingSoon || blocked || lockParts,
         comingSoon,
       };
     });
@@ -87,8 +88,9 @@
     return out;
   }
 
-  function productIdsFromSelection(selectedIds) {
-    return knownIds(selectedIds);
+  function productIdsFromSelection(selectedIds, priceMap) {
+    const catalog = resolveCatalog(priceMap);
+    return knownIds(selectedIds).filter(id => !isBlocked(id, catalog));
   }
 
   function formatGbp(amount) {
@@ -113,18 +115,27 @@
   function normalizeCatalog(input) {
     if (!input || typeof input !== 'object') return null;
     const currency = typeof input.currency === 'string' ? input.currency.trim() : '';
-    if (currency && currency !== 'GBP') return { currency, products: {} };
+    if (currency && currency !== 'GBP') return { currency, products: {}, blocked: new Set() };
     const source = input.products && typeof input.products === 'object' ? input.products : input;
     const products = {};
+    const blocked = new Set();
     for (const part of orderableParts()) {
       const raw = source[part.id] != null ? source[part.id] : source[String(part.id)];
-      if (!raw || typeof raw !== 'object' || raw.available === false) continue;
+      if (!raw || typeof raw !== 'object') continue;
+      if (raw.available === false) {
+        blocked.add(part.id);
+        continue;
+      }
       if (raw.price == null || raw.price === '') continue;
       const price = Number(raw.price);
       if (!Number.isFinite(price) || price < 0) continue;
       products[part.id] = price;
     }
-    return { currency: currency || 'GBP', products };
+    return { currency: currency || 'GBP', products, blocked };
+  }
+
+  function isBlocked(id, catalog) {
+    return !!(catalog && catalog.blocked && catalog.blocked.has(id));
   }
 
   function amountFor(id, catalog) {
@@ -143,7 +154,7 @@
   }
 
   function listTotal(selectedIds, priceMap) {
-    const ids = productIdsFromSelection(selectedIds);
+    const ids = productIdsFromSelection(selectedIds, priceMap);
     if (!ids.length) return 0;
     const catalog = resolveCatalog(priceMap);
     let cents = 0;
@@ -165,7 +176,9 @@
   function partLabel(part, priceMap) {
     if (!part) return '';
     if (part.unavailable || part.comingSoon) return part.name;
-    const price = amountFor(part.id, resolveCatalog(priceMap));
+    const catalog = resolveCatalog(priceMap);
+    if (isBlocked(part.id, catalog)) return part.name;
+    const price = amountFor(part.id, catalog);
     if (price == null) return part.name;
     return part.name + ' ' + formatGbp(price);
   }
@@ -176,7 +189,7 @@
   }
 
   function selectionLabel(selectedIds, priceMap) {
-    const ids = productIdsFromSelection(selectedIds);
+    const ids = productIdsFromSelection(selectedIds, priceMap);
     if (!ids.length) return 'Choose at least one design file.';
     const total = selectionTotal(ids, priceMap);
     if (total == null) return 'Price shown at checkout';

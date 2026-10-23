@@ -28,6 +28,14 @@
  *
  * Frame Designer product ids only. 8637 is not a picker product. Nothing
  * here writes to WooCommerce. A missing price is omitted, never filled in.
+ * A product that is not published, or whose stock_status is outofstock,
+ * is returned as available:false with no price.
+ *
+ * The catalogue read aborts after WC_PRICE_TIMEOUT_MS (default 8s). A
+ * timeout is an error: the last good result is served while it is under
+ * an hour old, otherwise the route is 503. After any failed read, Woo is
+ * not called again until WC_PRICE_BACKOFF_MS (default 45s, clamped to
+ * 30–60s). A success clears that backoff.
  */
 
 const { wcGet } = require('./woocommerce');
@@ -35,11 +43,37 @@ const { wcGet } = require('./woocommerce');
 const FD_PRODUCT_IDS = [8634, 8635, 8636];
 const TTL_MS = 5 * 60 * 1000;
 const STALE_MS = 60 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_BACKOFF_MS = 45 * 1000;
+const MIN_BACKOFF_MS = 30 * 1000;
+const MAX_BACKOFF_MS = 60 * 1000;
 const ROUNDING_PRECISION_FLOOR = 6;
 
 let cache = null;
 let inflight = null;
+let backoffUntil = 0;
 let nowFn = () => Date.now();
+
+function numericEnv(name) {
+  const raw = process.env[name];
+  if (raw == null || String(raw).trim() === '') return null;
+  const n = Number(String(raw).trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function priceTimeoutMs() {
+  const n = numericEnv('WC_PRICE_TIMEOUT_MS');
+  if (n == null || n <= 0) return DEFAULT_TIMEOUT_MS;
+  return Math.floor(n);
+}
+
+function priceBackoffMs() {
+  const n = numericEnv('WC_PRICE_BACKOFF_MS');
+  const value = n == null ? DEFAULT_BACKOFF_MS : n;
+  if (value < MIN_BACKOFF_MS) return MIN_BACKOFF_MS;
+  if (value > MAX_BACKOFF_MS) return MAX_BACKOFF_MS;
+  return Math.floor(value);
+}
 
 function setting(list, id) {
   const row = (list || []).find(item => item && item.id === id);
@@ -247,8 +281,15 @@ function productsPath() {
   params.set('include', FD_PRODUCT_IDS.join(','));
   params.set('per_page', '10');
   params.set('status', 'any');
-  params.set('_fields', 'id,name,price,tax_status,tax_class,status');
+  params.set('_fields', 'id,name,price,tax_status,tax_class,status,stock_status');
   return `/products?${params.toString()}`;
+}
+
+function notForSale(product) {
+  const status = String(product && product.status || '').trim().toLowerCase();
+  if (status !== 'publish') return true;
+  const stock = String(product && product.stock_status || '').trim().toLowerCase();
+  return stock === 'outofstock';
 }
 
 function catalogueFrom(products, ctx) {
@@ -262,7 +303,7 @@ function catalogueFrom(products, ctx) {
   for (const id of FD_PRODUCT_IDS) {
     const product = byId.get(id);
     const key = String(id);
-    if (!product || String(product.status || '').toLowerCase() === 'trash') {
+    if (!product || notForSale(product)) {
       out[key] = { available: false };
       continue;
     }
@@ -280,9 +321,10 @@ function catalogueFrom(products, ctx) {
 }
 
 async function fetchFromWoo() {
-  const products = await wcGet(productsPath());
+  const signal = AbortSignal.timeout(priceTimeoutMs());
+  const products = await wcGet(productsPath(), signal);
   if (!Array.isArray(products)) throw new Error('WooCommerce products response was not a list.');
-  const general = await wcGet('/settings/general');
+  const general = await wcGet('/settings/general', signal);
   if (!Array.isArray(general)) throw new Error('WooCommerce general settings response was not a list.');
 
   const ctx = {
@@ -297,13 +339,13 @@ async function fetchFromWoo() {
   ctx.roundingPrecision = Math.max(ctx.decimals + 2, ROUNDING_PRECISION_FLOOR);
 
   if (ctx.calcTaxes) {
-    const taxSettings = await wcGet('/settings/tax');
+    const taxSettings = await wcGet('/settings/tax', signal);
     if (!Array.isArray(taxSettings)) throw new Error('WooCommerce tax settings response was not a list.');
     ctx.pricesIncludeTax = requireYesNo(taxSettings, 'woocommerce_prices_include_tax') === 'yes';
     ctx.roundAtSubtotal = setting(taxSettings, 'woocommerce_tax_round_at_subtotal') === 'yes';
     ctx.base = baseLocation(general);
     if (!ctx.base.country) throw new Error('WooCommerce base country is missing.');
-    const rates = await wcGet('/taxes?per_page=100');
+    const rates = await wcGet('/taxes?per_page=100', signal);
     if (!Array.isArray(rates)) throw new Error('WooCommerce tax rates response was not a list.');
     ctx.rates = rates;
   }
@@ -314,18 +356,24 @@ async function fetchFromWoo() {
   };
 }
 
+function staleOrUnavailable(now) {
+  if (cache && now - cache.fetchedAt < STALE_MS) {
+    return { status: 200, body: cache.body };
+  }
+  return { status: 503, body: { error: 'prices_unavailable' } };
+}
+
 async function refresh(now) {
   try {
     const body = await fetchFromWoo();
     body.fetched_at = new Date(now).toISOString();
     cache = { body, fetchedAt: now };
+    backoffUntil = 0;
     return { status: 200, body };
   } catch (err) {
     console.error('[prices]', err && err.message ? err.message : err);
-    if (cache && now - cache.fetchedAt < STALE_MS) {
-      return { status: 200, body: cache.body };
-    }
-    return { status: 503, body: { error: 'prices_unavailable' } };
+    backoffUntil = now + priceBackoffMs();
+    return staleOrUnavailable(now);
   }
 }
 
@@ -333,6 +381,9 @@ function getPrices() {
   const now = nowFn();
   if (cache && now - cache.fetchedAt < TTL_MS) {
     return Promise.resolve({ status: 200, body: cache.body });
+  }
+  if (now < backoffUntil) {
+    return Promise.resolve(staleOrUnavailable(now));
   }
   if (!inflight) {
     const pending = refresh(now).finally(() => {
@@ -346,6 +397,7 @@ function getPrices() {
 function resetForTests() {
   cache = null;
   inflight = null;
+  backoffUntil = 0;
   nowFn = () => Date.now();
 }
 
@@ -357,6 +409,10 @@ module.exports = {
   FD_PRODUCT_IDS,
   TTL_MS,
   STALE_MS,
+  DEFAULT_TIMEOUT_MS,
+  DEFAULT_BACKOFF_MS,
+  priceTimeoutMs,
+  priceBackoffMs,
   getPrices,
   resetForTests,
   setNowForTests,

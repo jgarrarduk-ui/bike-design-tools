@@ -21,6 +21,7 @@ const CATALOGUE = {
 const ENV_KEYS = [
   'WC_URL', 'WC_CONSUMER_KEY', 'WC_CONSUMER_SECRET',
   'WC_PRODUCT_ID', 'WC_PRODUCT_IDS', 'WC_PRODUCT_PRICE', 'WC_API_VERSION',
+  'WC_PRICE_TIMEOUT_MS', 'WC_PRICE_BACKOFF_MS',
 ];
 
 async function withEnv(vars, fn) {
@@ -55,7 +56,8 @@ function product(id, price, extra = {}) {
     price,
     tax_status: 'taxable',
     tax_class: '',
-    status: 'draft',
+    status: 'publish',
+    stock_status: 'instock',
     ...extra,
   };
 }
@@ -147,6 +149,7 @@ describe('GET /api/prices', { concurrency: false }, () => {
       taxSettings: vatSettings(true),
       rates: GB_VAT,
       productFetches: 0,
+      hang: false,
     };
     calls = [];
     originalFetch = global.fetch;
@@ -155,11 +158,26 @@ describe('GET /api/prices', { concurrency: false }, () => {
       const method = opts.method || 'GET';
       calls.push({ href, method, body: opts.body || null });
       if (method !== 'GET' || opts.body) throw new Error(`Woo write ${method} ${href}`);
+      if (state.hang) {
+        if (href.includes('/products?')) state.productFetches += 1;
+        await new Promise((resolve, reject) => {
+          const signal = opts.signal;
+          if (!signal) {
+            reject(new Error('price fetch has no timeout'));
+            return;
+          }
+          const fail = () => reject(signal.reason || new Error('The operation was aborted'));
+          if (signal.aborted) fail();
+          else signal.addEventListener('abort', fail, { once: true });
+        });
+        return json({});
+      }
       if (state.fail) return json({ message: 'shop down' }, 500);
       if (href.includes('/products?')) {
         state.productFetches += 1;
         const parsed = new URL(href);
         assert.equal(parsed.searchParams.get('status'), 'any');
+        assert.equal(parsed.searchParams.get('_fields'), 'id,name,price,tax_status,tax_class,status,stock_status');
         assert.deepEqual(
           (parsed.searchParams.get('include') || '').split(',').sort(),
           ['8634', '8635', '8636'],
@@ -275,6 +293,7 @@ describe('GET /api/prices', { concurrency: false }, () => {
       assert.equal(cold.headers['cache-control'], 'no-store');
 
       state.fail = false;
+      now += prices.priceBackoffMs();
       const warm = await get(server, '/api/prices');
       assert.equal(warm.status, 200);
       now += prices.STALE_MS;
@@ -314,6 +333,129 @@ describe('GET /api/prices', { concurrency: false }, () => {
       assert.equal(a.body.fetched_at, b.body.fetched_at);
       assert.deepEqual(Object.keys(a.body.products).sort(), ['8634', '8635', '8636']);
       assert.equal(a.body.products['8637'], undefined);
+    });
+  });
+
+  test('a timeout serves a cached result under an hour old', async () => {
+    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '40' }, async () => {
+      const first = await get(server, '/api/prices');
+      assert.equal(first.status, 200);
+      assert.equal(prices.priceTimeoutMs(), 40);
+      now += prices.TTL_MS;
+      state.hang = true;
+      const stale = await get(server, '/api/prices');
+      assert.equal(stale.status, 200);
+      assert.equal(stale.headers['cache-control'], 'public, max-age=60');
+      assert.equal(stale.body.fetched_at, first.body.fetched_at);
+      assert.equal(stale.body.products['8634'].price, '50.00');
+      assert.equal(state.productFetches, 2);
+    });
+  });
+
+  test('a timeout with no cache returns 503', async () => {
+    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '40' }, async () => {
+      state.hang = true;
+      const cold = await get(server, '/api/prices');
+      assert.equal(cold.status, 503);
+      assert.deepEqual(cold.body, { error: 'prices_unavailable' });
+      assert.equal(cold.headers['cache-control'], 'no-store');
+      assert.equal(JSON.stringify(cold.body).includes('50'), false);
+      const during = state.productFetches;
+      const again = await get(server, '/api/prices');
+      assert.equal(again.status, 503);
+      assert.equal(state.productFetches, during);
+    });
+  });
+
+  test('a failed fetch does not call Woo during backoff, then refetches', async () => {
+    await withEnv(CATALOGUE, async () => {
+      assert.equal(prices.priceTimeoutMs(), prices.DEFAULT_TIMEOUT_MS);
+      assert.equal(prices.priceBackoffMs(), prices.DEFAULT_BACKOFF_MS);
+      const first = await get(server, '/api/prices');
+      assert.equal(first.status, 200);
+      now += prices.TTL_MS;
+      state.fail = true;
+      const failed = await get(server, '/api/prices');
+      assert.equal(failed.status, 200);
+      assert.equal(failed.body.products['8634'].price, '50.00');
+      const fetches = state.productFetches;
+      now += prices.priceBackoffMs() - 1;
+      const during = await get(server, '/api/prices');
+      assert.equal(during.status, 200);
+      assert.equal(during.body.fetched_at, first.body.fetched_at);
+      assert.equal(state.productFetches, fetches);
+      now += 1;
+      state.fail = false;
+      state.products = [
+        product(8634, '52.00'),
+        product(8635, '36.00'),
+        product(8636, '64.00'),
+      ];
+      const again = await get(server, '/api/prices');
+      assert.equal(state.productFetches, fetches + 1);
+      assert.equal(again.status, 200);
+      assert.equal(again.body.products['8634'].price, '52.00');
+      now += prices.TTL_MS;
+      state.fail = true;
+      await get(server, '/api/prices');
+      const afterSecondFail = state.productFetches;
+      now += 1000;
+      const held = await get(server, '/api/prices');
+      assert.equal(held.status, 200);
+      assert.equal(held.body.products['8634'].price, '52.00');
+      assert.equal(state.productFetches, afterSecondFail);
+    });
+  });
+
+  test('backoff is clamped to 30–60 seconds', async () => {
+    await withEnv({ ...CATALOGUE, WC_PRICE_BACKOFF_MS: '1000' }, async () => {
+      assert.equal(prices.priceBackoffMs(), 30000);
+    });
+    await withEnv({ ...CATALOGUE, WC_PRICE_BACKOFF_MS: '120000' }, async () => {
+      assert.equal(prices.priceBackoffMs(), 60000);
+    });
+    await withEnv({ ...CATALOGUE, WC_PRICE_BACKOFF_MS: 'not-a-number' }, async () => {
+      assert.equal(prices.priceBackoffMs(), 45000);
+    });
+  });
+
+  test('a draft or private product is unavailable and has no price', async () => {
+    state.products = [
+      product(8634, '50.00', { status: 'draft' }),
+      product(8635, '36.00', { status: 'private' }),
+      product(8636, '64.00'),
+    ];
+    await withEnv(CATALOGUE, async () => {
+      const res = await get(server, '/api/prices');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.products['8634'].available, false);
+      assert.equal('price' in res.body.products['8634'], false);
+      assert.equal(res.body.products['8635'].available, false);
+      assert.equal('price' in res.body.products['8635'], false);
+      assert.equal(res.body.products['8636'].price, '64.00');
+      assert.equal(res.body.products['8636'].available, true);
+      assert.equal(JSON.stringify(res.body).includes('50.00'), false);
+      assert.equal(JSON.stringify(res.body).includes('36.00'), false);
+    });
+  });
+
+  test('an out of stock product is unavailable and has no price', async () => {
+    state.products = [
+      product(8634, '50.00', { stock_status: 'outofstock' }),
+      product(8635, '36.00', { stock_status: 'instock' }),
+      product(8636, '64.00', { stock_status: 'outofstock' }),
+    ];
+    await withEnv(CATALOGUE, async () => {
+      const res = await get(server, '/api/prices');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.products['8634'].available, false);
+      assert.equal('price' in res.body.products['8634'], false);
+      assert.equal(res.body.products['8635'].price, '36.00');
+      assert.equal(res.body.products['8635'].available, true);
+      assert.equal(res.body.products['8636'].available, false);
+      assert.equal('price' in res.body.products['8636'], false);
+      assert.equal(JSON.stringify(res.body).includes('50.00'), false);
+      assert.equal(JSON.stringify(res.body).includes('64.00'), false);
     });
   });
 

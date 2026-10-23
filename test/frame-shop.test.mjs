@@ -88,11 +88,23 @@ test('checkout labels and totals come from the injected price map', () => {
   };
   assert.equal(FrameShop.partLabel(byId[8634], unavailable), 'BB yoke');
   assert.equal(/\d/.test(FrameShop.partLabel(byId[8634], unavailable)), false);
-  assert.equal(FrameShop.selectionLabel([8634, 8635], unavailable), 'Price shown at checkout');
-  assert.equal(/\d/.test(FrameShop.selectionLabel([8634, 8635], unavailable)), false);
-  assert.equal(FrameShop.selectionTotal([8634, 8635], unavailable), null);
+  const blocked = FrameShop.pickerRows([8634, 8635], { prices: unavailable }).find(row => row.id === 8634);
+  assert.equal(blocked.price, null);
+  assert.equal(blocked.disabled, true);
+  assert.equal(blocked.checked, false);
+  assert.equal(blocked.comingSoon, false);
+  assert.deepEqual(FrameShop.productIdsFromSelection([8634, 8635], unavailable), [8635]);
+  assert.equal(FrameShop.selectionLabel([8634], unavailable), 'Choose at least one design file.');
   assert.equal(FrameShop.selectionLabel([8635], unavailable), 'SS yoke £36.50');
-  assert.equal(FrameShop.pickerRows(null, { prices: unavailable }).find(row => row.id === 8634).price, null);
+  const dropouts = FrameShop.pickerRows(null, { prices: {
+    products: { '8636': { price: '64.00', available: false } },
+  }}).find(row => row.id === 8636);
+  assert.equal(dropouts.comingSoon, true);
+  assert.equal(dropouts.disabled, true);
+  assert.equal(dropouts.checked, false);
+  assert.equal(dropouts.price, null);
+  assert.equal(FrameShop.partLabel(byId[8636], unavailable), 'Dropouts');
+  assert.equal(/\d/.test(FrameShop.partLabel(byId[8636], unavailable)), false);
 
   assert.equal(FrameShop.partLabel(byId[8634], null), 'BB yoke');
   assert.equal(/\d/.test(FrameShop.partLabel(byId[8634], null)), false);

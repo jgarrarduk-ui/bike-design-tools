@@ -99,11 +99,17 @@ WooCommerce sets the line from `wc_get_price_excluding_tax()` on the product
 has no billing country. When catalogue prices include tax, or the product
 is not taxable, or taxes are off, that charge is the stored `price`. When
 prices exclude tax and the product is taxable, the charge is `price` plus
-base-rate tax. The result is cached in memory for five minutes. A
-WooCommerce error serves the last good result while it is under an hour
-old. After that, or with nothing cached, the route returns `503`
-`{ "error": "prices_unavailable" }` and does not invent a price. It does
-not write to WooCommerce. The success response sends
+base-rate tax. The result is cached in memory for five minutes. Each catalogue read
+aborts after `WC_PRICE_TIMEOUT_MS` (default 8000). A timeout is treated
+as any other WooCommerce error: the last good result is served while it
+is under an hour old, and otherwise the route returns `503`
+`{ "error": "prices_unavailable" }`. After a failed read, WooCommerce is
+not called again for `WC_PRICE_BACKOFF_MS` (default 45000, clamped to
+30–60 seconds). During that backoff the same stale-or-503 rule applies.
+A successful read clears the backoff. A product whose status is not
+`publish`, or whose `stock_status` is `outofstock`, is
+`available: false` with no `price`. The route does not invent a price. It does
+not write to WooCommerce.  The success response sends
 `Cache-Control: public, max-age=60`. CORS is the same policy as the other
 routes. In WordPress, add a webhook with topic Order updated and delivery URL
 `{BASE_URL}/api/webhooks/woocommerce/order-updated`. Set the webhook secret to

@@ -58,7 +58,7 @@ function authHeader() {
   return `Basic ${credentials}`;
 }
 
-async function wcFetch(path, method = 'GET', body = null) {
+async function wcFetch(path, method = 'GET', body = null, options = {}) {
   const opts = {
     method,
     headers: {
@@ -66,6 +66,7 @@ async function wcFetch(path, method = 'GET', body = null) {
       'Authorization': authHeader(),
     },
   };
+  if (options && options.signal) opts.signal = options.signal;
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(apiUrl(path), opts);
   const text = await res.text();
@@ -530,13 +531,13 @@ async function requestChange(method, payload) {
  * @param {string} path  Path under /wp-json/wc/v3, including a query string.
  * @returns {Promise<any>}
  */
-async function wcGet(path) {
+async function wcGet(path, signal) {
   if (!(env('WC_URL') && env('WC_CONSUMER_KEY') && env('WC_CONSUMER_SECRET'))) {
     const err = new Error('WooCommerce is not configured.');
     err.status = 503;
     throw err;
   }
-  return wcFetch(path, 'GET');
+  return wcFetch(path, 'GET', null, { signal });
 }
 
 module.exports = {
