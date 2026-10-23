@@ -310,9 +310,11 @@ send waits on that secret and DNS.
 `FRAME_DESIGNER_URL` overrides the edit link if the page is not on
 `/apps/frame-designer.html`. `FRONTEND_URL` must be the Frame Designer origin exactly, with no path,
 so the hydrate `GET` is not blocked by CORS. A longer host such as
-`https://creaturecycles.co.uk.evil.com` does not match. A refused origin
-gets no `Access-Control-Allow-Origin` header; the response itself is
-unchanged for non-browser clients, and a refused preflight is 403.
+`https://creaturecycles.co.uk.evil.com` does not match. A refused `GET`
+or `HEAD` gets no `Access-Control-Allow-Origin` header and the response
+itself is unchanged for non-browser clients. Any other method from a
+refused origin, including a preflight, is 403 with no
+`Access-Control-Allow-Origin` header.
 `http://localhost:3000`, `http://localhost:5173`, and `http://127.0.0.1:5173`
 are allowed only when `NODE_ENV` is `development` or `dev`.
 

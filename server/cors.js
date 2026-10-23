@@ -66,14 +66,14 @@ function createCorsMiddleware(allowlist) {
 
   return function corsGate(req, res, next) {
     if (originAllowed(req.headers.origin, allowed)) return reflect(req, res, next);
-    if (String(req.method || '').toUpperCase() === 'OPTIONS') {
-      res.status(403).json({ error: 'origin_not_allowed' });
-      return;
-    }
-    // Quiet deny: the browser blocks the read because there is no
-    // Access-Control-Allow-Origin. curl and other non-browser clients
-    // still receive the normal response.
-    next();
+    const method = String(req.method || '').toUpperCase();
+    // Quiet deny for reads: the browser blocks the response because there
+    // is no Access-Control-Allow-Origin. curl and other non-browser
+    // clients still receive the normal response.
+    if (method === 'GET' || method === 'HEAD') return next();
+    // Writes and preflight from a refused origin stop here. No
+    // Access-Control-Allow-Origin header is set.
+    res.status(403).json({ error: 'origin_not_allowed' });
   };
 }
 

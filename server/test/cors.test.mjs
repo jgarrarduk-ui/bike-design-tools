@@ -59,6 +59,12 @@ function appFor(allowlist) {
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
+  app.post('/api/health', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
+  app.put('/api/health', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
   app.use((err, _req, res, _next) => {
     res.status(500).json({ error: 'Internal server error.' });
   });
@@ -107,12 +113,16 @@ describe('CORS origins', () => {
     assert.equal(res.body.status, 'ok');
   });
 
-  test('a refused origin continues with no allow-origin header', async () => {
+  test('a refused GET or HEAD continues with no allow-origin header', async () => {
     const res = await request(server, { headers: { origin: EVIL } });
     assert.equal(res.status, 200);
     assert.equal(res.headers['access-control-allow-origin'], undefined);
     assert.equal(res.body.status, 'ok');
     assert.equal(JSON.stringify(res.body).includes(EVIL), false);
+
+    const head = await request(server, { method: 'HEAD', headers: { origin: EVIL } });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers['access-control-allow-origin'], undefined);
 
     const www = await request(server, { headers: { origin: OTHER } });
     assert.equal(www.status, 200);
@@ -123,11 +133,38 @@ describe('CORS origins', () => {
     assert.equal(sandboxed.headers['access-control-allow-origin'], undefined);
   });
 
+  test('a refused non-GET request is 403 with no allow-origin header', async () => {
+    for (const method of ['POST', 'PUT']) {
+      const res = await request(server, { method, headers: { origin: EVIL } });
+      assert.equal(res.status, 403);
+      assert.equal(res.headers['access-control-allow-origin'], undefined);
+      assert.deepEqual(res.body, { error: 'origin_not_allowed' });
+      assert.equal(JSON.stringify(res.body).includes(EVIL), false);
+    }
+
+    const www = await request(server, { method: 'POST', headers: { origin: OTHER } });
+    assert.equal(www.status, 403);
+    assert.equal(www.headers['access-control-allow-origin'], undefined);
+    assert.deepEqual(www.body, { error: 'origin_not_allowed' });
+  });
+
+  test('an allowed non-GET request is unchanged', async () => {
+    const res = await request(server, { method: 'POST', headers: { origin: SHOP } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers['access-control-allow-origin'], SHOP);
+    assert.equal(res.body.status, 'ok');
+  });
+
   test('a request with no origin is allowed', async () => {
     const res = await request(server);
     assert.equal(res.status, 200);
     assert.equal(res.headers['access-control-allow-origin'], undefined);
     assert.equal(res.body.status, 'ok');
+
+    const post = await request(server, { method: 'POST' });
+    assert.equal(post.status, 200);
+    assert.equal(post.headers['access-control-allow-origin'], undefined);
+    assert.equal(post.body.status, 'ok');
   });
 
   test('an allowed preflight reflects the origin', async () => {
