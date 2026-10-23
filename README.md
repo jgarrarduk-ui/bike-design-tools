@@ -335,11 +335,14 @@ send waits on that secret and DNS.
 `FRAME_DESIGNER_URL` overrides the edit link if the page is not on
 `/apps/frame-designer.html`. `FRONTEND_URL` must be the Frame Designer origin exactly, with no path,
 so the hydrate `GET` and `GET /api/prices` are not blocked by CORS. A longer host such as
-`https://creaturecycles.co.uk.evil.com` does not match. A refused `GET`
-or `HEAD` gets no `Access-Control-Allow-Origin` header and the response
-itself is unchanged for non-browser clients. Any other method from a
-refused origin, including a preflight, is 403 with no
-`Access-Control-Allow-Origin` header.
+`https://creaturecycles.co.uk.evil.com` does not match, and scheme and host
+are compared case-insensitively. A request whose Origin is this API — `BASE_URL`,
+or the Host header with the connection protocol — is served with no
+`Access-Control-Allow-Origin` header. That is the `/admin` Send Review Email
+post. A refused `GET` or `HEAD` gets no `Access-Control-Allow-Origin` header
+and the response itself is unchanged for non-browser clients. Any other
+method from a refused origin, including a preflight, is 403 with no
+`Access-Control-Allow-Origin` header. Every response varies on `Origin`.
 `http://localhost:3000`, `http://localhost:5173`, and `http://127.0.0.1:5173`
 are allowed only when `NODE_ENV` is `development` or `dev`.
 
