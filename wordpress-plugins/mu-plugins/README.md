@@ -2,13 +2,13 @@
 
 Must-use WordPress plugin for Creature Cycles. When a cart or order contains all three of these products, and those lines share the same `design_id`, WooCommerce adds one fee:
 
-| Product | ID | Catalogue price |
-| --- | --- | --- |
-| BB yoke | 8634 | £48 |
-| SS yoke | 8635 | £48 |
-| Dropouts | 8636 | £64 |
+| Product | ID |
+| --- | --- |
+| BB yoke | 8634 |
+| SS yoke | 8635 |
+| Dropouts | 8636 |
 
-The fee is labelled **Whole rear end discount** and is **−£24** per complete set, so those three lines total **£136** instead of £160. Quantity above 1 uses the smallest quantity of the three parts that share that `design_id` (two of each is −£48). A missing part, or three parts whose `design_id` values differ, leaves the total unchanged.
+The fee is labelled **Whole rear end discount** and is **−£24** per complete set. Quantity above 1 uses the smallest quantity of the three parts that share that `design_id` (two of each is −£48). A missing part, or three parts whose `design_id` values differ, leaves the total unchanged. Catalogue prices are set in WooCommerce, not in this file.
 
 Leave draft product 8637 unpublished. This plugin never creates or edits products.
 
@@ -96,7 +96,7 @@ php wordpress-plugins/mu-plugins/tests/creature-fd-order-experience-test.php
 Use a pending order, then cancel it. Do not take payment.
 
 1. Create a pending order with line items for products **8634**, **8635**, and **8636**. Set line-item meta `design_id` to the same value on each of those three lines. The frame-design checkout already does this: tools-api creates the order over the WooCommerce REST API, and the customer pays on the order-pay link.
-2. Open the order-pay URL while the order is still pending. The totals table shows **Whole rear end discount −£24**. At the catalogue prices above, the order total is **£136**.
+2. Open the order-pay URL while the order is still pending. The totals table shows **Whole rear end discount −£24**.
 3. In the cart, the same three products with the same `design_id` show that fee. Give the lines different `design_id` values, or remove one product, and the fee drops off. Quantity 2 of each part shows **−£48**.
 4. Open order-pay again (or recalculate the order). The fee stays a single line. It does not add a second −£24.
 5. In **WooCommerce → Orders**, set the test order to **Cancelled**.

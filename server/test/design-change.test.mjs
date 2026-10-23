@@ -317,4 +317,21 @@ describe('paid design changes', { concurrency: false }, () => {
     assert.equal(other.raw.includes('ada@example.com'), false);
     assert.equal(JSON.parse(db.prepare('SELECT params FROM designs WHERE id = ?').get(DESIGN).params).reach, 460);
   });
+
+  test('a revision keeps every paid part and does not ask Woo if it is still for sale', async () => {
+    calls = [];
+    const saved = await request(server, 'POST', `/api/designs/${DESIGN}/revision`, {
+      change: TOKEN,
+      params: { ...NEXT, reach: 471 },
+      productIds: [8634, 8635],
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.ok, true);
+    assert.deepEqual(saved.body.productIds, [8634, 8635]);
+    assert.equal(calls.some((call) => call.href.includes('/products')), false);
+    assert.equal(calls.some((call) => /stock_status/.test(call.href)), false);
+    const shopWrites = calls.filter((call) => call.href.includes('/wp-json/creature-fd/v1/change') && call.method === 'POST');
+    assert.equal(shopWrites.length, 1);
+    assert.deepEqual(shopWrites[0].body.productIds, [8634, 8635]);
+  });
 });
