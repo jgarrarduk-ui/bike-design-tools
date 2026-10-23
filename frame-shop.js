@@ -128,10 +128,9 @@
     for (const part of orderableParts()) {
       const raw = source[part.id] != null ? source[part.id] : source[String(part.id)];
       if (!raw || typeof raw !== 'object') continue;
-      if (raw.available === false) {
-        blocked.add(part.id);
-        continue;
-      }
+      // Off sale still keeps a price when one was sent, so an amend of
+      // parts already paid for can total them. A new purchase ignores it.
+      if (raw.available === false) blocked.add(part.id);
       if (raw.price == null || raw.price === '') continue;
       const price = Number(raw.price);
       if (!Number.isFinite(price) || price < 0) continue;
@@ -197,7 +196,7 @@
   function selectionLabel(selectedIds, priceMap, options) {
     const ids = productIdsFromSelection(selectedIds, priceMap, options);
     if (!ids.length) return 'Choose at least one design file.';
-    const total = selectionTotal(ids, priceMap);
+    const total = selectionTotal(ids, priceMap, options);
     if (total == null) return 'Price shown at checkout';
     if (ids.length === 1) return partLabel(PARTS.find(part => part.id === ids[0]), priceMap);
     return 'Selected design files ' + formatGbp(total);

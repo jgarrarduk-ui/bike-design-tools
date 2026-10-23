@@ -521,6 +521,19 @@ test('amend mode locks the paid parts and saves geometry without checkout', asyn
     });
     assert.equal(kept.action, 'post');
     assert.deepEqual(kept.productIds, [8634, 8635]);
+    const paidOffSale = {
+      currency: 'GBP',
+      products: {
+        '8634': { price: '50.00', available: false },
+        '8635': { price: '36.00', available: true },
+      },
+    };
+    assert.equal(
+      FrameShop.selectionLabel([8634, 8635], paidOffSale, { keepBlocked: true }),
+      'Selected design files £86',
+    );
+    assert.equal(FrameShop.selectionTotal([8634, 8635], paidOffSale, { keepBlocked: true }), 86);
+    assert.equal(FrameShop.selectionLabel([8634, 8635], paidOffSale), 'SS yoke £36');
     assert.notEqual(kept.message, 'Those parts can\'t be changed on this order.');
     const dropped = FrameShop.revisionPlan({
       lockedIds: [8634, 8635],
