@@ -1,16 +1,26 @@
 #!/usr/bin/env node
-// PreToolUse hook for Bash. Blocks two things the permission rules miss:
-//   - git push, including flags before the subcommand (git -C … push)
-//     and an absolute binary (/usr/bin/git push)
-//   - a shell command that names a .env file other than .env.example
-// Exit 0 leaves the normal permission prompt in place. Exit 2 blocks.
-// A JSON parse failure exits 0 so a broken hook does not stop the session.
-// This does not approve any command.
+// Guard rail, not a security boundary. It catches common spellings only.
+// Deny rules in .claude/settings.json are the other layer and have the
+// same limit. Globs (cat server/.e*), quote-splitting (cat server/.e''nv),
+// and a program that opens the file itself (dotenv) are not covered.
+//
+// Blocks:
+//   - git push, including flags (git -C … push), an absolute binary
+//     (/usr/bin/git push), and the same command after env, exec, eval,
+//     npx, or npm exec
+//   - a command that names .env or .env.<suffix>, other than .env.example.
+//     .envrc, .env_backup and .env-old are not secret files.
+//
+// Runs as `node` on PATH. If node is missing, Claude Code treats any exit
+// other than 2 as fail-open and the normal permission prompt still applies.
+// Exit 0 does not approve the command. Unparseable input exits 0.
+// Checks: node .claude/hooks/block-secrets.test.mjs
 
 import fs from 'node:fs';
 
 const WRAPPERS = new Set([
   'timeout', 'time', 'nice', 'nohup', 'stdbuf', 'command', 'builtin', 'xargs', 'sudo',
+  'env', 'exec', 'eval', 'npx', 'npm',
 ]);
 
 function wordsOf(command) {
@@ -39,7 +49,9 @@ function namesSecretEnv(token) {
 }
 
 function chunkNamesSecretEnv(chunk) {
-  const re = /(?:^|[\s'"`(=])((?:[A-Za-z0-9._~-]+[/\\])*?\.env(?:\.[A-Za-z0-9_-]+)*)/g;
+  // Boundary after ".env" so .envrc / .env_backup / .env-old are not .env.
+  // .env.example and .env.local still match; namesSecretEnv allows the example.
+  const re = /(?:^|[\s'"`(=])((?:[A-Za-z0-9._~-]+[/\\])*?\.env(?![A-Za-z0-9_-])(?:\.[A-Za-z0-9_-]+)*)/g;
   let match;
   while ((match = re.exec(chunk))) {
     if (namesSecretEnv(match[1])) return true;
@@ -59,18 +71,43 @@ function skipFlags(words, index) {
   return i;
 }
 
-function skipWrappers(words) {
-  let i = 0;
-  while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i])) i += 1;
-  while (i < words.length && WRAPPERS.has(baseName(words[i]))) {
-    const wrapped = baseName(words[i]);
-    i += 1;
-    if (wrapped === 'timeout' && /^\d/.test(words[i] || '')) i += 1;
-    if (wrapped === 'sudo') {
-      while (i < words.length && words[i].startsWith('-')) i += 1;
+function isAssignment(token) {
+  return /^[A-Za-z_][A-Za-z0-9_]*=/.test(token);
+}
+
+function skipWrapperFlags(words, index, wrapped) {
+  let i = index;
+  if (wrapped === 'timeout') {
+    while (i < words.length && words[i].startsWith('-')) i += 1;
+    if (/^\d/.test(words[i] || '')) i += 1;
+    return i;
+  }
+  if (wrapped === 'sudo' || wrapped === 'exec' || wrapped === 'env' || wrapped === 'npx' || wrapped === 'npm') {
+    while (i < words.length && (words[i].startsWith('-') || (wrapped === 'env' && isAssignment(words[i])))) {
+      const flag = words[i];
+      if (isAssignment(flag)) {
+        i += 1;
+        continue;
+      }
+      i += 1;
+      const takesValue = flag === '-u' || flag === '--unset' || flag === '-a'
+        || flag === '--package' || flag === '-p' || flag === '--call'
+        || flag === '--prefix' || flag === '-C' || flag === '-g' || flag === '--group';
+      if (takesValue && i < words.length && !words[i].startsWith('-') && !isAssignment(words[i])) i += 1;
     }
   }
   return i;
+}
+
+function skipWrappers(words) {
+  let i = 0;
+  for (;;) {
+    while (i < words.length && isAssignment(words[i])) i += 1;
+    if (i >= words.length || !WRAPPERS.has(baseName(words[i]))) return i;
+    const wrapped = baseName(words[i]);
+    i += 1;
+    i = skipWrapperFlags(words, i, wrapped);
+  }
 }
 
 function gitSubcommand(words) {
