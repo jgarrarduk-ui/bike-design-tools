@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm test *)",
+      "Bash(node --test test/*.test.mjs)",
+      "Bash(node --test server/test/*.test.mjs)",
+      "Bash(node test/frame-shop.test.mjs)",
+      "Bash(node test/notch-tests.mjs)",
+      "Bash(node suspension-designer/test/flexstay-tests.mjs)",
+      "Bash(node flexstay-tests.mjs)",
+      "Bash(node .claude/hooks/block-secrets.test.mjs)",
+      "Bash(php wordpress-plugins/mu-plugins/tests/*)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(!.env.example)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(!.env.example)",
+      "Bash(git push)",
+      "Bash(git push *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/block-secrets.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}

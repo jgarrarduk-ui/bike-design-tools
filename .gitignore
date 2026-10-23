@@ -1,0 +1,4 @@
+# Secret env files anywhere in the tree. .env.example stays tracked.
+.env
+.env.*
+!.env.example
