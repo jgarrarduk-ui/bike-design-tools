@@ -59,6 +59,18 @@ function appFor(allowlist) {
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
+  app.post('/api/health', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
+  app.put('/api/health', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
+  app.delete('/api/health', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
+  app.post('/api/admin/orders/:id/send-review', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
   app.use((err, _req, res, _next) => {
     res.status(500).json({ error: 'Internal server error.' });
   });
@@ -68,15 +80,24 @@ function appFor(allowlist) {
 describe('CORS origins', () => {
   /** @type {http.Server} */
   let server;
+  let savedBaseUrl;
   const production = configuredOrigins({ frontendUrl: `${SHOP}/`, nodeEnv: 'production' });
 
   before(async () => {
+    savedBaseUrl = process.env.BASE_URL;
+    delete process.env.BASE_URL;
     server = await listen(appFor(production));
   });
 
   after(async () => {
+    if (savedBaseUrl === undefined) delete process.env.BASE_URL;
+    else process.env.BASE_URL = savedBaseUrl;
     if (server) await close(server);
   });
+
+  function ownOrigin(target = server) {
+    return `http://127.0.0.1:${target.address().port}`;
+  }
 
   test('the app allowlist is matched exactly and localhost is dev-only', () => {
     const index = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
@@ -98,21 +119,39 @@ describe('CORS origins', () => {
     }
     assert.deepEqual(configuredOrigins({ frontendUrl: SHOP, nodeEnv: '' }), [SHOP]);
     assert.deepEqual(configuredOrigins({ frontendUrl: SHOP, nodeEnv: 'production' }), [SHOP]);
+    assert.deepEqual(
+      configuredOrigins({ frontendUrl: 'HTTPS://CreatureCycles.co.uk/', nodeEnv: 'production' }),
+      [SHOP],
+    );
+    assert.equal(originAllowed('HTTPS://CreatureCycles.co.uk', production), true);
+
+    const indexHtml = fs.readFileSync(new URL('../public/admin.html', import.meta.url), 'utf8');
+    assert.match(index, /app\.get\('\/admin'/);
+    assert.match(index, /public',\s*'admin\.html'/);
+    assert.match(indexHtml, /Send Review Email/);
+    assert.match(indexHtml, /\/api\/admin\/orders\/\$\{currentDesignId\}\/send-review/);
+    assert.match(indexHtml, /method:\s*'POST'/);
   });
 
   test('an allowlisted origin is reflected exactly', async () => {
     const res = await request(server, { headers: { origin: SHOP } });
     assert.equal(res.status, 200);
     assert.equal(res.headers['access-control-allow-origin'], SHOP);
+    assert.equal(res.headers.vary, 'Origin');
     assert.equal(res.body.status, 'ok');
   });
 
-  test('a refused origin continues with no allow-origin header', async () => {
+  test('a refused GET or HEAD continues with no allow-origin header', async () => {
     const res = await request(server, { headers: { origin: EVIL } });
     assert.equal(res.status, 200);
     assert.equal(res.headers['access-control-allow-origin'], undefined);
+    assert.equal(res.headers.vary, 'Origin');
     assert.equal(res.body.status, 'ok');
     assert.equal(JSON.stringify(res.body).includes(EVIL), false);
+
+    const head = await request(server, { method: 'HEAD', headers: { origin: EVIL } });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers['access-control-allow-origin'], undefined);
 
     const www = await request(server, { headers: { origin: OTHER } });
     assert.equal(www.status, 200);
@@ -123,11 +162,46 @@ describe('CORS origins', () => {
     assert.equal(sandboxed.headers['access-control-allow-origin'], undefined);
   });
 
+  test('a refused non-GET request is 403 with no allow-origin header', async () => {
+    for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
+      const res = await request(server, { method, headers: { origin: EVIL } });
+      assert.equal(res.status, 403);
+      assert.equal(res.headers['access-control-allow-origin'], undefined);
+      assert.equal(res.headers.vary, 'Origin');
+      assert.deepEqual(res.body, { error: 'origin_not_allowed' });
+      assert.equal(JSON.stringify(res.body).includes(EVIL), false);
+    }
+
+    const www = await request(server, { method: 'POST', headers: { origin: OTHER } });
+    assert.equal(www.status, 403);
+    assert.equal(www.headers['access-control-allow-origin'], undefined);
+    assert.deepEqual(www.body, { error: 'origin_not_allowed' });
+
+    const sandboxed = await request(server, { method: 'POST', headers: { origin: 'null' } });
+    assert.equal(sandboxed.status, 403);
+    assert.equal(sandboxed.headers['access-control-allow-origin'], undefined);
+    assert.deepEqual(sandboxed.body, { error: 'origin_not_allowed' });
+  });
+
+  test('an allowed non-GET request is unchanged', async () => {
+    const res = await request(server, { method: 'POST', headers: { origin: SHOP } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers['access-control-allow-origin'], SHOP);
+    assert.equal(res.body.status, 'ok');
+  });
+
   test('a request with no origin is allowed', async () => {
     const res = await request(server);
     assert.equal(res.status, 200);
     assert.equal(res.headers['access-control-allow-origin'], undefined);
+    assert.equal(res.headers.vary, 'Origin');
     assert.equal(res.body.status, 'ok');
+
+    const post = await request(server, { method: 'POST' });
+    assert.equal(post.status, 200);
+    assert.equal(post.headers['access-control-allow-origin'], undefined);
+    assert.equal(post.headers.vary, 'Origin');
+    assert.equal(post.body.status, 'ok');
   });
 
   test('an allowed preflight reflects the origin', async () => {
@@ -199,6 +273,113 @@ describe('CORS origins', () => {
       assert.equal(prefix.headers['access-control-allow-origin'], undefined);
     } finally {
       await close(devServer);
+    }
+  });
+
+  test('a Host-derived origin that is not BASE_URL is refused', async () => {
+    const origin = ownOrigin();
+    const host = `127.0.0.1:${server.address().port}`;
+    const path = '/api/admin/orders/design-1/send-review';
+
+    const unset = await request(server, {
+      method: 'POST',
+      path,
+      headers: { origin, host },
+    });
+    assert.equal(unset.status, 403);
+    assert.equal(unset.headers['access-control-allow-origin'], undefined);
+    assert.deepEqual(unset.body, { error: 'origin_not_allowed' });
+
+    process.env.BASE_URL = 'https://api.creaturecycles.co.uk';
+    try {
+      const res = await request(server, {
+        method: 'POST',
+        path,
+        headers: { origin, host, 'x-forwarded-proto': 'https' },
+      });
+      assert.equal(res.status, 403);
+      assert.equal(res.headers['access-control-allow-origin'], undefined);
+      assert.deepEqual(res.body, { error: 'origin_not_allowed' });
+    } finally {
+      delete process.env.BASE_URL;
+    }
+  });
+
+  test('an Origin from another host is 403 while Host is the API', async () => {
+    const res = await request(server, {
+      method: 'POST',
+      path: '/api/admin/orders/design-1/send-review',
+      headers: {
+        origin: 'https://not-the-api.example',
+        host: `127.0.0.1:${server.address().port}`,
+      },
+    });
+    assert.equal(res.status, 403);
+    assert.equal(res.headers['access-control-allow-origin'], undefined);
+    assert.deepEqual(res.body, { error: 'origin_not_allowed' });
+  });
+
+  test('BASE_URL matches the public API origin when the connection is http', async () => {
+    process.env.BASE_URL = 'HTTPS://Api.Creaturecycles.co.uk/';
+    try {
+      const res = await request(server, {
+        method: 'POST',
+        path: '/api/admin/orders/design-1/send-review',
+        headers: {
+          origin: 'https://api.creaturecycles.co.uk',
+          host: `127.0.0.1:${server.address().port}`,
+        },
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.headers['access-control-allow-origin'], undefined);
+      assert.equal(res.body.status, 'ok');
+
+      const spoof = await request(server, {
+        method: 'POST',
+        path: '/api/admin/orders/design-1/send-review',
+        headers: {
+          origin: EVIL,
+          host: `127.0.0.1:${server.address().port}`,
+        },
+      });
+      assert.equal(spoof.status, 403);
+      assert.equal(spoof.headers['access-control-allow-origin'], undefined);
+    } finally {
+      delete process.env.BASE_URL;
+    }
+  });
+
+  test('an allowlisted origin is reflected when it equals BASE_URL', async () => {
+    process.env.BASE_URL = 'HTTPS://CreatureCycles.co.uk/';
+    try {
+      const res = await request(server, {
+        method: 'POST',
+        headers: { origin: 'HTTPS://CreatureCycles.co.uk' },
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.headers['access-control-allow-origin'], SHOP);
+      assert.equal(res.body.status, 'ok');
+
+      const get = await request(server, { headers: { origin: SHOP } });
+      assert.equal(get.status, 200);
+      assert.equal(get.headers['access-control-allow-origin'], SHOP);
+    } finally {
+      delete process.env.BASE_URL;
+    }
+  });
+
+  test('a mixed-case allowlist entry matches the browser origin', async () => {
+    const mixed = await listen(appFor(['HTTPS://CreatureCycles.co.uk/']));
+    try {
+      const res = await request(mixed, {
+        method: 'POST',
+        headers: { origin: 'HTTPS://CreatureCycles.co.uk' },
+      });
+      assert.equal(res.status, 200);
+      assert.equal(res.headers['access-control-allow-origin'], SHOP);
+      assert.equal(res.body.status, 'ok');
+    } finally {
+      await close(mixed);
     }
   });
 });
