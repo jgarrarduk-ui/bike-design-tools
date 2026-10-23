@@ -3,8 +3,8 @@
 require('dotenv').config();
 
 const express = require('express');
-const cors    = require('cors');
 const path    = require('path');
+const { configuredOrigins, createCorsMiddleware } = require('./cors');
 
 const designsRouter   = require('./routes/designs');
 const webhooksRouter  = require('./routes/webhooks');
@@ -19,23 +19,10 @@ const app  = express();
 const PORT = process.env.PORT || 3001;
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-].filter(Boolean);
-
-app.use(cors({
-  origin: (origin, cb) => {
-    // Allow requests with no origin (same-origin, curl, Postman)
-    if (!origin) return cb(null, true);
-    if (allowedOrigins.some(o => origin.startsWith(o))) return cb(null, true);
-    cb(new Error(`CORS: origin ${origin} not allowed`));
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-WC-Webhook-Signature', 'Authorization'],
-}));
+// Exact origin match. A prefix such as https://creaturecycles.co.uk.evil.com
+// is refused without a 500. Localhost is included only in development.
+const allowedOrigins = configuredOrigins();
+app.use(createCorsMiddleware(allowedOrigins));
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 // Webhooks route uses express.raw() inline (to preserve raw body for HMAC)
