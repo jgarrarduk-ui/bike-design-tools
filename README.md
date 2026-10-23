@@ -107,9 +107,9 @@ is under an hour old, and otherwise the route returns `503`
 not called again for `WC_PRICE_BACKOFF_MS` (default 45000, clamped to
 30–60 seconds). During that backoff the same stale-or-503 rule applies.
 A successful read clears the backoff. A product whose status is not
-`publish`, or whose `stock_status` is `outofstock`, is
-`available: false` with no `price`. The route does not invent a price. It does
-not write to WooCommerce.  The success response sends
+`publish`, or whose `stock_status` is `outofstock`, is `available: false`
+with no `price`. The route does not invent a price and does not write to
+WooCommerce. The success response sends
 `Cache-Control: public, max-age=60`. CORS is the same policy as the other
 routes. In WordPress, add a webhook with topic Order updated and delivery URL
 `{BASE_URL}/api/webhooks/woocommerce/order-updated`. Set the webhook secret to
