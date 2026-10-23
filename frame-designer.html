@@ -1601,26 +1601,23 @@
     </div>
     <div>
       <p style="margin-bottom:6px">design files</p>
-      <!-- Fallback ticks if frame-shop.js has not filled the list yet. JS replaces these. -->
+      <!-- Fallback ticks if frame-shop.js has not filled the list yet. JS replaces these. Prices are not in the markup. -->
       <div id="shop-parts">
         <label class="shop-part">
           <input type="checkbox" data-product-id="8634" checked>
           <span class="shop-part-name">BB yoke</span>
-          <span class="shop-price">£58</span>
         </label>
         <label class="shop-part">
           <input type="checkbox" data-product-id="8635" checked>
           <span class="shop-part-name">SS yoke</span>
-          <span class="shop-price">£42</span>
         </label>
         <label class="shop-part is-unavailable">
           <input type="checkbox" data-product-id="8636" disabled aria-disabled="true">
           <span class="shop-part-name">Dropouts<span class="shop-soon">Coming soon</span></span>
-          <span class="shop-price">£64</span>
         </label>
       </div>
       <p id="shop-parts-lock" hidden>These parts are the ones you paid for, so they stay as they are. You can still change the geometry.</p>
-      <p id="shop-total">Selected design files £100</p>
+      <p id="shop-total">Price shown at checkout</p>
       <p id="shop-save-hint" hidden></p>
       <p id="shop-print-note">Printed 316L is enquire only. Checkout is for these design files.</p>
     </div>
@@ -1662,7 +1659,7 @@ viewBox="0 0 42000 7000"
 </script>
 <script src="config.js"></script>
 <!-- /apps/frame-shop.js is cached for a year. Bump ?v= when that file changes. -->
-<script src="frame-shop.js?v=20261009"></script>
+<script src="frame-shop.js?v=20261023b"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -4604,12 +4601,14 @@ function renderShopParts(){
       soon.textContent = 'Coming soon';
       text.appendChild(soon);
     }
-    const price = document.createElement('span');
-    price.className = 'shop-price';
-    price.textContent = FrameShop.formatGbp(row.price);
     label.appendChild(input);
     label.appendChild(text);
-    label.appendChild(price);
+    if(row.price != null && !comingSoon){
+      const price = document.createElement('span');
+      price.className = 'shop-price';
+      price.textContent = FrameShop.formatGbp(row.price);
+      label.appendChild(price);
+    }
     root.appendChild(label);
   });
   refreshShopTotal();
@@ -4628,18 +4627,30 @@ function onShopPartChange(){
   refreshShopTotal();
 }
 
+function shopIdOptions(){
+  // Amend keeps parts already paid for, even if they later go off sale.
+  return shopAmend ? { keepBlocked: true } : undefined;
+}
+
 function selectedShopProductIds(){
   const checked = [...document.querySelectorAll('#shop-parts input:checked')]
     .map(el=>Number(el.dataset.productId));
-  return FrameShop.productIdsFromSelection(checked);
+  return FrameShop.productIdsFromSelection(checked, undefined, shopIdOptions());
 }
 
 function setShopChecks(ids){
-  const selected = new Set(FrameShop.productIdsFromSelection(ids || []));
+  const selected = new Set(FrameShop.productIdsFromSelection(ids || [], undefined, shopIdOptions()));
   document.querySelectorAll('#shop-parts input').forEach(el=>{
     el.checked = selected.has(Number(el.dataset.productId));
   });
   refreshShopTotal();
+}
+
+function loadShopPrices(){
+  if(!window.FrameShop || typeof FrameShop.fetchPrices !== 'function') return;
+  FrameShop.fetchPrices(toolsApiBase()).then(data=>{
+    if(data) renderShopParts();
+  }).catch(()=>{});
 }
 
 function refreshShopTotal(){
@@ -4647,7 +4658,7 @@ function refreshShopTotal(){
   const save = document.getElementById('shop-save-hint');
   if(!el || !window.FrameShop) return;
   const ids = selectedShopProductIds();
-  el.textContent = FrameShop.selectionLabel(ids);
+  el.textContent = FrameShop.selectionLabel(ids, undefined, shopIdOptions());
   if(!save) return;
   const saving = FrameShop.selectionSaving(ids);
   save.textContent = saving;
@@ -5162,6 +5173,7 @@ params.stack = calcStackFromAtc(params);
 try { buildPanel(); } catch(e){ console.error('buildPanel failed:',e); }
 try { buildPresetPanel(); } catch(e){ console.error('buildPresetPanel failed:',e); }
 try { restoreShopSession(); } catch(e){ console.error('restoreShopSession failed:',e); }
+try { loadShopPrices(); } catch(e){ console.error('loadShopPrices failed:',e); }
 
 // Populate view panel preset selects
 (function buildViewPanelPresets(){

@@ -26,15 +26,18 @@
     if (el) el.textContent = designFileDeliverySentence();
   }
 
-  // Design-file list prices locked 7 Oct 2026.
-  // Dropouts stay on the picker but are not sold. The full-set total is hidden
-  // until every part is buyable. Printed 316L is enquire only, not a product.
-  const TRIO_PRICE = 128;
+  // Dropouts stay on the picker but are not sold, and are never priced here.
+  // Live amounts come from GET /api/prices. Nothing in this file is a price
+  // the page may show before that response arrives. Printed 316L is enquire
+  // only, not a product. Checkout still sends product ids, not prices.
   const PARTS = [
-    { id: 8634, name: 'BB yoke', price: 58 },
-    { id: 8635, name: 'SS yoke', price: 42 },
-    { id: 8636, name: 'Dropouts', price: 64, unavailable: true },
+    { id: 8634, name: 'BB yoke' },
+    { id: 8635, name: 'SS yoke' },
+    { id: 8636, name: 'Dropouts', unavailable: true },
   ];
+
+  // null until a live catalogue is applied. Never a hard-coded price list.
+  let currentCatalog = null;
 
   function orderableParts() {
     return PARTS.filter(part => !part.unavailable);
@@ -52,16 +55,26 @@
 
   function pickerRows(selectedIds, options) {
     const lockParts = !!(options && options.lockParts);
-    const chosen = selectedIds == null ? defaultProductIds() : productIdsFromSelection(selectedIds);
+    const priceOverride = options && Object.prototype.hasOwnProperty.call(options, 'prices')
+      ? options.prices
+      : undefined;
+    const catalog = resolveCatalog(priceOverride);
+    // A paid amend keeps the parts already on the order. Availability gates
+    // a new purchase only, so a later draft or out-of-stock status does not
+    // untick them.
+    const chosen = selectedIds == null
+      ? defaultProductIds()
+      : (lockParts ? knownIds(selectedIds) : productIdsFromSelection(selectedIds, priceOverride));
     const selected = new Set(chosen);
     return PARTS.map(part => {
       const comingSoon = !!part.unavailable;
+      const blocked = !comingSoon && !lockParts && isBlocked(part.id, catalog);
       return {
         id: part.id,
         name: part.name,
-        price: part.price,
-        checked: !comingSoon && selected.has(part.id),
-        disabled: comingSoon || lockParts,
+        price: comingSoon || blocked ? null : amountFor(part.id, catalog),
+        checked: !comingSoon && !blocked && selected.has(part.id),
+        disabled: comingSoon || blocked || lockParts,
         comingSoon,
       };
     });
@@ -80,49 +93,147 @@
     return out;
   }
 
-  function productIdsFromSelection(selectedIds) {
-    return knownIds(selectedIds);
+  function productIdsFromSelection(selectedIds, priceMap, options) {
+    const catalog = resolveCatalog(priceMap);
+    const keepBlocked = !!(options && options.keepBlocked);
+    return knownIds(selectedIds).filter(id => keepBlocked || !isBlocked(id, catalog));
   }
 
   function formatGbp(amount) {
-    return '£' + amount;
+    if (amount == null || amount === '') return '';
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n < 0) return '';
+    const cents = Math.round(n * 100);
+    const pounds = Math.trunc(cents / 100);
+    const pence = Math.abs(cents % 100);
+    if (pence === 0) return '£' + pounds;
+    return '£' + pounds + '.' + String(pence).padStart(2, '0');
   }
 
-  function listTotal(selectedIds) {
-    const selected = new Set(productIdsFromSelection(selectedIds));
-    return PARTS.reduce((sum, part) => sum + (selected.has(part.id) ? part.price : 0), 0);
+  // A price map is the GET /api/prices body, or `{ id: { price, available } }`.
+  // null means prices are unknown. undefined means the catalogue last applied.
+  function resolveCatalog(priceMap) {
+    if (priceMap === null) return null;
+    if (priceMap !== undefined) return normalizeCatalog(priceMap);
+    return currentCatalog;
   }
 
-  // The full-set price is withheld while any row is coming soon.
-  function isFullSet(selectedIds) {
-    if (PARTS.some(part => part.unavailable)) return false;
-    const ids = new Set(productIdsFromSelection(selectedIds));
-    return PARTS.every(part => ids.has(part.id));
+  function normalizeCatalog(input) {
+    if (!input || typeof input !== 'object') return null;
+    const currency = typeof input.currency === 'string' ? input.currency.trim() : '';
+    if (currency && currency !== 'GBP') return { currency, products: {}, blocked: new Set() };
+    const source = input.products && typeof input.products === 'object' ? input.products : input;
+    const products = {};
+    const blocked = new Set();
+    for (const part of orderableParts()) {
+      const raw = source[part.id] != null ? source[part.id] : source[String(part.id)];
+      if (!raw || typeof raw !== 'object') continue;
+      // Off sale still keeps a price when one was sent, so an amend of
+      // parts already paid for can total them. A new purchase ignores it.
+      if (raw.available === false) blocked.add(part.id);
+      if (raw.price == null || raw.price === '') continue;
+      const price = Number(raw.price);
+      if (!Number.isFinite(price) || price < 0) continue;
+      products[part.id] = price;
+    }
+    return { currency: currency || 'GBP', products, blocked };
   }
 
-  // Buyable files show their list sum. A full set is not offered while dropouts are unavailable.
-  function selectionTotal(selectedIds) {
-    if (isFullSet(selectedIds)) return TRIO_PRICE;
-    return listTotal(selectedIds);
+  function isBlocked(id, catalog) {
+    return !!(catalog && catalog.blocked && catalog.blocked.has(id));
   }
 
-  function partLabel(part) {
-    return part.name + ' ' + formatGbp(part.price);
+  function amountFor(id, catalog) {
+    if (!catalog || !catalog.products) return null;
+    const price = catalog.products[id];
+    return price == null ? null : price;
   }
 
-  function selectionSaving(selectedIds) {
-    if (!isFullSet(selectedIds)) return '';
-    const list = listTotal(selectedIds);
-    return 'List ' + formatGbp(list) + ', save ' + formatGbp(list - TRIO_PRICE);
+  function applyPrices(input) {
+    currentCatalog = input == null ? null : normalizeCatalog(input);
+    return currentCatalog;
   }
 
-  function selectionLabel(selectedIds) {
-    const ids = productIdsFromSelection(selectedIds);
+  function resetPrices() {
+    currentCatalog = null;
+  }
+
+  function listTotal(selectedIds, priceMap, options) {
+    const ids = productIdsFromSelection(selectedIds, priceMap, options);
+    if (!ids.length) return 0;
+    const catalog = resolveCatalog(priceMap);
+    let cents = 0;
+    for (const id of ids) {
+      const price = amountFor(id, catalog);
+      if (price == null) return null;
+      cents += Math.round(price * 100);
+    }
+    return cents / 100;
+  }
+
+  // Sum of the live prices for the buyable selection. null when any of those
+  // prices is missing, so the page cannot fall back to a made-up figure.
+  // The rear-end discount is a Woo fee, not a total computed here.
+  function selectionTotal(selectedIds, priceMap, options) {
+    return listTotal(selectedIds, priceMap, options);
+  }
+
+  function partLabel(part, priceMap) {
+    if (!part) return '';
+    if (part.unavailable || part.comingSoon) return part.name;
+    const catalog = resolveCatalog(priceMap);
+    if (isBlocked(part.id, catalog)) return part.name;
+    const price = amountFor(part.id, catalog);
+    if (price == null) return part.name;
+    return part.name + ' ' + formatGbp(price);
+  }
+
+  // The £24 whole-rear-end fee is applied by WooCommerce, not as a picker saving.
+  function selectionSaving(_selectedIds, _priceMap) {
+    return '';
+  }
+
+  function selectionLabel(selectedIds, priceMap, options) {
+    const ids = productIdsFromSelection(selectedIds, priceMap, options);
     if (!ids.length) return 'Choose at least one design file.';
-    const total = formatGbp(selectionTotal(ids));
-    if (isFullSet(ids)) return 'Three design files ' + total;
-    if (ids.length === 1) return partLabel(PARTS.find(part => part.id === ids[0]));
-    return 'Selected design files ' + total;
+    const total = selectionTotal(ids, priceMap, options);
+    if (total == null) return 'Price shown at checkout';
+    if (ids.length === 1) return partLabel(PARTS.find(part => part.id === ids[0]), priceMap);
+    return 'Selected design files ' + formatGbp(total);
+  }
+
+  function pricesUrl(apiBase) {
+    const base = String(apiBase || '').trim().replace(/\/$/, '');
+    if (!/^https?:\/\//i.test(base)) {
+      const err = new Error('Tools API is not configured.');
+      err.status = 400;
+      throw err;
+    }
+    return base + '/api/prices';
+  }
+
+  // DOM-free. The page paints labels after this resolves. A failed fetch
+  // leaves the previous live catalogue in place, or none if there wasn't one.
+  async function fetchPrices(apiBase, fetchImpl) {
+    let url;
+    try { url = pricesUrl(apiBase); }
+    catch { return null; }
+    const doFetch = fetchImpl || (typeof fetch === 'function' ? fetch : null);
+    if (!doFetch) return null;
+    let res;
+    try {
+      res = await doFetch(url, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+      });
+    } catch {
+      return null;
+    }
+    let data = null;
+    try { data = await res.json(); } catch { data = null; }
+    if (!res || !res.ok || !data || typeof data !== 'object' || !data.products) return null;
+    applyPrices(data);
+    return data;
   }
 
   function buildDesignPayload({ customerName, customerEmail, params, productIds, designName }) {
@@ -329,8 +440,10 @@
   }
 
   function revisionPlan({ lockedIds, productIds, params, savedParams }) {
-    const locked = productIdsFromSelection(lockedIds).slice().sort((a, b) => a - b);
-    const next = productIdsFromSelection(productIds).slice().sort((a, b) => a - b);
+    // Paid ids skip the catalogue filter. Adding or removing a part is still
+    // rejected: the two lists have to match.
+    const locked = knownIds(lockedIds).slice().sort((a, b) => a - b);
+    const next = knownIds(productIds).slice().sort((a, b) => a - b);
     if (!locked.length || locked.join(',') !== next.join(',')) {
       return { action: 'error', message: 'Those parts can\'t be changed on this order.' };
     }
@@ -410,13 +523,16 @@
     PARTS,
     defaultProductIds,
     pickerRows,
-    TRIO_PRICE,
     formatGbp,
     listTotal,
     selectionTotal,
     partLabel,
     selectionSaving,
     selectionLabel,
+    applyPrices,
+    resetPrices,
+    pricesUrl,
+    fetchPrices,
     productIdsFromSelection,
     buildDesignPayload,
     selectionSnapshot,

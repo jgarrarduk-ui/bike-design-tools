@@ -86,7 +86,32 @@ written to the order and to each line. Allowed ids come from `WC_PRODUCT_IDS`.
 If the body omits `productIds`, the order is the single `WC_PRODUCT_ID`, as
 before, and that is the only case that applies `WC_PRODUCT_PRICE`. An explicit
 `productIds` list uses each product's own WooCommerce price. A paid order (`processing` or `completed`) still marks that one design
-paid. In WordPress, add a webhook with topic Order updated and delivery URL
+paid.
+
+`GET /api/prices` is public and read-only. It returns the Frame Designer
+products only (8634, 8635, 8636) as
+`{ currency, products: { "<id>": { price, name, available } }, fetched_at }`.
+`price` is the amount an order created with explicit `productIds` charges
+for one unit, as a decimal string. That create sends no line total, so
+WooCommerce sets the line from `wc_get_price_excluding_tax()` on the product
+`price` field (`WC_Product::get_price()`, the active price) and
+`calculate_totals()` adds tax at the shop base address, because the order
+has no billing country. When catalogue prices include tax, or the product
+is not taxable, or taxes are off, that charge is the stored `price`. When
+prices exclude tax and the product is taxable, the charge is `price` plus
+base-rate tax. The result is cached in memory for five minutes. Each catalogue read
+aborts after `WC_PRICE_TIMEOUT_MS` (default 8000, clamped to 1000–15000). A timeout is treated
+as any other WooCommerce error: the last good result is served while it
+is under an hour old, and otherwise the route returns `503`
+`{ "error": "prices_unavailable" }`. After a failed read, WooCommerce is
+not called again for `WC_PRICE_BACKOFF_MS` (default 45000, clamped to
+30–60 seconds), counted from the failure. During that backoff the same stale-or-503 rule applies.
+A successful read clears the backoff. A product whose status is not
+`publish`, or whose `stock_status` is `outofstock`, is `available: false`
+with no `price`. The route does not invent a price and does not write to
+WooCommerce. The success response sends
+`Cache-Control: public, max-age=60`. CORS is the same policy as the other
+routes. In WordPress, add a webhook with topic Order updated and delivery URL
 `{BASE_URL}/api/webhooks/woocommerce/order-updated`. Set the webhook secret to
 `WC_WEBHOOK_SECRET`. Catalogue products are only referenced by id; this server
 does not publish them.
@@ -100,13 +125,13 @@ written into the page.
 Save posts `POST /api/designs` with the customer's name, email, the current
 geometry as `params`, and `productIds` for the design files they picked:
 
-| Design file | Product | Price |
-|---|---|---|
-| BB yoke | 8634 | £58 | selectable |
-| SS yoke | 8635 | £42 | selectable |
-| Dropouts | 8636 | £64 | shown, Coming soon, not sent |
+| Design file | Product |
+|---|---|
+| BB yoke | 8634 |
+| SS yoke | 8635 |
+| Dropouts | 8636 |
 
-BB yoke and SS yoke start checked. Together they list at **£100**. Dropouts stay visible, grayed, and untickable, and `productIds` never includes 8636. The full-set total is not shown while dropouts are unavailable. Product 8637 is not a checkout choice. Printed 316L stays enquire/quote only.
+Frame Designer prices are set in WooCommerce and are read live via `GET /api/prices`. The page does not keep its own catalogue prices. Until that response arrives, or if it fails, the page hides each price and the total and says “Price shown at checkout”. BB yoke and SS yoke start checked. Dropouts stay visible, grayed, and untickable, and `productIds` never includes 8636. The full-set total is not shown while dropouts are unavailable. Product 8637 is not a checkout choice. Printed 316L stays enquire/quote only.
 
 The response `designId` (also accepted as `design_id`) is kept in
 `sessionStorage` and in `?design=` on the page. JSON download is the existing
@@ -309,7 +334,7 @@ Resend. Verifying the domain in Resend is separate from this code. A live
 send waits on that secret and DNS.
 `FRAME_DESIGNER_URL` overrides the edit link if the page is not on
 `/apps/frame-designer.html`. `FRONTEND_URL` must be the Frame Designer origin exactly, with no path,
-so the hydrate `GET` is not blocked by CORS. A longer host such as
+so the hydrate `GET` and `GET /api/prices` are not blocked by CORS. A longer host such as
 `https://creaturecycles.co.uk.evil.com` does not match. A refused `GET`
 or `HEAD` gets no `Access-Control-Allow-Origin` header and the response
 itself is unchanged for non-browser clients. Any other method from a
