@@ -26,15 +26,18 @@
     if (el) el.textContent = designFileDeliverySentence();
   }
 
-  // Design-file list prices locked 7 Oct 2026.
-  // Dropouts stay on the picker but are not sold. The full-set total is hidden
-  // until every part is buyable. Printed 316L is enquire only, not a product.
-  const TRIO_PRICE = 128;
+  // Dropouts stay on the picker but are not sold, and are never priced here.
+  // Live amounts come from GET /api/prices. Nothing in this file is a price
+  // the page may show before that response arrives. Printed 316L is enquire
+  // only, not a product. Checkout still sends product ids, not prices.
   const PARTS = [
-    { id: 8634, name: 'BB yoke', price: 58 },
-    { id: 8635, name: 'SS yoke', price: 42 },
-    { id: 8636, name: 'Dropouts', price: 64, unavailable: true },
+    { id: 8634, name: 'BB yoke' },
+    { id: 8635, name: 'SS yoke' },
+    { id: 8636, name: 'Dropouts', unavailable: true },
   ];
+
+  // null until a live catalogue is applied. Never a hard-coded price list.
+  let currentCatalog = null;
 
   function orderableParts() {
     return PARTS.filter(part => !part.unavailable);
@@ -52,6 +55,10 @@
 
   function pickerRows(selectedIds, options) {
     const lockParts = !!(options && options.lockParts);
+    const priceOverride = options && Object.prototype.hasOwnProperty.call(options, 'prices')
+      ? options.prices
+      : undefined;
+    const catalog = resolveCatalog(priceOverride);
     const chosen = selectedIds == null ? defaultProductIds() : productIdsFromSelection(selectedIds);
     const selected = new Set(chosen);
     return PARTS.map(part => {
@@ -59,7 +66,7 @@
       return {
         id: part.id,
         name: part.name,
-        price: part.price,
+        price: comingSoon ? null : amountFor(part.id, catalog),
         checked: !comingSoon && selected.has(part.id),
         disabled: comingSoon || lockParts,
         comingSoon,
@@ -85,44 +92,130 @@
   }
 
   function formatGbp(amount) {
-    return '£' + amount;
+    if (amount == null || amount === '') return '';
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n < 0) return '';
+    const cents = Math.round(n * 100);
+    const pounds = Math.trunc(cents / 100);
+    const pence = Math.abs(cents % 100);
+    if (pence === 0) return '£' + pounds;
+    return '£' + pounds + '.' + String(pence).padStart(2, '0');
   }
 
-  function listTotal(selectedIds) {
-    const selected = new Set(productIdsFromSelection(selectedIds));
-    return PARTS.reduce((sum, part) => sum + (selected.has(part.id) ? part.price : 0), 0);
+  // A price map is the GET /api/prices body, or `{ id: { price, available } }`.
+  // null means prices are unknown. undefined means the catalogue last applied.
+  function resolveCatalog(priceMap) {
+    if (priceMap === null) return null;
+    if (priceMap !== undefined) return normalizeCatalog(priceMap);
+    return currentCatalog;
   }
 
-  // The full-set price is withheld while any row is coming soon.
-  function isFullSet(selectedIds) {
-    if (PARTS.some(part => part.unavailable)) return false;
-    const ids = new Set(productIdsFromSelection(selectedIds));
-    return PARTS.every(part => ids.has(part.id));
+  function normalizeCatalog(input) {
+    if (!input || typeof input !== 'object') return null;
+    const currency = typeof input.currency === 'string' ? input.currency.trim() : '';
+    if (currency && currency !== 'GBP') return { currency, products: {} };
+    const source = input.products && typeof input.products === 'object' ? input.products : input;
+    const products = {};
+    for (const part of orderableParts()) {
+      const raw = source[part.id] != null ? source[part.id] : source[String(part.id)];
+      if (!raw || typeof raw !== 'object' || raw.available === false) continue;
+      if (raw.price == null || raw.price === '') continue;
+      const price = Number(raw.price);
+      if (!Number.isFinite(price) || price < 0) continue;
+      products[part.id] = price;
+    }
+    return { currency: currency || 'GBP', products };
   }
 
-  // Buyable files show their list sum. A full set is not offered while dropouts are unavailable.
-  function selectionTotal(selectedIds) {
-    if (isFullSet(selectedIds)) return TRIO_PRICE;
-    return listTotal(selectedIds);
+  function amountFor(id, catalog) {
+    if (!catalog || !catalog.products) return null;
+    const price = catalog.products[id];
+    return price == null ? null : price;
   }
 
-  function partLabel(part) {
-    return part.name + ' ' + formatGbp(part.price);
+  function applyPrices(input) {
+    currentCatalog = input == null ? null : normalizeCatalog(input);
+    return currentCatalog;
   }
 
-  function selectionSaving(selectedIds) {
-    if (!isFullSet(selectedIds)) return '';
-    const list = listTotal(selectedIds);
-    return 'List ' + formatGbp(list) + ', save ' + formatGbp(list - TRIO_PRICE);
+  function resetPrices() {
+    currentCatalog = null;
   }
 
-  function selectionLabel(selectedIds) {
+  function listTotal(selectedIds, priceMap) {
+    const ids = productIdsFromSelection(selectedIds);
+    if (!ids.length) return 0;
+    const catalog = resolveCatalog(priceMap);
+    let cents = 0;
+    for (const id of ids) {
+      const price = amountFor(id, catalog);
+      if (price == null) return null;
+      cents += Math.round(price * 100);
+    }
+    return cents / 100;
+  }
+
+  // Sum of the live prices for the buyable selection. null when any of those
+  // prices is missing, so the page cannot fall back to a made-up figure.
+  // The rear-end discount is a Woo fee, not a total computed here.
+  function selectionTotal(selectedIds, priceMap) {
+    return listTotal(selectedIds, priceMap);
+  }
+
+  function partLabel(part, priceMap) {
+    if (!part) return '';
+    if (part.unavailable || part.comingSoon) return part.name;
+    const price = amountFor(part.id, resolveCatalog(priceMap));
+    if (price == null) return part.name;
+    return part.name + ' ' + formatGbp(price);
+  }
+
+  // The £24 whole-rear-end fee is applied by WooCommerce, not as a picker saving.
+  function selectionSaving(_selectedIds, _priceMap) {
+    return '';
+  }
+
+  function selectionLabel(selectedIds, priceMap) {
     const ids = productIdsFromSelection(selectedIds);
     if (!ids.length) return 'Choose at least one design file.';
-    const total = formatGbp(selectionTotal(ids));
-    if (isFullSet(ids)) return 'Three design files ' + total;
-    if (ids.length === 1) return partLabel(PARTS.find(part => part.id === ids[0]));
-    return 'Selected design files ' + total;
+    const total = selectionTotal(ids, priceMap);
+    if (total == null) return 'Price shown at checkout';
+    if (ids.length === 1) return partLabel(PARTS.find(part => part.id === ids[0]), priceMap);
+    return 'Selected design files ' + formatGbp(total);
+  }
+
+  function pricesUrl(apiBase) {
+    const base = String(apiBase || '').trim().replace(/\/$/, '');
+    if (!/^https?:\/\//i.test(base)) {
+      const err = new Error('Tools API is not configured.');
+      err.status = 400;
+      throw err;
+    }
+    return base + '/api/prices';
+  }
+
+  // DOM-free. The page paints labels after this resolves. A failed fetch
+  // leaves the previous live catalogue in place, or none if there wasn't one.
+  async function fetchPrices(apiBase, fetchImpl) {
+    let url;
+    try { url = pricesUrl(apiBase); }
+    catch { return null; }
+    const doFetch = fetchImpl || (typeof fetch === 'function' ? fetch : null);
+    if (!doFetch) return null;
+    let res;
+    try {
+      res = await doFetch(url, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+      });
+    } catch {
+      return null;
+    }
+    let data = null;
+    try { data = await res.json(); } catch { data = null; }
+    if (!res || !res.ok || !data || typeof data !== 'object' || !data.products) return null;
+    applyPrices(data);
+    return data;
   }
 
   function buildDesignPayload({ customerName, customerEmail, params, productIds, designName }) {
@@ -410,13 +503,16 @@
     PARTS,
     defaultProductIds,
     pickerRows,
-    TRIO_PRICE,
     formatGbp,
     listTotal,
     selectionTotal,
     partLabel,
     selectionSaving,
     selectionLabel,
+    applyPrices,
+    resetPrices,
+    pricesUrl,
+    fetchPrices,
     productIdsFromSelection,
     buildDesignPayload,
     selectionSnapshot,

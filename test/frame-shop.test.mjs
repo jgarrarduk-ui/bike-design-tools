@@ -45,32 +45,73 @@ test('dropouts and unknown ids are never sent', () => {
   assert.deepEqual(FrameShop.productIdsFromSelection([]), []);
 });
 
-test('checkout shows BB and SS list prices and hides the full-set total', () => {
+test('checkout labels and totals come from the injected price map', () => {
   const byId = Object.fromEntries(FrameShop.PARTS.map(part => [part.id, part]));
-  assert.equal(byId[8634].price, 58);
-  assert.equal(byId[8635].price, 42);
-  assert.equal(byId[8636].price, 64);
-  assert.equal(FrameShop.partLabel(byId[8634]), 'BB yoke £58');
-  assert.equal(FrameShop.partLabel(byId[8635]), 'SS yoke £42');
-  assert.equal(FrameShop.partLabel(byId[8636]), 'Dropouts £64');
-  assert.equal(FrameShop.selectionTotal([8634, 8635]), 100);
-  assert.equal(FrameShop.selectionSaving([8634, 8635]), '');
-  assert.equal(FrameShop.selectionLabel([8634, 8635]), 'Selected design files £100');
-  assert.equal(FrameShop.selectionTotal([8634, 8635, 8636]), 100);
-  assert.equal(FrameShop.selectionSaving([8634, 8635, 8636]), '');
-  assert.equal(FrameShop.selectionLabel([8634, 8635, 8636]), 'Selected design files £100');
-  assert.equal(FrameShop.selectionTotal([8634]), 58);
-  assert.equal(FrameShop.selectionLabel([8635]), 'SS yoke £42');
-  assert.equal(FrameShop.selectionLabel([8636]), 'Choose at least one design file.');
+  assert.equal(byId[8634].price, undefined);
+  assert.equal(byId[8635].price, undefined);
+  assert.equal(byId[8636].price, undefined);
+
+  const prices = {
+    currency: 'GBP',
+    products: {
+      '8634': { price: '50.00', name: 'BB yoke', available: true },
+      '8635': { price: '36.50', name: 'SS yoke', available: true },
+      '8636': { price: '64.00', name: 'Dropouts', available: true },
+    },
+  };
+  assert.equal(FrameShop.partLabel(byId[8634], prices), 'BB yoke £50');
+  assert.equal(FrameShop.partLabel(byId[8635], prices), 'SS yoke £36.50');
+  assert.equal(FrameShop.partLabel(byId[8636], prices), 'Dropouts');
+  assert.equal(/\d/.test(FrameShop.partLabel(byId[8636], prices)), false);
+  assert.equal(FrameShop.selectionTotal([8634, 8635], prices), 86.5);
+  assert.equal(FrameShop.selectionSaving([8634, 8635], prices), '');
+  assert.equal(FrameShop.selectionLabel([8634, 8635], prices), 'Selected design files £86.50');
+  assert.equal(FrameShop.selectionTotal([8634, 8635, 8636], prices), 86.5);
+  assert.equal(FrameShop.selectionSaving([8634, 8635, 8636], prices), '');
+  assert.equal(FrameShop.selectionLabel([8634, 8635, 8636], prices), 'Selected design files £86.50');
+  assert.equal(FrameShop.selectionTotal([8634], prices), 50);
+  assert.equal(FrameShop.selectionLabel([8635], prices), 'SS yoke £36.50');
+  assert.equal(FrameShop.selectionLabel([8636], prices), 'Choose at least one design file.');
+
+  const rows = FrameShop.pickerRows(null, { prices });
+  const rowById = Object.fromEntries(rows.map(row => [row.id, row]));
+  assert.equal(rowById[8634].price, 50);
+  assert.equal(rowById[8635].price, 36.5);
+  assert.equal(rowById[8636].price, null);
+  assert.equal(rowById[8636].comingSoon, true);
+
+  const unavailable = {
+    products: {
+      '8634': { price: '50.00', available: false },
+      '8635': { price: '36.50', available: true },
+    },
+  };
+  assert.equal(FrameShop.partLabel(byId[8634], unavailable), 'BB yoke');
+  assert.equal(/\d/.test(FrameShop.partLabel(byId[8634], unavailable)), false);
+  assert.equal(FrameShop.selectionLabel([8634, 8635], unavailable), 'Price shown at checkout');
+  assert.equal(/\d/.test(FrameShop.selectionLabel([8634, 8635], unavailable)), false);
+  assert.equal(FrameShop.selectionTotal([8634, 8635], unavailable), null);
+  assert.equal(FrameShop.selectionLabel([8635], unavailable), 'SS yoke £36.50');
+  assert.equal(FrameShop.pickerRows(null, { prices: unavailable }).find(row => row.id === 8634).price, null);
+
+  assert.equal(FrameShop.partLabel(byId[8634], null), 'BB yoke');
+  assert.equal(/\d/.test(FrameShop.partLabel(byId[8634], null)), false);
+  assert.equal(FrameShop.partLabel(byId[8635], null), 'SS yoke');
+  assert.equal(FrameShop.selectionLabel([8634, 8635], null), 'Price shown at checkout');
+  assert.equal(/\d/.test(FrameShop.selectionLabel([8634, 8635], null)), false);
+  assert.equal(FrameShop.selectionTotal([8634, 8635], null), null);
+  assert.equal(FrameShop.selectionSaving([8634, 8635], null), '');
+  assert.equal(FrameShop.pickerRows(null, { prices: null }).every(row => row.price == null), true);
+
   const shown = [
-    FrameShop.selectionLabel([8634, 8635]),
-    FrameShop.selectionLabel([8634, 8635, 8636]),
-    FrameShop.selectionSaving([8634, 8635, 8636]),
-    FrameShop.partLabel(byId[8634]),
-    FrameShop.partLabel(byId[8635]),
+    FrameShop.selectionLabel([8634, 8635], prices),
+    FrameShop.selectionLabel([8634, 8635, 8636], prices),
+    FrameShop.selectionSaving([8634, 8635, 8636], prices),
+    FrameShop.partLabel(byId[8634], prices),
+    FrameShop.partLabel(byId[8636], prices),
   ];
   for (const label of shown) {
-    assert.equal(/128|164|£36|save £|136|£24|three design files/i.test(label), false);
+    assert.equal(/128|164|save £|136|£24|three design files/i.test(label), false);
   }
 });
 
@@ -85,9 +126,49 @@ test('Frame Designer shop copy keeps dropouts visible and not for sale', () => {
   assert.match(html, /is-unavailable/);
   assert.match(html, /input\.disabled = unavailable/);
   assert.match(readme, /Coming soon/);
-  assert.match(readme, /£100/);
+  assert.match(readme, /prices are set in WooCommerce/);
+  assert.match(readme, /\/api\/prices/);
+  assert.equal(/£100/.test(readme), false);
   assert.match(readme, /never includes 8636/);
   assert.match(html, /Printed 316L is enquire only/);
+});
+
+test('fetchPrices reads /api/prices and a failure does not invent figures', async () => {
+  FrameShop.resetPrices();
+  const part = FrameShop.PARTS.find(item => item.id === 8634);
+  try {
+    assert.equal(FrameShop.selectionLabel([8634, 8635]), 'Price shown at checkout');
+    assert.equal(/\d/.test(FrameShop.partLabel(part)), false);
+    let seen = '';
+    const data = await FrameShop.fetchPrices('https://tools.example/', async (url) => {
+      seen = url;
+      return {
+        ok: true,
+        json: async () => ({
+          currency: 'GBP',
+          products: {
+            '8634': { price: '50.00', name: 'BB yoke', available: true },
+            '8635': { price: '36.00', name: 'SS yoke', available: true },
+          },
+        }),
+      };
+    });
+    assert.equal(seen, 'https://tools.example/api/prices');
+    assert.equal(data.products['8634'].price, '50.00');
+    assert.equal(FrameShop.partLabel(part), 'BB yoke £50');
+    assert.equal(FrameShop.selectionLabel([8634, 8635]), 'Selected design files £86');
+    const failed = await FrameShop.fetchPrices('https://tools.example/', async () => {
+      throw new Error('offline');
+    });
+    assert.equal(failed, null);
+    assert.equal(FrameShop.partLabel(part), 'BB yoke £50');
+    FrameShop.resetPrices();
+    assert.equal(FrameShop.selectionLabel([8634, 8635]), 'Price shown at checkout');
+    assert.equal(/\d/.test(FrameShop.selectionLabel([8634, 8635])), false);
+    assert.equal(await FrameShop.fetchPrices(''), null);
+  } finally {
+    FrameShop.resetPrices();
+  }
 });
 
 test('design payload is the Phase 2 tools-api body', () => {
@@ -288,7 +369,12 @@ test('Save design keeps its label, downloads JSON, and hydrates only with resume
   assert.equal(/id="shop-save"[\s>]/.test(html), false);
   assert.equal((html.match(/id="shop-save-btn"/g) || []).length, 1);
   assert.equal((html.match(/id="shop-save-hint"/g) || []).length, 1);
-  assert.match(html, /src="frame-shop\.js\?v=20261009"/);
+  assert.match(html, /src="frame-shop\.js\?v=20261023"/);
+  assert.match(html, /id="shop-total">Price shown at checkout</);
+  assert.match(html, /FrameShop\.fetchPrices\(toolsApiBase\(\)\)/);
+  assert.match(html, /loadShopPrices\(\)/);
+  const shopParts = html.slice(html.indexOf('id="shop-parts"'), html.indexOf('id="shop-print-note"'));
+  assert.equal(/£\d/.test(shopParts), false);
   assert.match(html, /id="shop-lead-time">Design files are delivered within 5 working days of payment\.</);
   const leadAt = html.indexOf('id="shop-lead-time"');
   const continueAt = html.indexOf('id="shop-continue"');

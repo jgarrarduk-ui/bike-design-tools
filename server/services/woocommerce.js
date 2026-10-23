@@ -250,6 +250,10 @@ function buildOrderPayload({
       quantity: 1,
       meta_data: designMeta(designId, geometrySummary),
     };
+    // An explicit productIds list leaves subtotal and total unset. WooCommerce
+    // REST then sets both from wc_get_price_excluding_tax(), which reads the
+    // product `price` (WC_Product::get_price()), and calculate_totals() adds
+    // tax. GET /api/prices uses that same charge. WC_PRODUCT_PRICE is not it.
     if (singlePrice) {
       lineItem.subtotal = singlePrice;
       lineItem.total    = singlePrice;
@@ -519,8 +523,25 @@ async function requestChange(method, payload) {
   return { status: res.status, body };
 }
 
+/**
+ * Read-only WooCommerce REST GET. Prices and other catalogue reads use this.
+ * It does not POST, PUT, or DELETE.
+ *
+ * @param {string} path  Path under /wp-json/wc/v3, including a query string.
+ * @returns {Promise<any>}
+ */
+async function wcGet(path) {
+  if (!(env('WC_URL') && env('WC_CONSUMER_KEY') && env('WC_CONSUMER_SECRET'))) {
+    const err = new Error('WooCommerce is not configured.');
+    err.status = 503;
+    throw err;
+  }
+  return wcFetch(path, 'GET');
+}
+
 module.exports = {
   isConfigured,
+  wcGet,
   createOrder,
   getDesignIdFromOrder,
   resolveProductIds,

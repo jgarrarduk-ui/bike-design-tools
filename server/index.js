@@ -7,6 +7,7 @@ const path    = require('path');
 const { configuredOrigins, createCorsMiddleware } = require('./cors');
 
 const designsRouter   = require('./routes/designs');
+const pricesRouter    = require('./routes/prices');
 const webhooksRouter  = require('./routes/webhooks');
 const downloadRouter  = require('./routes/download');
 const reviewRouter    = require('./routes/review');
@@ -33,6 +34,8 @@ app.use(express.json({ limit: '10mb' })); // 10 MB for PDF base64 payloads
 
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use('/api/designs',  designsRouter);
+// Same CORS middleware as the other routes, so the Frame Designer origin is allowed.
+app.use('/api/prices',   pricesRouter);
 app.use('/api/download', downloadRouter);
 app.use('/api/review',   reviewRouter);
 app.use('/api/admin',    adminRouter);
