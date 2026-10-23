@@ -308,8 +308,9 @@ skipped and the save still succeeds. The save response does not wait on
 Resend. Verifying the domain in Resend is separate from this code. A live
 send waits on that secret and DNS.
 `FRAME_DESIGNER_URL` overrides the edit link if the page is not on
-`/apps/frame-designer.html`. `FRONTEND_URL` must allow the Frame Designer
-origin so the hydrate `GET` is not blocked by CORS.
+`/apps/frame-designer.html`. `FRONTEND_URL` must be the Frame Designer origin exactly, with no path,
+so the hydrate `GET` is not blocked by CORS. A longer host such as
+`https://creaturecycles.co.uk.evil.com` does not match.
 
 ## Deploying
 

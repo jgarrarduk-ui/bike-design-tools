@@ -3,8 +3,8 @@
 require('dotenv').config();
 
 const express = require('express');
-const cors    = require('cors');
 const path    = require('path');
+const { createCorsMiddleware } = require('./cors');
 
 const designsRouter   = require('./routes/designs');
 const webhooksRouter  = require('./routes/webhooks');
@@ -26,16 +26,9 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
 ].filter(Boolean);
 
-app.use(cors({
-  origin: (origin, cb) => {
-    // Allow requests with no origin (same-origin, curl, Postman)
-    if (!origin) return cb(null, true);
-    if (allowedOrigins.some(o => origin.startsWith(o))) return cb(null, true);
-    cb(new Error(`CORS: origin ${origin} not allowed`));
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-WC-Webhook-Signature', 'Authorization'],
-}));
+// Exact origin match. A prefix such as https://creaturecycles.co.uk.evil.com
+// is rejected. Requests with no Origin header (curl, same-origin) are allowed.
+app.use(createCorsMiddleware(allowedOrigins));
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 // Webhooks route uses express.raw() inline (to preserve raw body for HMAC)
