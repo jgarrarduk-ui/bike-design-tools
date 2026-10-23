@@ -381,7 +381,7 @@ test('Save design keeps its label, downloads JSON, and hydrates only with resume
   assert.equal(/id="shop-save"[\s>]/.test(html), false);
   assert.equal((html.match(/id="shop-save-btn"/g) || []).length, 1);
   assert.equal((html.match(/id="shop-save-hint"/g) || []).length, 1);
-  assert.match(html, /src="frame-shop\.js\?v=20261023"/);
+  assert.match(html, /src="frame-shop\.js\?v=20261023b"/);
   assert.match(html, /id="shop-total">Price shown at checkout</);
   assert.match(html, /FrameShop\.fetchPrices\(toolsApiBase\(\)\)/);
   assert.match(html, /loadShopPrices\(\)/);
@@ -490,6 +490,64 @@ test('amend mode locks the paid parts and saves geometry without checkout', asyn
   });
   assert.equal(post.action, 'post');
   assert.deepEqual(post.productIds, [8634, 8635]);
+
+  const paused = {
+    currency: 'GBP',
+    products: {
+      '8634': { available: false },
+      '8635': { price: '36.00', name: 'SS yoke', available: true },
+    },
+  };
+  FrameShop.applyPrices(paused);
+  try {
+    const pausedRows = FrameShop.pickerRows([8634, 8635], { lockParts: true, prices: paused });
+    const pausedById = Object.fromEntries(pausedRows.map(row => [row.id, row]));
+    assert.equal(pausedById[8634].checked, true);
+    assert.equal(pausedById[8634].disabled, true);
+    assert.equal(pausedById[8634].comingSoon, false);
+    assert.equal(pausedById[8634].price, null);
+    assert.equal(pausedById[8635].checked, true);
+    assert.equal(pausedById[8635].disabled, true);
+    assert.equal(pausedById[8636].comingSoon, true);
+    assert.equal(pausedById[8636].checked, false);
+    const bb = FrameShop.PARTS.find(part => part.id === 8634);
+    assert.equal(FrameShop.partLabel(bb, paused), 'BB yoke');
+    assert.equal(/\d/.test(FrameShop.partLabel(bb, paused)), false);
+    const kept = FrameShop.revisionPlan({
+      lockedIds: [8634, 8635],
+      productIds: FrameShop.productIdsFromSelection([8634, 8635], paused, { keepBlocked: true }),
+      params: { ...PARAMS, reach: 460 },
+      savedParams: PARAMS,
+    });
+    assert.equal(kept.action, 'post');
+    assert.deepEqual(kept.productIds, [8634, 8635]);
+    assert.notEqual(kept.message, 'Those parts can\'t be changed on this order.');
+    const dropped = FrameShop.revisionPlan({
+      lockedIds: [8634, 8635],
+      productIds: [8635],
+      params: { ...PARAMS, reach: 460 },
+      savedParams: PARAMS,
+    });
+    assert.equal(dropped.action, 'error');
+    assert.equal(dropped.message, 'Those parts can\'t be changed on this order.');
+    const added = FrameShop.revisionPlan({
+      lockedIds: [8634],
+      productIds: [8634, 8635],
+      params: { ...PARAMS, reach: 460 },
+      savedParams: PARAMS,
+    });
+    assert.equal(added.action, 'error');
+    const fresh = FrameShop.pickerRows([8634, 8635], { prices: paused });
+    const freshById = Object.fromEntries(fresh.map(row => [row.id, row]));
+    assert.equal(freshById[8634].checked, false);
+    assert.equal(freshById[8634].disabled, true);
+    assert.equal(freshById[8634].price, null);
+    assert.deepEqual(FrameShop.productIdsFromSelection([8634, 8635], paused), [8635]);
+  } finally {
+    FrameShop.resetPrices();
+  }
+  assert.match(html, /keepBlocked: true/);
+  assert.match(html, /shopAmend \? \{ keepBlocked: true \}/);
 
   let seen;
   const saved = await FrameShop.postRevision(

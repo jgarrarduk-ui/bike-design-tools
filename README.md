@@ -100,12 +100,12 @@ has no billing country. When catalogue prices include tax, or the product
 is not taxable, or taxes are off, that charge is the stored `price`. When
 prices exclude tax and the product is taxable, the charge is `price` plus
 base-rate tax. The result is cached in memory for five minutes. Each catalogue read
-aborts after `WC_PRICE_TIMEOUT_MS` (default 8000). A timeout is treated
+aborts after `WC_PRICE_TIMEOUT_MS` (default 8000, clamped to 1000–15000). A timeout is treated
 as any other WooCommerce error: the last good result is served while it
 is under an hour old, and otherwise the route returns `503`
 `{ "error": "prices_unavailable" }`. After a failed read, WooCommerce is
 not called again for `WC_PRICE_BACKOFF_MS` (default 45000, clamped to
-30–60 seconds). During that backoff the same stale-or-503 rule applies.
+30–60 seconds), counted from the failure. During that backoff the same stale-or-503 rule applies.
 A successful read clears the backoff. A product whose status is not
 `publish`, or whose `stock_status` is `outofstock`, is `available: false`
 with no `price`. The route does not invent a price and does not write to

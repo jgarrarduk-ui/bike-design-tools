@@ -150,6 +150,7 @@ describe('GET /api/prices', { concurrency: false }, () => {
       rates: GB_VAT,
       productFetches: 0,
       hang: false,
+      advanceOnAbort: 0,
     };
     calls = [];
     originalFetch = global.fetch;
@@ -166,7 +167,10 @@ describe('GET /api/prices', { concurrency: false }, () => {
             reject(new Error('price fetch has no timeout'));
             return;
           }
-          const fail = () => reject(signal.reason || new Error('The operation was aborted'));
+          const fail = () => {
+            if (state.advanceOnAbort) now += state.advanceOnAbort;
+            reject(signal.reason || new Error('The operation was aborted'));
+          };
           if (signal.aborted) fail();
           else signal.addEventListener('abort', fail, { once: true });
         });
@@ -198,7 +202,7 @@ describe('GET /api/prices', { concurrency: false }, () => {
 
   test('the route is mounted after CORS and before the static files', () => {
     const index = fs.readFileSync(new URL('../index.js', import.meta.url), 'utf8');
-    const corsAt = index.indexOf('app.use(cors(');
+    const corsAt = index.indexOf('createCorsMiddleware(');
     const pricesAt = index.indexOf("app.use('/api/prices'");
     const staticAt = index.indexOf('express.static');
     assert.ok(corsAt >= 0 && pricesAt > corsAt && staticAt > pricesAt);
@@ -337,10 +341,10 @@ describe('GET /api/prices', { concurrency: false }, () => {
   });
 
   test('a timeout serves a cached result under an hour old', async () => {
-    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '40' }, async () => {
+    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '1000' }, async () => {
       const first = await get(server, '/api/prices');
       assert.equal(first.status, 200);
-      assert.equal(prices.priceTimeoutMs(), 40);
+      assert.equal(prices.priceTimeoutMs(), 1000);
       now += prices.TTL_MS;
       state.hang = true;
       const stale = await get(server, '/api/prices');
@@ -353,7 +357,7 @@ describe('GET /api/prices', { concurrency: false }, () => {
   });
 
   test('a timeout with no cache returns 503', async () => {
-    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '40' }, async () => {
+    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '1000' }, async () => {
       state.hang = true;
       const cold = await get(server, '/api/prices');
       assert.equal(cold.status, 503);
@@ -404,6 +408,55 @@ describe('GET /api/prices', { concurrency: false }, () => {
       assert.equal(held.status, 200);
       assert.equal(held.body.products['8634'].price, '52.00');
       assert.equal(state.productFetches, afterSecondFail);
+    });
+  });
+
+  test('the price timeout is clamped to 1–15 seconds', async () => {
+    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '40' }, async () => {
+      assert.equal(prices.priceTimeoutMs(), 1000);
+    });
+    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '600000' }, async () => {
+      assert.equal(prices.priceTimeoutMs(), 15000);
+    });
+    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '8000' }, async () => {
+      assert.equal(prices.priceTimeoutMs(), 8000);
+    });
+    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: 'not-a-number' }, async () => {
+      assert.equal(prices.priceTimeoutMs(), 8000);
+    });
+  });
+
+  test('backoff is measured from the failure, not the start of the read', async () => {
+    await withEnv({ ...CATALOGUE, WC_PRICE_TIMEOUT_MS: '1000' }, async () => {
+      const first = await get(server, '/api/prices');
+      assert.equal(first.status, 200);
+      const started = now;
+      now += prices.TTL_MS;
+      state.hang = true;
+      state.advanceOnAbort = 1000;
+      const stale = await get(server, '/api/prices');
+      assert.equal(stale.status, 200);
+      assert.equal(stale.body.fetched_at, first.body.fetched_at);
+      assert.equal(stale.body.products['8634'].price, '50.00');
+      const failedAt = now;
+      assert.equal(failedAt, started + prices.TTL_MS + 1000);
+      const fetches = state.productFetches;
+      state.hang = false;
+      now = started + prices.TTL_MS + prices.priceBackoffMs();
+      const during = await get(server, '/api/prices');
+      assert.equal(during.status, 200);
+      assert.equal(during.body.fetched_at, first.body.fetched_at);
+      assert.equal(state.productFetches, fetches);
+      now = failedAt + prices.priceBackoffMs();
+      state.products = [
+        product(8634, '52.00'),
+        product(8635, '36.00'),
+        product(8636, '64.00'),
+      ];
+      const again = await get(server, '/api/prices');
+      assert.equal(state.productFetches, fetches + 1);
+      assert.equal(again.status, 200);
+      assert.equal(again.body.products['8634'].price, '52.00');
     });
   });
 

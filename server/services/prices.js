@@ -31,11 +31,12 @@
  * A product that is not published, or whose stock_status is outofstock,
  * is returned as available:false with no price.
  *
- * The catalogue read aborts after WC_PRICE_TIMEOUT_MS (default 8s). A
- * timeout is an error: the last good result is served while it is under
- * an hour old, otherwise the route is 503. After any failed read, Woo is
- * not called again until WC_PRICE_BACKOFF_MS (default 45s, clamped to
- * 30–60s). A success clears that backoff.
+ * The catalogue read aborts after WC_PRICE_TIMEOUT_MS (default 8s,
+ * clamped to 1–15s). A timeout is an error: the last good result is
+ * served while it is under an hour old, otherwise the route is 503.
+ * After any failed read, Woo is not called again until
+ * WC_PRICE_BACKOFF_MS (default 45s, clamped to 30–60s), measured from
+ * the failure. A success clears that backoff.
  */
 
 const { wcGet } = require('./woocommerce');
@@ -44,6 +45,8 @@ const FD_PRODUCT_IDS = [8634, 8635, 8636];
 const TTL_MS = 5 * 60 * 1000;
 const STALE_MS = 60 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 8000;
+const MIN_TIMEOUT_MS = 1000;
+const MAX_TIMEOUT_MS = 15000;
 const DEFAULT_BACKOFF_MS = 45 * 1000;
 const MIN_BACKOFF_MS = 30 * 1000;
 const MAX_BACKOFF_MS = 60 * 1000;
@@ -64,6 +67,8 @@ function numericEnv(name) {
 function priceTimeoutMs() {
   const n = numericEnv('WC_PRICE_TIMEOUT_MS');
   if (n == null || n <= 0) return DEFAULT_TIMEOUT_MS;
+  if (n < MIN_TIMEOUT_MS) return MIN_TIMEOUT_MS;
+  if (n > MAX_TIMEOUT_MS) return MAX_TIMEOUT_MS;
   return Math.floor(n);
 }
 
@@ -372,8 +377,9 @@ async function refresh(now) {
     return { status: 200, body };
   } catch (err) {
     console.error('[prices]', err && err.message ? err.message : err);
-    backoffUntil = now + priceBackoffMs();
-    return staleOrUnavailable(now);
+    const failedAt = nowFn();
+    backoffUntil = failedAt + priceBackoffMs();
+    return staleOrUnavailable(failedAt);
   }
 }
 

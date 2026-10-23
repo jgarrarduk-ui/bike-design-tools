@@ -1659,7 +1659,7 @@ viewBox="0 0 42000 7000"
 </script>
 <script src="config.js"></script>
 <!-- /apps/frame-shop.js is cached for a year. Bump ?v= when that file changes. -->
-<script src="frame-shop.js?v=20261023"></script>
+<script src="frame-shop.js?v=20261023b"></script>
 <script>
 'use strict';
 // ═══════════════════════════════════════════════════════
@@ -4627,14 +4627,19 @@ function onShopPartChange(){
   refreshShopTotal();
 }
 
+function shopIdOptions(){
+  // Amend keeps parts already paid for, even if they later go off sale.
+  return shopAmend ? { keepBlocked: true } : undefined;
+}
+
 function selectedShopProductIds(){
   const checked = [...document.querySelectorAll('#shop-parts input:checked')]
     .map(el=>Number(el.dataset.productId));
-  return FrameShop.productIdsFromSelection(checked);
+  return FrameShop.productIdsFromSelection(checked, undefined, shopIdOptions());
 }
 
 function setShopChecks(ids){
-  const selected = new Set(FrameShop.productIdsFromSelection(ids || []));
+  const selected = new Set(FrameShop.productIdsFromSelection(ids || [], undefined, shopIdOptions()));
   document.querySelectorAll('#shop-parts input').forEach(el=>{
     el.checked = selected.has(Number(el.dataset.productId));
   });
@@ -4653,7 +4658,7 @@ function refreshShopTotal(){
   const save = document.getElementById('shop-save-hint');
   if(!el || !window.FrameShop) return;
   const ids = selectedShopProductIds();
-  el.textContent = FrameShop.selectionLabel(ids);
+  el.textContent = FrameShop.selectionLabel(ids, undefined, shopIdOptions());
   if(!save) return;
   const saving = FrameShop.selectionSaving(ids);
   save.textContent = saving;

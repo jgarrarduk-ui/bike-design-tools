@@ -59,11 +59,16 @@
       ? options.prices
       : undefined;
     const catalog = resolveCatalog(priceOverride);
-    const chosen = selectedIds == null ? defaultProductIds() : productIdsFromSelection(selectedIds, priceOverride);
+    // A paid amend keeps the parts already on the order. Availability gates
+    // a new purchase only, so a later draft or out-of-stock status does not
+    // untick them.
+    const chosen = selectedIds == null
+      ? defaultProductIds()
+      : (lockParts ? knownIds(selectedIds) : productIdsFromSelection(selectedIds, priceOverride));
     const selected = new Set(chosen);
     return PARTS.map(part => {
       const comingSoon = !!part.unavailable;
-      const blocked = !comingSoon && isBlocked(part.id, catalog);
+      const blocked = !comingSoon && !lockParts && isBlocked(part.id, catalog);
       return {
         id: part.id,
         name: part.name,
@@ -88,9 +93,10 @@
     return out;
   }
 
-  function productIdsFromSelection(selectedIds, priceMap) {
+  function productIdsFromSelection(selectedIds, priceMap, options) {
     const catalog = resolveCatalog(priceMap);
-    return knownIds(selectedIds).filter(id => !isBlocked(id, catalog));
+    const keepBlocked = !!(options && options.keepBlocked);
+    return knownIds(selectedIds).filter(id => keepBlocked || !isBlocked(id, catalog));
   }
 
   function formatGbp(amount) {
@@ -153,8 +159,8 @@
     currentCatalog = null;
   }
 
-  function listTotal(selectedIds, priceMap) {
-    const ids = productIdsFromSelection(selectedIds, priceMap);
+  function listTotal(selectedIds, priceMap, options) {
+    const ids = productIdsFromSelection(selectedIds, priceMap, options);
     if (!ids.length) return 0;
     const catalog = resolveCatalog(priceMap);
     let cents = 0;
@@ -169,8 +175,8 @@
   // Sum of the live prices for the buyable selection. null when any of those
   // prices is missing, so the page cannot fall back to a made-up figure.
   // The rear-end discount is a Woo fee, not a total computed here.
-  function selectionTotal(selectedIds, priceMap) {
-    return listTotal(selectedIds, priceMap);
+  function selectionTotal(selectedIds, priceMap, options) {
+    return listTotal(selectedIds, priceMap, options);
   }
 
   function partLabel(part, priceMap) {
@@ -188,8 +194,8 @@
     return '';
   }
 
-  function selectionLabel(selectedIds, priceMap) {
-    const ids = productIdsFromSelection(selectedIds, priceMap);
+  function selectionLabel(selectedIds, priceMap, options) {
+    const ids = productIdsFromSelection(selectedIds, priceMap, options);
     if (!ids.length) return 'Choose at least one design file.';
     const total = selectionTotal(ids, priceMap);
     if (total == null) return 'Price shown at checkout';
@@ -435,8 +441,10 @@
   }
 
   function revisionPlan({ lockedIds, productIds, params, savedParams }) {
-    const locked = productIdsFromSelection(lockedIds).slice().sort((a, b) => a - b);
-    const next = productIdsFromSelection(productIds).slice().sort((a, b) => a - b);
+    // Paid ids skip the catalogue filter. Adding or removing a part is still
+    // rejected: the two lists have to match.
+    const locked = knownIds(lockedIds).slice().sort((a, b) => a - b);
+    const next = knownIds(productIds).slice().sort((a, b) => a - b);
     if (!locked.length || locked.join(',') !== next.join(',')) {
       return { action: 'error', message: 'Those parts can\'t be changed on this order.' };
     }
