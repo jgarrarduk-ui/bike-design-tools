@@ -94,6 +94,7 @@ final class Creature_Feedback_Files {
 	const META             = '_creature_feedback_files';
 	const ALERT_META       = '_creature_feedback_files_alerted';
 	const KEY_OPTION       = 'creature_feedback_files_key';
+	const KEY_EXPORTED_OPTION = 'creature_feedback_files_key_exported_at';
 	const CRON_FETCH       = 'creature_feedback_files_fetch';
 	const CRON_RETENTION   = 'creature_feedback_files_retention';
 	const REST_NAMESPACE   = 'creature/v1';
@@ -1248,6 +1249,67 @@ final class Creature_Feedback_Files {
 	}
 
 	/**
+	 * Base64 option key for a one-time export. Does not print or write a file.
+	 *
+	 * A defined CREATURE_FEEDBACK_FILES_KEY is refused without reading it.
+	 * The first success records KEY_EXPORTED_OPTION (GMT, autoload off).
+	 * Later calls refuse unless $force is true, and that timestamp stays.
+	 *
+	 * @param bool $yes   Operator passed --yes.
+	 * @param bool $force Operator passed --force.
+	 * @return string|WP_Error Stored base64, or an error that does not contain the key.
+	 */
+	public static function export_key( $yes, $force ) {
+		if ( defined( 'CREATURE_FEEDBACK_FILES_KEY' ) ) {
+			return new WP_Error(
+				'creature_feedback_files_key_constant',
+				'The key comes from the constant CREATURE_FEEDBACK_FILES_KEY. This command only exports the option.'
+			);
+		}
+
+		if ( ! $yes ) {
+			return new WP_Error(
+				'creature_feedback_files_export_confirm',
+				'Pass --yes to print the key.'
+			);
+		}
+
+		$exported_at = get_option( self::KEY_EXPORTED_OPTION, false );
+		$already     = is_string( $exported_at ) && '' !== $exported_at;
+		if ( $already && ! $force ) {
+			return new WP_Error(
+				'creature_feedback_files_key_exported',
+				'The key was already exported. Pass --force to print it again.'
+			);
+		}
+
+		$raw = self::key_bytes();
+		if ( is_wp_error( $raw ) ) {
+			return new WP_Error( 'creature_feedback_files_key', 'The stored key is unusable.' );
+		}
+
+		$stored = get_option( self::KEY_OPTION, false );
+		$check  = is_string( $stored ) ? self::decode_key( $stored ) : null;
+		if ( ! is_string( $check ) || ! hash_equals( $raw, $check ) ) {
+			return new WP_Error( 'creature_feedback_files_key', 'The stored key is unusable.' );
+		}
+
+		if ( ! $already ) {
+			$stamp = gmdate( 'Y-m-d H:i:s' );
+			$added = add_option( self::KEY_EXPORTED_OPTION, $stamp, '', false );
+			$saved = get_option( self::KEY_EXPORTED_OPTION, false );
+			if ( ! $added && ( ! is_string( $saved ) || '' === $saved ) ) {
+				return new WP_Error(
+					'creature_feedback_files_key_exported',
+					'The export could not be recorded.'
+				);
+			}
+		}
+
+		return $stored;
+	}
+
+	/**
 	 * 32-byte key. The constant wins when it is defined. The option is
 	 * created once, with autoload off. The key is never logged.
 	 *
@@ -1633,7 +1695,9 @@ final class Creature_Feedback_Files {
 }
 
 /**
- * WP-CLI: queue one existing response. Dry-run unless --yes is passed.
+ * WP-CLI commands for private feedback copies.
+ *
+ * `backfill` queues one existing response. `export-key` prints the option key once.
  */
 final class Creature_Feedback_Files_CLI {
 
@@ -1688,6 +1752,42 @@ final class Creature_Feedback_Files_CLI {
 		}
 
 		WP_CLI::success( sprintf( 'Queued %d file(s) for response %d.', count( $result['files'] ), $post_id ) );
+	}
+
+	/**
+	 * Print the option key to STDOUT and nothing else.
+	 *
+	 * Diagnostics are WP_CLI::error, which goes to STDERR. The key is not
+	 * logged and is not written to a file. There is no REST route for this.
+	 *
+	 * ## OPTIONS
+	 *
+	 * --yes
+	 * : Print the key. Required.
+	 *
+	 * [--force]
+	 * : Print the key again after creature_feedback_files_key_exported_at is set.
+	 *
+	 * @param array $args       Positional args. Unused.
+	 * @param array $assoc_args Flags.
+	 * @return void
+	 */
+	public function export_key( $args, $assoc_args ) {
+		unset( $args );
+		if ( ! is_array( $assoc_args ) ) {
+			$assoc_args = array();
+		}
+
+		$result = Creature_Feedback_Files::export_key(
+			! empty( $assoc_args['yes'] ),
+			! empty( $assoc_args['force'] )
+		);
+		if ( is_wp_error( $result ) ) {
+			WP_CLI::error( $result->get_error_message() );
+			return;
+		}
+
+		fwrite( STDOUT, $result . "\n" );
 	}
 }
 

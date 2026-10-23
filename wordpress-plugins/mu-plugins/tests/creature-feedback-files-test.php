@@ -12,6 +12,10 @@ if ( PHP_SAPI !== 'cli' || ( isset( $_SERVER['SCRIPT_FILENAME'] ) && realpath( $
 	return;
 }
 
+if ( 'export' === getenv( 'CREATURE_FF_CHILD' ) ) {
+	creature_ff_export_child();
+}
+
 ini_set( 'memory_limit', '512M' );
 
 set_error_handler(
@@ -119,6 +123,304 @@ function creature_ff_rrmdir( $dir ) {
 		}
 	}
 	rmdir( $dir );
+}
+
+/**
+ * Child process for export-key. STDOUT is the command's STDOUT.
+ *
+ * @return void
+ */
+function creature_ff_export_child() {
+	$mode = getenv( 'CREATURE_FF_CHILD_MODE' );
+	$key  = getenv( 'CREATURE_FF_CHILD_KEY' );
+	if ( ! is_string( $mode ) || ! is_string( $key ) || '' === $key ) {
+		fwrite( STDERR, "export child is missing its mode\n" );
+		exit( 2 );
+	}
+
+	$root = sys_get_temp_dir() . '/creature-ff-export-' . getmypid();
+	mkdir( $root, 0700, true );
+	$log = $root . '/php-errors.log';
+	ini_set( 'log_errors', '1' );
+	ini_set( 'display_errors', '0' );
+	ini_set( 'error_log', $log );
+	chdir( $root );
+	register_shutdown_function(
+		static function () use ( $root ) {
+			creature_ff_rrmdir( $root );
+		}
+	);
+	set_error_handler(
+		static function ( $severity, $message ) use ( $key ) {
+			unset( $severity );
+			if ( is_string( $message ) && false !== strpos( $message, $key ) ) {
+				fwrite( STDERR, "key reached a log\n" );
+				exit( 4 );
+			}
+			fwrite( STDERR, "export child hit a PHP warning\n" );
+			exit( 2 );
+		}
+	);
+
+	if ( ! class_exists( 'WP_Error' ) ) {
+		/**
+		 * Minimal WP_Error for the export child.
+		 */
+		class WP_Error {
+			/** @var string */
+			public $code = '';
+			/** @var string */
+			public $message = '';
+			/** @var mixed */
+			public $data = '';
+
+			/**
+			 * @param string $code    Code.
+			 * @param string $message Message.
+			 * @param mixed  $data    Data.
+			 */
+			public function __construct( $code = '', $message = '', $data = '' ) {
+				$this->code    = (string) $code;
+				$this->message = (string) $message;
+				$this->data    = $data;
+			}
+
+			/**
+			 * @return string
+			 */
+			public function get_error_message() {
+				return $this->message;
+			}
+		}
+	}
+
+	if ( ! function_exists( 'is_wp_error' ) ) {
+		/**
+		 * @param mixed $thing Thing.
+		 * @return bool
+		 */
+		function is_wp_error( $thing ) {
+			return $thing instanceof WP_Error;
+		}
+	}
+
+	if ( ! function_exists( 'add_action' ) ) {
+		/**
+		 * @return void
+		 */
+		function add_action() {
+		}
+	}
+
+	if ( ! function_exists( 'add_filter' ) ) {
+		/**
+		 * @return void
+		 */
+		function add_filter() {
+		}
+	}
+
+	$GLOBALS['creature_ff_child_options']  = array();
+	$GLOBALS['creature_ff_child_autoload'] = array();
+	if ( 'constant' !== $mode ) {
+		$GLOBALS['creature_ff_child_options']['creature_feedback_files_key']  = $key;
+		$GLOBALS['creature_ff_child_autoload']['creature_feedback_files_key'] = false;
+	}
+	if ( 'second' === $mode || 'force' === $mode ) {
+		$GLOBALS['creature_ff_child_options']['creature_feedback_files_key_exported_at']  = '2020-01-02 03:04:05';
+		$GLOBALS['creature_ff_child_autoload']['creature_feedback_files_key_exported_at'] = false;
+	}
+
+	if ( ! function_exists( 'get_option' ) ) {
+		/**
+		 * @param string $option  Option.
+		 * @param mixed  $default Default.
+		 * @return mixed
+		 */
+		function get_option( $option, $default = false ) {
+			if ( array_key_exists( $option, $GLOBALS['creature_ff_child_options'] ) ) {
+				return $GLOBALS['creature_ff_child_options'][ $option ];
+			}
+			return $default;
+		}
+	}
+
+	if ( ! function_exists( 'add_option' ) ) {
+		/**
+		 * @param string $option   Option.
+		 * @param mixed  $value    Value.
+		 * @param string $deprecated Deprecated.
+		 * @param mixed  $autoload Autoload.
+		 * @return bool
+		 */
+		function add_option( $option, $value = '', $deprecated = '', $autoload = 'yes' ) {
+			unset( $deprecated );
+			if ( array_key_exists( $option, $GLOBALS['creature_ff_child_options'] ) ) {
+				return false;
+			}
+			$GLOBALS['creature_ff_child_options'][ $option ]  = $value;
+			$GLOBALS['creature_ff_child_autoload'][ $option ] = $autoload;
+			return true;
+		}
+	}
+
+	if ( ! defined( 'CREATURE_FF_CHILD_STDERR' ) ) {
+		define( 'CREATURE_FF_CHILD_STDERR', true );
+	}
+
+	if ( 'constant' === $mode ) {
+		define( 'CREATURE_FEEDBACK_FILES_KEY', $key );
+	}
+	define( 'ABSPATH', $root . '/abs/' );
+	mkdir( ABSPATH, 0700, true );
+	define( 'WP_CLI', true );
+
+	require dirname( __DIR__ ) . '/creature-feedback-files.php';
+
+	$assoc = array();
+	if ( 'no-yes' !== $mode ) {
+		$assoc['yes'] = true;
+	}
+	if ( 'force' === $mode ) {
+		$assoc['force'] = true;
+	}
+	$cli = new Creature_Feedback_Files_CLI();
+	$cli->export_key( array(), $assoc );
+
+	$logged = implode( "\n", WP_CLI::$logs ) . "\n" . implode( "\n", WP_CLI::$errors );
+	if ( is_file( $log ) ) {
+		$logged_file = file_get_contents( $log );
+		if ( is_string( $logged_file ) ) {
+			$logged .= "\n" . $logged_file;
+		}
+	}
+	if ( false !== strpos( $logged, $key ) ) {
+		fwrite( STDERR, "key reached a log\n" );
+		exit( 4 );
+	}
+
+	$iterator = new RecursiveIteratorIterator(
+		new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS )
+	);
+	foreach ( $iterator as $file ) {
+		if ( ! $file->isFile() ) {
+			continue;
+		}
+		$contents = file_get_contents( $file->getPathname() );
+		if ( is_string( $contents ) && false !== strpos( $contents, $key ) ) {
+			fwrite( STDERR, "key written to a file\n" );
+			exit( 6 );
+		}
+	}
+
+	$exported = array_key_exists( 'creature_feedback_files_key_exported_at', $GLOBALS['creature_ff_child_options'] )
+		? $GLOBALS['creature_ff_child_options']['creature_feedback_files_key_exported_at']
+		: null;
+
+	if ( 'stdout' === $mode ) {
+		if ( ! is_string( $exported ) || 1 !== preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $exported ) ) {
+			fwrite( STDERR, "export timestamp missing\n" );
+			exit( 5 );
+		}
+		$autoload = $GLOBALS['creature_ff_child_autoload']['creature_feedback_files_key_exported_at'];
+		if ( false !== $autoload ) {
+			fwrite( STDERR, "export timestamp autoloads\n" );
+			exit( 5 );
+		}
+		exit( 0 );
+	}
+
+	if ( 'force' === $mode ) {
+		if ( '2020-01-02 03:04:05' !== $exported ) {
+			fwrite( STDERR, "export timestamp changed\n" );
+			exit( 5 );
+		}
+		exit( 0 );
+	}
+
+	if ( 'no-yes' === $mode || 'second' === $mode || 'constant' === $mode ) {
+		if ( 'no-yes' === $mode && null !== $exported ) {
+			fwrite( STDERR, "export recorded without --yes\n" );
+			exit( 5 );
+		}
+		if ( 'second' === $mode && '2020-01-02 03:04:05' !== $exported ) {
+			fwrite( STDERR, "export timestamp changed on refusal\n" );
+			exit( 5 );
+		}
+		if ( array() === WP_CLI::$errors ) {
+			fwrite( STDERR, "expected a refusal\n" );
+			exit( 3 );
+		}
+		exit( 1 );
+	}
+
+	fwrite( STDERR, "unknown export child mode\n" );
+	exit( 2 );
+}
+
+/**
+ * Run one export-key child. The key stays in that process.
+ *
+ * @param string $mode stdout, no-yes, second, force, or constant.
+ * @param string $key  Base64 key.
+ * @return array{exit: int, stdout: string, stderr: string}
+ */
+function creature_ff_run_export_child( $mode, $key ) {
+	$env = array();
+	$raw = @file_get_contents( '/proc/self/environ' );
+	if ( is_string( $raw ) && '' !== $raw ) {
+		foreach ( explode( "\0", $raw ) as $pair ) {
+			if ( '' === $pair || false === strpos( $pair, '=' ) ) {
+				continue;
+			}
+			$parts           = explode( '=', $pair, 2 );
+			$env[ $parts[0] ] = $parts[1];
+		}
+	}
+	$env['CREATURE_FF_CHILD']      = 'export';
+	$env['CREATURE_FF_CHILD_MODE'] = $mode;
+	$env['CREATURE_FF_CHILD_KEY']  = $key;
+
+	$descriptors = array(
+		0 => array( 'pipe', 'r' ),
+		1 => array( 'pipe', 'w' ),
+		2 => array( 'pipe', 'w' ),
+	);
+	$process = proc_open( array( PHP_BINARY, __FILE__ ), $descriptors, $pipes, sys_get_temp_dir(), $env );
+	if ( ! is_resource( $process ) ) {
+		return array(
+			'exit'   => 127,
+			'stdout' => '',
+			'stderr' => "proc_open failed\n",
+		);
+	}
+	fclose( $pipes[0] );
+	$stdout = stream_get_contents( $pipes[1] );
+	$stderr = stream_get_contents( $pipes[2] );
+	fclose( $pipes[1] );
+	fclose( $pipes[2] );
+	$code = proc_close( $process );
+	return array(
+		'exit'   => (int) $code,
+		'stdout' => is_string( $stdout ) ? $stdout : '',
+		'stderr' => is_string( $stderr ) ? $stderr : '',
+	);
+}
+
+/**
+ * Fail the child without copying either stream into this message.
+ *
+ * @param array  $result   Child result.
+ * @param int    $expected Expected exit code.
+ * @param string $key      Key that must not be printed on failure.
+ * @param string $message  Failure text.
+ * @return void
+ */
+function creature_ff_expect_export_exit( $result, $expected, $key, $message ) {
+	if ( (int) $result['exit'] !== (int) $expected && false === strpos( $result['stderr'], $key ) ) {
+		fwrite( STDERR, $result['stderr'] );
+	}
+	creature_ff_expect( (int) $result['exit'] === (int) $expected, $message );
 }
 
 if ( ! function_exists( 'add_filter' ) ) {
@@ -771,6 +1073,9 @@ class WP_CLI {
 	 */
 	public static function error( $message ) {
 		self::$errors[] = (string) $message;
+		if ( defined( 'CREATURE_FF_CHILD_STDERR' ) && CREATURE_FF_CHILD_STDERR ) {
+			fwrite( STDERR, $message . "\n" );
+		}
 	}
 
 	/**
@@ -860,6 +1165,7 @@ foreach ( $routes as $route ) {
 	if ( '/feedback-files/(?P<response_id>\d+)/(?P<file_id>\d+)' === $route[1] ) {
 		$saw_download = true;
 	}
+	creature_ff_expect( false === strpos( $route[1], 'export' ) && false === strpos( $route[1], 'key' ), 'REST routes do not export the key' );
 }
 creature_ff_expect( $saw_list, 'list route registered' );
 creature_ff_expect( $saw_download, 'download route registered' );
@@ -1580,6 +1886,90 @@ creature_ff_expect( false !== strpos( implode( "\n", WP_CLI::$logs ), 'Queued' )
 WP_CLI::$errors = array();
 $cli->backfill( array(), array( 'post' => 602, 'yes' => true ) );
 creature_ff_expect( 1 === count( WP_CLI::$errors ), 'CLI reports a response from another form' );
+
+creature_ff_expect( method_exists( $cli, 'export_key' ), 'export-key is a WP-CLI method' );
+$export_log = $creature_ff_root . '/export-php-errors.log';
+ini_set( 'log_errors', '1' );
+ini_set( 'error_log', $export_log );
+WP_CLI::$logs   = array();
+WP_CLI::$errors = array();
+
+$export_before = gmdate( 'Y-m-d H:i:s' );
+$refused_yes   = Creature_Feedback_Files::export_key( false, false );
+$refused_force = Creature_Feedback_Files::export_key( false, true );
+creature_ff_expect( is_wp_error( $refused_yes ) && false !== strpos( $refused_yes->get_error_message(), '--yes' ), 'export refuses without --yes' );
+creature_ff_expect( is_wp_error( $refused_force ), 'export refuses --force without --yes' );
+creature_ff_expect( false === get_option( Creature_Feedback_Files::KEY_EXPORTED_OPTION, false ), 'a refusal does not record an export' );
+$cli->export_key( array(), array() );
+creature_ff_expect( 1 === count( WP_CLI::$errors ) && false !== strpos( WP_CLI::$errors[0], '--yes' ), 'CLI refuses without --yes' );
+
+$exported_key = Creature_Feedback_Files::export_key( true, false );
+$export_after = gmdate( 'Y-m-d H:i:s' );
+$exported_at  = get_option( Creature_Feedback_Files::KEY_EXPORTED_OPTION, false );
+creature_ff_expect( $exported_key === $stored_key, 'export returns the stored key' );
+creature_ff_expect(
+	is_string( $exported_at ) && 1 === preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $exported_at ) && $exported_at >= $export_before && $exported_at <= $export_after,
+	'export records a GMT timestamp'
+);
+creature_ff_expect( false === $GLOBALS['creature_ff_option_autoload'][ Creature_Feedback_Files::KEY_EXPORTED_OPTION ], 'export timestamp autoload is false' );
+
+$second_export = Creature_Feedback_Files::export_key( true, false );
+creature_ff_expect( is_wp_error( $second_export ) && false !== strpos( $second_export->get_error_message(), '--force' ), 'second export refuses without --force' );
+creature_ff_expect( $exported_at === get_option( Creature_Feedback_Files::KEY_EXPORTED_OPTION ), 'a second export keeps the original timestamp' );
+WP_CLI::$errors = array();
+$cli->export_key( array(), array( 'yes' => true ) );
+creature_ff_expect( 1 === count( WP_CLI::$errors ) && false !== strpos( WP_CLI::$errors[0], '--force' ), 'CLI second run refuses without --force' );
+
+$forced_key = Creature_Feedback_Files::export_key( true, true );
+creature_ff_expect( $forced_key === $stored_key, 'export --force returns the stored key' );
+creature_ff_expect( $exported_at === get_option( Creature_Feedback_Files::KEY_EXPORTED_OPTION ), '--force keeps the original timestamp' );
+
+$export_messages = implode( "\n", WP_CLI::$logs ) . "\n" . implode( "\n", WP_CLI::$errors );
+foreach ( array( $refused_yes, $refused_force, $second_export ) as $export_error ) {
+	$export_messages .= "\n" . $export_error->get_error_message();
+	$encoded_data     = json_encode( $export_error->get_error_data() );
+	if ( is_string( $encoded_data ) ) {
+		$export_messages .= "\n" . $encoded_data;
+	}
+}
+if ( is_file( $export_log ) ) {
+	$export_log_body = file_get_contents( $export_log );
+	if ( is_string( $export_log_body ) ) {
+		$export_messages .= "\n" . $export_log_body;
+	}
+}
+creature_ff_expect( false === strpos( $export_messages, $stored_key ), 'no logging calls receive the key' );
+
+$stdout_export = creature_ff_run_export_child( 'stdout', $stored_key );
+creature_ff_expect_export_exit( $stdout_export, 0, $stored_key, 'export stdout command exits 0' );
+creature_ff_expect( $stdout_export['stdout'] === $stored_key . "\n", 'stdout contains only the key' );
+creature_ff_expect( false === strpos( $stdout_export['stderr'], $stored_key ), 'export stderr does not contain the key' );
+creature_ff_expect( 4 !== $stdout_export['exit'] && 6 !== $stdout_export['exit'], 'export does not log or write the key' );
+
+$no_yes_export = creature_ff_run_export_child( 'no-yes', $stored_key );
+creature_ff_expect_export_exit( $no_yes_export, 1, $stored_key, 'export without --yes exits 1' );
+creature_ff_expect( '' === $no_yes_export['stdout'], 'export without --yes leaves stdout empty' );
+creature_ff_expect( false !== strpos( $no_yes_export['stderr'], '--yes' ), 'export without --yes names the flag on stderr' );
+creature_ff_expect( false === strpos( $no_yes_export['stderr'], $stored_key ), 'export without --yes does not reveal the key' );
+
+$second_child = creature_ff_run_export_child( 'second', $stored_key );
+creature_ff_expect_export_exit( $second_child, 1, $stored_key, 'second export without --force exits 1' );
+creature_ff_expect( '' === $second_child['stdout'], 'second export without --force leaves stdout empty' );
+creature_ff_expect( false !== strpos( $second_child['stderr'], '--force' ), 'second export names --force on stderr' );
+creature_ff_expect( false === strpos( $second_child['stderr'], $stored_key ), 'second export does not reveal the key' );
+
+$force_child = creature_ff_run_export_child( 'force', $stored_key );
+creature_ff_expect_export_exit( $force_child, 0, $stored_key, 'export --force exits 0' );
+creature_ff_expect( $force_child['stdout'] === $stored_key . "\n", 'export --force stdout contains only the key' );
+creature_ff_expect( false === strpos( $force_child['stderr'], $stored_key ), 'export --force stderr does not contain the key' );
+
+$constant_key    = base64_encode( random_bytes( SODIUM_CRYPTO_SECRETBOX_KEYBYTES ) );
+$constant_export = creature_ff_run_export_child( 'constant', $constant_key );
+creature_ff_expect_export_exit( $constant_export, 1, $constant_key, 'export refuses when the constant is set' );
+creature_ff_expect( '' === $constant_export['stdout'], 'a constant key prints nothing' );
+creature_ff_expect( false !== strpos( $constant_export['stderr'], 'CREATURE_FEEDBACK_FILES_KEY' ), 'constant refusal names the constant' );
+creature_ff_expect( false === strpos( $constant_export['stdout'] . $constant_export['stderr'], $constant_key ), 'constant refusal does not include the key' );
+creature_ff_expect( 4 !== $constant_export['exit'] && 6 !== $constant_export['exit'], 'constant refusal does not log or write the key' );
 
 if ( $failures > 0 ) {
 	fwrite( STDERR, "{$failures} failed, {$checks} checks\n" );

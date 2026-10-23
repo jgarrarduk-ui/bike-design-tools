@@ -117,9 +117,30 @@ Each downloaded body must be an image. The type is sniffed from the bytes. A `Co
 
 Files are encrypted at rest with libsodium `sodium_crypto_secretbox`. A random nonce is stored in front of the ciphertext. The on-disk name is a random 32-hex folder per response and a random 32-hex `.bin` file, with a blank `index.php` in each directory. A leaked URL or a copied `.bin` is ciphertext. The REST list never returns the stored path. Download requires `manage_options`, checks the sha256 of the plaintext, and sends `Cache-Control: no-store`.
 
-The key is the constant `CREATURE_FEEDBACK_FILES_KEY` when that is defined: base64 of 32 bytes, normally in `wp-config.php`. Otherwise the plugin generates one key and stores it in the option `creature_feedback_files_key` with autoload off. Back up whichever one is in use before you need to restore a file. Without the key the ciphertext cannot be read. Do not put the key in the repo, in an email, or in a log. This plugin never writes the key or the file bytes to the log.
+The default key store is the option `creature_feedback_files_key`, with autoload off. On Atomic, `wp-config.php` is unreliable, so that option is what encrypts new copies. When the constant `CREATURE_FEEDBACK_FILES_KEY` is defined (base64 of 32 bytes), the constant is used instead.
+
+Losing the key makes every copy unreadable. Back it up before you need to restore a file. Do not put the key in the repo, in an email, or in a log. This plugin never writes the key or the file bytes to the log, and it never writes the key to a file on the server.
 
 The private directory is the first writable path outside the WordPress root from `creature_feedback_files_private_dirs`. The default is a `creature-private` directory next to the WordPress root. If none of those are usable, files fall back to `uploads/creature-private`.
+
+### Export the key
+
+WP-CLI only. There is no REST route.
+
+```bash
+wp creature-feedback export-key --yes
+```
+
+STDOUT is the base64 key and a newline, and nothing else, so the command can be piped over SSH into a mode-600 file:
+
+```bash
+ssh <host> 'wp creature-feedback export-key --yes' > creature-feedback-files.key
+chmod 600 creature-feedback-files.key
+```
+
+Diagnostics go to STDERR. `--yes` is required. The first successful run records `creature_feedback_files_key_exported_at` in GMT, with autoload off. A later run refuses unless you pass `--force`. If `CREATURE_FEEDBACK_FILES_KEY` is set, the command refuses and prints nothing; copy the constant yourself. The command does not log the key and does not write it to any file on the server.
+
+Losing the key makes every copy unreadable.
 
 ### Filters
 
@@ -173,5 +194,5 @@ Must-use plugins have no uninstall hook. A single file in `mu-plugins/` never ru
 1. Delete `wp-content/mu-plugins/creature-feedback-files.php`.
 2. Clear any remaining cron events named `creature_feedback_files_fetch` and `creature_feedback_files_retention` (`wp cron event list`).
 3. Delete the private directory only when the photos are no longer needed. Until then it holds ciphertext.
-4. Export `creature_feedback_files_key`, or copy `CREATURE_FEEDBACK_FILES_KEY`, before you delete the option. Deleting the key makes every stored file unreadable.
+4. Run `wp creature-feedback export-key --yes` and store that output off the server before you delete `creature_feedback_files_key`. If the constant is set, the command refuses; copy `CREATURE_FEEDBACK_FILES_KEY` yourself. Losing the key makes every copy unreadable. `creature_feedback_files_key_exported_at` is only a timestamp.
 5. Post meta `_creature_feedback_files` and `_creature_feedback_files_alerted` can stay. They do not contain the key or the ciphertext. Do not delete the Jetpack feedback posts.
