@@ -22,7 +22,7 @@ James runs Claude Code locally against this repo. Four static browser tools live
 | `wordpress-plugins/mu-plugins/` | Must-use PHP. Copy each plugin file into `wp-content/mu-plugins/` (not a subfolder) |
 | `.nojekyll` | Stops GitHub Pages/Jekyll ignoring `_` directories |
 
-No root `package.json`, no CI config, no `railway.toml`. Static files have no build step. There is no root `.gitignore`; `server/.gitignore` ignores `.env`, `node_modules/`, `data/`, and `*.log`.
+No root `package.json`, no CI config, no `railway.toml`. Static files have no build step. The root `.gitignore` ignores `.env` and `.env.*` in any directory and keeps `.env.example` tracked. `server/.gitignore` also ignores `node_modules/`, `data/`, `*.log`, and `.env`.
 
 ## Install and run
 
@@ -86,4 +86,4 @@ Run the suites the change can affect, and report the counts before finishing. `/
 
 `.claude/settings.json` allows read-only git inspection (`status`, `diff`, `log`, `show`) and the test commands above. It denies Read and Edit of `.env` and `.env.*`, then carves `.env.example` back out so that file stays readable, and it denies `git push`. Install, edit, and commit still ask. No MCP servers.
 
-`.claude/hooks/block-secrets.mjs` runs before Bash. It exits 2 when the command is `git push`, including `git -C … push` and `sh -c 'git push'`, or when the command names a `.env` file other than `.env.example` (`cat server/.env`, a `readFileSync` of that path). Exit 0 leaves the normal permission prompt. Unparseable hook input exits 0. The hook does not approve anything. `Bash(git push *)` in settings does not match `git -C … push`; the hook covers that form. A push invoked as `/usr/bin/git push` without going through `sh -c` is outside the hook.
+`.claude/hooks/block-secrets.mjs` runs before Bash. It exits 2 when the command is `git push`, including `git -C … push`, `/usr/bin/git push`, and `sh -c 'git push'`, or when the command names a `.env` file other than `.env.example` (`cat server/.env`, a `readFileSync` of that path). The program name is matched by basename, so an absolute git binary is the same as `git`. Exit 0 leaves the normal permission prompt. Unparseable hook input exits 0. The hook does not approve anything. `Bash(git push *)` in settings does not match `git -C … push` or `/usr/bin/git push`; the hook covers both.

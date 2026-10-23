@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // PreToolUse hook for Bash. Blocks two things the permission rules miss:
-//   - git push written with flags before the subcommand (git -C … push)
+//   - git push, including flags before the subcommand (git -C … push)
+//     and an absolute binary (/usr/bin/git push)
 //   - a shell command that names a .env file other than .env.example
 // Exit 0 leaves the normal permission prompt in place. Exit 2 blocks.
 // A JSON parse failure exits 0 so a broken hook does not stop the session.
@@ -58,7 +59,7 @@ function skipFlags(words, index) {
   return i;
 }
 
-function commandPushes(words) {
+function skipWrappers(words) {
   let i = 0;
   while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i])) i += 1;
   while (i < words.length && WRAPPERS.has(baseName(words[i]))) {
@@ -69,8 +70,19 @@ function commandPushes(words) {
       while (i < words.length && words[i].startsWith('-')) i += 1;
     }
   }
+  return i;
+}
+
+function gitSubcommand(words) {
+  const i = skipWrappers(words);
+  if (baseName(words[i] || '') !== 'git') return '';
+  return words[skipFlags(words, i + 1)] || '';
+}
+
+function commandPushes(words) {
+  if (gitSubcommand(words) === 'push') return true;
+  const i = skipWrappers(words);
   const bin = baseName(words[i] || '');
-  if (bin === 'git') return words[skipFlags(words, i + 1)] === 'push';
   if (bin === 'sh' || bin === 'bash' || bin === 'zsh' || bin === 'dash') {
     let j = i + 1;
     while (j < words.length && words[j].startsWith('-') && !words[j].startsWith('--')) {
@@ -117,7 +129,7 @@ function splitSegments(command) {
 }
 
 function withoutCommitMessage(segment) {
-  if (!/^\s*(?:sudo\s+)?git\s+commit\b/.test(segment)) return segment;
+  if (gitSubcommand(wordsOf(segment)) !== 'commit') return segment;
   return segment.replace(/-m\s+(?:'[^']*'|"[^"]*"|`[^`]*`|\S+)/g, ' ');
 }
 
