@@ -67,6 +67,9 @@ once a design is reviewed and approved. SQLite for storage (`better-sqlite3`),
 Resend's HTTPS API for email, `archiver` for zipping deliverables. Has its own
 admin panel (`server/public/admin.html`). To use Send Review Email locally,
 set `BASE_URL` to the origin you open, for example `http://127.0.0.1:3001`.
+`ADMIN_PASSWORD` must be set or every `/api/admin` route returns 503. The
+page sends that password as a bearer token; it does not unlock the routes
+on its own.
 
 ```
 cd server

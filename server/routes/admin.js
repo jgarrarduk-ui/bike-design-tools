@@ -13,6 +13,7 @@
  *   POST /api/admin/retention-purge           — anonymise designs past the retention window
  */
 
+const crypto   = require('crypto');
 const express  = require('express');
 const multer   = require('multer');
 const { v4: uuidv4 } = require('uuid');
@@ -24,18 +25,42 @@ const { maskEmail } = require('../services/redact');
 
 const router = express.Router();
 
+// Null when ADMIN_PASSWORD is unset, empty, or whitespace-only.
+// A value that contains any other character is kept exactly.
+function configuredAdminPassword() {
+  const raw = process.env.ADMIN_PASSWORD;
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  return raw;
+}
+
+function passwordsMatch(provided, expected) {
+  const a = crypto.createHash('sha256').update(String(provided), 'utf8').digest();
+  const b = crypto.createHash('sha256').update(String(expected), 'utf8').digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+function bearerToken(req) {
+  const header = req.headers.authorization || '';
+  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return '';
+  return header.slice('Bearer '.length);
+}
+
+// One line at process startup. The value is never written.
+function warnIfAdminUnconfigured() {
+  if (configuredAdminPassword() !== null) return;
+  console.warn('[admin] ADMIN_PASSWORD is unset — admin routes return 503');
+}
+
 // ── Auth middleware ───────────────────────────────────────────────────────────
+// Every route on this router (orders, send-review, cleanup-unpaid,
+// retention-purge) passes through here. GET /admin is only the login page.
 function requireAdminAuth(req, res, next) {
-  const password = process.env.ADMIN_PASSWORD;
-  if (!password) {
-    console.warn('[admin] ADMIN_PASSWORD not set — admin routes are unprotected');
-    return next();
+  const password = configuredAdminPassword();
+  if (password === null) {
+    return res.status(503).json({ error: 'admin_not_configured' });
   }
 
-  const authHeader = req.headers['authorization'] || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-  if (!token || token !== password) {
+  if (!passwordsMatch(bearerToken(req), password)) {
     return res.status(401).json({ error: 'Unauthorised' });
   }
 
@@ -157,4 +182,6 @@ router.post('/retention-purge', async (_req, res) => {
   }
 });
 
+router.warnIfAdminUnconfigured = warnIfAdminUnconfigured;
+router.passwordsMatch = passwordsMatch;
 module.exports = router;

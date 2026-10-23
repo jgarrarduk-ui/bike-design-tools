@@ -78,6 +78,7 @@ app.listen(PORT, () => {
   console.log(`  WooCommerce : ${process.env.WC_URL   || '(not configured)'}`);
   console.log(`  Email       : ${email.isConfigured() ? 'Resend API' : '(SMTP_PASS / RESEND_API_KEY not set)'}`);
   console.log(`  DB          : ${process.env.DB_PATH   || './data/designs.db'}`);
+  adminRouter.warnIfAdminUnconfigured();
   scheduleUnpaidCleanup();
   scheduleRetentionPurge();
 });

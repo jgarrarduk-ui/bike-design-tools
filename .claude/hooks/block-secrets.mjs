@@ -7,7 +7,7 @@
 // Blocks:
 //   - git push, including flags (git -C … push), an absolute binary
 //     (/usr/bin/git push), and the same command after env, exec, eval,
-//     npx, or npm exec
+//     npx, npm exec, nice, nohup, or time
 //   - a command that names .env or .env.<suffix>, other than .env.example.
 //     .envrc, .env_backup and .env-old are not secret files.
 //
@@ -80,6 +80,16 @@ function skipWrapperFlags(words, index, wrapped) {
   if (wrapped === 'timeout') {
     while (i < words.length && words[i].startsWith('-')) i += 1;
     if (/^\d/.test(words[i] || '')) i += 1;
+    return i;
+  }
+  if (wrapped === 'nice' || wrapped === 'nohup' || wrapped === 'time') {
+    while (i < words.length && words[i].startsWith('-')) {
+      const flag = words[i];
+      i += 1;
+      const takesValue = (wrapped === 'nice' && (flag === '-n' || flag === '--adjustment'))
+        || (wrapped === 'time' && (flag === '-f' || flag === '-o' || flag === '--format' || flag === '--output'));
+      if (takesValue && i < words.length && !words[i].startsWith('-')) i += 1;
+    }
     return i;
   }
   if (wrapped === 'sudo' || wrapped === 'exec' || wrapped === 'env' || wrapped === 'npx' || wrapped === 'npm') {

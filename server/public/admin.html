@@ -200,8 +200,15 @@
       headers: { 'Authorization': 'Bearer ' + pw }
     });
 
-    if (res.status === 401) {
-      document.getElementById('login-error').style.display = 'block';
+    const error = document.getElementById('login-error');
+    if (res.status === 503) {
+      error.textContent = 'Admin is not configured.';
+      error.style.display = 'block';
+      return;
+    }
+    if (!res.ok) {
+      error.textContent = 'Incorrect password.';
+      error.style.display = 'block';
       return;
     }
 

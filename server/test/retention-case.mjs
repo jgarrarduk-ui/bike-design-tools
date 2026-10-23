@@ -1095,11 +1095,10 @@ const cases = {
     app.use('/api/admin', admin);
     const server = await listen(app);
     try {
-      const open = await request(server, '/api/admin/retention-purge', { method: 'POST' });
-      assert.equal(open.status, 200);
-      assert.equal(open.json.ok, true);
-      assert.equal(open.json.dryRun, false);
-      assert.deepEqual(open.json.designIds, ['expired-91']);
+      const closed = await request(server, '/api/admin/retention-purge', { method: 'POST' });
+      assert.equal(closed.status, 503);
+      assert.deepEqual(closed.json, { error: 'admin_not_configured' });
+      assert.equal(row('expired-91').anonymised_at, null);
 
       process.env.ADMIN_PASSWORD = 'secret';
       const denied = await request(server, '/api/admin/retention-purge', { method: 'POST' });
@@ -1110,6 +1109,8 @@ const cases = {
       });
       assert.equal(allowed.status, 200);
       assert.equal(allowed.json.ok, true);
+      assert.equal(allowed.json.dryRun, false);
+      assert.deepEqual(allowed.json.designIds, ['expired-91']);
 
       db.close();
       const broken = await request(server, '/api/admin/retention-purge', {
@@ -1142,7 +1143,11 @@ const cases = {
     app.use('/api/admin', admin);
     const server = await listen(app);
     try {
-      const res = await request(server, '/api/admin/retention-purge', { method: 'POST' });
+      process.env.ADMIN_PASSWORD = 'secret';
+      const res = await request(server, '/api/admin/retention-purge', {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret' },
+      });
       assert.equal(res.status, 409);
       assert.equal(res.json.reason, 'overlap');
     } finally {

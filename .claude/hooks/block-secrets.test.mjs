@@ -22,6 +22,11 @@ const blocked = [
   'npx --yes git push',
   'npm exec git push',
   'npm exec -- git push',
+  'nice git push',
+  'nice -n 10 git push',
+  'nohup git push',
+  'time git push',
+  'time -p git push',
   'npm test && /usr/bin/git push',
   "sh -c 'env git push'",
   'cat server/.env',
@@ -51,6 +56,9 @@ const allowed = [
   'cat .env_backup',
   'cat .env-old',
   'node test/notch-tests.mjs',
+  'nice echo ok',
+  'time git status',
+  'nohup npm test',
 ];
 
 let failed = 0;
@@ -85,8 +93,12 @@ if (hookExit('cat .envrc') !== 0) {
   failed += 1;
   console.log('stdin hook did not exit 0 for cat .envrc');
 }
+if (hookExit('nice git push') !== 2) {
+  failed += 1;
+  console.log('stdin hook did not exit 2 for nice git push');
+}
 
-const total = blocked.length + allowed.length + 3;
+const total = blocked.length + allowed.length + 4;
 if (failed) {
   console.log(failed + ' failed of ' + total);
   process.exit(1);
