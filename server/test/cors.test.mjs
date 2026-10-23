@@ -276,17 +276,33 @@ describe('CORS origins', () => {
     }
   });
 
-  test('a same-origin admin POST passes with no allow-origin header', async () => {
+  test('a Host-derived origin that is not BASE_URL is refused', async () => {
     const origin = ownOrigin();
-    const res = await request(server, {
+    const host = `127.0.0.1:${server.address().port}`;
+    const path = '/api/admin/orders/design-1/send-review';
+
+    const unset = await request(server, {
       method: 'POST',
-      path: '/api/admin/orders/design-1/send-review',
-      headers: { origin, host: `127.0.0.1:${server.address().port}` },
+      path,
+      headers: { origin, host },
     });
-    assert.equal(res.status, 200);
-    assert.equal(res.headers['access-control-allow-origin'], undefined);
-    assert.equal(res.headers.vary, 'Origin');
-    assert.equal(res.body.status, 'ok');
+    assert.equal(unset.status, 403);
+    assert.equal(unset.headers['access-control-allow-origin'], undefined);
+    assert.deepEqual(unset.body, { error: 'origin_not_allowed' });
+
+    process.env.BASE_URL = 'https://api.creaturecycles.co.uk';
+    try {
+      const res = await request(server, {
+        method: 'POST',
+        path,
+        headers: { origin, host, 'x-forwarded-proto': 'https' },
+      });
+      assert.equal(res.status, 403);
+      assert.equal(res.headers['access-control-allow-origin'], undefined);
+      assert.deepEqual(res.body, { error: 'origin_not_allowed' });
+    } finally {
+      delete process.env.BASE_URL;
+    }
   });
 
   test('an Origin from another host is 403 while Host is the API', async () => {
@@ -333,64 +349,32 @@ describe('CORS origins', () => {
     }
   });
 
-  test('X-Forwarded-Proto is ignored unless trust proxy is set', async () => {
-    const origin = `https://127.0.0.1:${server.address().port}`;
-    const ignored = await request(server, {
-      method: 'POST',
-      path: '/api/admin/orders/design-1/send-review',
-      headers: {
-        origin,
-        host: `127.0.0.1:${server.address().port}`,
-        'x-forwarded-proto': 'https',
-      },
-    });
-    assert.equal(ignored.status, 403);
-    assert.equal(ignored.headers['access-control-allow-origin'], undefined);
-
-    const app = express();
-    app.set('trust proxy', true);
-    app.use(createCorsMiddleware(production));
-    app.post('/api/admin/orders/:id/send-review', (_req, res) => {
-      res.json({ status: 'ok' });
-    });
-    const trusted = await listen(app);
+  test('an allowlisted origin is reflected when it equals BASE_URL', async () => {
+    process.env.BASE_URL = 'HTTPS://CreatureCycles.co.uk/';
     try {
-      const port = trusted.address().port;
-      const res = await request(trusted, {
+      const res = await request(server, {
         method: 'POST',
-        path: '/api/admin/orders/design-1/send-review',
-        headers: {
-          origin: `https://127.0.0.1:${port}`,
-          host: `127.0.0.1:${port}`,
-          'x-forwarded-proto': 'https',
-          'x-forwarded-host': 'not-the-api.example',
-        },
+        headers: { origin: 'HTTPS://CreatureCycles.co.uk' },
       });
       assert.equal(res.status, 200);
-      assert.equal(res.headers['access-control-allow-origin'], undefined);
+      assert.equal(res.headers['access-control-allow-origin'], SHOP);
       assert.equal(res.body.status, 'ok');
 
-      const forwardedHost = await request(trusted, {
-        method: 'POST',
-        path: '/api/admin/orders/design-1/send-review',
-        headers: {
-          origin: 'https://not-the-api.example',
-          host: `127.0.0.1:${port}`,
-          'x-forwarded-proto': 'https',
-          'x-forwarded-host': 'not-the-api.example',
-        },
-      });
-      assert.equal(forwardedHost.status, 403);
-      assert.equal(forwardedHost.headers['access-control-allow-origin'], undefined);
+      const get = await request(server, { headers: { origin: SHOP } });
+      assert.equal(get.status, 200);
+      assert.equal(get.headers['access-control-allow-origin'], SHOP);
     } finally {
-      await close(trusted);
+      delete process.env.BASE_URL;
     }
   });
 
   test('a mixed-case allowlist entry matches the browser origin', async () => {
     const mixed = await listen(appFor(['HTTPS://CreatureCycles.co.uk/']));
     try {
-      const res = await request(mixed, { method: 'POST', headers: { origin: SHOP } });
+      const res = await request(mixed, {
+        method: 'POST',
+        headers: { origin: 'HTTPS://CreatureCycles.co.uk' },
+      });
       assert.equal(res.status, 200);
       assert.equal(res.headers['access-control-allow-origin'], SHOP);
       assert.equal(res.body.status, 'ok');

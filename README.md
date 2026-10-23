@@ -65,7 +65,8 @@ Node/Express service behind the "buy this design" flow: stores a submitted
 design, hands off to WooCommerce for checkout, and emails the finished files
 once a design is reviewed and approved. SQLite for storage (`better-sqlite3`),
 Resend's HTTPS API for email, `archiver` for zipping deliverables. Has its own
-admin panel (`server/public/admin.html`).
+admin panel (`server/public/admin.html`). To use Send Review Email locally,
+set `BASE_URL` to the origin you open, for example `http://127.0.0.1:3001`.
 
 ```
 cd server
@@ -336,13 +337,18 @@ send waits on that secret and DNS.
 `/apps/frame-designer.html`. `FRONTEND_URL` must be the Frame Designer origin exactly, with no path,
 so the hydrate `GET` and `GET /api/prices` are not blocked by CORS. A longer host such as
 `https://creaturecycles.co.uk.evil.com` does not match, and scheme and host
-are compared case-insensitively. A request whose Origin is this API — `BASE_URL`,
-or the Host header with the connection protocol — is served with no
+are compared case-insensitively. An allowlisted origin is reflected in
+lowercase. The allowlist is checked first, so a `BASE_URL` that is also the
+Frame Designer origin still gets `Access-Control-Allow-Origin`. Any other
+request whose Origin equals `BASE_URL` is served with no
 `Access-Control-Allow-Origin` header. That is the `/admin` Send Review Email
-post. A refused `GET` or `HEAD` gets no `Access-Control-Allow-Origin` header
-and the response itself is unchanged for non-browser clients. Any other
-method from a refused origin, including a preflight, is 403 with no
-`Access-Control-Allow-Origin` header. Every response varies on `Origin`.
+post. Set `BASE_URL` to the origin you open locally, for example
+`http://127.0.0.1:3001`, or that post is refused. With `BASE_URL` unset,
+nothing is treated as same-origin. A refused `GET` or `HEAD` gets no
+`Access-Control-Allow-Origin` header and the response itself is unchanged
+for non-browser clients. Any other method from a refused origin, including
+a preflight, is 403 with no `Access-Control-Allow-Origin` header. Every
+response varies on `Origin`.
 `http://localhost:3000`, `http://localhost:5173`, and `http://127.0.0.1:5173`
 are allowed only when `NODE_ENV` is `development` or `dev`.
 

@@ -5,21 +5,19 @@ const cors = require('cors');
 /**
  * Allowlist entries are origins. A trailing slash is stripped and the
  * scheme and host are lowercased, so FRONTEND_URL=HTTPS://CreatureCycles.co.uk/
- * still matches the browser Origin header. A longer host such as
- * https://creaturecycles.co.uk.evil.com does not match.
+ * still matches the browser Origin header. The reflected
+ * Access-Control-Allow-Origin value is that normalised origin. A longer
+ * host such as https://creaturecycles.co.uk.evil.com does not match.
  *
  * Local origins are included only when NODE_ENV is development or dev.
  * Production (NODE_ENV=production) does not allow them.
  *
- * A same-origin request is not a CORS request. It is let through with no
- * Access-Control-Allow-Origin header when Origin equals either:
- *   - the origin of this request (req.protocol + the Host header).
- *     req.protocol honours X-Forwarded-Proto only when Express trust proxy
- *     is enabled. This app does not set trust proxy, so a client-supplied
- *     X-Forwarded-Proto is ignored. X-Forwarded-Host is never read.
- *   - BASE_URL, the public URL of this API. Behind a TLS terminator the
- *     browser Origin is https while req.protocol stays http, so /admin
- *     matches the configured public origin.
+ * The allowlist is checked first. After that, a request whose Origin
+ * equals BASE_URL (the public URL of this API) is let through with no
+ * Access-Control-Allow-Origin header. That is the /admin Send Review
+ * Email post. If BASE_URL is unset, nothing is treated as same-origin.
+ * The Host header and X-Forwarded-Proto are not consulted. If BASE_URL
+ * is also on the allowlist, the allowlist wins and the origin is reflected.
  */
 
 const LOCAL_ORIGINS = [
@@ -48,18 +46,9 @@ function publicBaseOrigin(baseUrl) {
   }
 }
 
-function requestOrigin(req) {
-  const host = headerValue(typeof req.get === 'function' ? req.get('host') : req.headers.host).trim();
-  if (!host) return '';
-  const proto = String(req.protocol || 'http').trim().toLowerCase();
-  return normaliseOrigin(`${proto}://${host}`);
-}
-
 function isSameOrigin(req) {
   const origin = normaliseOrigin(headerValue(req.headers.origin));
   if (!origin || origin === 'null') return false;
-  const own = requestOrigin(req);
-  if (own && origin === own) return true;
   const base = publicBaseOrigin();
   return Boolean(base && origin === base);
 }
@@ -100,7 +89,11 @@ function originAllowed(origin, allowlist) {
 function createCorsMiddleware(allowlist) {
   const allowed = allowlistFrom(allowlist);
   const reflect = cors({
-    origin: true,
+    origin(origin, callback) {
+      // Echo the canonical origin. Browsers already send a lowercase
+      // scheme and host, so this still matches the request Origin.
+      callback(null, normaliseOrigin(headerValue(origin)));
+    },
     methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'X-WC-Webhook-Signature', 'Authorization'],
   });
@@ -108,10 +101,10 @@ function createCorsMiddleware(allowlist) {
   return function corsGate(req, res, next) {
     // A shared cache must not reuse a no-ACAO response for another Origin.
     res.vary('Origin');
-    // Same-origin writes (the /admin page) carry an Origin header but are
-    // not cross-origin. Pass them through with no allow-origin header.
-    if (isSameOrigin(req)) return next();
     if (originAllowed(req.headers.origin, allowed)) return reflect(req, res, next);
+    // /admin posts from the API origin. No allow-origin header: the page
+    // is not cross-origin. Unset BASE_URL matches nothing.
+    if (isSameOrigin(req)) return next();
     const method = String(req.method || '').toUpperCase();
     // Quiet deny for reads: the browser blocks the response because there
     // is no Access-Control-Allow-Origin. curl and other non-browser
@@ -131,7 +124,6 @@ module.exports = {
   configuredOrigins,
   originAllowed,
   publicBaseOrigin,
-  requestOrigin,
   isSameOrigin,
   createCorsMiddleware,
 };
