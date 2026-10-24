@@ -102,3 +102,97 @@ Use a pending order, then cancel it. Do not take payment.
 5. In **WooCommerce → Orders**, set the test order to **Cancelled**.
 
 The REST create calculates order totals, which is when the fee is written onto a new pending order. The order-pay page checks again before showing the total and before the payment is taken, including for an order that was created before this file was installed.
+
+## Feedback files
+
+`creature-feedback-files.php` (0.1.0) keeps a private copy of photos uploaded through the Jetpack Form on page 8901 (`/demo-feedback/`). Copy it into `wp-content/mu-plugins/` the same way. It loads on the next request. Under **Plugins → Must-Use** it is listed as “Creature Cycles Feedback Files”. It does not hook WooCommerce and it does not change prices.
+
+Jetpack’s own links (`admin-ajax.php?action=jetpack_unauth_file_download&file_id=…`) expire after 7 days and need a logged-in admin. When a response is saved, this file writes a pending list to post meta `_creature_feedback_files` and schedules `creature_feedback_files_fetch` for 120 seconds later. Nothing is downloaded during the visitor’s request. Spam is skipped. A response whose `post_parent` is not an allowed form page is skipped.
+
+The concrete fetch is deliberately undecided until a read-only check of the WordPress.com handler. `Creature_Feedback_Files_Fetcher_Direct` (a redirect, signed URL, or internal function) and `Creature_Feedback_Files_Fetcher_Loopback` (a loopback to admin-ajax with a short-lived cookie for a dedicated Editor) both return `not_implemented`. The filter `creature_feedback_files_fetcher` chooses which one is active.
+
+Each downloaded body must be an image. The type is sniffed from the bytes. A `Content-Type` of `image/jpeg` does not make a PDF an image. Files over 20 MB are rejected. A transport failure increments `attempts` and runs again an hour later. A response that is still missing a file after 3 days sends one email to `admin_email`, then sets a flag so it does not send again.
+
+### Privacy
+
+Files are encrypted at rest with libsodium `sodium_crypto_secretbox`. A random nonce is stored in front of the ciphertext. The on-disk name is a random 32-hex folder per response and a random 32-hex `.bin` file, with a blank `index.php` in each directory. A leaked URL or a copied `.bin` is ciphertext. The REST list never returns the stored path. Download requires `manage_options`, checks the sha256 of the plaintext, and sends `Cache-Control: no-store`.
+
+The default key store is the option `creature_feedback_files_key`, with autoload off. On Atomic, `wp-config.php` is unreliable, so that option is what encrypts new copies. When the constant `CREATURE_FEEDBACK_FILES_KEY` is defined (base64 of 32 bytes), the constant is used instead.
+
+Losing the key makes every copy unreadable. Back it up before you need to restore a file. Do not put the key in the repo, in an email, or in a log. This plugin never writes the key or the file bytes to the log, and it never writes the key to a file on the server.
+
+The private directory is the first writable path outside the WordPress root from `creature_feedback_files_private_dirs`. The default is a `creature-private` directory next to the WordPress root. If none of those are usable, files fall back to `uploads/creature-private`.
+
+### Export the key
+
+WP-CLI only. There is no REST route.
+
+```bash
+wp creature-feedback export-key --yes
+```
+
+STDOUT is the base64 key and a newline, and nothing else, so the command can be piped over SSH into a mode-600 file:
+
+```bash
+ssh <host> 'wp creature-feedback export-key --yes' > creature-feedback-files.key
+chmod 600 creature-feedback-files.key
+```
+
+Diagnostics go to STDERR. `--yes` is required. The first successful run records `creature_feedback_files_key_exported_at` in GMT, with autoload off. A later run refuses unless you pass `--force`. If `CREATURE_FEEDBACK_FILES_KEY` is set, the command refuses and prints nothing; copy the constant yourself. The command does not log the key and does not write it to any file on the server.
+
+Losing the key makes every copy unreadable.
+
+### Filters
+
+| Filter | Default |
+| --- | --- |
+| `creature_feedback_files_form_ids` | `8901` |
+| `creature_feedback_files_fetcher` | `Creature_Feedback_Files_Fetcher_Direct` |
+| `creature_feedback_files_private_dirs` | `dirname(ABSPATH) . '/creature-private'` |
+| `creature_feedback_files_alert_email` | `get_option('admin_email')` |
+| `creature_feedback_files_retention_days` | `365` (values under 30 are raised to 30) |
+
+### REST and retention
+
+Namespace `creature/v1`. Both routes use `current_user_can('manage_options')`.
+
+- `GET /wp-json/creature/v1/feedback-files?since=<ISO8601>&form=8901&page=&per_page=` returns response id, submitted time, status, and each file’s id, name, size, mime, sha256, saved time, and status. `X-WP-Total` and `X-WP-TotalPages` are set. Paths are not included.
+- `GET /wp-json/creature/v1/feedback-files/<response_id>/<file_id>` decrypts and streams the bytes. Unknown ids, and a response that is not from an allowed form, are 404.
+
+There is no delete route. A daily cron, `creature_feedback_files_retention`, deletes ciphertext whose `saved_at` is more than the retention window ago and marks those rows purged. Empty response folders are removed. The Jetpack feedback post and Jetpack’s own file are not touched.
+
+### Backfill
+
+There is no REST backfill. For one existing response:
+
+```bash
+wp creature-feedback backfill --post=<id>
+wp creature-feedback backfill --post=<id> --dry-run
+```
+
+Dry-run is the default. It prints file ids and writes nothing. `--yes` is what queues the cron copy. Do not pass `--yes` until the fetch method has been chosen. Do not backfill response 8913 without James’s OK and a backup.
+
+### Checks
+
+In the repo, without a shop:
+
+```bash
+php wordpress-plugins/mu-plugins/tests/creature-feedback-files-test.php
+```
+
+On the shop, use an existing response. Do not submit the form.
+
+1. Pick a feedback post whose parent is page 8901. Leave response 8913 alone unless James has agreed and you have a backup of that response.
+2. Run `wp creature-feedback backfill --post=<id>`. The output is a dry run. It names the file ids. The post meta `_creature_feedback_files` is still empty, and Jetpack’s own file links are unchanged.
+3. `wp creature-feedback backfill --post=<id> --dry-run` is the same command.
+4. Do not pass `--yes` on this pass. That flag only queues a later cron copy. It still does not download during the command, and the fetcher is not implemented yet.
+
+### Removal
+
+Must-use plugins have no uninstall hook. A single file in `mu-plugins/` never runs `uninstall.php`. Remove it by hand:
+
+1. Delete `wp-content/mu-plugins/creature-feedback-files.php`.
+2. Clear any remaining cron events named `creature_feedback_files_fetch` and `creature_feedback_files_retention` (`wp cron event list`).
+3. Delete the private directory only when the photos are no longer needed. Until then it holds ciphertext.
+4. Run `wp creature-feedback export-key --yes` and store that output off the server before you delete `creature_feedback_files_key`. If the constant is set, the command refuses; copy `CREATURE_FEEDBACK_FILES_KEY` yourself. Losing the key makes every copy unreadable. `creature_feedback_files_key_exported_at` is only a timestamp.
+5. Post meta `_creature_feedback_files` and `_creature_feedback_files_alerted` can stay. They do not contain the key or the ciphertext. Do not delete the Jetpack feedback posts.
