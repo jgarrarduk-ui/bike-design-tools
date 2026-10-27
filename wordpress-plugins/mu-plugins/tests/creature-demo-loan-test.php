@@ -494,6 +494,16 @@ function wc_get_order( $id ) {
 }
 
 function wc_get_orders( $args = array() ) {
+	if ( isset( $args['customer'] ) ) {
+		$uid   = (int) $args['customer'];
+		$found = array();
+		foreach ( $GLOBALS['creature_demo_orders'] as $order ) {
+			if ( (int) $order->get_user_id() === $uid ) {
+				$found[] = $order;
+			}
+		}
+		return $found;
+	}
 	$page = isset( $args['page'] ) ? (int) $args['page'] : 1;
 	if ( $page > 1 ) {
 		return array();
@@ -777,6 +787,7 @@ creature_demo_expect( false !== strpos( $consent, '£40.00' ), 'consent names th
 creature_demo_expect( false !== strpos( $consent, '£212.00' ), 'consent names the £212 deemed-purchase maximum' );
 creature_demo_expect( false !== strpos( $consent, '£35.00' ), 'consent names the £35 inverted mount kit' );
 creature_demo_expect( false !== strpos( $consent, 'damage or missing parts' ), 'consent covers damage as well as missing parts' );
+creature_demo_expect( false !== strpos( $consent, 'damage or missing parts, never' ), 'consent has a comma after missing parts' );
 
 creature_demo_expect( array() === Creature_Demo_Loan::demo_product_ids(), 'demo product ids stay empty until configured' );
 creature_demo_expect( array( 6687 ) === Creature_Demo_Loan::coupon_product_ids(), 'coupon defaults to De-Reacher product 6687' );
@@ -1190,6 +1201,7 @@ WC_Stripe_API::$response = new WP_Error( 'stripe_error', 'authentication_require
 $auth = Creature_Demo_Loan::charge_saved_card( $late, '2026-04-02' );
 creature_demo_expect( 'authentication_required' === $auth['code'], 'authentication required does not take the money' );
 creature_demo_expect( 'yes' !== $late_charge->get_meta( '_creature_demo_charge_paid' ), 'an authentication challenge leaves the charge unpaid' );
+creature_demo_expect( '' === (string) $late_charge->get_meta( '_creature_demo_charge_lock' ), 'authentication required releases the saved-card lock' );
 creature_demo_expect( 1 === creature_demo_mail_count( 'charge_authentication_required' ), 'authentication required emails the payment link' );
 $auth_key = $late_charge->get_meta( '_creature_demo_idempotency_key' );
 creature_demo_expect( '' !== $auth_key, 'the first attempt stores an idempotency key' );
@@ -1207,6 +1219,7 @@ creature_demo_expect( 'processing' === $late_charge->get_status(), 'a successful
 creature_demo_expect( 'pi_test_demo_1' === $late_charge->get_transaction_id(), 'the charge order stores the Stripe payment id' );
 creature_demo_expect( false === Creature_Demo_Loan::filter_needs_payment( true, $late_charge ), 'the pay link cannot take a second payment' );
 creature_demo_expect( 'yes' === $late_charge->get_meta( '_creature_demo_charge_order' ), 'the charge order is marked as a demo charge' );
+creature_demo_expect( '' === (string) $late_charge->get_meta( '_creature_demo_charge_lock' ), 'a successful charge clears the lock' );
 creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === Creature_Demo_Loan::filter_customer_recipient( 'rider@example.com', $late_charge ), 'Woo customer mail for a charge order is redirected' );
 creature_demo_expect( 0 === strpos( Creature_Demo_Loan::filter_customer_subject( 'Your order', $late_charge ), '[TEST] ' ), 'Woo customer mail for a charge order is prefixed' );
 $success_requests = 0;
@@ -1246,6 +1259,7 @@ WC_Stripe_API::$response = (object) array(
 );
 $retried = Creature_Demo_Loan::charge_saved_card( $retry, '2026-04-02' );
 creature_demo_expect( 'stripe_error' === $declined['code'], 'a decline is a stripe error and not a paid charge' );
+creature_demo_expect( '' === (string) $retry_charge->get_meta( '_creature_demo_charge_lock' ), 'a declined charge releases the lock so the pay link still works' );
 creature_demo_expect( ! empty( $retried['ok'] ), 'the same charge can be retried after a decline' );
 creature_demo_expect( $retry_charge->get_meta( '_creature_demo_idempotency_key' ) === Creature_Demo_Loan::idempotency_key( $retry_charge ), 'a retry keeps the original idempotency key' );
 
@@ -1555,6 +1569,156 @@ creature_demo_expect( 'keep' === $choices->get_meta( '_creature_demo_choice' ), 
 creature_demo_expect( 1 === count( $GLOBALS['creature_demo_notices'] ), 'confirming a choice leaves a notice' );
 $_GET = array();
 $GLOBALS['creature_demo_user'] = 0;
+
+$mail_hooks = array();
+foreach ( $GLOBALS['creature_demo_hooks'] as $hook_row ) {
+	$mail_hooks[ $hook_row[0] ] = true;
+}
+creature_demo_expect( ! empty( $mail_hooks['woocommerce_email_recipient_customer_cancelled_order'] ), 'cancelled-order mail uses the redirect guard' );
+creature_demo_expect( ! empty( $mail_hooks['woocommerce_email_subject_customer_cancelled_order'] ), 'cancelled-order subjects use the redirect guard' );
+creature_demo_expect( ! empty( $mail_hooks['woocommerce_email_recipient_customer_new_account'] ), 'new-account mail uses the redirect guard' );
+creature_demo_expect( ! empty( $mail_hooks['woocommerce_email_subject_customer_new_account'] ), 'new-account subjects use the redirect guard' );
+
+$cancel_loan = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $cancel_loan, '2026-03-30', '2026-03-30' );
+$cancel_charge = wc_get_order( (int) $cancel_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+$cancel_charge->update_status( 'cancelled', 'Unpaid demo charge cancelled so it is not taken as well as a later charge.' );
+creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === Creature_Demo_Loan::filter_customer_recipient( 'rider@example.com', $cancel_charge ), 'a cancelled charge order email is redirected' );
+creature_demo_expect( 0 === strpos( Creature_Demo_Loan::filter_customer_subject( 'Cancelled order', $cancel_charge ), '[TEST] ' ), 'a cancelled charge order subject is prefixed' );
+creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === Creature_Demo_Loan::filter_customer_recipient( 'rider@example.com', $cancel_loan ), 'a cancelled demo loan email is redirected' );
+$plain_cancel = wc_create_order();
+creature_demo_expect( 'rider@example.com' === Creature_Demo_Loan::filter_customer_recipient( 'rider@example.com', $plain_cancel ), 'a cancelled normal order is not redirected' );
+
+$saved_cart = $GLOBALS['creature_demo_cart'];
+$GLOBALS['creature_demo_cart'] = null;
+$new_account = (object) array( 'id' => 'customer_new_account' );
+$rider_user  = (object) array(
+	'ID'         => 42,
+	'user_email' => 'rider@example.com',
+);
+creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === Creature_Demo_Loan::filter_customer_recipient( 'rider@example.com', $rider_user, $new_account ), 'a new account for a demo rider is redirected' );
+creature_demo_expect( 0 === strpos( Creature_Demo_Loan::filter_customer_subject( 'Welcome', $rider_user, $new_account ), '[TEST] ' ), 'a new account for a demo rider is prefixed' );
+$stranger = (object) array(
+	'ID'         => 4242,
+	'user_email' => 'stranger@example.com',
+);
+creature_demo_expect( 'stranger@example.com' === Creature_Demo_Loan::filter_customer_recipient( 'stranger@example.com', $stranger, $new_account ), 'a new account with no demo order is unchanged' );
+$charge_only = wc_create_order( array( 'customer_id' => 88 ) );
+$charge_only->update_meta_data( '_creature_demo_charge_order', 'yes' );
+$charge_user = (object) array(
+	'ID'         => 88,
+	'user_email' => 'charge-only@example.com',
+);
+creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === Creature_Demo_Loan::filter_customer_recipient( 'charge-only@example.com', $charge_user, $new_account ), 'a new account for a charge-order customer is redirected' );
+$GLOBALS['creature_demo_cart'] = array(
+	array( 'product_id' => 9001 ),
+);
+$checkout_user = (object) array(
+	'ID'         => 777,
+	'user_email' => 'new@example.com',
+);
+creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === Creature_Demo_Loan::filter_customer_recipient( 'new@example.com', $checkout_user, $new_account ), 'a new account during demo checkout is redirected' );
+$GLOBALS['creature_demo_cart'] = $saved_cart;
+
+$race = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $race, '2026-03-30', '2026-03-30' );
+$race_charge = wc_get_order( (int) $race->get_meta( '_creature_demo_late_fee_order_id' ) );
+$pay_first   = Creature_Demo_Loan::begin_pay_link( $race_charge );
+creature_demo_expect( ! empty( $pay_first['ok'] ) && 'pay_link' === $race_charge->get_meta( '_creature_demo_charge_lock' ), 'the pay link takes the charge lock' );
+$race_calls   = count( WC_Stripe_API::$requests );
+$race_refused = Creature_Demo_Loan::charge_saved_card( $race, '2026-04-02' );
+creature_demo_expect( 'payment_in_progress' === $race_refused['code'], 'a pay link in progress refuses the saved card' );
+creature_demo_expect( $race_calls === count( WC_Stripe_API::$requests ), 'a pay link in progress does not call Stripe' );
+creature_demo_expect( 'pay_link' === $race_charge->get_meta( '_creature_demo_charge_lock' ), 'the refusal leaves the pay-link lock in place' );
+
+$upe = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $upe, '2026-03-30', '2026-03-30' );
+$upe_charge = wc_get_order( (int) $upe->get_meta( '_creature_demo_late_fee_order_id' ) );
+$upe_charge->update_meta_data( '_stripe_intent_id', 'pi_test_upe' );
+$upe_charge->update_meta_data( '_stripe_intent_status', 'processing' );
+$upe_charge->save();
+$upe_calls   = count( WC_Stripe_API::$requests );
+$upe_refused = Creature_Demo_Loan::charge_saved_card( $upe, '2026-04-02' );
+creature_demo_expect( 'payment_in_progress' === $upe_refused['code'], 'a Stripe pay-link intent in progress refuses the saved card' );
+creature_demo_expect( $upe_calls === count( WC_Stripe_API::$requests ), 'an in-progress pay-link intent does not call Stripe' );
+creature_demo_expect( 'pending' === $upe_charge->get_status(), 'the in-progress pay link leaves the order pending' );
+
+$done_link = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $done_link, '2026-03-30', '2026-03-30' );
+$done_charge = wc_get_order( (int) $done_link->get_meta( '_creature_demo_late_fee_order_id' ) );
+$done_charge->payment_complete( 'pi_test_paylink' );
+$done_calls   = count( WC_Stripe_API::$requests );
+$done_refused = Creature_Demo_Loan::charge_saved_card( $done_link, '2026-04-02' );
+creature_demo_expect( 'already_paid' === $done_refused['code'], 'a completed pay link refuses the saved card' );
+creature_demo_expect( $done_calls === count( WC_Stripe_API::$requests ), 'a completed pay link does not call Stripe again' );
+creature_demo_expect( '500' === (string) $done_link->get_meta( '_creature_demo_late_fees_paid_pence' ), 'the pay link records the late fee once' );
+
+$held = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $held, '2026-03-30', '2026-03-30' );
+$held_charge = wc_get_order( (int) $held->get_meta( '_creature_demo_late_fee_order_id' ) );
+$held_charge->update_meta_data( '_creature_demo_charge_lock', 'saved_card' );
+$held_charge->save();
+$held_pay = Creature_Demo_Loan::begin_pay_link( $held_charge );
+creature_demo_expect( empty( $held_pay['ok'] ) && 'payment_in_progress' === $held_pay['code'], 'a saved-card lock refuses the pay link' );
+creature_demo_expect( 'saved_card' === $held_charge->get_meta( '_creature_demo_charge_lock' ), 'the pay link does not replace the saved-card lock' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_needs_payment( true, $held_charge ), 'the pay link cannot start while the saved card is charging' );
+$GLOBALS['creature_demo_notices'] = array();
+Creature_Demo_Loan::on_before_pay_action( $held_charge );
+creature_demo_expect( ! empty( $GLOBALS['creature_demo_notices'] ), 'the pay action refuses while the saved card is charging' );
+
+$flip = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $flip, '2026-03-30', '2026-03-30' );
+$flip_charge = wc_get_order( (int) $flip->get_meta( '_creature_demo_late_fee_order_id' ) );
+$flip_hook   = static function ( $order ) use ( $flip_charge ) {
+	if ( is_object( $order ) && (int) $order->get_id() === (int) $flip_charge->get_id() ) {
+		$order->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
+		$order->save();
+	}
+};
+add_action( 'creature_demo_loan_saved_card_lock_acquired', $flip_hook );
+$flip_calls = count( WC_Stripe_API::$requests );
+$flipped    = Creature_Demo_Loan::charge_saved_card( $flip, '2026-04-02' );
+remove_action( 'creature_demo_loan_saved_card_lock_acquired', $flip_hook );
+creature_demo_expect( 'payment_in_progress' === $flipped['code'], 'a pay link that wins the lock is seen on the re-check' );
+creature_demo_expect( $flip_calls === count( WC_Stripe_API::$requests ), 'the re-check does not call Stripe' );
+creature_demo_expect( 'pay_link' === $flip_charge->get_meta( '_creature_demo_charge_lock' ), 'the re-check leaves the pay-link lock' );
+
+$paid_mid = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $paid_mid, '2026-03-30', '2026-03-30' );
+$paid_mid_charge = wc_get_order( (int) $paid_mid->get_meta( '_creature_demo_late_fee_order_id' ) );
+$paid_hook       = static function ( $order ) {
+	$order->update_meta_data( '_creature_demo_charge_paid', 'yes' );
+	$order->save();
+};
+add_action( 'creature_demo_loan_saved_card_lock_acquired', $paid_hook );
+$paid_calls      = count( WC_Stripe_API::$requests );
+$paid_mid_result = Creature_Demo_Loan::charge_saved_card( $paid_mid, '2026-04-02' );
+remove_action( 'creature_demo_loan_saved_card_lock_acquired', $paid_hook );
+creature_demo_expect( 'already_paid' === $paid_mid_result['code'], 'a pay link that completes during the lock is seen on the re-check' );
+creature_demo_expect( $paid_calls === count( WC_Stripe_API::$requests ), 'a completed pay link seen on the re-check does not call Stripe' );
+creature_demo_expect( '' === (string) $paid_mid_charge->get_meta( '_creature_demo_charge_lock' ), 'the saved-card lock is released when the pay link already completed' );
+
+$abandoned = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $abandoned, '2026-03-30', '2026-03-30' );
+$abandoned_charge = wc_get_order( (int) $abandoned->get_meta( '_creature_demo_late_fee_order_id' ) );
+$abandoned_charge->update_meta_data( '_stripe_intent_id', 'pi_test_abandoned' );
+$abandoned_charge->update_meta_data( '_stripe_intent_status', 'requires_payment_method' );
+$abandoned_charge->save();
+WC_Stripe_API::$response = (object) array(
+	'error' => (object) array(
+		'code'         => 'card_declined',
+		'decline_code' => 'generic_decline',
+	),
+);
+$abandoned_calls  = count( WC_Stripe_API::$requests );
+$abandoned_result = Creature_Demo_Loan::charge_saved_card( $abandoned, '2026-04-02' );
+creature_demo_expect( 'stripe_error' === $abandoned_result['code'], 'a failed pay-link intent does not block the saved card' );
+creature_demo_expect( $abandoned_calls < count( WC_Stripe_API::$requests ), 'a failed pay-link intent still reaches Stripe' );
+creature_demo_expect( '' === (string) $abandoned_charge->get_meta( '_creature_demo_charge_lock' ), 'a Stripe error releases the saved-card lock' );
+WC_Stripe_API::$response = (object) array(
+	'id'     => 'pi_test_demo_1',
+	'status' => 'succeeded',
+);
 
 creature_demo_expect( 'creature_demo_loan_deactivate' === $GLOBALS['creature_demo_deactivation'][1], 'deactivation is registered' );
 creature_demo_loan_deactivate();

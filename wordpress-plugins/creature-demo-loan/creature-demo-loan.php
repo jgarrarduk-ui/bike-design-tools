@@ -18,6 +18,11 @@
  * Customer email stays redirected unless CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL
  * is boolean true. Undefined and any other value mean off.
  *
+ * Product ids, coupon product ids, and the test redirect address can be set
+ * from the companion Demo Loan Config plugin. A wp-config constant for the
+ * same value wins. That screen cannot turn live charges or real customer
+ * email on. Those stay these two constants.
+ *
  * @package Creature_Demo_Loan
  */
 

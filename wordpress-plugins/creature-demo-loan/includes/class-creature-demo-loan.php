@@ -105,6 +105,7 @@ final class Creature_Demo_Loan {
 		add_action( 'woocommerce_order_details_after_order_table', array( __CLASS__, 'render_my_account_choices' ) );
 		add_action( 'template_redirect', array( __CLASS__, 'maybe_handle_choice_request' ) );
 		add_action( 'woocommerce_payment_complete', array( __CLASS__, 'on_payment_complete' ) );
+		add_action( 'woocommerce_before_pay_action', array( __CLASS__, 'on_before_pay_action' ) );
 		add_filter( 'woocommerce_order_needs_payment', array( __CLASS__, 'filter_needs_payment' ), 10, 2 );
 		add_action( 'woocommerce_order_status_processing', array( __CLASS__, 'on_payment_complete' ) );
 		add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'on_payment_complete' ) );
@@ -118,6 +119,8 @@ final class Creature_Demo_Loan {
 			'customer_invoice',
 			'customer_note',
 			'customer_failed_order',
+			'customer_cancelled_order',
+			'customer_new_account',
 		) as $email_id ) {
 			add_filter( 'woocommerce_email_recipient_' . $email_id, array( __CLASS__, 'filter_customer_recipient' ), 10, 3 );
 			add_filter( 'woocommerce_email_subject_' . $email_id, array( __CLASS__, 'filter_customer_subject' ), 10, 3 );
@@ -133,8 +136,7 @@ final class Creature_Demo_Loan {
 	 * @return mixed
 	 */
 	public static function filter_customer_recipient( $recipient, $order = null, $email = null ) {
-		unset( $email );
-		if ( self::customer_email_allowed() || ! self::demo_customer_mail_order( $order ) ) {
+		if ( self::customer_email_allowed() || ! self::redirects_customer_mail( $order, $email ) ) {
 			return $recipient;
 		}
 		$redirect = Creature_Demo_Loan_Mail::redirect_address();
@@ -148,8 +150,7 @@ final class Creature_Demo_Loan {
 	 * @return mixed
 	 */
 	public static function filter_customer_subject( $subject, $order = null, $email = null ) {
-		unset( $email );
-		if ( self::customer_email_allowed() || ! self::demo_customer_mail_order( $order ) ) {
+		if ( self::customer_email_allowed() || ! self::redirects_customer_mail( $order, $email ) ) {
 			return $subject;
 		}
 		$subject = (string) $subject;
@@ -285,16 +286,10 @@ final class Creature_Demo_Loan {
 	 * @return int[]
 	 */
 	public static function demo_product_ids() {
-		$ids = array();
 		if ( defined( 'CREATURE_DEMO_LOAN_PRODUCT_IDS' ) ) {
-			$raw = CREATURE_DEMO_LOAN_PRODUCT_IDS;
-			if ( is_string( $raw ) ) {
-				$raw = explode( ',', $raw );
-			}
-			if ( is_array( $raw ) ) {
-				$ids = $raw;
-			}
+			return self::normalize_ids( self::constant_id_list( CREATURE_DEMO_LOAN_PRODUCT_IDS ) );
 		}
+		$ids = array();
 		if ( function_exists( 'apply_filters' ) ) {
 			$ids = apply_filters( 'creature_demo_loan_product_ids', $ids );
 		}
@@ -308,16 +303,11 @@ final class Creature_Demo_Loan {
 	 * @return int[]
 	 */
 	public static function coupon_product_ids() {
-		$ids = array( 6687 );
 		if ( defined( 'CREATURE_DEMO_LOAN_COUPON_PRODUCT_IDS' ) ) {
-			$raw = CREATURE_DEMO_LOAN_COUPON_PRODUCT_IDS;
-			if ( is_string( $raw ) ) {
-				$raw = explode( ',', $raw );
-			}
-			if ( is_array( $raw ) ) {
-				$ids = $raw;
-			}
+			$ids = self::normalize_ids( self::constant_id_list( CREATURE_DEMO_LOAN_COUPON_PRODUCT_IDS ) );
+			return $ids ? $ids : array( 6687 );
 		}
+		$ids = array( 6687 );
 		if ( function_exists( 'apply_filters' ) ) {
 			$ids = apply_filters( 'creature_demo_loan_coupon_product_ids', $ids );
 		}
@@ -436,8 +426,9 @@ final class Creature_Demo_Loan {
 			'notice_too_recent'  => 'Charge refused: fewer than ' . $need . ' working days have passed since the notice.',
 			'disputed'           => 'Charge refused: a dispute is open.',
 			'dispute_waived'     => 'Charge refused: the dispute decision did not uphold the charge.',
-			'already_paid'       => 'Charge refused: this charge is already paid.',
-			'no_consent'         => 'Charge refused: the loan has no recorded consent for a later charge.',
+			'already_paid'         => 'Charge refused: this charge is already paid.',
+			'payment_in_progress'  => 'Charge refused: a pay-link payment is already in progress on this charge order.',
+			'no_consent'           => 'Charge refused: the loan has no recorded consent for a later charge.',
 			'live_mode'          => 'Charge refused: the Stripe gateway is not in test mode.',
 			'live_key'           => 'Charge refused: the Stripe secret key is not a test key.',
 			'no_saved_method'    => 'Charge refused: no saved Stripe customer and payment method were found.',
@@ -1409,6 +1400,14 @@ final class Creature_Demo_Loan {
 			self::note( $loan, self::refusal_message( 'no_saved_method' ) );
 			return array( 'ok' => false, 'code' => 'no_saved_method' );
 		}
+		$blocked = self::claim_saved_card_lock( $charge );
+		if ( '' !== $blocked ) {
+			self::note( $loan, self::refusal_message( $blocked ) );
+			if ( $charge !== $loan ) {
+				self::note( $charge, self::refusal_message( $blocked ) );
+			}
+			return array( 'ok' => false, 'code' => $blocked );
+		}
 		$amount = (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' );
 		$key    = self::idempotency_key( $charge );
 		$result = Creature_Demo_Loan_Stripe::off_session_intent(
@@ -1423,6 +1422,7 @@ final class Creature_Demo_Loan {
 			)
 		);
 		if ( 'authentication_required' === $result['code'] ) {
+			self::release_charge_lock( $charge, 'saved_card' );
 			$charge->update_meta_data( '_creature_demo_authentication_required', 'yes' );
 			$charge->save();
 			self::note( $loan, 'Charge needs authentication. A payment link was emailed instead. The saved card was not charged.' );
@@ -1438,6 +1438,7 @@ final class Creature_Demo_Loan {
 			return array( 'ok' => false, 'code' => 'authentication_required' );
 		}
 		if ( empty( $result['ok'] ) ) {
+			self::release_charge_lock( $charge, 'saved_card' );
 			self::note( $loan, self::refusal_message( $result['code'] ) );
 			return array( 'ok' => false, 'code' => $result['code'] );
 		}
@@ -1565,6 +1566,7 @@ final class Creature_Demo_Loan {
 			return array( 'ok' => true, 'idempotent' => true );
 		}
 		$charge->update_meta_data( '_creature_demo_charge_paid', 'yes' );
+		$charge->update_meta_data( '_creature_demo_charge_lock', '' );
 		$charge->save();
 		$loan->update_meta_data( $key, 'yes' );
 		$loan->save();
@@ -1715,9 +1717,6 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * @param mixed $order_id
-	 */
-	/**
 	 * A paid charge order cannot be paid again from its checkout link.
 	 *
 	 * @param mixed  $needed
@@ -1732,6 +1731,9 @@ final class Creature_Demo_Loan {
 			return $needed;
 		}
 		if ( 'yes' === self::meta_string( $order, '_creature_demo_charge_paid' ) ) {
+			return false;
+		}
+		if ( 'saved_card' === self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
 			return false;
 		}
 		$status = method_exists( $order, 'get_status' ) ? (string) $order->get_status() : '';
@@ -2768,10 +2770,6 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * @param object $order
-	 * @return string
-	 */
-	/**
 	 * PaymentIntent id from our off-session charge, or from the gateway after a pay link.
 	 *
 	 * @param object $order
@@ -2808,6 +2806,225 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * Pay-for-order is starting. Refuse when the saved card already holds the order.
+	 *
+	 * @param object $order
+	 */
+	public static function on_before_pay_action( $order ) {
+		$result = self::begin_pay_link( $order );
+		if ( empty( $result['ok'] ) && function_exists( 'wc_add_notice' ) ) {
+			wc_add_notice( self::refusal_message( isset( $result['code'] ) ? $result['code'] : 'payment_in_progress' ), 'error' );
+		}
+	}
+
+	/**
+	 * Mark a charge order while its pay link is being paid.
+	 *
+	 * @param object $order
+	 * @return array{ok: bool, code: string}
+	 */
+	public static function begin_pay_link( $order ) {
+		$order = self::reload_order( $order );
+		if ( ! self::is_charge_order( $order ) ) {
+			return array(
+				'ok'   => true,
+				'code' => '',
+			);
+		}
+		if ( 'pay_link' === self::meta_string( $order, '_creature_demo_charge_lock' ) && '' === self::charge_already_settled( $order ) ) {
+			return array(
+				'ok'   => true,
+				'code' => 'pay_link',
+			);
+		}
+		$blocked = self::pay_link_blocked_by( $order );
+		if ( '' !== $blocked ) {
+			return array(
+				'ok'   => false,
+				'code' => $blocked,
+			);
+		}
+		$order->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
+		$order->save();
+		if ( function_exists( 'do_action' ) ) {
+			do_action( 'creature_demo_loan_pay_link_lock_acquired', $order );
+		}
+		$fresh = self::reload_order( $order );
+		if ( 'saved_card' === self::meta_string( $fresh, '_creature_demo_charge_lock' ) ) {
+			return array(
+				'ok'   => false,
+				'code' => 'payment_in_progress',
+			);
+		}
+		$blocked = self::pay_link_blocked_by( $fresh );
+		if ( '' !== $blocked ) {
+			self::release_charge_lock( $fresh, 'pay_link' );
+			return array(
+				'ok'   => false,
+				'code' => $blocked,
+			);
+		}
+		return array(
+			'ok'   => true,
+			'code' => 'pay_link',
+		);
+	}
+
+	/**
+	 * Take the saved-card lock, then read the order again.
+	 *
+	 * @param object $charge
+	 * @return string Refusal code, or an empty string when the lock is held.
+	 */
+	private static function claim_saved_card_lock( $charge ) {
+		$charge = self::reload_order( $charge );
+		$code   = self::charge_payment_conflict( $charge );
+		if ( '' !== $code ) {
+			return $code;
+		}
+		$charge->update_meta_data( '_creature_demo_charge_lock', 'saved_card' );
+		$charge->save();
+		if ( function_exists( 'do_action' ) ) {
+			do_action( 'creature_demo_loan_saved_card_lock_acquired', $charge );
+		}
+		$fresh = self::reload_order( $charge );
+		if ( 'saved_card' !== self::meta_string( $fresh, '_creature_demo_charge_lock' ) ) {
+			if ( 'pay_link' === self::meta_string( $fresh, '_creature_demo_charge_lock' ) ) {
+				return 'payment_in_progress';
+			}
+			$again = self::charge_payment_conflict( $fresh );
+			return '' !== $again ? $again : 'payment_in_progress';
+		}
+		$again = self::charge_payment_conflict( $fresh );
+		if ( '' !== $again ) {
+			self::release_charge_lock( $fresh, 'saved_card' );
+			return $again;
+		}
+		return '';
+	}
+
+	/**
+	 * @param object $charge
+	 * @return string
+	 */
+	private static function charge_payment_conflict( $charge ) {
+		if ( ! is_object( $charge ) ) {
+			return 'payment_in_progress';
+		}
+		$settled = self::charge_already_settled( $charge );
+		if ( '' !== $settled ) {
+			return $settled;
+		}
+		if ( 'pay_link' === self::meta_string( $charge, '_creature_demo_charge_lock' ) ) {
+			return 'payment_in_progress';
+		}
+		if ( self::pay_link_intent_in_progress( $charge ) ) {
+			return 'payment_in_progress';
+		}
+		return '';
+	}
+
+	/**
+	 * @param object $order
+	 * @return string
+	 */
+	private static function pay_link_blocked_by( $order ) {
+		$settled = self::charge_already_settled( $order );
+		if ( '' !== $settled ) {
+			return $settled;
+		}
+		if ( 'saved_card' === self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
+			return 'payment_in_progress';
+		}
+		if ( 'pay_link' !== self::meta_string( $order, '_creature_demo_charge_lock' ) && self::pay_link_intent_in_progress( $order ) ) {
+			return 'payment_in_progress';
+		}
+		return '';
+	}
+
+	/**
+	 * @param object $order
+	 * @return string
+	 */
+	private static function charge_already_settled( $order ) {
+		if ( ! is_object( $order ) ) {
+			return 'already_paid';
+		}
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_charge_paid' ) ) {
+			return 'already_paid';
+		}
+		$status = method_exists( $order, 'get_status' ) ? (string) $order->get_status() : '';
+		if ( in_array( $status, array( 'processing', 'completed', 'refunded' ), true ) ) {
+			return 'already_paid';
+		}
+		if ( method_exists( $order, 'get_transaction_id' ) ) {
+			$txn = (string) $order->get_transaction_id();
+			if ( '' !== $txn && 0 === strpos( $txn, 'pi_' ) ) {
+				return 'already_paid';
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * A PaymentIntent the pay link has already opened, and not a failed one.
+	 *
+	 * @param object $order
+	 * @return bool
+	 */
+	private static function pay_link_intent_in_progress( $order ) {
+		$id = self::meta_string( $order, '_stripe_intent_id' );
+		if ( '' === $id ) {
+			return false;
+		}
+		$status = self::meta_string( $order, '_stripe_intent_status' );
+		if ( '' === $status ) {
+			$status = self::meta_string( $order, '_stripe_status' );
+		}
+		$finished = array( 'requires_payment_method', 'canceled', 'cancelled' );
+		return ! in_array( $status, $finished, true );
+	}
+
+	/**
+	 * @param object $order
+	 * @param string $owner
+	 */
+	private static function release_charge_lock( $order, $owner ) {
+		$order = self::reload_order( $order );
+		if ( ! is_object( $order ) || self::meta_string( $order, '_creature_demo_charge_lock' ) !== $owner ) {
+			return;
+		}
+		$order->update_meta_data( '_creature_demo_charge_lock', '' );
+		$order->save();
+	}
+
+	/**
+	 * @param object $order
+	 * @return object
+	 */
+	private static function reload_order( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_id' ) || ! function_exists( 'wc_get_order' ) ) {
+			return $order;
+		}
+		$fresh = wc_get_order( $order->get_id() );
+		return $fresh ? $fresh : $order;
+	}
+
+	/**
+	 * @param object $order
+	 * @return bool
+	 */
+	private static function is_charge_order( $order ) {
+		if ( ! is_object( $order ) ) {
+			return false;
+		}
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_charge_order' ) ) {
+			return true;
+		}
+		return '' !== self::meta_string( $order, '_creature_demo_parent_loan_id' );
+	}
+
+	/**
 	 * Loan orders and the charge orders raised from them.
 	 *
 	 * @param object $order
@@ -2824,6 +3041,74 @@ final class Creature_Demo_Loan {
 			return true;
 		}
 		return '' !== self::meta_string( $order, '_creature_demo_parent_loan_id' );
+	}
+
+	/**
+	 * Demo and charge orders, plus a new account opened for one of those riders.
+	 *
+	 * @param mixed $order
+	 * @param mixed $email
+	 * @return bool
+	 */
+	private static function redirects_customer_mail( $order, $email ) {
+		if ( self::demo_customer_mail_order( $order ) ) {
+			return true;
+		}
+		$email_id = '';
+		if ( is_object( $email ) && isset( $email->id ) ) {
+			$email_id = (string) $email->id;
+		}
+		if ( 'customer_new_account' !== $email_id ) {
+			return false;
+		}
+		if ( self::cart_is_demo_only() ) {
+			return true;
+		}
+		return self::user_has_demo_mail_order( self::mail_user_id( $order ) );
+	}
+
+	/**
+	 * @param mixed $object
+	 * @return int
+	 */
+	private static function mail_user_id( $object ) {
+		if ( ! is_object( $object ) || method_exists( $object, 'get_billing_email' ) ) {
+			return 0;
+		}
+		if ( isset( $object->ID ) ) {
+			return (int) $object->ID;
+		}
+		if ( isset( $object->id ) ) {
+			return (int) $object->id;
+		}
+		return 0;
+	}
+
+	/**
+	 * @param int $user_id
+	 * @return bool
+	 */
+	private static function user_has_demo_mail_order( $user_id ) {
+		$user_id = (int) $user_id;
+		if ( $user_id < 1 || ! function_exists( 'wc_get_orders' ) ) {
+			return false;
+		}
+		$orders = wc_get_orders(
+			array(
+				'customer' => $user_id,
+				'limit'    => 50,
+				'return'   => 'objects',
+			)
+		);
+		if ( ! is_array( $orders ) ) {
+			return false;
+		}
+		foreach ( $orders as $candidate ) {
+			if ( self::demo_customer_mail_order( $candidate ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -3100,6 +3385,21 @@ final class Creature_Demo_Loan {
 			return '';
 		}
 		return is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/**
+	 * @param mixed $ids
+	 * @return int[]
+	 */
+	/**
+	 * @param mixed $raw
+	 * @return array<int, mixed>
+	 */
+	private static function constant_id_list( $raw ) {
+		if ( is_string( $raw ) ) {
+			$raw = explode( ',', $raw );
+		}
+		return is_array( $raw ) ? $raw : array();
 	}
 
 	/**

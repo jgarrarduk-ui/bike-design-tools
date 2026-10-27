@@ -28,7 +28,13 @@ add_filter( 'creature_demo_loan_product_ids', function () {
 } );
 ```
 
-Or define `CREATURE_DEMO_LOAN_PRODUCT_IDS` as a comma-separated list in `wp-config.php` before plugins load.
+Or define `CREATURE_DEMO_LOAN_PRODUCT_IDS` as a comma-separated list in `wp-config.php` before plugins load. Staging has no `wp-config.php` access, so the companion plugin can set the same filter from wp-admin:
+
+```bash
+sh wordpress-plugins/creature-demo-loan-config/build-zip.sh
+```
+
+That writes `wordpress-plugins/creature-demo-loan-config.zip` (gitignored). Upload it the same way and open **WooCommerce → Demo loan**. The screen (`manage_woocommerce`) sets the product ids, the coupon product ids, and the test redirect address. It cannot turn on live charges or real customer email. If a constant and the screen are both set, the constant wins.
 
 The £25 code is restricted to product **6687** (De-Reacher stem). Terms 3A.1(a) also describe the bundle. Add that product id with `creature_demo_loan_coupon_product_ids` when the bundle should accept the code. The default stays 6687 if the filter returns an empty list.
 
@@ -81,6 +87,7 @@ Each default matches the v4 terms. A filter can flip it. Both values are covered
 
 ```bash
 php wordpress-plugins/mu-plugins/tests/creature-demo-loan-test.php
+php wordpress-plugins/mu-plugins/tests/creature-demo-loan-config-test.php
 ```
 
 Staging walkthrough (creates orders, does not charge Stripe unless you opt in):

@@ -3,9 +3,10 @@
  * Customer and shop email for the demo loan.
  *
  * Customer mail is redirected unless CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL
- * is exactly true. The default redirect is the creature_demo_loan_redirect_email
- * filter (demo-loan-test@creaturecycles.co.uk) and the subject is prefixed [TEST].
- * Shop alerts are not redirected.
+ * is exactly true. The default redirect is demo-loan-test@creaturecycles.co.uk.
+ * CREATURE_DEMO_LOAN_REDIRECT_EMAIL wins when it is defined. Otherwise the
+ * creature_demo_loan_redirect_email filter can change the address. The subject
+ * is prefixed [TEST]. Shop alerts are not redirected.
  *
  * @package Creature_Demo_Loan
  */
@@ -56,9 +57,13 @@ final class Creature_Demo_Loan_Mail {
 	 * @return string
 	 */
 	public static function redirect_address() {
-		$address = 'demo-loan-test@creaturecycles.co.uk';
-		if ( function_exists( 'apply_filters' ) ) {
-			$address = apply_filters( 'creature_demo_loan_redirect_email', $address );
+		if ( defined( 'CREATURE_DEMO_LOAN_REDIRECT_EMAIL' ) ) {
+			$address = CREATURE_DEMO_LOAN_REDIRECT_EMAIL;
+		} else {
+			$address = 'demo-loan-test@creaturecycles.co.uk';
+			if ( function_exists( 'apply_filters' ) ) {
+				$address = apply_filters( 'creature_demo_loan_redirect_email', $address );
+			}
 		}
 		if ( ! is_string( $address ) || ! preg_match( '/^[^\s@]+@[^\s@]+\.[^\s@]+$/', $address ) ) {
 			return '';

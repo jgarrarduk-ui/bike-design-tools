@@ -26,7 +26,7 @@ final class Creature_Demo_Loan_Copy {
 	 */
 	public static function catalogue() {
 		$consent = sprintf(
-			'[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to %s, a deemed purchase up to %s, and damage or missing parts never more than the cost of repair or replacement (inverted mount kit %s). This box is separate from the general terms and is not ticked for me.',
+			'[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to %s, a deemed purchase up to %s, and damage or missing parts, never more than the cost of repair or replacement (inverted mount kit %s). This box is separate from the general terms and is not ticked for me.',
 			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::LATE_CAP_PENCE ),
 			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::KEEP_PENCE ),
 			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::MOUNT_KIT_PENCE )
