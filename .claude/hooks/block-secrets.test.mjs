@@ -63,9 +63,9 @@ const allowed = [
 
 let failed = 0;
 let checks = 0;
-function check(command, shouldBlock) {
+function check(command, shouldBlock, options) {
   checks += 1;
-  const reason = blockReason(command);
+  const reason = blockReason(command, options || {});
   const got = Boolean(reason);
   if (got !== shouldBlock) {
     failed += 1;
@@ -112,7 +112,6 @@ else process.env.CLAUDECODE = previousClaude;
 const outside = [
   ['git push -u origin cursor/hook-allow-cloud-push', false],
   ['git push origin feature', false],
-  ['git push', false],
   ['nice git push -u origin feature', false],
   ['nice -n 10 git push origin feature', false],
   ['nohup git push origin feature', false],
@@ -142,6 +141,50 @@ const outside = [
   ['cat .envrc', false],
 ];
 for (const [command, shouldBlock] of outside) check(command, shouldBlock);
+
+const feature = { currentBranch: 'cursor/hook-allow-cloud-push', remotes: ['origin'] };
+const onMain = { currentBranch: 'main', remotes: ['origin'] };
+const onMaster = { currentBranch: 'master', remotes: ['origin'] };
+const unresolved = { currentBranch: null, remotes: ['origin'] };
+const remoteUnknown = { currentBranch: 'cursor/hook-allow-cloud-push', remotes: null };
+const implicit = [
+  ['git push --mirror', true, feature],
+  ['git push --mirror origin', true, feature],
+  ['git push origin --mirror', true, feature],
+  ['git push --all', true, feature],
+  ['git push --all origin', true, feature],
+  ['git push origin --all', true, feature],
+  ['git push', false, feature],
+  ['git push', true, onMain],
+  ['git push', true, onMaster],
+  ['git push', true, unresolved],
+  ['git push origin', true, onMain],
+  ['git push origin', false, feature],
+  ['git push origin', true, remoteUnknown],
+  ['git push origin HEAD', true, onMain],
+  ['git push origin HEAD', true, onMaster],
+  ['git push origin HEAD', false, feature],
+  ['git push origin HEAD', true, unresolved],
+  ['git -c push.default=current push', true, onMain],
+  ['git -c push.default=current push', false, feature],
+  ['git -c push.default=current push', true, unresolved],
+  ['git push origin feature:heads/main', true, feature],
+  ['git push origin feature:refs/heads/main', true, feature],
+  ['git push origin heads/main', true, feature],
+  ['git push origin refs/heads/main', true, feature],
+  ['git push origin HEAD:main', true, feature],
+  ['git push origin HEAD:master', true, feature],
+  ['git push origin HEAD:heads/main', true, feature],
+  ['git push origin HEAD:refs/heads/master', true, feature],
+  ['git push main', true, feature],
+  ['git push feature', false, onMain],
+  ['git push origin HEAD:feature', false, onMain],
+  ['nice git push', true, onMain],
+  ['time git push origin HEAD', true, onMain],
+  ["sh -c 'git push'", true, onMain],
+  ["sh -c 'git push --mirror origin'", true, feature],
+];
+for (const [command, shouldBlock, options] of implicit) check(command, shouldBlock, options);
 if (hookExit('git push -u origin feature') !== 0) {
   failed += 1;
   console.log('stdin hook blocked a normal branch push outside Claude Code');

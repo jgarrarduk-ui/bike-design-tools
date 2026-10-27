@@ -9,7 +9,11 @@
 //     before: flags (git -C … push), an absolute binary (/usr/bin/git push),
 //     and the command after env, exec, eval, npx, npm exec, nice, nohup, or time.
 //   - outside Claude Code, a force push (--force, -f, --force-with-lease,
-//     +refspec) or a push whose destination is main or master.
+//     +refspec), a mirror or all-branch push, or a push whose destination
+//     is main or master. A destination of heads/main or refs/heads/main
+//     counts. A push with no explicit non-main destination uses the current
+//     branch, and is refused if that branch is main or master or cannot
+//     be resolved.
 //   - a command that names .env or .env.<suffix>, other than .env.example.
 //     .envrc, .env_backup and .env-old are not secret files.
 //
@@ -18,6 +22,7 @@
 // Exit 0 does not approve the command. Unparseable input exits 0.
 // Checks: node .claude/hooks/block-secrets.test.mjs
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 
 const WRAPPERS = new Set([
@@ -148,50 +153,199 @@ function insideClaudeCode() {
   return typeof value === 'string' && value !== '';
 }
 
-function pushArguments(words) {
+function pushContext(words) {
   if (gitSubcommand(words) === 'push') {
     const i = skipWrappers(words);
     const subIndex = skipFlags(words, i + 1);
-    return words.slice(subIndex + 1);
+    return { args: words.slice(subIndex + 1), gitWords: words.slice(i) };
   }
   const i = skipWrappers(words);
   const bin = baseName(words[i] || '');
   if (bin === 'sh' || bin === 'bash' || bin === 'zsh' || bin === 'dash') {
     let j = i + 1;
     while (j < words.length && words[j].startsWith('-') && !words[j].startsWith('--')) {
-      if (words[j].includes('c')) return pushArguments(words.slice(j + 1));
+      if (words[j].includes('c')) return pushContext(words.slice(j + 1));
       j += 1;
     }
-    if (words[j] === '-c') return pushArguments(words.slice(j + 1));
+    if (words[j] === '-c') return pushContext(words.slice(j + 1));
   }
   return null;
 }
 
-function pushIsForced(args) {
-  for (const word of args) {
-    if (word === '--force' || word === '-f' || word.startsWith('--force-with-lease')) return true;
-    if (word.startsWith('-') && !word.startsWith('--') && word.slice(1).includes('f')) return true;
-    if (word.startsWith('+')) return true;
+function gitGlobals(gitWords) {
+  const globals = [];
+  let j = 1;
+  while (j < gitWords.length && gitWords[j].startsWith('-')) {
+    const flag = gitWords[j];
+    if (flag === '-C' || flag === '--git-dir' || flag === '--work-tree') {
+      const value = gitWords[j + 1];
+      if (!value || value.startsWith('-')) return null;
+      globals.push(flag, value);
+      j += 2;
+      continue;
+    }
+    if (flag.startsWith('--git-dir=') || flag.startsWith('--work-tree=')) {
+      globals.push(flag);
+      j += 1;
+      continue;
+    }
+    if (flag === '-c') {
+      if (!gitWords[j + 1] || gitWords[j + 1].startsWith('-')) return null;
+      j += 2;
+      continue;
+    }
+    j += 1;
   }
-  return false;
+  return globals;
 }
 
-function destinationRef(spec) {
+function gitOutput(globals, args) {
+  try {
+    return execFileSync('git', globals.concat(args), {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function branchFromGit(gitWords) {
+  const globals = gitGlobals(gitWords);
+  if (!globals) return null;
+  const out = gitOutput(globals, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (!out || out === 'HEAD') return null;
+  return out;
+}
+
+function remotesFromGit(gitWords) {
+  const globals = gitGlobals(gitWords);
+  if (!globals) return null;
+  const out = gitOutput(globals, ['remote']);
+  if (out === null) return null;
+  return out.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+function flagTakesValue(flag) {
+  if (flag.includes('=')) return false;
+  return flag === '-o' || flag === '--push-option' || flag === '--repo'
+    || flag === '--receive-pack' || flag === '--exec' || flag === '--recurse-submodules';
+}
+
+function parsePushArgs(args) {
+  let mirror = false;
+  let all = false;
+  let forced = false;
+  const positionals = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const word = args[i];
+    if (word === '--') {
+      positionals.push(...args.slice(i + 1));
+      break;
+    }
+    if (word.startsWith('-')) {
+      if (word === '--mirror') mirror = true;
+      if (word === '--all') all = true;
+      if (word === '--force' || word === '-f' || word.startsWith('--force-with-lease')) forced = true;
+      if (!word.startsWith('--') && word.slice(1).includes('f')) forced = true;
+      if (flagTakesValue(word)) {
+        if (!args[i + 1] || args[i + 1].startsWith('-')) return { error: true };
+        i += 1;
+      }
+      continue;
+    }
+    if (word.startsWith('+')) forced = true;
+    positionals.push(word);
+  }
+  return { mirror, all, forced, positionals, error: false };
+}
+
+function looksLikeRefspec(word) {
+  if (word.includes('://')) return false;
+  return word.startsWith('+') || word.includes(':') || word === 'HEAD'
+    || word.startsWith('refs/') || word.startsWith('heads/');
+}
+
+function branchName(ref) {
+  let name = ref;
+  if (name.startsWith('+')) name = name.slice(1);
+  if (name.startsWith('refs/heads/')) name = name.slice('refs/heads/'.length);
+  if (name.startsWith('heads/')) name = name.slice('heads/'.length);
+  return name;
+}
+
+function isProtectedBranch(name) {
+  return name === 'main' || name === 'master';
+}
+
+function refspecInfo(spec) {
   let ref = spec;
   if (ref.startsWith('+')) ref = ref.slice(1);
-  if (ref.includes('://')) return '';
   const colon = ref.indexOf(':');
-  if (colon === -1) return ref;
-  return ref.slice(colon + 1);
+  if (colon === -1) {
+    if (ref === 'HEAD') return { implicit: true, name: '' };
+    return { implicit: false, name: branchName(ref) };
+  }
+  const dest = ref.slice(colon + 1);
+  if (dest === 'HEAD') return { implicit: true, name: '' };
+  return { implicit: false, name: branchName(dest) };
 }
 
-function pushTargetsMain(args) {
-  for (const word of args) {
-    if (word.startsWith('-')) continue;
-    const name = destinationRef(word).replace(/^refs\/heads\//, '');
-    if (name === 'main' || name === 'master') return true;
+function classifyPositionals(positionals, options, gitWords) {
+  let refspecs;
+  if (positionals.length === 0) {
+    return { needsBranch: true, targetsProtected: false };
   }
-  return false;
+  if (positionals.length === 1) {
+    const only = positionals[0];
+    if (only.includes('://')) return { needsBranch: true, targetsProtected: false };
+    if (looksLikeRefspec(only)) {
+      refspecs = [only];
+    } else {
+      const remotes = Object.prototype.hasOwnProperty.call(options, 'remotes')
+        ? options.remotes
+        : remotesFromGit(gitWords);
+      if (!Array.isArray(remotes)) return { error: true };
+      if (remotes.includes(only)) return { needsBranch: true, targetsProtected: false };
+      refspecs = [only];
+    }
+  } else if (looksLikeRefspec(positionals[0])) {
+    refspecs = positionals;
+  } else {
+    refspecs = positionals.slice(1);
+  }
+  let needsBranch = refspecs.length === 0;
+  for (const spec of refspecs) {
+    const info = refspecInfo(spec);
+    if (info.implicit) {
+      needsBranch = true;
+      continue;
+    }
+    if (isProtectedBranch(info.name)) return { targetsProtected: true, needsBranch: false };
+  }
+  return { needsBranch, targetsProtected: false };
+}
+
+const MAIN_PUSH = 'Blocked: pushing to main or master is not allowed.';
+const UNRESOLVED = 'Blocked: the current branch could not be resolved, so the push was refused.';
+
+function outsidePushReason(args, options, gitWords) {
+  const parsed = parsePushArgs(args);
+  if (parsed.error) return 'Blocked: the push could not be parsed, so it was refused.';
+  if (parsed.mirror) return 'Blocked: a mirror push is not allowed.';
+  if (parsed.all) return 'Blocked: pushing all branches is not allowed.';
+  if (parsed.forced) return 'Blocked: force push is not allowed.';
+  const spec = classifyPositionals(parsed.positionals, options, gitWords);
+  if (spec.error) return UNRESOLVED;
+  if (spec.targetsProtected) return MAIN_PUSH;
+  if (!spec.needsBranch) return '';
+  const branch = Object.prototype.hasOwnProperty.call(options, 'currentBranch')
+    ? options.currentBranch
+    : branchFromGit(gitWords);
+  if (typeof branch !== 'string' || branch === '' || branch === 'HEAD') return UNRESOLVED;
+  if (isProtectedBranch(branchName(branch))) return MAIN_PUSH;
+  return '';
 }
 
 function splitSegments(command) {
@@ -233,21 +387,18 @@ function withoutCommitMessage(segment) {
   return segment.replace(/-m\s+(?:'[^']*'|"[^"]*"|`[^`]*`|\S+)/g, ' ');
 }
 
-export function blockReason(command) {
+export function blockReason(command, options = {}) {
   if (typeof command !== 'string' || !command.trim()) return '';
+  const pushOptions = options && typeof options === 'object' ? options : {};
   for (const segment of splitSegments(command)) {
     const words = wordsOf(segment);
     if (commandPushes(words)) {
       if (insideClaudeCode()) {
         return 'Blocked: git push is not allowed from Claude Code. Push from your own terminal.';
       }
-      const args = pushArguments(words) || [];
-      if (pushIsForced(args)) {
-        return 'Blocked: force push is not allowed.';
-      }
-      if (pushTargetsMain(args)) {
-        return 'Blocked: pushing to main or master is not allowed.';
-      }
+      const context = pushContext(words) || { args: [], gitWords: words };
+      const reason = outsidePushReason(context.args, pushOptions, context.gitWords);
+      if (reason) return reason;
     }
     const scanned = withoutCommitMessage(segment);
     if (chunkNamesSecretEnv(scanned) || wordsOf(scanned).some(namesSecretEnv)) {
