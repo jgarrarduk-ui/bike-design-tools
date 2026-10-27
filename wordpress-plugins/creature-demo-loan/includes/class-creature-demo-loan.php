@@ -3174,8 +3174,15 @@ final class Creature_Demo_Loan {
 
 	/**
 	 * Insert the lock. False when another live lock already holds the order.
-	 * A stale row, or one with no timestamp, is deleted and inserted again.
-	 * If that insert fails, another process won.
+	 *
+	 * add_option() is not used. When the name is in the notoptions cache, core
+	 * skips the existence check and runs INSERT ... ON DUPLICATE KEY UPDATE,
+	 * which returns true for a row that already exists. INSERT IGNORE reports
+	 * a new row only when rows_affected is 1.
+	 *
+	 * A stale row, or one with no timestamp, is removed with a value-matched
+	 * DELETE and inserted again. If that insert does not affect one row, another
+	 * process won.
 	 *
 	 * @param object $order
 	 * @param string $owner saved_card|pay_link
@@ -3184,7 +3191,7 @@ final class Creature_Demo_Loan {
 	public static function acquire_charge_lock( $order, $owner ) {
 		self::forget_legacy_charge_lock_meta( $order );
 		$order_id = is_object( $order ) && method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
-		if ( $order_id < 1 || ! in_array( $owner, array( 'saved_card', 'pay_link' ), true ) || ! function_exists( 'add_option' ) ) {
+		if ( $order_id < 1 || ! in_array( $owner, array( 'saved_card', 'pay_link' ), true ) || ! self::wpdb_ready() ) {
 			return false;
 		}
 		$name    = self::charge_lock_option_name( $order_id );
@@ -3193,33 +3200,41 @@ final class Creature_Demo_Loan {
 			'at'    => self::charge_lock_now(),
 			'token' => self::charge_lock_token(),
 		);
-		if ( add_option( $name, $payload, '', 'no' ) ) {
+		if ( self::insert_charge_lock( $name, $payload ) ) {
 			self::$held_lock_tokens[ $order_id ] = $payload['token'];
+			self::clear_charge_lock_cache( $name );
 			return $payload['token'];
 		}
-		$existing = function_exists( 'get_option' ) ? get_option( $name, false ) : false;
-		if ( false === $existing ) {
-			if ( add_option( $name, $payload, '', 'no' ) ) {
+		$raw = self::charge_lock_db_value( $name );
+		if ( null === $raw ) {
+			if ( self::insert_charge_lock( $name, $payload ) ) {
 				self::$held_lock_tokens[ $order_id ] = $payload['token'];
+				self::clear_charge_lock_cache( $name );
 				return $payload['token'];
 			}
+			self::clear_charge_lock_cache( $name );
 			return false;
 		}
+		$existing = function_exists( 'maybe_unserialize' ) ? maybe_unserialize( $raw ) : $raw;
 		if ( ! self::charge_lock_payload_is_stale( $existing ) ) {
+			self::clear_charge_lock_cache( $name );
 			return false;
 		}
-		if ( ! self::delete_matching_lock( $name, $existing ) ) {
+		if ( ! self::delete_charge_lock_value( $name, $raw ) ) {
+			self::clear_charge_lock_cache( $name );
 			return false;
 		}
-		if ( add_option( $name, $payload, '', 'no' ) ) {
+		if ( self::insert_charge_lock( $name, $payload ) ) {
 			self::$held_lock_tokens[ $order_id ] = $payload['token'];
+			self::clear_charge_lock_cache( $name );
 			return $payload['token'];
 		}
+		self::clear_charge_lock_cache( $name );
 		return false;
 	}
 
 	/**
-	 * Delete the lock only when the owner and token both match.
+	 * Delete the lock only when the owner and token both match the database row.
 	 *
 	 * @param object $order
 	 * @param string $owner
@@ -3228,26 +3243,31 @@ final class Creature_Demo_Loan {
 	 */
 	public static function release_charge_lock( $order, $owner, $token = '' ) {
 		$order_id = is_object( $order ) && method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
-		if ( $order_id < 1 ) {
+		if ( $order_id < 1 || ! self::wpdb_ready() ) {
 			return false;
 		}
 		if ( '' === (string) $token && isset( self::$held_lock_tokens[ $order_id ] ) ) {
 			$token = self::$held_lock_tokens[ $order_id ];
 		}
-		if ( '' === (string) $token || ! function_exists( 'get_option' ) ) {
+		if ( '' === (string) $token ) {
 			return false;
 		}
-		$name    = self::charge_lock_option_name( $order_id );
-		$current = get_option( $name, false );
+		$name = self::charge_lock_option_name( $order_id );
+		$raw  = self::charge_lock_db_value( $name );
+		if ( null === $raw ) {
+			return false;
+		}
+		$current = function_exists( 'maybe_unserialize' ) ? maybe_unserialize( $raw ) : $raw;
 		if ( ! is_array( $current ) || (string) ( $current['owner'] ?? '' ) !== (string) $owner ) {
 			return false;
 		}
 		if ( '' === (string) ( $current['token'] ?? '' ) || ! hash_equals( (string) $current['token'], (string) $token ) ) {
 			return false;
 		}
-		$deleted = self::delete_matching_lock( $name, $current );
+		$deleted = self::delete_charge_lock_value( $name, $raw );
 		if ( $deleted ) {
 			unset( self::$held_lock_tokens[ $order_id ] );
+			self::clear_charge_lock_cache( $name );
 		}
 		return $deleted;
 	}
@@ -3280,44 +3300,100 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * @param string $name
-	 * @param mixed  $payload
 	 * @return bool
 	 */
-	private static function delete_matching_lock( $name, $payload ) {
-		if ( ! is_array( $payload ) || '' === (string) ( $payload['token'] ?? '' ) ) {
-			return false;
-		}
+	private static function wpdb_ready() {
 		global $wpdb;
-		if ( isset( $wpdb ) && is_object( $wpdb ) && ! empty( $wpdb->options ) && method_exists( $wpdb, 'delete' ) && function_exists( 'maybe_serialize' ) ) {
-			$deleted = $wpdb->delete(
-				$wpdb->options,
-				array(
-					'option_name'  => $name,
-					'option_value' => maybe_serialize( $payload ),
-				),
-				array( '%s', '%s' )
-			);
-			if ( function_exists( 'wp_cache_delete' ) ) {
-				wp_cache_delete( $name, 'options' );
-			}
-			return is_int( $deleted ) ? $deleted > 0 : (bool) $deleted;
+		return isset( $wpdb )
+			&& is_object( $wpdb )
+			&& ! empty( $wpdb->options )
+			&& method_exists( $wpdb, 'query' )
+			&& method_exists( $wpdb, 'prepare' )
+			&& method_exists( $wpdb, 'get_var' )
+			&& function_exists( 'maybe_serialize' );
+	}
+
+	/**
+	 * @param string               $name
+	 * @param array<string, mixed> $payload
+	 * @return bool
+	 */
+	private static function insert_charge_lock( $name, $payload ) {
+		global $wpdb;
+		$wpdb->query(
+			$wpdb->prepare(
+				"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s)",
+				$name,
+				maybe_serialize( $payload ),
+				'off'
+			)
+		);
+		return isset( $wpdb->rows_affected ) && 1 === (int) $wpdb->rows_affected;
+	}
+
+	/**
+	 * Serialized option_value from the options table, not from the object cache.
+	 *
+	 * @param string $name
+	 * @return string|null
+	 */
+	private static function charge_lock_db_value( $name ) {
+		global $wpdb;
+		$value = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT option_value FROM {$wpdb->options} WHERE option_name = %s LIMIT 1",
+				$name
+			)
+		);
+		if ( null === $value || false === $value ) {
+			return null;
 		}
-		if ( ! function_exists( 'get_option' ) || ! function_exists( 'delete_option' ) ) {
+		return (string) $value;
+	}
+
+	/**
+	 * Delete only the exact row that was read. A newer lock does not match.
+	 *
+	 * @param string $name
+	 * @param string $serialized
+	 * @return bool
+	 */
+	private static function delete_charge_lock_value( $name, $serialized ) {
+		global $wpdb;
+		if ( '' === (string) $serialized ) {
 			return false;
 		}
-		$current = get_option( $name, false );
-		if ( ! is_array( $current ) ) {
-			return false;
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s",
+				$name,
+				$serialized
+			)
+		);
+		return isset( $wpdb->rows_affected ) && 1 === (int) $wpdb->rows_affected;
+	}
+
+	/**
+	 * Drop the per-key cache, this name in notoptions, and alloptions when that cache exists.
+	 *
+	 * @param string $name
+	 */
+	private static function clear_charge_lock_cache( $name ) {
+		if ( function_exists( 'wp_cache_delete' ) ) {
+			wp_cache_delete( $name, 'options' );
 		}
-		if ( (string) ( $current['owner'] ?? '' ) !== (string) ( $payload['owner'] ?? '' ) ) {
-			return false;
+		if ( ! function_exists( 'wp_cache_get' ) || ! function_exists( 'wp_cache_set' ) || ! function_exists( 'wp_cache_delete' ) ) {
+			return;
 		}
-		if ( '' === (string) ( $current['token'] ?? '' ) || ! hash_equals( (string) $current['token'], (string) $payload['token'] ) ) {
-			return false;
+		$notoptions = wp_cache_get( 'notoptions', 'options' );
+		if ( is_array( $notoptions ) && array_key_exists( $name, $notoptions ) ) {
+			unset( $notoptions[ $name ] );
+			wp_cache_set( 'notoptions', $notoptions, 'options' );
 		}
-		delete_option( $name );
-		return true;
+		$alloptions = wp_cache_get( 'alloptions', 'options' );
+		if ( false !== $alloptions && null !== $alloptions ) {
+			wp_cache_delete( 'alloptions', 'options' );
+		}
 	}
 
 	/**
@@ -3327,10 +3403,14 @@ final class Creature_Demo_Loan {
 	private static function read_charge_lock( $order ) {
 		self::forget_legacy_charge_lock_meta( $order );
 		$order_id = is_object( $order ) && method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
-		if ( $order_id < 1 || ! function_exists( 'get_option' ) ) {
+		if ( $order_id < 1 || ! self::wpdb_ready() ) {
 			return false;
 		}
-		$row = get_option( self::charge_lock_option_name( $order_id ), false );
+		$raw = self::charge_lock_db_value( self::charge_lock_option_name( $order_id ) );
+		if ( null === $raw ) {
+			return false;
+		}
+		$row = function_exists( 'maybe_unserialize' ) ? maybe_unserialize( $raw ) : $raw;
 		return is_array( $row ) ? $row : false;
 	}
 
@@ -3383,10 +3463,22 @@ final class Creature_Demo_Loan {
 			$order_id = $order_id->get_id();
 		}
 		$order_id = (int) $order_id;
-		if ( $order_id < 1 || ! function_exists( 'delete_option' ) ) {
+		if ( $order_id < 1 ) {
 			return;
 		}
-		delete_option( self::charge_lock_option_name( $order_id ) );
+		$name = self::charge_lock_option_name( $order_id );
+		if ( self::wpdb_ready() ) {
+			global $wpdb;
+			$wpdb->query(
+				$wpdb->prepare(
+					"DELETE FROM {$wpdb->options} WHERE option_name = %s",
+					$name
+				)
+			);
+			self::clear_charge_lock_cache( $name );
+		} elseif ( function_exists( 'delete_option' ) ) {
+			delete_option( $name );
+		}
 		unset( self::$held_lock_tokens[ $order_id ] );
 	}
 

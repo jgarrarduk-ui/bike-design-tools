@@ -20,6 +20,12 @@ $GLOBALS['creature_demo_next_id']       = 1000;
 $GLOBALS['creature_demo_options']       = array();
 $GLOBALS['creature_demo_option_adds']   = array();
 $GLOBALS['creature_demo_add_option_reject'] = 0;
+$GLOBALS['creature_demo_add_option_overwrite'] = false;
+$GLOBALS['creature_demo_option_raw']    = array();
+$GLOBALS['creature_demo_cache']         = array();
+$GLOBALS['creature_demo_cache_deletes'] = array();
+$GLOBALS['creature_demo_insert_ignore_reject'] = 0;
+$GLOBALS['creature_demo_before_lock_delete'] = null;
 $GLOBALS['creature_demo_postmeta']      = array();
 $GLOBALS['creature_demo_post_types']    = array();
 $GLOBALS['creature_demo_coupons']       = array();
@@ -211,6 +217,57 @@ if ( ! function_exists( 'get_option' ) ) {
 	}
 }
 
+if ( ! function_exists( 'maybe_serialize' ) ) {
+	function maybe_serialize( $data ) {
+		if ( is_array( $data ) || is_object( $data ) ) {
+			return serialize( $data );
+		}
+		if ( is_string( $data ) ) {
+			return $data;
+		}
+		return (string) $data;
+	}
+}
+
+if ( ! function_exists( 'maybe_unserialize' ) ) {
+	function maybe_unserialize( $data ) {
+		if ( ! is_string( $data ) ) {
+			return $data;
+		}
+		$unserialized = @unserialize( $data );
+		if ( false === $unserialized && 'b:0;' !== $data ) {
+			return $data;
+		}
+		return $unserialized;
+	}
+}
+
+if ( ! function_exists( 'wp_cache_get' ) ) {
+	function wp_cache_get( $key, $group = '' ) {
+		$group = (string) $group;
+		$key   = (string) $key;
+		if ( ! isset( $GLOBALS['creature_demo_cache'][ $group ] ) || ! array_key_exists( $key, $GLOBALS['creature_demo_cache'][ $group ] ) ) {
+			return false;
+		}
+		return $GLOBALS['creature_demo_cache'][ $group ][ $key ];
+	}
+}
+
+if ( ! function_exists( 'wp_cache_set' ) ) {
+	function wp_cache_set( $key, $value, $group = '' ) {
+		$GLOBALS['creature_demo_cache'][ (string) $group ][ (string) $key ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_cache_delete' ) ) {
+	function wp_cache_delete( $key, $group = '' ) {
+		$GLOBALS['creature_demo_cache_deletes'][] = array( (string) $key, (string) $group );
+		unset( $GLOBALS['creature_demo_cache'][ (string) $group ][ (string) $key ] );
+		return true;
+	}
+}
+
 if ( ! function_exists( 'add_option' ) ) {
 	function add_option( $option, $value = '', $deprecated = '', $autoload = 'yes' ) {
 		$GLOBALS['creature_demo_option_adds'][] = array(
@@ -218,6 +275,13 @@ if ( ! function_exists( 'add_option' ) ) {
 			'deprecated' => (string) $deprecated,
 			'autoload'   => (string) $autoload,
 		);
+		// Core add_option() does this when the name is cached in notoptions:
+		// INSERT ... ON DUPLICATE KEY UPDATE, which returns true and overwrites.
+		if ( ! empty( $GLOBALS['creature_demo_add_option_overwrite'] ) ) {
+			$GLOBALS['creature_demo_options'][ $option ]    = $value;
+			$GLOBALS['creature_demo_option_raw'][ $option ] = maybe_serialize( $value );
+			return true;
+		}
 		if ( array_key_exists( $option, $GLOBALS['creature_demo_options'] ) ) {
 			return false;
 		}
@@ -659,7 +723,9 @@ function creature_demo_plant_lock( $order, $owner, $at, $token = 'planted-token'
 	if ( null !== $at ) {
 		$payload['at'] = (int) $at;
 	}
-	$GLOBALS['creature_demo_options'][ 'creature_demo_charge_lock_' . $id ] = $payload;
+	$name = 'creature_demo_charge_lock_' . $id;
+	$GLOBALS['creature_demo_options'][ $name ]    = $payload;
+	$GLOBALS['creature_demo_option_raw'][ $name ] = maybe_serialize( $payload );
 }
 
 function creature_demo_filter_lock_now( $now ) {
@@ -673,6 +739,106 @@ function creature_demo_record_fleet( $id, $order, $reason ) {
 	unset( $order );
 	$GLOBALS['creature_demo_fleet'][] = array( (int) $id, (string) $reason );
 }
+
+class Creature_Demo_Test_Wpdb {
+	public $options       = 'wp_options';
+	public $rows_affected = 0;
+	public $inserts       = array();
+
+	public function esc_like( $text ) {
+		return addcslashes( (string) $text, '_%\\' );
+	}
+
+	public function prepare( $query, ...$args ) {
+		return array(
+			'sql'  => (string) $query,
+			'args' => $args,
+		);
+	}
+
+	public function get_var( $prepared ) {
+		$args = is_array( $prepared ) && isset( $prepared['args'] ) ? $prepared['args'] : array();
+		$name = isset( $args[0] ) ? (string) $args[0] : '';
+		if ( '' === $name || ! array_key_exists( $name, $GLOBALS['creature_demo_options'] ) ) {
+			return null;
+		}
+		if ( ! isset( $GLOBALS['creature_demo_option_raw'][ $name ] ) ) {
+			$GLOBALS['creature_demo_option_raw'][ $name ] = maybe_serialize( $GLOBALS['creature_demo_options'][ $name ] );
+		}
+		return $GLOBALS['creature_demo_option_raw'][ $name ];
+	}
+
+	public function query( $prepared ) {
+		$sql  = is_array( $prepared ) && isset( $prepared['sql'] ) ? $prepared['sql'] : (string) $prepared;
+		$args = is_array( $prepared ) && isset( $prepared['args'] ) ? $prepared['args'] : array();
+		if ( false !== strpos( $sql, 'INSERT IGNORE' ) ) {
+			$name     = isset( $args[0] ) ? (string) $args[0] : '';
+			$raw      = isset( $args[1] ) ? (string) $args[1] : '';
+			$autoload = isset( $args[2] ) ? (string) $args[2] : '';
+			$this->inserts[] = array(
+				'name'     => $name,
+				'autoload' => $autoload,
+				'sql'      => $sql,
+			);
+			if ( array_key_exists( $name, $GLOBALS['creature_demo_options'] ) ) {
+				$this->rows_affected = 0;
+				return 0;
+			}
+			if ( ! empty( $GLOBALS['creature_demo_insert_ignore_reject'] ) ) {
+				$GLOBALS['creature_demo_insert_ignore_reject']--;
+				$this->rows_affected = 0;
+				return 0;
+			}
+			$GLOBALS['creature_demo_options'][ $name ]    = maybe_unserialize( $raw );
+			$GLOBALS['creature_demo_option_raw'][ $name ] = $raw;
+			$this->rows_affected = 1;
+			return 1;
+		}
+		if ( false !== strpos( $sql, 'DELETE' ) && false !== strpos( $sql, 'option_value' ) ) {
+			if ( isset( $GLOBALS['creature_demo_before_lock_delete'] ) && is_callable( $GLOBALS['creature_demo_before_lock_delete'] ) ) {
+				$hook = $GLOBALS['creature_demo_before_lock_delete'];
+				$GLOBALS['creature_demo_before_lock_delete'] = null;
+				$hook();
+			}
+			$name = isset( $args[0] ) ? (string) $args[0] : '';
+			$raw  = isset( $args[1] ) ? (string) $args[1] : '';
+			$current = isset( $GLOBALS['creature_demo_option_raw'][ $name ] ) ? (string) $GLOBALS['creature_demo_option_raw'][ $name ] : '';
+			if ( '' !== $current && '' !== $raw && hash_equals( $current, $raw ) ) {
+				unset( $GLOBALS['creature_demo_options'][ $name ], $GLOBALS['creature_demo_option_raw'][ $name ] );
+				$this->rows_affected = 1;
+				return 1;
+			}
+			$this->rows_affected = 0;
+			return 0;
+		}
+		if ( false !== strpos( $sql, 'DELETE' ) && false !== strpos( $sql, 'LIKE' ) ) {
+			$removed = 0;
+			foreach ( array_keys( $GLOBALS['creature_demo_options'] ) as $key ) {
+				if ( 0 === strpos( (string) $key, 'creature_demo_charge_lock_' ) ) {
+					unset( $GLOBALS['creature_demo_options'][ $key ], $GLOBALS['creature_demo_option_raw'][ $key ] );
+					$removed++;
+				}
+			}
+			$this->rows_affected = $removed;
+			return $removed;
+		}
+		if ( false !== strpos( $sql, 'DELETE' ) ) {
+			$name = isset( $args[0] ) ? (string) $args[0] : '';
+			if ( '' !== $name && array_key_exists( $name, $GLOBALS['creature_demo_options'] ) ) {
+				unset( $GLOBALS['creature_demo_options'][ $name ], $GLOBALS['creature_demo_option_raw'][ $name ] );
+				$this->rows_affected = 1;
+				return 1;
+			}
+			$this->rows_affected = 0;
+			return 0;
+		}
+		$this->rows_affected = 0;
+		return 0;
+	}
+}
+
+global $wpdb;
+$wpdb = new Creature_Demo_Test_Wpdb();
 
 require dirname( __DIR__, 2 ) . '/creature-demo-loan/creature-demo-loan.php';
 
@@ -2003,22 +2169,48 @@ WC_Stripe_API::$response = (object) array(
 	'status' => 'succeeded',
 );
 
+$overwrite_name = 'creature_demo_charge_lock_overwrite';
+$GLOBALS['creature_demo_add_option_overwrite'] = true;
+$overwrite_first  = add_option( $overwrite_name, array( 'owner' => 'saved_card', 'at' => Creature_Demo_Loan::charge_lock_now(), 'token' => 'first' ), '', 'no' );
+$overwrite_second = add_option( $overwrite_name, array( 'owner' => 'pay_link', 'at' => Creature_Demo_Loan::charge_lock_now(), 'token' => 'second' ), '', 'no' );
+$GLOBALS['creature_demo_add_option_overwrite'] = false;
+creature_demo_expect( true === $overwrite_first && true === $overwrite_second, 'add_option with ON DUPLICATE KEY UPDATE returns true for both takers' );
+creature_demo_expect( 'pay_link' === $GLOBALS['creature_demo_options'][ $overwrite_name ]['owner'], 'that add_option overwrites the first lock' );
+unset( $GLOBALS['creature_demo_options'][ $overwrite_name ], $GLOBALS['creature_demo_option_raw'][ $overwrite_name ] );
+
 $contender = wc_create_order();
 $contender->update_meta_data( '_creature_demo_charge_order', 'yes' );
 $contender->save();
+$contender_name = Creature_Demo_Loan::charge_lock_option_name( $contender->get_id() );
+wp_cache_set( 'notoptions', array( $contender_name => true, 'keep-me' => true ), 'options' );
+wp_cache_set( 'alloptions', array( $contender_name => 'cached', 'siteurl' => 'https://example.test' ), 'options' );
+wp_cache_set( $contender_name, 'cached-row', 'options' );
+$cache_deletes_before = count( $GLOBALS['creature_demo_cache_deletes'] );
 $first_token  = Creature_Demo_Loan::acquire_charge_lock( $contender, 'saved_card' );
 $second_token = Creature_Demo_Loan::acquire_charge_lock( $contender, 'pay_link' );
 creature_demo_expect( is_string( $first_token ) && '' !== $first_token, 'the first acquire wins the charge lock' );
 creature_demo_expect( false === $second_token, 'a second acquire loses the charge lock' );
-creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $contender ), 'exactly one contender holds the lock' );
-$contender_added = false;
-foreach ( $GLOBALS['creature_demo_option_adds'] as $option_add ) {
-	if ( Creature_Demo_Loan::charge_lock_option_name( $contender->get_id() ) === $option_add['option'] ) {
-		$contender_added = true;
-		creature_demo_expect( '' === $option_add['deprecated'] && 'no' === $option_add['autoload'], 'the charge lock is a non-autoloaded option' );
+creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $contender ), 'exactly one contender holds the lock when add_option would overwrite' );
+$contender_inserted = false;
+foreach ( $wpdb->inserts as $insert ) {
+	if ( $contender_name === $insert['name'] ) {
+		$contender_inserted = true;
+		creature_demo_expect( false !== strpos( $insert['sql'], 'INSERT IGNORE' ), 'the charge lock is inserted with INSERT IGNORE' );
+		creature_demo_expect( 'off' === $insert['autoload'], 'the charge lock option is not autoloaded' );
 	}
 }
-creature_demo_expect( $contender_added, 'the charge lock is stored with add_option' );
+creature_demo_expect( $contender_inserted, 'the charge lock is stored by INSERT IGNORE' );
+$notoptions_after = wp_cache_get( 'notoptions', 'options' );
+creature_demo_expect( is_array( $notoptions_after ) && ! array_key_exists( $contender_name, $notoptions_after ) && ! empty( $notoptions_after['keep-me'] ), 'acquire removes the lock name from the notoptions cache' );
+creature_demo_expect( false === wp_cache_get( 'alloptions', 'options' ), 'acquire clears alloptions when that cache is present' );
+creature_demo_expect( false === wp_cache_get( $contender_name, 'options' ), 'acquire deletes the per-option cache' );
+$lock_cache_deleted = false;
+foreach ( array_slice( $GLOBALS['creature_demo_cache_deletes'], $cache_deletes_before ) as $cache_delete ) {
+	if ( $contender_name === $cache_delete[0] && 'options' === $cache_delete[1] ) {
+		$lock_cache_deleted = true;
+	}
+}
+creature_demo_expect( $lock_cache_deleted, 'acquire calls wp_cache_delete for the lock option' );
 
 $stale_order = wc_create_order();
 creature_demo_plant_lock( $stale_order, 'pay_link', Creature_Demo_Loan::charge_lock_now() - 900, 'stale-token' );
@@ -2033,11 +2225,27 @@ creature_demo_expect( is_string( $timeless_token ) && 'no-time' !== $timeless_to
 
 $lost_order = wc_create_order();
 creature_demo_plant_lock( $lost_order, 'pay_link', Creature_Demo_Loan::charge_lock_now() - 900, 'lost-token' );
-$GLOBALS['creature_demo_add_option_reject'] = 1;
+$GLOBALS['creature_demo_insert_ignore_reject'] = 1;
 $lost_token = Creature_Demo_Loan::acquire_charge_lock( $lost_order, 'saved_card' );
-$GLOBALS['creature_demo_add_option_reject'] = 0;
+$GLOBALS['creature_demo_insert_ignore_reject'] = 0;
 creature_demo_expect( false === $lost_token, 'a takeover that loses the insert does not hold the lock' );
 creature_demo_expect( false === creature_demo_lock_row( $lost_order ), 'a lost takeover does not leave the stale row' );
+
+$raced = wc_create_order();
+creature_demo_plant_lock( $raced, 'pay_link', Creature_Demo_Loan::charge_lock_now() - 900, 'stale-before-race' );
+$raced_name = Creature_Demo_Loan::charge_lock_option_name( $raced->get_id() );
+$GLOBALS['creature_demo_before_lock_delete'] = static function () use ( $raced_name ) {
+	$fresh = array(
+		'owner' => 'saved_card',
+		'at'    => Creature_Demo_Loan::charge_lock_now(),
+		'token' => 'fresh-during-takeover',
+	);
+	$GLOBALS['creature_demo_options'][ $raced_name ]    = $fresh;
+	$GLOBALS['creature_demo_option_raw'][ $raced_name ] = maybe_serialize( $fresh );
+};
+$raced_token = Creature_Demo_Loan::acquire_charge_lock( $raced, 'pay_link' );
+creature_demo_expect( false === $raced_token, 'a stale takeover does not win when a fresh lock arrives first' );
+creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $raced ) && 'fresh-during-takeover' === creature_demo_lock_row( $raced )['token'], 'a stale takeover cannot delete the fresh lock' );
 
 $mismatch = wc_create_order();
 $mismatch_token = Creature_Demo_Loan::acquire_charge_lock( $mismatch, 'pay_link' );
@@ -2079,38 +2287,10 @@ $GLOBALS['creature_demo_post_types'][ $legacy_post->get_id() ] = 'shop_order';
 do_action( 'before_delete_post', $legacy_post->get_id() );
 creature_demo_expect( false === creature_demo_lock_row( $legacy_post ), 'deleting a shop_order post removes its charge lock' );
 
-class Creature_Demo_Test_Wpdb {
-	public $options = 'wp_options';
-
-	public function esc_like( $text ) {
-		return addcslashes( (string) $text, '_%\\' );
-	}
-
-	public function prepare( $query, ...$args ) {
-		foreach ( $args as $arg ) {
-			$query = preg_replace( '/%s/', "'" . str_replace( "'", "''", (string) $arg ) . "'", $query, 1 );
-		}
-		return $query;
-	}
-
-	public function query( $sql ) {
-		unset( $sql );
-		foreach ( array_keys( $GLOBALS['creature_demo_options'] ) as $key ) {
-			if ( 0 === strpos( (string) $key, 'creature_demo_charge_lock_' ) ) {
-				unset( $GLOBALS['creature_demo_options'][ $key ] );
-			}
-		}
-		return 1;
-	}
-}
-
 $uninstall_order = wc_create_order();
 creature_demo_plant_lock( $uninstall_order, 'pay_link', Creature_Demo_Loan::charge_lock_now(), 'uninstall-me' );
 creature_demo_expect( 'creature_demo_loan_uninstall' === $GLOBALS['creature_demo_uninstall'][1], 'uninstall is registered' );
-global $wpdb;
-$wpdb = new Creature_Demo_Test_Wpdb();
 creature_demo_loan_uninstall();
-unset( $wpdb );
 creature_demo_expect( false === creature_demo_lock_row( $uninstall_order ), 'uninstall removes charge lock options' );
 creature_demo_expect( isset( $GLOBALS['creature_demo_options']['woocommerce_stripe_settings'] ), 'uninstall leaves other options in place' );
 
