@@ -208,6 +208,44 @@ final class Creature_Demo_Loan_Stripe {
 	 * @param string $id
 	 * @return string
 	 */
+	/**
+	 * PaymentIntent status from the gateway API. Empty when the call fails.
+	 *
+	 * WC_Stripe_API::request is the same helper the gateway uses. The path is
+	 * payment_intents/{id} with GET.
+	 *
+	 * @param string $payment_intent_id
+	 * @return string
+	 */
+	public static function payment_intent_status( $payment_intent_id ) {
+		$id = self::safe_id( $payment_intent_id );
+		if ( '' === $id || ! class_exists( 'WC_Stripe_API' ) || ! is_callable( array( 'WC_Stripe_API', 'request' ) ) ) {
+			return '';
+		}
+		$response = WC_Stripe_API::request( array(), 'payment_intents/' . $id, 'GET' );
+		if ( is_object( $response ) && is_a( $response, 'WP_Error' ) ) {
+			return '';
+		}
+		if ( is_object( $response ) && isset( $response->error ) ) {
+			return '';
+		}
+		if ( is_array( $response ) && isset( $response['error'] ) ) {
+			return '';
+		}
+		$status = '';
+		if ( is_object( $response ) && isset( $response->status ) ) {
+			$status = (string) $response->status;
+		} elseif ( is_array( $response ) && isset( $response['status'] ) ) {
+			$status = (string) $response['status'];
+		}
+		$status = strtolower( trim( $status ) );
+		return '' === $status ? '' : $status;
+	}
+
+	/**
+	 * @param string $id
+	 * @return string
+	 */
 	public static function safe_id( $id ) {
 		if ( ! is_string( $id ) ) {
 			return '';

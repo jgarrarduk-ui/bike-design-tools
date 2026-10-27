@@ -27,8 +27,20 @@ final class Creature_Demo_Loan {
 	const STATUS_DEEMED   = 'demo-deemed';
 	const STATUS_CLOSED   = 'demo-closed';
 
+	/**
+	 * A pay-link lock older than this is not treated as in progress.
+	 * The creature_demo_loan_charge_lock_stale_seconds filter can change it.
+	 */
+	const CHARGE_LOCK_STALE_SECONDS = 900;
+
 	/** @var bool */
 	private static $booted = false;
+
+	/** @var array<int, bool> */
+	private static $intent_lookup_noted = array();
+
+	/** @var array<int, string> */
+	private static $intent_status_cache = array();
 
 	/** @var array<string, mixed>|null */
 	public static $block_field = null;
@@ -106,6 +118,9 @@ final class Creature_Demo_Loan {
 		add_action( 'template_redirect', array( __CLASS__, 'maybe_handle_choice_request' ) );
 		add_action( 'woocommerce_payment_complete', array( __CLASS__, 'on_payment_complete' ) );
 		add_action( 'woocommerce_before_pay_action', array( __CLASS__, 'on_before_pay_action' ) );
+		add_action( 'woocommerce_order_status_failed', array( __CLASS__, 'on_pay_link_failed' ), 10, 2 );
+		add_action( 'woocommerce_order_status_cancelled', array( __CLASS__, 'on_pay_link_failed' ), 10, 2 );
+		add_action( 'wc_gateway_stripe_process_payment_error', array( __CLASS__, 'on_stripe_payment_error' ), 10, 2 );
 		add_filter( 'woocommerce_order_needs_payment', array( __CLASS__, 'filter_needs_payment' ), 10, 2 );
 		add_action( 'woocommerce_order_status_processing', array( __CLASS__, 'on_payment_complete' ) );
 		add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'on_payment_complete' ) );
@@ -1567,6 +1582,7 @@ final class Creature_Demo_Loan {
 		}
 		$charge->update_meta_data( '_creature_demo_charge_paid', 'yes' );
 		$charge->update_meta_data( '_creature_demo_charge_lock', '' );
+		$charge->update_meta_data( '_creature_demo_charge_lock_at', '' );
 		$charge->save();
 		$loan->update_meta_data( $key, 'yes' );
 		$loan->save();
@@ -2831,7 +2847,14 @@ final class Creature_Demo_Loan {
 				'code' => '',
 			);
 		}
-		if ( 'pay_link' === self::meta_string( $order, '_creature_demo_charge_lock' ) && '' === self::charge_already_settled( $order ) ) {
+		if ( self::pay_link_lock_active( $order ) && '' === self::charge_already_settled( $order ) ) {
+			$intent = self::pay_link_intent_conflict( $order );
+			if ( '' !== $intent ) {
+				return array(
+					'ok'   => false,
+					'code' => $intent,
+				);
+			}
 			return array(
 				'ok'   => true,
 				'code' => 'pay_link',
@@ -2845,6 +2868,7 @@ final class Creature_Demo_Loan {
 			);
 		}
 		$order->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
+		$order->update_meta_data( '_creature_demo_charge_lock_at', self::charge_lock_now() );
 		$order->save();
 		if ( function_exists( 'do_action' ) ) {
 			do_action( 'creature_demo_loan_pay_link_lock_acquired', $order );
@@ -2915,10 +2939,11 @@ final class Creature_Demo_Loan {
 		if ( '' !== $settled ) {
 			return $settled;
 		}
-		if ( 'pay_link' === self::meta_string( $charge, '_creature_demo_charge_lock' ) ) {
-			return 'payment_in_progress';
+		$intent = self::pay_link_intent_conflict( $charge );
+		if ( '' !== $intent ) {
+			return $intent;
 		}
-		if ( self::pay_link_intent_in_progress( $charge ) ) {
+		if ( self::pay_link_lock_active( $charge ) ) {
 			return 'payment_in_progress';
 		}
 		return '';
@@ -2936,10 +2961,7 @@ final class Creature_Demo_Loan {
 		if ( 'saved_card' === self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
 			return 'payment_in_progress';
 		}
-		if ( 'pay_link' !== self::meta_string( $order, '_creature_demo_charge_lock' ) && self::pay_link_intent_in_progress( $order ) ) {
-			return 'payment_in_progress';
-		}
-		return '';
+		return self::pay_link_intent_conflict( $order );
 	}
 
 	/**
@@ -2967,22 +2989,171 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * A PaymentIntent the pay link has already opened, and not a failed one.
+	 * Seconds after which a pay-link lock no longer blocks Charge saved card.
+	 *
+	 * @return int
+	 */
+	public static function charge_lock_stale_seconds() {
+		$seconds = self::CHARGE_LOCK_STALE_SECONDS;
+		if ( defined( 'CREATURE_DEMO_LOAN_CHARGE_LOCK_STALE_SECONDS' ) ) {
+			$seconds = (int) CREATURE_DEMO_LOAN_CHARGE_LOCK_STALE_SECONDS;
+		}
+		if ( function_exists( 'apply_filters' ) ) {
+			$filtered = apply_filters( 'creature_demo_loan_charge_lock_stale_seconds', $seconds );
+			if ( is_numeric( $filtered ) ) {
+				$seconds = (int) $filtered;
+			}
+		}
+		return $seconds > 0 ? $seconds : self::CHARGE_LOCK_STALE_SECONDS;
+	}
+
+	/**
+	 * @return int
+	 */
+	public static function charge_lock_now() {
+		$now = time();
+		if ( function_exists( 'apply_filters' ) ) {
+			$filtered = apply_filters( 'creature_demo_loan_charge_lock_now', $now );
+			if ( is_numeric( $filtered ) ) {
+				$now = (int) $filtered;
+			}
+		}
+		return $now;
+	}
+
+	/**
+	 * A failed or cancelled pay-link payment drops the lock so the saved card can be charged.
+	 *
+	 * @param mixed       $order_id
+	 * @param object|null $order
+	 */
+	public static function on_pay_link_failed( $order_id, $order = null ) {
+		if ( ! is_object( $order ) && function_exists( 'wc_get_order' ) ) {
+			$order = wc_get_order( $order_id );
+		}
+		if ( ! self::is_charge_order( $order ) || 'pay_link' !== self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
+			return;
+		}
+		self::release_charge_lock( $order, 'pay_link' );
+		self::note( $order, 'Pay-link payment failed or was cancelled. The saved card can be charged.' );
+	}
+
+	/**
+	 * Stripe Gateway fires this when the pay-link PaymentIntent fails.
+	 * Documented on 11.1 as ( WC_Stripe_Exception $e, WC_Order $order ).
+	 *
+	 * @param mixed  $error
+	 * @param object $order
+	 */
+	public static function on_stripe_payment_error( $error, $order ) {
+		unset( $error );
+		if ( ! self::is_charge_order( $order ) || 'pay_link' !== self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
+			return;
+		}
+		self::release_charge_lock( $order, 'pay_link' );
+		self::note( $order, 'Pay-link payment failed at Stripe. The saved card can be charged.' );
+	}
+
+	/**
+	 * @param object $order
+	 * @return bool
+	 */
+	private static function pay_link_lock_active( $order ) {
+		if ( 'pay_link' !== self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
+			return false;
+		}
+		return ! self::charge_lock_is_stale( $order );
+	}
+
+	/**
+	 * A missing timestamp is already stale, so an old lock cannot block forever.
 	 *
 	 * @param object $order
 	 * @return bool
 	 */
-	private static function pay_link_intent_in_progress( $order ) {
+	private static function charge_lock_is_stale( $order ) {
+		$at = (int) self::meta_string( $order, '_creature_demo_charge_lock_at' );
+		if ( $at < 1 ) {
+			return true;
+		}
+		return ( self::charge_lock_now() - $at ) >= self::charge_lock_stale_seconds();
+	}
+
+	/**
+	 * Intent id with no status meta is read from the Stripe API.
+	 *
+	 * Succeeded, processing and requires_capture always refuse. requires_payment_method,
+	 * canceled and requires_action are not in progress once the lock is stale.
+	 * A failed lookup refuses while the lock is younger than that window, and after
+	 * that allows the charge and leaves an order note.
+	 *
+	 * Status meta, if the gateway wrote one, is `_stripe_intent_status` or
+	 * `_stripe_status`. The intent id is `_stripe_intent_id`.
+	 *
+	 * @param object $order
+	 * @return string
+	 */
+	private static function pay_link_intent_conflict( $order ) {
 		$id = self::meta_string( $order, '_stripe_intent_id' );
-		if ( '' === $id ) {
-			return false;
+		if ( '' === $id || ! is_object( $order ) ) {
+			return '';
 		}
 		$status = self::meta_string( $order, '_stripe_intent_status' );
 		if ( '' === $status ) {
 			$status = self::meta_string( $order, '_stripe_status' );
 		}
-		$finished = array( 'requires_payment_method', 'canceled', 'cancelled' );
-		return ! in_array( $status, $finished, true );
+		if ( '' === $status ) {
+			$cache_id = method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
+			if ( array_key_exists( $cache_id, self::$intent_status_cache ) ) {
+				$status = self::$intent_status_cache[ $cache_id ];
+			} else {
+				$status = Creature_Demo_Loan_Stripe::payment_intent_status( $id );
+				self::$intent_status_cache[ $cache_id ] = $status;
+			}
+			if ( '' === $status ) {
+				if ( self::charge_lock_is_stale( $order ) ) {
+					self::note_intent_lookup_once( $order );
+					return '';
+				}
+				return 'payment_in_progress';
+			}
+		}
+		return self::intent_status_conflict( $order, $status );
+	}
+
+	/**
+	 * Succeeded, processing and requires_capture always refuse.
+	 * requires_payment_method, canceled and requires_action refuse only while the lock is fresh.
+	 *
+	 * @param object $order
+	 * @param string $status
+	 * @return string
+	 */
+	private static function intent_status_conflict( $order, $status ) {
+		$status = strtolower( trim( (string) $status ) );
+		if ( 'succeeded' === $status ) {
+			return 'already_paid';
+		}
+		if ( in_array( $status, array( 'processing', 'requires_capture' ), true ) ) {
+			return 'payment_in_progress';
+		}
+		$soft = array( 'requires_payment_method', 'canceled', 'cancelled', 'requires_action' );
+		if ( in_array( $status, $soft, true ) ) {
+			return self::charge_lock_is_stale( $order ) ? '' : 'payment_in_progress';
+		}
+		return 'payment_in_progress';
+	}
+
+	/**
+	 * @param object $order
+	 */
+	private static function note_intent_lookup_once( $order ) {
+		$id = method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
+		if ( isset( self::$intent_lookup_noted[ $id ] ) ) {
+			return;
+		}
+		self::$intent_lookup_noted[ $id ] = true;
+		self::note( $order, 'Stripe did not return the pay-link PaymentIntent status. The charge lock is past the stale window, so Charge saved card is allowed.' );
 	}
 
 	/**
@@ -2995,6 +3166,7 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		$order->update_meta_data( '_creature_demo_charge_lock', '' );
+		$order->update_meta_data( '_creature_demo_charge_lock_at', '' );
 		$order->save();
 	}
 
@@ -3387,10 +3559,6 @@ final class Creature_Demo_Loan {
 		return is_scalar( $value ) ? (string) $value : '';
 	}
 
-	/**
-	 * @param mixed $ids
-	 * @return int[]
-	 */
 	/**
 	 * @param mixed $raw
 	 * @return array<int, mixed>

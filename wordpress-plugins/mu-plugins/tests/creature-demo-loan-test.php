@@ -25,6 +25,7 @@ $GLOBALS['creature_demo_keep_included'] = null;
 $GLOBALS['creature_demo_refund_flag']   = null;
 $GLOBALS['creature_demo_switch_until']  = '';
 $GLOBALS['creature_demo_lapse_days']    = null;
+$GLOBALS['creature_demo_lock_now']      = null;
 $GLOBALS['creature_demo_user']          = 0;
 $GLOBALS['creature_demo_scheduled']     = array();
 $GLOBALS['creature_demo_post_statuses'] = array();
@@ -553,6 +554,13 @@ function creature_demo_filter_lapse( $days ) {
 	return $days;
 }
 
+function creature_demo_filter_lock_now( $now ) {
+	if ( null !== $GLOBALS['creature_demo_lock_now'] ) {
+		return (int) $GLOBALS['creature_demo_lock_now'];
+	}
+	return $now;
+}
+
 function creature_demo_record_fleet( $id, $order, $reason ) {
 	unset( $order );
 	$GLOBALS['creature_demo_fleet'][] = array( (int) $id, (string) $reason );
@@ -566,6 +574,7 @@ add_filter( 'creature_demo_loan_late_fees_included_in_keep', 'creature_demo_filt
 add_filter( 'creature_demo_loan_refund_includes_keep_choosers', 'creature_demo_filter_refund_flag' );
 add_filter( 'creature_demo_loan_buy_return_switch_until', 'creature_demo_filter_switch_until' );
 add_filter( 'creature_demo_loan_keep_lapse_working_days', 'creature_demo_filter_lapse' );
+add_filter( 'creature_demo_loan_charge_lock_now', 'creature_demo_filter_lock_now' );
 add_action( 'creature_demo_loan_unit_removed_from_fleet', 'creature_demo_record_fleet', 10, 3 );
 
 do_action( 'plugins_loaded' );
@@ -1715,6 +1724,127 @@ $abandoned_result = Creature_Demo_Loan::charge_saved_card( $abandoned, '2026-04-
 creature_demo_expect( 'stripe_error' === $abandoned_result['code'], 'a failed pay-link intent does not block the saved card' );
 creature_demo_expect( $abandoned_calls < count( WC_Stripe_API::$requests ), 'a failed pay-link intent still reaches Stripe' );
 creature_demo_expect( '' === (string) $abandoned_charge->get_meta( '_creature_demo_charge_lock' ), 'a Stripe error releases the saved-card lock' );
+WC_Stripe_API::$response = (object) array(
+	'id'     => 'pi_test_demo_1',
+	'status' => 'succeeded',
+);
+
+creature_demo_expect( 900 === Creature_Demo_Loan::charge_lock_stale_seconds(), 'the pay-link lock goes stale after 15 minutes' );
+$GLOBALS['creature_demo_lock_now'] = 1700000000;
+$declined_link = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $declined_link, '2026-03-30', '2026-03-30' );
+$declined_charge = wc_get_order( (int) $declined_link->get_meta( '_creature_demo_late_fee_order_id' ) );
+creature_demo_expect( ! empty( Creature_Demo_Loan::begin_pay_link( $declined_charge )['ok'] ), 'a declined-link test can open the pay link' );
+creature_demo_expect( '1700000000' === (string) $declined_charge->get_meta( '_creature_demo_charge_lock_at' ), 'the pay-link lock stores the time it was taken' );
+do_action( 'woocommerce_order_status_failed', $declined_charge->get_id(), $declined_charge );
+creature_demo_expect( '' === (string) $declined_charge->get_meta( '_creature_demo_charge_lock' ), 'a failed pay-link payment releases the lock' );
+creature_demo_expect( '' === (string) $declined_charge->get_meta( '_creature_demo_charge_lock_at' ), 'a failed pay-link payment clears the lock time' );
+$declined_posts = count( WC_Stripe_API::$requests );
+$declined_result = Creature_Demo_Loan::charge_saved_card( $declined_link, '2026-04-02' );
+creature_demo_expect( ! empty( $declined_result['ok'] ), 'a declined pay link does not block Charge saved card' );
+creature_demo_expect( $declined_posts < count( WC_Stripe_API::$requests ), 'a declined pay link still lets the saved card call Stripe' );
+
+$cancelled_link = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $cancelled_link, '2026-03-30', '2026-03-30' );
+$cancelled_charge = wc_get_order( (int) $cancelled_link->get_meta( '_creature_demo_late_fee_order_id' ) );
+Creature_Demo_Loan::begin_pay_link( $cancelled_charge );
+do_action( 'woocommerce_order_status_cancelled', $cancelled_charge->get_id(), $cancelled_charge );
+creature_demo_expect( '' === (string) $cancelled_charge->get_meta( '_creature_demo_charge_lock' ), 'a cancelled pay-link payment releases the lock' );
+
+$stripe_fail = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $stripe_fail, '2026-03-30', '2026-03-30' );
+$stripe_fail_charge = wc_get_order( (int) $stripe_fail->get_meta( '_creature_demo_late_fee_order_id' ) );
+Creature_Demo_Loan::begin_pay_link( $stripe_fail_charge );
+do_action( 'wc_gateway_stripe_process_payment_error', new WP_Error( 'card_declined', 'declined' ), $stripe_fail_charge );
+creature_demo_expect( '' === (string) $stripe_fail_charge->get_meta( '_creature_demo_charge_lock' ), 'a Stripe pay-link failure releases the lock' );
+
+$left_link = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $left_link, '2026-03-30', '2026-03-30' );
+$left_charge = wc_get_order( (int) $left_link->get_meta( '_creature_demo_late_fee_order_id' ) );
+Creature_Demo_Loan::begin_pay_link( $left_charge );
+$left_fresh = count( WC_Stripe_API::$requests );
+$left_now = Creature_Demo_Loan::charge_saved_card( $left_link, '2026-04-02' );
+creature_demo_expect( 'payment_in_progress' === $left_now['code'], 'an abandoned pay link still blocks inside 15 minutes' );
+creature_demo_expect( $left_fresh === count( WC_Stripe_API::$requests ), 'an abandoned pay link does not call Stripe inside 15 minutes' );
+$GLOBALS['creature_demo_lock_now'] = 1700000000 + 899;
+$left_almost = Creature_Demo_Loan::charge_saved_card( $left_link, '2026-04-02' );
+creature_demo_expect( 'payment_in_progress' === $left_almost['code'], 'an abandoned pay link still blocks at 14 minutes 59 seconds' );
+$GLOBALS['creature_demo_lock_now'] = 1700000000 + 900;
+$left_later = Creature_Demo_Loan::charge_saved_card( $left_link, '2026-04-02' );
+creature_demo_expect( ! empty( $left_later['ok'] ), 'an abandoned pay link goes stale after 15 minutes and the saved card is charged' );
+
+$intent_statuses = array( 'succeeded', 'processing', 'requires_capture', 'requires_payment_method', 'canceled', 'requires_action' );
+foreach ( $intent_statuses as $intent_status ) {
+	foreach ( array( 0, 900 ) as $intent_age ) {
+		$GLOBALS['creature_demo_lock_now'] = 1700000000;
+		$intent_loan = creature_demo_loan();
+		Creature_Demo_Loan::record_return_scan( $intent_loan, '2026-03-30', '2026-03-30' );
+		$intent_charge = wc_get_order( (int) $intent_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+		$intent_charge->update_meta_data( '_stripe_intent_id', 'pi_test_lookup' );
+		$intent_charge->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
+		$intent_charge->update_meta_data( '_creature_demo_charge_lock_at', 1700000000 - $intent_age );
+		$intent_charge->save();
+		WC_Stripe_API::$response = (object) array(
+			'id'     => 'pi_test_lookup',
+			'status' => $intent_status,
+		);
+		$intent_from = count( WC_Stripe_API::$requests );
+		$intent_result = Creature_Demo_Loan::charge_saved_card( $intent_loan, '2026-04-02' );
+		$intent_posts = 0;
+		foreach ( array_slice( WC_Stripe_API::$requests, $intent_from ) as $intent_request ) {
+			if ( 'POST' === $intent_request['method'] && 'payment_intents' === $intent_request['endpoint'] ) {
+				$intent_posts++;
+			}
+		}
+		$hard = in_array( $intent_status, array( 'succeeded', 'processing', 'requires_capture' ), true );
+		if ( $hard || 0 === $intent_age ) {
+			creature_demo_expect( empty( $intent_result['ok'] ), 'intent ' . $intent_status . ' at age ' . $intent_age . ' refuses the saved card' );
+			creature_demo_expect( 0 === $intent_posts, 'intent ' . $intent_status . ' at age ' . $intent_age . ' does not create a PaymentIntent' );
+			if ( 'succeeded' === $intent_status ) {
+				creature_demo_expect( 'already_paid' === $intent_result['code'], 'a succeeded pay-link intent always refuses, including after the stale window' );
+			}
+		} else {
+			creature_demo_expect( 'payment_in_progress' !== $intent_result['code'] && 'already_paid' !== $intent_result['code'], 'intent ' . $intent_status . ' older than 15 minutes is not in progress' );
+			creature_demo_expect( $intent_posts > 0, 'intent ' . $intent_status . ' older than 15 minutes lets the saved card call Stripe' );
+		}
+	}
+}
+
+foreach ( array( 0, 900 ) as $fail_age ) {
+	$GLOBALS['creature_demo_lock_now'] = 1700000000;
+	$fail_loan = creature_demo_loan();
+	Creature_Demo_Loan::record_return_scan( $fail_loan, '2026-03-30', '2026-03-30' );
+	$fail_charge = wc_get_order( (int) $fail_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+	$fail_charge->update_meta_data( '_stripe_intent_id', 'pi_test_lookup_fail' );
+	$fail_charge->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
+	$fail_charge->update_meta_data( '_creature_demo_charge_lock_at', 1700000000 - $fail_age );
+	$fail_charge->save();
+	WC_Stripe_API::$response = new WP_Error( 'stripe_error', 'timeout' );
+	$fail_from = count( WC_Stripe_API::$requests );
+	$fail_result = Creature_Demo_Loan::charge_saved_card( $fail_loan, '2026-04-02' );
+	$fail_posts = 0;
+	$fail_gets = 0;
+	foreach ( array_slice( WC_Stripe_API::$requests, $fail_from ) as $fail_request ) {
+		if ( 'POST' === $fail_request['method'] && 'payment_intents' === $fail_request['endpoint'] ) {
+			$fail_posts++;
+		}
+		if ( 'GET' === $fail_request['method'] && 0 === strpos( $fail_request['endpoint'], 'payment_intents/' ) ) {
+			$fail_gets++;
+		}
+	}
+	$fail_notes = implode( "\n", $fail_charge->notes );
+	creature_demo_expect( $fail_gets > 0, 'a missing intent status is looked up at age ' . $fail_age );
+	if ( 0 === $fail_age ) {
+		creature_demo_expect( 'payment_in_progress' === $fail_result['code'], 'a failed intent lookup refuses while the lock is younger than 15 minutes' );
+		creature_demo_expect( 0 === $fail_posts, 'a failed intent lookup does not charge while the lock is fresh' );
+		creature_demo_expect( false === strpos( $fail_notes, 'did not return the pay-link PaymentIntent status' ), 'a fresh failed lookup does not allow the charge' );
+	} else {
+		creature_demo_expect( 'payment_in_progress' !== $fail_result['code'], 'a failed intent lookup allows the charge after 15 minutes' );
+		creature_demo_expect( $fail_posts > 0, 'a failed intent lookup after 15 minutes calls Stripe' );
+		creature_demo_expect( false !== strpos( $fail_notes, 'did not return the pay-link PaymentIntent status' ), 'a failed intent lookup after 15 minutes is noted on the order' );
+	}
+}
+$GLOBALS['creature_demo_lock_now'] = null;
 WC_Stripe_API::$response = (object) array(
 	'id'     => 'pi_test_demo_1',
 	'status' => 'succeeded',
