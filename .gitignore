@@ -2,3 +2,6 @@
 .env
 .env.*
 !.env.example
+
+# Plugin upload zip. wordpress-plugins/creature-demo-loan/build-zip.sh recreates it.
+wordpress-plugins/creature-demo-loan.zip

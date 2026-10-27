@@ -1,0 +1,60 @@
+<?php
+/**
+ * Plugin Name: Creature Cycles De-Reacher Demo Loan
+ * Description: Postal demo loan for the De-Reacher. Consent, saved card, loan statuses, reminders, and charge-later on the WooCommerce Stripe Gateway. Test mode unless live charges are explicitly enabled.
+ * Version: 1.0.0
+ * Author: Creature Cycles
+ * License: GPL-2.0-or-later
+ * Requires Plugins: woocommerce
+ * Text Domain: creature-demo-loan
+ *
+ * Install from Plugins → Add New → Upload the zip built by build-zip.sh.
+ * WooCommerce and WooCommerce Stripe Gateway 11.x must already be active.
+ * Copy optional-mu-loader/creature-demo-loan-loader.php into wp-content/mu-plugins/
+ * only if the plugin should load without being activated in the plugins screen.
+ *
+ * Live charges stay off unless wp-config.php defines
+ * CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES as boolean true before plugins load.
+ * Customer email stays redirected unless CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL
+ * is boolean true. Undefined and any other value mean off.
+ *
+ * @package Creature_Demo_Loan
+ */
+
+if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
+	exit;
+}
+
+if ( defined( 'CREATURE_DEMO_LOAN_LOADED' ) ) {
+	return;
+}
+
+define( 'CREATURE_DEMO_LOAN_LOADED', true );
+define( 'CREATURE_DEMO_LOAN_FILE', __FILE__ );
+define( 'CREATURE_DEMO_LOAN_DIR', __DIR__ );
+define( 'CREATURE_DEMO_LOAN_VERSION', '1.0.0' );
+
+if ( ! defined( 'CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES' ) ) {
+	define( 'CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES', false );
+}
+
+if ( ! defined( 'CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL' ) ) {
+	define( 'CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL', false );
+}
+
+if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
+	define( 'HOUR_IN_SECONDS', 3600 );
+}
+
+if ( ! defined( 'DAY_IN_SECONDS' ) ) {
+	define( 'DAY_IN_SECONDS', 86400 );
+}
+
+require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan-calendar.php';
+require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan-money.php';
+require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan-copy.php';
+require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan-mail.php';
+require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan-stripe.php';
+require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan.php';
+
+add_action( 'plugins_loaded', array( 'Creature_Demo_Loan', 'boot' ), 20 );
