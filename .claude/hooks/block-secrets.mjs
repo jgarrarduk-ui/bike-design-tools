@@ -5,9 +5,11 @@
 // and a program that opens the file itself (dotenv) are not covered.
 //
 // Blocks:
-//   - git push, including flags (git -C … push), an absolute binary
-//     (/usr/bin/git push), and the same command after env, exec, eval,
-//     npx, npm exec, nice, nohup, or time
+//   - git push while CLAUDECODE is set (Claude Code). The same spellings as
+//     before: flags (git -C … push), an absolute binary (/usr/bin/git push),
+//     and the command after env, exec, eval, npx, npm exec, nice, nohup, or time.
+//   - outside Claude Code, a force push (--force, -f, --force-with-lease,
+//     +refspec) or a push whose destination is main or master.
 //   - a command that names .env or .env.<suffix>, other than .env.example.
 //     .envrc, .env_backup and .env-old are not secret files.
 //
@@ -141,6 +143,57 @@ function commandPushes(words) {
   return false;
 }
 
+function insideClaudeCode() {
+  const value = process.env.CLAUDECODE;
+  return typeof value === 'string' && value !== '';
+}
+
+function pushArguments(words) {
+  if (gitSubcommand(words) === 'push') {
+    const i = skipWrappers(words);
+    const subIndex = skipFlags(words, i + 1);
+    return words.slice(subIndex + 1);
+  }
+  const i = skipWrappers(words);
+  const bin = baseName(words[i] || '');
+  if (bin === 'sh' || bin === 'bash' || bin === 'zsh' || bin === 'dash') {
+    let j = i + 1;
+    while (j < words.length && words[j].startsWith('-') && !words[j].startsWith('--')) {
+      if (words[j].includes('c')) return pushArguments(words.slice(j + 1));
+      j += 1;
+    }
+    if (words[j] === '-c') return pushArguments(words.slice(j + 1));
+  }
+  return null;
+}
+
+function pushIsForced(args) {
+  for (const word of args) {
+    if (word === '--force' || word === '-f' || word.startsWith('--force-with-lease')) return true;
+    if (word.startsWith('-') && !word.startsWith('--') && word.slice(1).includes('f')) return true;
+    if (word.startsWith('+')) return true;
+  }
+  return false;
+}
+
+function destinationRef(spec) {
+  let ref = spec;
+  if (ref.startsWith('+')) ref = ref.slice(1);
+  if (ref.includes('://')) return '';
+  const colon = ref.indexOf(':');
+  if (colon === -1) return ref;
+  return ref.slice(colon + 1);
+}
+
+function pushTargetsMain(args) {
+  for (const word of args) {
+    if (word.startsWith('-')) continue;
+    const name = destinationRef(word).replace(/^refs\/heads\//, '');
+    if (name === 'main' || name === 'master') return true;
+  }
+  return false;
+}
+
 function splitSegments(command) {
   const parts = [];
   let current = '';
@@ -183,8 +236,18 @@ function withoutCommitMessage(segment) {
 export function blockReason(command) {
   if (typeof command !== 'string' || !command.trim()) return '';
   for (const segment of splitSegments(command)) {
-    if (commandPushes(wordsOf(segment))) {
-      return 'Blocked: git push is not allowed from Claude Code. Push from your own terminal.';
+    const words = wordsOf(segment);
+    if (commandPushes(words)) {
+      if (insideClaudeCode()) {
+        return 'Blocked: git push is not allowed from Claude Code. Push from your own terminal.';
+      }
+      const args = pushArguments(words) || [];
+      if (pushIsForced(args)) {
+        return 'Blocked: force push is not allowed.';
+      }
+      if (pushTargetsMain(args)) {
+        return 'Blocked: pushing to main or master is not allowed.';
+      }
     }
     const scanned = withoutCommitMessage(segment);
     if (chunkNamesSecretEnv(scanned) || wordsOf(scanned).some(namesSecretEnv)) {
