@@ -42,6 +42,9 @@ final class Creature_Demo_Loan {
 	/** @var array<int, string> */
 	private static $intent_status_cache = array();
 
+	/** @var array<int, string> */
+	private static $held_lock_tokens = array();
+
 	/** @var array<string, mixed>|null */
 	public static $block_field = null;
 
@@ -82,8 +85,8 @@ final class Creature_Demo_Loan {
 		add_action( 'manage_shop_order_posts_custom_column', array( __CLASS__, 'render_legacy_column' ), 10, 2 );
 
 		add_filter( 'woocommerce_available_payment_gateways', array( __CLASS__, 'filter_gateways' ) );
-		// Stripe Gateway UPE (11.x) reads this to save the card for a later
-		// off-session charge. Confirm on staging that 11.2.1 still applies it.
+		// Stripe Gateway 11.1.1 applies this in classic and block checkout.
+		// The second argument is an order id. 11.2.1 is not public yet.
 		add_filter( 'wc_stripe_force_save_payment_method', array( __CLASS__, 'filter_force_save' ), 10, 2 );
 		add_filter( 'woocommerce_checkout_registration_required', array( __CLASS__, 'filter_registration_required' ) );
 		add_filter( 'woocommerce_checkout_registration_enabled', array( __CLASS__, 'filter_registration_enabled' ) );
@@ -121,6 +124,9 @@ final class Creature_Demo_Loan {
 		add_action( 'woocommerce_order_status_failed', array( __CLASS__, 'on_pay_link_failed' ), 10, 2 );
 		add_action( 'woocommerce_order_status_cancelled', array( __CLASS__, 'on_pay_link_failed' ), 10, 2 );
 		add_action( 'wc_gateway_stripe_process_payment_error', array( __CLASS__, 'on_stripe_payment_error' ), 10, 2 );
+		add_action( 'woocommerce_before_delete_order', array( __CLASS__, 'on_charge_order_deleted' ) );
+		add_action( 'woocommerce_delete_order', array( __CLASS__, 'on_charge_order_deleted' ) );
+		add_action( 'before_delete_post', array( __CLASS__, 'on_before_delete_shop_order' ) );
 		add_filter( 'woocommerce_order_needs_payment', array( __CLASS__, 'filter_needs_payment' ), 10, 2 );
 		add_action( 'woocommerce_order_status_processing', array( __CLASS__, 'on_payment_complete' ) );
 		add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'on_payment_complete' ) );
@@ -539,13 +545,18 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * @param mixed       $force
-	 * @param object|null $order
+	 * Gateway 11.1.1 passes an order id. An order object is accepted too.
+	 *
+	 * @param mixed $force
+	 * @param mixed $order
 	 * @return mixed
 	 */
 	public static function filter_force_save( $force, $order = null ) {
 		if ( self::cart_is_demo_only() ) {
 			return true;
+		}
+		if ( is_numeric( $order ) && function_exists( 'wc_get_order' ) ) {
+			$order = wc_get_order( (int) $order );
 		}
 		if ( is_object( $order ) && self::order_is_demo( $order ) ) {
 			return true;
@@ -1581,9 +1592,8 @@ final class Creature_Demo_Loan {
 			return array( 'ok' => true, 'idempotent' => true );
 		}
 		$charge->update_meta_data( '_creature_demo_charge_paid', 'yes' );
-		$charge->update_meta_data( '_creature_demo_charge_lock', '' );
-		$charge->update_meta_data( '_creature_demo_charge_lock_at', '' );
 		$charge->save();
+		self::release_current_charge_lock( $charge );
 		$loan->update_meta_data( $key, 'yes' );
 		$loan->save();
 		self::complete_charge_payment( $charge, self::payment_intent_id( $charge ) );
@@ -1749,7 +1759,7 @@ final class Creature_Demo_Loan {
 		if ( 'yes' === self::meta_string( $order, '_creature_demo_charge_paid' ) ) {
 			return false;
 		}
-		if ( 'saved_card' === self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
+		if ( self::saved_card_lock_active( $order ) ) {
 			return false;
 		}
 		$status = method_exists( $order, 'get_status' ) ? (string) $order->get_status() : '';
@@ -2867,22 +2877,20 @@ final class Creature_Demo_Loan {
 				'code' => $blocked,
 			);
 		}
-		$order->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
-		$order->update_meta_data( '_creature_demo_charge_lock_at', self::charge_lock_now() );
-		$order->save();
-		if ( function_exists( 'do_action' ) ) {
-			do_action( 'creature_demo_loan_pay_link_lock_acquired', $order );
-		}
-		$fresh = self::reload_order( $order );
-		if ( 'saved_card' === self::meta_string( $fresh, '_creature_demo_charge_lock' ) ) {
+		$token = self::acquire_charge_lock( $order, 'pay_link' );
+		if ( false === $token ) {
 			return array(
 				'ok'   => false,
 				'code' => 'payment_in_progress',
 			);
 		}
+		if ( function_exists( 'do_action' ) ) {
+			do_action( 'creature_demo_loan_pay_link_lock_acquired', $order );
+		}
+		$fresh   = self::reload_order( $order );
 		$blocked = self::pay_link_blocked_by( $fresh );
 		if ( '' !== $blocked ) {
-			self::release_charge_lock( $fresh, 'pay_link' );
+			self::release_charge_lock( $fresh, 'pay_link', $token );
 			return array(
 				'ok'   => false,
 				'code' => $blocked,
@@ -2906,22 +2914,17 @@ final class Creature_Demo_Loan {
 		if ( '' !== $code ) {
 			return $code;
 		}
-		$charge->update_meta_data( '_creature_demo_charge_lock', 'saved_card' );
-		$charge->save();
+		$token = self::acquire_charge_lock( $charge, 'saved_card' );
+		if ( false === $token ) {
+			return 'payment_in_progress';
+		}
 		if ( function_exists( 'do_action' ) ) {
 			do_action( 'creature_demo_loan_saved_card_lock_acquired', $charge );
 		}
 		$fresh = self::reload_order( $charge );
-		if ( 'saved_card' !== self::meta_string( $fresh, '_creature_demo_charge_lock' ) ) {
-			if ( 'pay_link' === self::meta_string( $fresh, '_creature_demo_charge_lock' ) ) {
-				return 'payment_in_progress';
-			}
-			$again = self::charge_payment_conflict( $fresh );
-			return '' !== $again ? $again : 'payment_in_progress';
-		}
 		$again = self::charge_payment_conflict( $fresh );
 		if ( '' !== $again ) {
-			self::release_charge_lock( $fresh, 'saved_card' );
+			self::release_charge_lock( $fresh, 'saved_card', $token );
 			return $again;
 		}
 		return '';
@@ -2958,7 +2961,7 @@ final class Creature_Demo_Loan {
 		if ( '' !== $settled ) {
 			return $settled;
 		}
-		if ( 'saved_card' === self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
+		if ( self::saved_card_lock_active( $order ) ) {
 			return 'payment_in_progress';
 		}
 		return self::pay_link_intent_conflict( $order );
@@ -3031,26 +3034,23 @@ final class Creature_Demo_Loan {
 		if ( ! is_object( $order ) && function_exists( 'wc_get_order' ) ) {
 			$order = wc_get_order( $order_id );
 		}
-		if ( ! self::is_charge_order( $order ) || 'pay_link' !== self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
+		if ( ! self::release_owned_charge_lock( $order, 'pay_link' ) ) {
 			return;
 		}
-		self::release_charge_lock( $order, 'pay_link' );
 		self::note( $order, 'Pay-link payment failed or was cancelled. The saved card can be charged.' );
 	}
 
 	/**
-	 * Stripe Gateway fires this when the pay-link PaymentIntent fails.
-	 * Documented on 11.1 as ( WC_Stripe_Exception $e, WC_Order $order ).
+	 * Stripe Gateway 11.1.1 fires this as ( WC_Stripe_Exception $e, WC_Order $order ).
 	 *
 	 * @param mixed  $error
 	 * @param object $order
 	 */
 	public static function on_stripe_payment_error( $error, $order ) {
 		unset( $error );
-		if ( ! self::is_charge_order( $order ) || 'pay_link' !== self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
+		if ( ! self::release_owned_charge_lock( $order, 'pay_link' ) ) {
 			return;
 		}
-		self::release_charge_lock( $order, 'pay_link' );
 		self::note( $order, 'Pay-link payment failed at Stripe. The saved card can be charged.' );
 	}
 
@@ -3059,36 +3059,52 @@ final class Creature_Demo_Loan {
 	 * @return bool
 	 */
 	private static function pay_link_lock_active( $order ) {
-		if ( 'pay_link' !== self::meta_string( $order, '_creature_demo_charge_lock' ) ) {
-			return false;
-		}
-		return ! self::charge_lock_is_stale( $order );
+		$row = self::read_charge_lock( $order );
+		return is_array( $row ) && 'pay_link' === (string) ( $row['owner'] ?? '' ) && ! self::charge_lock_payload_is_stale( $row );
 	}
 
 	/**
-	 * A missing timestamp is already stale, so an old lock cannot block forever.
+	 * @param object $order
+	 * @return bool
+	 */
+	private static function saved_card_lock_active( $order ) {
+		$row = self::read_charge_lock( $order );
+		return is_array( $row ) && 'saved_card' === (string) ( $row['owner'] ?? '' ) && ! self::charge_lock_payload_is_stale( $row );
+	}
+
+	/**
+	 * A missing pay-link lock, or one with no timestamp, is already stale.
 	 *
 	 * @param object $order
 	 * @return bool
 	 */
 	private static function charge_lock_is_stale( $order ) {
-		$at = (int) self::meta_string( $order, '_creature_demo_charge_lock_at' );
-		if ( $at < 1 ) {
+		$row = self::read_charge_lock( $order );
+		if ( ! is_array( $row ) || 'pay_link' !== (string) ( $row['owner'] ?? '' ) ) {
 			return true;
 		}
-		return ( self::charge_lock_now() - $at ) >= self::charge_lock_stale_seconds();
+		return self::charge_lock_payload_is_stale( $row );
 	}
 
 	/**
-	 * Intent id with no status meta is read from the Stripe API.
+	 * @param mixed $payload
+	 * @return bool
+	 */
+	private static function charge_lock_payload_is_stale( $payload ) {
+		if ( ! is_array( $payload ) || ! isset( $payload['at'] ) || '' === $payload['at'] || (int) $payload['at'] < 1 ) {
+			return true;
+		}
+		return ( self::charge_lock_now() - (int) $payload['at'] ) >= self::charge_lock_stale_seconds();
+	}
+
+	/**
+	 * The intent id is `_stripe_intent_id`. Gateway 11.1.1 writes no status meta,
+	 * so the status always comes from the PaymentIntent API.
 	 *
-	 * Succeeded, processing and requires_capture always refuse. requires_payment_method,
-	 * canceled and requires_action are not in progress once the lock is stale.
-	 * A failed lookup refuses while the lock is younger than that window, and after
-	 * that allows the charge and leaves an order note.
-	 *
-	 * Status meta, if the gateway wrote one, is `_stripe_intent_status` or
-	 * `_stripe_status`. The intent id is `_stripe_intent_id`.
+	 * Succeeded, processing and requires_capture always refuse. Any other status
+	 * stops blocking once the pay-link lock is stale. A failed lookup refuses
+	 * while that lock is younger than the window, and after that allows the
+	 * charge and leaves an order note.
 	 *
 	 * @param object $order
 	 * @return string
@@ -3098,32 +3114,26 @@ final class Creature_Demo_Loan {
 		if ( '' === $id || ! is_object( $order ) ) {
 			return '';
 		}
-		$status = self::meta_string( $order, '_stripe_intent_status' );
-		if ( '' === $status ) {
-			$status = self::meta_string( $order, '_stripe_status' );
+		$cache_id = method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
+		if ( array_key_exists( $cache_id, self::$intent_status_cache ) ) {
+			$status = self::$intent_status_cache[ $cache_id ];
+		} else {
+			$status = Creature_Demo_Loan_Stripe::payment_intent_status( $id );
+			self::$intent_status_cache[ $cache_id ] = $status;
 		}
 		if ( '' === $status ) {
-			$cache_id = method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
-			if ( array_key_exists( $cache_id, self::$intent_status_cache ) ) {
-				$status = self::$intent_status_cache[ $cache_id ];
-			} else {
-				$status = Creature_Demo_Loan_Stripe::payment_intent_status( $id );
-				self::$intent_status_cache[ $cache_id ] = $status;
+			if ( self::charge_lock_is_stale( $order ) ) {
+				self::note_intent_lookup_once( $order );
+				return '';
 			}
-			if ( '' === $status ) {
-				if ( self::charge_lock_is_stale( $order ) ) {
-					self::note_intent_lookup_once( $order );
-					return '';
-				}
-				return 'payment_in_progress';
-			}
+			return 'payment_in_progress';
 		}
 		return self::intent_status_conflict( $order, $status );
 	}
 
 	/**
 	 * Succeeded, processing and requires_capture always refuse.
-	 * requires_payment_method, canceled and requires_action refuse only while the lock is fresh.
+	 * Every other status, including requires_confirmation, refuses only while the pay-link lock is fresh.
 	 *
 	 * @param object $order
 	 * @param string $status
@@ -3137,11 +3147,7 @@ final class Creature_Demo_Loan {
 		if ( in_array( $status, array( 'processing', 'requires_capture' ), true ) ) {
 			return 'payment_in_progress';
 		}
-		$soft = array( 'requires_payment_method', 'canceled', 'cancelled', 'requires_action' );
-		if ( in_array( $status, $soft, true ) ) {
-			return self::charge_lock_is_stale( $order ) ? '' : 'payment_in_progress';
-		}
-		return 'payment_in_progress';
+		return self::charge_lock_is_stale( $order ) ? '' : 'payment_in_progress';
 	}
 
 	/**
@@ -3157,17 +3163,263 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * Option name for the charge lock. One row per order, autoload no.
+	 *
+	 * @param int $order_id
+	 * @return string
+	 */
+	public static function charge_lock_option_name( $order_id ) {
+		return 'creature_demo_charge_lock_' . (int) $order_id;
+	}
+
+	/**
+	 * Insert the lock. False when another live lock already holds the order.
+	 * A stale row, or one with no timestamp, is deleted and inserted again.
+	 * If that insert fails, another process won.
+	 *
+	 * @param object $order
+	 * @param string $owner saved_card|pay_link
+	 * @return string|false Token, or false when the lock was not acquired.
+	 */
+	public static function acquire_charge_lock( $order, $owner ) {
+		self::forget_legacy_charge_lock_meta( $order );
+		$order_id = is_object( $order ) && method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
+		if ( $order_id < 1 || ! in_array( $owner, array( 'saved_card', 'pay_link' ), true ) || ! function_exists( 'add_option' ) ) {
+			return false;
+		}
+		$name    = self::charge_lock_option_name( $order_id );
+		$payload = array(
+			'owner' => $owner,
+			'at'    => self::charge_lock_now(),
+			'token' => self::charge_lock_token(),
+		);
+		if ( add_option( $name, $payload, '', 'no' ) ) {
+			self::$held_lock_tokens[ $order_id ] = $payload['token'];
+			return $payload['token'];
+		}
+		$existing = function_exists( 'get_option' ) ? get_option( $name, false ) : false;
+		if ( false === $existing ) {
+			if ( add_option( $name, $payload, '', 'no' ) ) {
+				self::$held_lock_tokens[ $order_id ] = $payload['token'];
+				return $payload['token'];
+			}
+			return false;
+		}
+		if ( ! self::charge_lock_payload_is_stale( $existing ) ) {
+			return false;
+		}
+		if ( ! self::delete_matching_lock( $name, $existing ) ) {
+			return false;
+		}
+		if ( add_option( $name, $payload, '', 'no' ) ) {
+			self::$held_lock_tokens[ $order_id ] = $payload['token'];
+			return $payload['token'];
+		}
+		return false;
+	}
+
+	/**
+	 * Delete the lock only when the owner and token both match.
+	 *
 	 * @param object $order
 	 * @param string $owner
+	 * @param string $token
+	 * @return bool
 	 */
-	private static function release_charge_lock( $order, $owner ) {
-		$order = self::reload_order( $order );
-		if ( ! is_object( $order ) || self::meta_string( $order, '_creature_demo_charge_lock' ) !== $owner ) {
+	public static function release_charge_lock( $order, $owner, $token = '' ) {
+		$order_id = is_object( $order ) && method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
+		if ( $order_id < 1 ) {
+			return false;
+		}
+		if ( '' === (string) $token && isset( self::$held_lock_tokens[ $order_id ] ) ) {
+			$token = self::$held_lock_tokens[ $order_id ];
+		}
+		if ( '' === (string) $token || ! function_exists( 'get_option' ) ) {
+			return false;
+		}
+		$name    = self::charge_lock_option_name( $order_id );
+		$current = get_option( $name, false );
+		if ( ! is_array( $current ) || (string) ( $current['owner'] ?? '' ) !== (string) $owner ) {
+			return false;
+		}
+		if ( '' === (string) ( $current['token'] ?? '' ) || ! hash_equals( (string) $current['token'], (string) $token ) ) {
+			return false;
+		}
+		$deleted = self::delete_matching_lock( $name, $current );
+		if ( $deleted ) {
+			unset( self::$held_lock_tokens[ $order_id ] );
+		}
+		return $deleted;
+	}
+
+	/**
+	 * @param object $order
+	 * @param string $owner
+	 * @return bool
+	 */
+	private static function release_owned_charge_lock( $order, $owner ) {
+		if ( ! self::is_charge_order( $order ) ) {
+			return false;
+		}
+		$row = self::read_charge_lock( $order );
+		if ( ! is_array( $row ) || (string) ( $row['owner'] ?? '' ) !== (string) $owner || '' === (string) ( $row['token'] ?? '' ) ) {
+			return false;
+		}
+		return self::release_charge_lock( $order, $owner, (string) $row['token'] );
+	}
+
+	/**
+	 * @param object $order
+	 */
+	private static function release_current_charge_lock( $order ) {
+		$row = self::read_charge_lock( $order );
+		if ( ! is_array( $row ) || '' === (string) ( $row['owner'] ?? '' ) || '' === (string) ( $row['token'] ?? '' ) ) {
 			return;
 		}
-		$order->update_meta_data( '_creature_demo_charge_lock', '' );
-		$order->update_meta_data( '_creature_demo_charge_lock_at', '' );
-		$order->save();
+		self::release_charge_lock( $order, (string) $row['owner'], (string) $row['token'] );
+	}
+
+	/**
+	 * @param string $name
+	 * @param mixed  $payload
+	 * @return bool
+	 */
+	private static function delete_matching_lock( $name, $payload ) {
+		if ( ! is_array( $payload ) || '' === (string) ( $payload['token'] ?? '' ) ) {
+			return false;
+		}
+		global $wpdb;
+		if ( isset( $wpdb ) && is_object( $wpdb ) && ! empty( $wpdb->options ) && method_exists( $wpdb, 'delete' ) && function_exists( 'maybe_serialize' ) ) {
+			$deleted = $wpdb->delete(
+				$wpdb->options,
+				array(
+					'option_name'  => $name,
+					'option_value' => maybe_serialize( $payload ),
+				),
+				array( '%s', '%s' )
+			);
+			if ( function_exists( 'wp_cache_delete' ) ) {
+				wp_cache_delete( $name, 'options' );
+			}
+			return is_int( $deleted ) ? $deleted > 0 : (bool) $deleted;
+		}
+		if ( ! function_exists( 'get_option' ) || ! function_exists( 'delete_option' ) ) {
+			return false;
+		}
+		$current = get_option( $name, false );
+		if ( ! is_array( $current ) ) {
+			return false;
+		}
+		if ( (string) ( $current['owner'] ?? '' ) !== (string) ( $payload['owner'] ?? '' ) ) {
+			return false;
+		}
+		if ( '' === (string) ( $current['token'] ?? '' ) || ! hash_equals( (string) $current['token'], (string) $payload['token'] ) ) {
+			return false;
+		}
+		delete_option( $name );
+		return true;
+	}
+
+	/**
+	 * @param object $order
+	 * @return array<string, mixed>|false
+	 */
+	private static function read_charge_lock( $order ) {
+		self::forget_legacy_charge_lock_meta( $order );
+		$order_id = is_object( $order ) && method_exists( $order, 'get_id' ) ? (int) $order->get_id() : 0;
+		if ( $order_id < 1 || ! function_exists( 'get_option' ) ) {
+			return false;
+		}
+		$row = get_option( self::charge_lock_option_name( $order_id ), false );
+		return is_array( $row ) ? $row : false;
+	}
+
+	/**
+	 * Old order-meta locks are not the lock. Drop them so they cannot block.
+	 *
+	 * @param object $order
+	 */
+	private static function forget_legacy_charge_lock_meta( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+			return;
+		}
+		$dirty = false;
+		foreach ( array( '_creature_demo_charge_lock', '_creature_demo_charge_lock_at' ) as $key ) {
+			$value = $order->get_meta( $key, true );
+			if ( null === $value || false === $value || '' === $value || array() === $value ) {
+				continue;
+			}
+			if ( method_exists( $order, 'delete_meta_data' ) ) {
+				$order->delete_meta_data( $key );
+			} elseif ( method_exists( $order, 'update_meta_data' ) ) {
+				$order->update_meta_data( $key, '' );
+			}
+			$dirty = true;
+		}
+		if ( $dirty && method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
+	}
+
+	/**
+	 * @return string
+	 */
+	private static function charge_lock_token() {
+		try {
+			return bin2hex( random_bytes( 16 ) );
+		} catch ( Exception $e ) {
+			unset( $e );
+			return uniqid( 'lock', true );
+		}
+	}
+
+	/**
+	 * HPOS deletes the order without a shop_order post. The lock is an option either way.
+	 *
+	 * @param mixed $order_id
+	 */
+	public static function on_charge_order_deleted( $order_id ) {
+		if ( is_object( $order_id ) && method_exists( $order_id, 'get_id' ) ) {
+			$order_id = $order_id->get_id();
+		}
+		$order_id = (int) $order_id;
+		if ( $order_id < 1 || ! function_exists( 'delete_option' ) ) {
+			return;
+		}
+		delete_option( self::charge_lock_option_name( $order_id ) );
+		unset( self::$held_lock_tokens[ $order_id ] );
+	}
+
+	/**
+	 * Legacy shop_order posts. HPOS order ids are not posts, so the post type is required.
+	 *
+	 * @param mixed $post_id
+	 */
+	public static function on_before_delete_shop_order( $post_id ) {
+		if ( ! function_exists( 'get_post_type' ) || 'shop_order' !== get_post_type( $post_id ) ) {
+			return;
+		}
+		self::on_charge_order_deleted( $post_id );
+	}
+
+	/**
+	 * Plugin uninstall removes every charge lock option.
+	 */
+	public static function delete_all_charge_locks() {
+		global $wpdb;
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) || empty( $wpdb->options ) || ! method_exists( $wpdb, 'query' ) ) {
+			return;
+		}
+		$like = 'creature_demo_charge_lock_%';
+		if ( method_exists( $wpdb, 'esc_like' ) ) {
+			$like = $wpdb->esc_like( 'creature_demo_charge_lock_' ) . '%';
+		}
+		$sql = "DELETE FROM {$wpdb->options} WHERE option_name LIKE '{$like}'";
+		if ( method_exists( $wpdb, 'prepare' ) ) {
+			$sql = $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", $like );
+		}
+		$wpdb->query( $sql );
+		self::$held_lock_tokens = array();
 	}
 
 	/**

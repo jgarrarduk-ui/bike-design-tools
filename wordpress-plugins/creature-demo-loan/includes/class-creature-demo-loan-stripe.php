@@ -205,24 +205,26 @@ final class Creature_Demo_Loan_Stripe {
 	}
 
 	/**
-	 * @param string $id
-	 * @return string
-	 */
-	/**
 	 * PaymentIntent status from the gateway API. Empty when the call fails.
 	 *
-	 * WC_Stripe_API::request is the same helper the gateway uses. The path is
-	 * payment_intents/{id} with GET.
+	 * Gateway 11.1.1 exposes WC_Stripe_API::retrieve. Older copies use request().
 	 *
 	 * @param string $payment_intent_id
 	 * @return string
 	 */
 	public static function payment_intent_status( $payment_intent_id ) {
 		$id = self::safe_id( $payment_intent_id );
-		if ( '' === $id || ! class_exists( 'WC_Stripe_API' ) || ! is_callable( array( 'WC_Stripe_API', 'request' ) ) ) {
+		if ( '' === $id || ! class_exists( 'WC_Stripe_API' ) ) {
 			return '';
 		}
-		$response = WC_Stripe_API::request( array(), 'payment_intents/' . $id, 'GET' );
+		$path = 'payment_intents/' . $id;
+		if ( is_callable( array( 'WC_Stripe_API', 'retrieve' ) ) ) {
+			$response = WC_Stripe_API::retrieve( $path );
+		} elseif ( is_callable( array( 'WC_Stripe_API', 'request' ) ) ) {
+			$response = WC_Stripe_API::request( array(), $path, 'GET' );
+		} else {
+			return '';
+		}
 		if ( is_object( $response ) && is_a( $response, 'WP_Error' ) ) {
 			return '';
 		}

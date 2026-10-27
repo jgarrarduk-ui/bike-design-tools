@@ -18,6 +18,10 @@ $GLOBALS['creature_demo_notices']       = array();
 $GLOBALS['creature_demo_orders']        = array();
 $GLOBALS['creature_demo_next_id']       = 1000;
 $GLOBALS['creature_demo_options']       = array();
+$GLOBALS['creature_demo_option_adds']   = array();
+$GLOBALS['creature_demo_add_option_reject'] = 0;
+$GLOBALS['creature_demo_postmeta']      = array();
+$GLOBALS['creature_demo_post_types']    = array();
 $GLOBALS['creature_demo_coupons']       = array();
 $GLOBALS['creature_demo_cart']          = null;
 $GLOBALS['creature_demo_use_product']   = false;
@@ -207,6 +211,66 @@ if ( ! function_exists( 'get_option' ) ) {
 	}
 }
 
+if ( ! function_exists( 'add_option' ) ) {
+	function add_option( $option, $value = '', $deprecated = '', $autoload = 'yes' ) {
+		$GLOBALS['creature_demo_option_adds'][] = array(
+			'option'     => (string) $option,
+			'deprecated' => (string) $deprecated,
+			'autoload'   => (string) $autoload,
+		);
+		if ( array_key_exists( $option, $GLOBALS['creature_demo_options'] ) ) {
+			return false;
+		}
+		if ( ! empty( $GLOBALS['creature_demo_add_option_reject'] ) ) {
+			$GLOBALS['creature_demo_add_option_reject']--;
+			return false;
+		}
+		$GLOBALS['creature_demo_options'][ $option ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'delete_option' ) ) {
+	function delete_option( $option ) {
+		if ( ! array_key_exists( $option, $GLOBALS['creature_demo_options'] ) ) {
+			return false;
+		}
+		unset( $GLOBALS['creature_demo_options'][ $option ] );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'get_post_type' ) ) {
+	function get_post_type( $post = null ) {
+		$id = is_object( $post ) && isset( $post->ID ) ? (int) $post->ID : (int) $post;
+		return isset( $GLOBALS['creature_demo_post_types'][ $id ] ) ? $GLOBALS['creature_demo_post_types'][ $id ] : '';
+	}
+}
+
+if ( ! function_exists( 'update_post_meta' ) ) {
+	function update_post_meta( $id, $key, $value, $prev = '' ) {
+		unset( $value, $prev );
+		$GLOBALS['creature_demo_postmeta'][] = array( 'update', (int) $id, (string) $key );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'add_post_meta' ) ) {
+	function add_post_meta( $id, $key, $value, $unique = false ) {
+		unset( $value, $unique );
+		$GLOBALS['creature_demo_postmeta'][] = array( 'add', (int) $id, (string) $key );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'delete_post_meta' ) ) {
+	function delete_post_meta( $id, $key, $value = '' ) {
+		unset( $value );
+		$GLOBALS['creature_demo_postmeta'][] = array( 'delete', (int) $id, (string) $key );
+		return true;
+	}
+}
+
 if ( ! function_exists( 'wp_mail' ) ) {
 	function wp_mail( $to, $subject, $message ) {
 		unset( $to, $subject, $message );
@@ -267,6 +331,12 @@ if ( ! function_exists( 'register_deactivation_hook' ) ) {
 	}
 }
 
+if ( ! function_exists( 'register_uninstall_hook' ) ) {
+	function register_uninstall_hook( $file, $callback ) {
+		$GLOBALS['creature_demo_uninstall'] = array( (string) $file, $callback );
+	}
+}
+
 if ( ! function_exists( 'woocommerce_register_additional_checkout_field' ) ) {
 	function woocommerce_register_additional_checkout_field( $args ) {
 		$GLOBALS['creature_demo_block_fields'][] = $args;
@@ -314,6 +384,18 @@ if ( ! class_exists( 'WC_Stripe_API' ) ) {
 				'endpoint' => (string) $endpoint,
 				'method'   => (string) $method,
 				'headers'  => $headers,
+				'via'      => 'request',
+			);
+			return self::$response;
+		}
+
+		public static function retrieve( $endpoint ) {
+			self::$requests[] = array(
+				'body'     => array(),
+				'endpoint' => (string) $endpoint,
+				'method'   => 'GET',
+				'headers'  => array(),
+				'via'      => 'retrieve',
 			);
 			return self::$response;
 		}
@@ -399,6 +481,9 @@ class Creature_Demo_Test_Order {
 	}
 	public function update_meta_data( $key, $value ) {
 		$this->meta[ $key ] = $value;
+	}
+	public function delete_meta_data( $key ) {
+		unset( $this->meta[ $key ] );
 	}
 	public function save() {
 		return $this->id;
@@ -552,6 +637,29 @@ function creature_demo_filter_lapse( $days ) {
 		return $GLOBALS['creature_demo_lapse_days'];
 	}
 	return $days;
+}
+
+function creature_demo_lock_row( $order ) {
+	$id   = is_object( $order ) ? (int) $order->get_id() : (int) $order;
+	$name = 'creature_demo_charge_lock_' . $id;
+	return array_key_exists( $name, $GLOBALS['creature_demo_options'] ) ? $GLOBALS['creature_demo_options'][ $name ] : false;
+}
+
+function creature_demo_lock_owner( $order ) {
+	$row = creature_demo_lock_row( $order );
+	return is_array( $row ) && isset( $row['owner'] ) ? (string) $row['owner'] : '';
+}
+
+function creature_demo_plant_lock( $order, $owner, $at, $token = 'planted-token' ) {
+	$id      = is_object( $order ) ? (int) $order->get_id() : (int) $order;
+	$payload = array(
+		'owner' => (string) $owner,
+		'token' => (string) $token,
+	);
+	if ( null !== $at ) {
+		$payload['at'] = (int) $at;
+	}
+	$GLOBALS['creature_demo_options'][ 'creature_demo_charge_lock_' . $id ] = $payload;
 }
 
 function creature_demo_filter_lock_now( $now ) {
@@ -912,7 +1020,11 @@ $normal_gateways = Creature_Demo_Loan::filter_gateways(
 creature_demo_expect( array( 'stripe', 'cheque' ) === array_keys( $normal_gateways ), 'a normal basket keeps its gateways' );
 creature_demo_expect( false === Creature_Demo_Loan::filter_force_save( false ), 'a normal basket does not force a saved card' );
 $loan_for_save = creature_demo_loan();
-creature_demo_expect( true === Creature_Demo_Loan::filter_force_save( false, $loan_for_save ), 'a demo order still forces a saved card' );
+creature_demo_expect( true === Creature_Demo_Loan::filter_force_save( false, $loan_for_save ), 'a demo order object still forces a saved card' );
+creature_demo_expect( true === Creature_Demo_Loan::filter_force_save( false, (int) $loan_for_save->get_id() ), 'a demo order id still forces a saved card' );
+$plain_for_save = wc_create_order();
+creature_demo_expect( false === Creature_Demo_Loan::filter_force_save( false, $plain_for_save ), 'a normal order object does not force a saved card' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_force_save( false, (int) $plain_for_save->get_id() ), 'a normal order id does not force a saved card' );
 creature_demo_expect( true === Creature_Demo_Loan::filter_express_supported( true, new Creature_Demo_Test_Product( 50 ) ), 'a normal product can keep express checkout' );
 
 $statuses = Creature_Demo_Loan::filter_order_statuses(
@@ -1210,7 +1322,7 @@ WC_Stripe_API::$response = new WP_Error( 'stripe_error', 'authentication_require
 $auth = Creature_Demo_Loan::charge_saved_card( $late, '2026-04-02' );
 creature_demo_expect( 'authentication_required' === $auth['code'], 'authentication required does not take the money' );
 creature_demo_expect( 'yes' !== $late_charge->get_meta( '_creature_demo_charge_paid' ), 'an authentication challenge leaves the charge unpaid' );
-creature_demo_expect( '' === (string) $late_charge->get_meta( '_creature_demo_charge_lock' ), 'authentication required releases the saved-card lock' );
+creature_demo_expect( false === creature_demo_lock_row( $late_charge ), 'authentication required releases the saved-card lock' );
 creature_demo_expect( 1 === creature_demo_mail_count( 'charge_authentication_required' ), 'authentication required emails the payment link' );
 $auth_key = $late_charge->get_meta( '_creature_demo_idempotency_key' );
 creature_demo_expect( '' !== $auth_key, 'the first attempt stores an idempotency key' );
@@ -1228,7 +1340,7 @@ creature_demo_expect( 'processing' === $late_charge->get_status(), 'a successful
 creature_demo_expect( 'pi_test_demo_1' === $late_charge->get_transaction_id(), 'the charge order stores the Stripe payment id' );
 creature_demo_expect( false === Creature_Demo_Loan::filter_needs_payment( true, $late_charge ), 'the pay link cannot take a second payment' );
 creature_demo_expect( 'yes' === $late_charge->get_meta( '_creature_demo_charge_order' ), 'the charge order is marked as a demo charge' );
-creature_demo_expect( '' === (string) $late_charge->get_meta( '_creature_demo_charge_lock' ), 'a successful charge clears the lock' );
+creature_demo_expect( false === creature_demo_lock_row( $late_charge ), 'a successful charge clears the lock' );
 creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === Creature_Demo_Loan::filter_customer_recipient( 'rider@example.com', $late_charge ), 'Woo customer mail for a charge order is redirected' );
 creature_demo_expect( 0 === strpos( Creature_Demo_Loan::filter_customer_subject( 'Your order', $late_charge ), '[TEST] ' ), 'Woo customer mail for a charge order is prefixed' );
 $success_requests = 0;
@@ -1268,7 +1380,7 @@ WC_Stripe_API::$response = (object) array(
 );
 $retried = Creature_Demo_Loan::charge_saved_card( $retry, '2026-04-02' );
 creature_demo_expect( 'stripe_error' === $declined['code'], 'a decline is a stripe error and not a paid charge' );
-creature_demo_expect( '' === (string) $retry_charge->get_meta( '_creature_demo_charge_lock' ), 'a declined charge releases the lock so the pay link still works' );
+creature_demo_expect( false === creature_demo_lock_row( $retry_charge ), 'a declined charge releases the lock so the pay link still works' );
 creature_demo_expect( ! empty( $retried['ok'] ), 'the same charge can be retried after a decline' );
 creature_demo_expect( $retry_charge->get_meta( '_creature_demo_idempotency_key' ) === Creature_Demo_Loan::idempotency_key( $retry_charge ), 'a retry keeps the original idempotency key' );
 
@@ -1633,23 +1745,42 @@ $race = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $race, '2026-03-30', '2026-03-30' );
 $race_charge = wc_get_order( (int) $race->get_meta( '_creature_demo_late_fee_order_id' ) );
 $pay_first   = Creature_Demo_Loan::begin_pay_link( $race_charge );
-creature_demo_expect( ! empty( $pay_first['ok'] ) && 'pay_link' === $race_charge->get_meta( '_creature_demo_charge_lock' ), 'the pay link takes the charge lock' );
+creature_demo_expect( ! empty( $pay_first['ok'] ) && 'pay_link' === creature_demo_lock_owner( $race_charge ), 'the pay link takes the charge lock' );
 $race_calls   = count( WC_Stripe_API::$requests );
 $race_refused = Creature_Demo_Loan::charge_saved_card( $race, '2026-04-02' );
 creature_demo_expect( 'payment_in_progress' === $race_refused['code'], 'a pay link in progress refuses the saved card' );
 creature_demo_expect( $race_calls === count( WC_Stripe_API::$requests ), 'a pay link in progress does not call Stripe' );
-creature_demo_expect( 'pay_link' === $race_charge->get_meta( '_creature_demo_charge_lock' ), 'the refusal leaves the pay-link lock in place' );
+creature_demo_expect( 'pay_link' === creature_demo_lock_owner( $race_charge ), 'the refusal leaves the pay-link lock in place' );
 
 $upe = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $upe, '2026-03-30', '2026-03-30' );
 $upe_charge = wc_get_order( (int) $upe->get_meta( '_creature_demo_late_fee_order_id' ) );
 $upe_charge->update_meta_data( '_stripe_intent_id', 'pi_test_upe' );
-$upe_charge->update_meta_data( '_stripe_intent_status', 'processing' );
+$upe_charge->update_meta_data( '_stripe_intent_status', 'requires_payment_method' );
 $upe_charge->save();
+WC_Stripe_API::$response = (object) array(
+	'id'     => 'pi_test_upe',
+	'status' => 'processing',
+);
 $upe_calls   = count( WC_Stripe_API::$requests );
 $upe_refused = Creature_Demo_Loan::charge_saved_card( $upe, '2026-04-02' );
-creature_demo_expect( 'payment_in_progress' === $upe_refused['code'], 'a Stripe pay-link intent in progress refuses the saved card' );
-creature_demo_expect( $upe_calls === count( WC_Stripe_API::$requests ), 'an in-progress pay-link intent does not call Stripe' );
+$upe_posts   = 0;
+$upe_retrieve = 0;
+foreach ( array_slice( WC_Stripe_API::$requests, $upe_calls ) as $upe_request ) {
+	if ( 'POST' === $upe_request['method'] && 'payment_intents' === $upe_request['endpoint'] ) {
+		$upe_posts++;
+	}
+	if ( isset( $upe_request['via'] ) && 'retrieve' === $upe_request['via'] ) {
+		$upe_retrieve++;
+	}
+}
+creature_demo_expect( 'payment_in_progress' === $upe_refused['code'], 'a processing PaymentIntent refuses the saved card' );
+creature_demo_expect( 0 === $upe_posts, 'a processing PaymentIntent does not create a charge' );
+creature_demo_expect( $upe_retrieve > 0, 'the PaymentIntent status is read with WC_Stripe_API::retrieve' );
+WC_Stripe_API::$response = (object) array(
+	'id'     => 'pi_test_demo_1',
+	'status' => 'succeeded',
+);
 creature_demo_expect( 'pending' === $upe_charge->get_status(), 'the in-progress pay link leaves the order pending' );
 
 $done_link = creature_demo_loan();
@@ -1666,10 +1797,14 @@ $held = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $held, '2026-03-30', '2026-03-30' );
 $held_charge = wc_get_order( (int) $held->get_meta( '_creature_demo_late_fee_order_id' ) );
 $held_charge->update_meta_data( '_creature_demo_charge_lock', 'saved_card' );
+$held_charge->update_meta_data( '_creature_demo_charge_lock_at', (string) time() );
 $held_charge->save();
+creature_demo_plant_lock( $held_charge, 'saved_card', Creature_Demo_Loan::charge_lock_now(), 'held-token' );
 $held_pay = Creature_Demo_Loan::begin_pay_link( $held_charge );
 creature_demo_expect( empty( $held_pay['ok'] ) && 'payment_in_progress' === $held_pay['code'], 'a saved-card lock refuses the pay link' );
-creature_demo_expect( 'saved_card' === $held_charge->get_meta( '_creature_demo_charge_lock' ), 'the pay link does not replace the saved-card lock' );
+creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $held_charge ), 'the pay link does not replace the saved-card lock' );
+creature_demo_expect( '' === (string) $held_charge->get_meta( '_creature_demo_charge_lock' ), 'old charge-lock meta is cleared on read' );
+creature_demo_expect( '' === (string) $held_charge->get_meta( '_creature_demo_charge_lock_at' ), 'old charge-lock time meta is cleared on read' );
 creature_demo_expect( false === Creature_Demo_Loan::filter_needs_payment( true, $held_charge ), 'the pay link cannot start while the saved card is charging' );
 $GLOBALS['creature_demo_notices'] = array();
 Creature_Demo_Loan::on_before_pay_action( $held_charge );
@@ -1678,19 +1813,21 @@ creature_demo_expect( ! empty( $GLOBALS['creature_demo_notices'] ), 'the pay act
 $flip = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $flip, '2026-03-30', '2026-03-30' );
 $flip_charge = wc_get_order( (int) $flip->get_meta( '_creature_demo_late_fee_order_id' ) );
-$flip_hook   = static function ( $order ) use ( $flip_charge ) {
+$flip_second = true;
+$flip_hook   = static function ( $order ) use ( $flip_charge, &$flip_second ) {
 	if ( is_object( $order ) && (int) $order->get_id() === (int) $flip_charge->get_id() ) {
 		$order->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
 		$order->save();
+		$flip_second = Creature_Demo_Loan::acquire_charge_lock( $order, 'pay_link' );
 	}
 };
 add_action( 'creature_demo_loan_saved_card_lock_acquired', $flip_hook );
 $flip_calls = count( WC_Stripe_API::$requests );
 $flipped    = Creature_Demo_Loan::charge_saved_card( $flip, '2026-04-02' );
 remove_action( 'creature_demo_loan_saved_card_lock_acquired', $flip_hook );
-creature_demo_expect( 'payment_in_progress' === $flipped['code'], 'a pay link that wins the lock is seen on the re-check' );
-creature_demo_expect( $flip_calls === count( WC_Stripe_API::$requests ), 'the re-check does not call Stripe' );
-creature_demo_expect( 'pay_link' === $flip_charge->get_meta( '_creature_demo_charge_lock' ), 'the re-check leaves the pay-link lock' );
+creature_demo_expect( false === $flip_second, 'a second acquire loses while the saved card holds the lock' );
+creature_demo_expect( ! empty( $flipped['ok'] ), 'legacy lock meta does not steal the saved-card lock' );
+creature_demo_expect( $flip_calls < count( WC_Stripe_API::$requests ), 'the saved card still calls Stripe when it holds the lock' );
 
 $paid_mid = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $paid_mid, '2026-03-30', '2026-03-30' );
@@ -1705,7 +1842,7 @@ $paid_mid_result = Creature_Demo_Loan::charge_saved_card( $paid_mid, '2026-04-02
 remove_action( 'creature_demo_loan_saved_card_lock_acquired', $paid_hook );
 creature_demo_expect( 'already_paid' === $paid_mid_result['code'], 'a pay link that completes during the lock is seen on the re-check' );
 creature_demo_expect( $paid_calls === count( WC_Stripe_API::$requests ), 'a completed pay link seen on the re-check does not call Stripe' );
-creature_demo_expect( '' === (string) $paid_mid_charge->get_meta( '_creature_demo_charge_lock' ), 'the saved-card lock is released when the pay link already completed' );
+creature_demo_expect( false === creature_demo_lock_row( $paid_mid_charge ), 'the saved-card lock is released when the pay link already completed' );
 
 $abandoned = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $abandoned, '2026-03-30', '2026-03-30' );
@@ -1723,7 +1860,7 @@ $abandoned_calls  = count( WC_Stripe_API::$requests );
 $abandoned_result = Creature_Demo_Loan::charge_saved_card( $abandoned, '2026-04-02' );
 creature_demo_expect( 'stripe_error' === $abandoned_result['code'], 'a failed pay-link intent does not block the saved card' );
 creature_demo_expect( $abandoned_calls < count( WC_Stripe_API::$requests ), 'a failed pay-link intent still reaches Stripe' );
-creature_demo_expect( '' === (string) $abandoned_charge->get_meta( '_creature_demo_charge_lock' ), 'a Stripe error releases the saved-card lock' );
+creature_demo_expect( false === creature_demo_lock_row( $abandoned_charge ), 'a Stripe error releases the saved-card lock' );
 WC_Stripe_API::$response = (object) array(
 	'id'     => 'pi_test_demo_1',
 	'status' => 'succeeded',
@@ -1735,10 +1872,10 @@ $declined_link = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $declined_link, '2026-03-30', '2026-03-30' );
 $declined_charge = wc_get_order( (int) $declined_link->get_meta( '_creature_demo_late_fee_order_id' ) );
 creature_demo_expect( ! empty( Creature_Demo_Loan::begin_pay_link( $declined_charge )['ok'] ), 'a declined-link test can open the pay link' );
-creature_demo_expect( '1700000000' === (string) $declined_charge->get_meta( '_creature_demo_charge_lock_at' ), 'the pay-link lock stores the time it was taken' );
+$declined_lock = creature_demo_lock_row( $declined_charge );
+creature_demo_expect( is_array( $declined_lock ) && 1700000000 === (int) $declined_lock['at'] && 'pay_link' === $declined_lock['owner'], 'the pay-link lock stores the owner and the time it was taken' );
 do_action( 'woocommerce_order_status_failed', $declined_charge->get_id(), $declined_charge );
-creature_demo_expect( '' === (string) $declined_charge->get_meta( '_creature_demo_charge_lock' ), 'a failed pay-link payment releases the lock' );
-creature_demo_expect( '' === (string) $declined_charge->get_meta( '_creature_demo_charge_lock_at' ), 'a failed pay-link payment clears the lock time' );
+creature_demo_expect( false === creature_demo_lock_row( $declined_charge ), 'a failed pay-link payment releases the lock' );
 $declined_posts = count( WC_Stripe_API::$requests );
 $declined_result = Creature_Demo_Loan::charge_saved_card( $declined_link, '2026-04-02' );
 creature_demo_expect( ! empty( $declined_result['ok'] ), 'a declined pay link does not block Charge saved card' );
@@ -1749,14 +1886,14 @@ Creature_Demo_Loan::record_return_scan( $cancelled_link, '2026-03-30', '2026-03-
 $cancelled_charge = wc_get_order( (int) $cancelled_link->get_meta( '_creature_demo_late_fee_order_id' ) );
 Creature_Demo_Loan::begin_pay_link( $cancelled_charge );
 do_action( 'woocommerce_order_status_cancelled', $cancelled_charge->get_id(), $cancelled_charge );
-creature_demo_expect( '' === (string) $cancelled_charge->get_meta( '_creature_demo_charge_lock' ), 'a cancelled pay-link payment releases the lock' );
+creature_demo_expect( false === creature_demo_lock_row( $cancelled_charge ), 'a cancelled pay-link payment releases the lock' );
 
 $stripe_fail = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $stripe_fail, '2026-03-30', '2026-03-30' );
 $stripe_fail_charge = wc_get_order( (int) $stripe_fail->get_meta( '_creature_demo_late_fee_order_id' ) );
 Creature_Demo_Loan::begin_pay_link( $stripe_fail_charge );
 do_action( 'wc_gateway_stripe_process_payment_error', new WP_Error( 'card_declined', 'declined' ), $stripe_fail_charge );
-creature_demo_expect( '' === (string) $stripe_fail_charge->get_meta( '_creature_demo_charge_lock' ), 'a Stripe pay-link failure releases the lock' );
+creature_demo_expect( false === creature_demo_lock_row( $stripe_fail_charge ), 'a Stripe pay-link failure releases the lock' );
 
 $left_link = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $left_link, '2026-03-30', '2026-03-30' );
@@ -1773,7 +1910,7 @@ $GLOBALS['creature_demo_lock_now'] = 1700000000 + 900;
 $left_later = Creature_Demo_Loan::charge_saved_card( $left_link, '2026-04-02' );
 creature_demo_expect( ! empty( $left_later['ok'] ), 'an abandoned pay link goes stale after 15 minutes and the saved card is charged' );
 
-$intent_statuses = array( 'succeeded', 'processing', 'requires_capture', 'requires_payment_method', 'canceled', 'requires_action' );
+$intent_statuses = array( 'succeeded', 'processing', 'requires_capture', 'requires_payment_method', 'canceled', 'requires_action', 'requires_confirmation' );
 foreach ( $intent_statuses as $intent_status ) {
 	foreach ( array( 0, 900 ) as $intent_age ) {
 		$GLOBALS['creature_demo_lock_now'] = 1700000000;
@@ -1781,9 +1918,8 @@ foreach ( $intent_statuses as $intent_status ) {
 		Creature_Demo_Loan::record_return_scan( $intent_loan, '2026-03-30', '2026-03-30' );
 		$intent_charge = wc_get_order( (int) $intent_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
 		$intent_charge->update_meta_data( '_stripe_intent_id', 'pi_test_lookup' );
-		$intent_charge->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
-		$intent_charge->update_meta_data( '_creature_demo_charge_lock_at', 1700000000 - $intent_age );
 		$intent_charge->save();
+		creature_demo_plant_lock( $intent_charge, 'pay_link', 1700000000 - $intent_age, 'intent-' . $intent_status . '-' . $intent_age );
 		WC_Stripe_API::$response = (object) array(
 			'id'     => 'pi_test_lookup',
 			'status' => $intent_status,
@@ -1816,9 +1952,9 @@ foreach ( array( 0, 900 ) as $fail_age ) {
 	Creature_Demo_Loan::record_return_scan( $fail_loan, '2026-03-30', '2026-03-30' );
 	$fail_charge = wc_get_order( (int) $fail_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
 	$fail_charge->update_meta_data( '_stripe_intent_id', 'pi_test_lookup_fail' );
-	$fail_charge->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
-	$fail_charge->update_meta_data( '_creature_demo_charge_lock_at', 1700000000 - $fail_age );
+	$fail_charge->update_meta_data( '_stripe_intent_status', 'processing' );
 	$fail_charge->save();
+	creature_demo_plant_lock( $fail_charge, 'pay_link', 1700000000 - $fail_age, 'fail-' . $fail_age );
 	WC_Stripe_API::$response = new WP_Error( 'stripe_error', 'timeout' );
 	$fail_from = count( WC_Stripe_API::$requests );
 	$fail_result = Creature_Demo_Loan::charge_saved_card( $fail_loan, '2026-04-02' );
@@ -1849,6 +1985,134 @@ WC_Stripe_API::$response = (object) array(
 	'id'     => 'pi_test_demo_1',
 	'status' => 'succeeded',
 );
+
+$meta_ignored = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $meta_ignored, '2026-03-30', '2026-03-30' );
+$meta_ignored_charge = wc_get_order( (int) $meta_ignored->get_meta( '_creature_demo_late_fee_order_id' ) );
+$meta_ignored_charge->update_meta_data( '_stripe_intent_id', 'pi_test_meta_ignored' );
+$meta_ignored_charge->update_meta_data( '_stripe_intent_status', 'processing' );
+$meta_ignored_charge->save();
+WC_Stripe_API::$response = (object) array(
+	'id'     => 'pi_test_meta_ignored',
+	'status' => 'requires_confirmation',
+);
+$meta_ignored_result = Creature_Demo_Loan::charge_saved_card( $meta_ignored, '2026-04-02' );
+creature_demo_expect( 'payment_in_progress' !== $meta_ignored_result['code'] && 'already_paid' !== $meta_ignored_result['code'], 'intent status meta is ignored and requires_confirmation does not block without a fresh lock' );
+WC_Stripe_API::$response = (object) array(
+	'id'     => 'pi_test_demo_1',
+	'status' => 'succeeded',
+);
+
+$contender = wc_create_order();
+$contender->update_meta_data( '_creature_demo_charge_order', 'yes' );
+$contender->save();
+$first_token  = Creature_Demo_Loan::acquire_charge_lock( $contender, 'saved_card' );
+$second_token = Creature_Demo_Loan::acquire_charge_lock( $contender, 'pay_link' );
+creature_demo_expect( is_string( $first_token ) && '' !== $first_token, 'the first acquire wins the charge lock' );
+creature_demo_expect( false === $second_token, 'a second acquire loses the charge lock' );
+creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $contender ), 'exactly one contender holds the lock' );
+$contender_added = false;
+foreach ( $GLOBALS['creature_demo_option_adds'] as $option_add ) {
+	if ( Creature_Demo_Loan::charge_lock_option_name( $contender->get_id() ) === $option_add['option'] ) {
+		$contender_added = true;
+		creature_demo_expect( '' === $option_add['deprecated'] && 'no' === $option_add['autoload'], 'the charge lock is a non-autoloaded option' );
+	}
+}
+creature_demo_expect( $contender_added, 'the charge lock is stored with add_option' );
+
+$stale_order = wc_create_order();
+creature_demo_plant_lock( $stale_order, 'pay_link', Creature_Demo_Loan::charge_lock_now() - 900, 'stale-token' );
+$stale_token = Creature_Demo_Loan::acquire_charge_lock( $stale_order, 'saved_card' );
+creature_demo_expect( is_string( $stale_token ) && 'stale-token' !== $stale_token, 'a stale lock can be taken over' );
+creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $stale_order ) && $stale_token === creature_demo_lock_row( $stale_order )['token'], 'the takeover writes a new token' );
+
+$timeless = wc_create_order();
+creature_demo_plant_lock( $timeless, 'pay_link', null, 'no-time' );
+$timeless_token = Creature_Demo_Loan::acquire_charge_lock( $timeless, 'pay_link' );
+creature_demo_expect( is_string( $timeless_token ) && 'no-time' !== $timeless_token, 'a lock with no timestamp is stale and can be taken over' );
+
+$lost_order = wc_create_order();
+creature_demo_plant_lock( $lost_order, 'pay_link', Creature_Demo_Loan::charge_lock_now() - 900, 'lost-token' );
+$GLOBALS['creature_demo_add_option_reject'] = 1;
+$lost_token = Creature_Demo_Loan::acquire_charge_lock( $lost_order, 'saved_card' );
+$GLOBALS['creature_demo_add_option_reject'] = 0;
+creature_demo_expect( false === $lost_token, 'a takeover that loses the insert does not hold the lock' );
+creature_demo_expect( false === creature_demo_lock_row( $lost_order ), 'a lost takeover does not leave the stale row' );
+
+$mismatch = wc_create_order();
+$mismatch_token = Creature_Demo_Loan::acquire_charge_lock( $mismatch, 'pay_link' );
+creature_demo_expect( false === Creature_Demo_Loan::release_charge_lock( $mismatch, 'pay_link', 'wrong-token' ), 'a token mismatch does not release the lock' );
+creature_demo_expect( 'pay_link' === creature_demo_lock_owner( $mismatch ), 'the lock stays after a token mismatch' );
+creature_demo_expect( false === Creature_Demo_Loan::release_charge_lock( $mismatch, 'saved_card', $mismatch_token ), 'the other owner cannot release the lock' );
+creature_demo_expect( true === Creature_Demo_Loan::release_charge_lock( $mismatch, 'pay_link', $mismatch_token ), 'the matching token releases the lock' );
+creature_demo_expect( false === creature_demo_lock_row( $mismatch ), 'a matching release deletes the option' );
+
+$hpos_before = count( $GLOBALS['creature_demo_postmeta'] );
+$hpos_order  = wc_create_order();
+$hpos_order->update_meta_data( '_creature_demo_charge_order', 'yes' );
+$hpos_order->update_meta_data( '_creature_demo_charge_lock', 'pay_link' );
+$hpos_order->update_meta_data( '_creature_demo_charge_lock_at', '123' );
+$hpos_order->save();
+$hpos_token = Creature_Demo_Loan::acquire_charge_lock( $hpos_order, 'saved_card' );
+creature_demo_expect( is_string( $hpos_token ), 'an HPOS order acquires the lock option' );
+creature_demo_expect( '' === (string) $hpos_order->get_meta( '_creature_demo_charge_lock' ), 'an HPOS acquire clears old lock meta' );
+creature_demo_expect( $hpos_before === count( $GLOBALS['creature_demo_postmeta'] ), 'an HPOS acquire does not touch postmeta' );
+creature_demo_expect( true === Creature_Demo_Loan::release_charge_lock( $hpos_order, 'saved_card', $hpos_token ), 'an HPOS release deletes the option' );
+creature_demo_expect( false === creature_demo_lock_row( $hpos_order ), 'the HPOS lock option is gone' );
+creature_demo_expect( $hpos_before === count( $GLOBALS['creature_demo_postmeta'] ), 'an HPOS release does not touch postmeta' );
+$loan_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/includes/class-creature-demo-loan.php' );
+creature_demo_expect( false === strpos( $loan_src, 'update_post_meta' ) && false === strpos( $loan_src, 'add_post_meta' ), 'the charge lock does not call post meta' );
+$stripe_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/includes/class-creature-demo-loan-stripe.php' );
+creature_demo_expect( false !== strpos( $stripe_src, 'WC_Stripe_API::retrieve' ) && false !== strpos( $stripe_src, 'WC_Stripe_API::request' ), 'PaymentIntent lookup uses retrieve and falls back to request' );
+
+$deleted_order = wc_create_order();
+creature_demo_plant_lock( $deleted_order, 'pay_link', Creature_Demo_Loan::charge_lock_now(), 'delete-me' );
+do_action( 'woocommerce_before_delete_order', $deleted_order->get_id() );
+creature_demo_expect( false === creature_demo_lock_row( $deleted_order ), 'deleting an HPOS order removes its charge lock' );
+
+$legacy_post = wc_create_order();
+creature_demo_plant_lock( $legacy_post, 'saved_card', Creature_Demo_Loan::charge_lock_now(), 'post-lock' );
+$GLOBALS['creature_demo_post_types'][ $legacy_post->get_id() ] = 'post';
+do_action( 'before_delete_post', $legacy_post->get_id() );
+creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $legacy_post ), 'deleting a non-order post does not remove a charge lock' );
+$GLOBALS['creature_demo_post_types'][ $legacy_post->get_id() ] = 'shop_order';
+do_action( 'before_delete_post', $legacy_post->get_id() );
+creature_demo_expect( false === creature_demo_lock_row( $legacy_post ), 'deleting a shop_order post removes its charge lock' );
+
+class Creature_Demo_Test_Wpdb {
+	public $options = 'wp_options';
+
+	public function esc_like( $text ) {
+		return addcslashes( (string) $text, '_%\\' );
+	}
+
+	public function prepare( $query, ...$args ) {
+		foreach ( $args as $arg ) {
+			$query = preg_replace( '/%s/', "'" . str_replace( "'", "''", (string) $arg ) . "'", $query, 1 );
+		}
+		return $query;
+	}
+
+	public function query( $sql ) {
+		unset( $sql );
+		foreach ( array_keys( $GLOBALS['creature_demo_options'] ) as $key ) {
+			if ( 0 === strpos( (string) $key, 'creature_demo_charge_lock_' ) ) {
+				unset( $GLOBALS['creature_demo_options'][ $key ] );
+			}
+		}
+		return 1;
+	}
+}
+
+$uninstall_order = wc_create_order();
+creature_demo_plant_lock( $uninstall_order, 'pay_link', Creature_Demo_Loan::charge_lock_now(), 'uninstall-me' );
+creature_demo_expect( 'creature_demo_loan_uninstall' === $GLOBALS['creature_demo_uninstall'][1], 'uninstall is registered' );
+global $wpdb;
+$wpdb = new Creature_Demo_Test_Wpdb();
+creature_demo_loan_uninstall();
+unset( $wpdb );
+creature_demo_expect( false === creature_demo_lock_row( $uninstall_order ), 'uninstall removes charge lock options' );
+creature_demo_expect( isset( $GLOBALS['creature_demo_options']['woocommerce_stripe_settings'] ), 'uninstall leaves other options in place' );
 
 creature_demo_expect( 'creature_demo_loan_deactivate' === $GLOBALS['creature_demo_deactivation'][1], 'deactivation is registered' );
 creature_demo_loan_deactivate();

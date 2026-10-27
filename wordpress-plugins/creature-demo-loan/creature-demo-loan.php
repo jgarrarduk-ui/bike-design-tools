@@ -77,3 +77,16 @@ function creature_demo_loan_deactivate() {
 if ( function_exists( 'register_deactivation_hook' ) ) {
 	register_deactivation_hook( CREATURE_DEMO_LOAN_FILE, 'creature_demo_loan_deactivate' );
 }
+
+/**
+ * Drop charge-lock options. Orders and their meta stay in place.
+ */
+function creature_demo_loan_uninstall() {
+	if ( class_exists( 'Creature_Demo_Loan' ) ) {
+		Creature_Demo_Loan::delete_all_charge_locks();
+	}
+}
+
+if ( function_exists( 'register_uninstall_hook' ) ) {
+	register_uninstall_hook( CREATURE_DEMO_LOAN_FILE, 'creature_demo_loan_uninstall' );
+}
