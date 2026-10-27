@@ -11,8 +11,11 @@
 //   - outside Claude Code, a force push (--force, -f, --force-with-lease,
 //     +refspec), a mirror or all-branch push, or a push whose destination
 //     is main or master. A destination of heads/main or refs/heads/main
-//     counts. A push with no explicit non-main destination uses the current
-//     branch, and is refused if that branch is main or master or cannot
+//     counts. A push with no explicit non-main destination resolves
+//     @{push} (so an upstream of main is refused even when the local
+//     branch is not), and falls back to the current branch when there is
+//     no upstream. A preceding cd is the directory that resolution uses.
+//     The push is refused if that destination is main or master or cannot
 //     be resolved.
 //   - a command that names .env or .env.<suffix>, other than .env.example.
 //     .envrc, .env_backup and .env-old are not secret files.
@@ -199,7 +202,16 @@ function gitGlobals(gitWords) {
   return globals;
 }
 
-function gitOutput(globals, args) {
+function gitOutput(globals, args, options) {
+  if (options && typeof options.gitRunner === 'function') {
+    try {
+      const out = options.gitRunner(globals, args);
+      if (out === null || out === undefined) return null;
+      return String(out).trim();
+    } catch {
+      return null;
+    }
+  }
   try {
     return execFileSync('git', globals.concat(args), {
       encoding: 'utf8',
@@ -211,18 +223,33 @@ function gitOutput(globals, args) {
   }
 }
 
-function branchFromGit(gitWords) {
+function branchFromGit(gitWords, options) {
+  if (!gitWords) return null;
   const globals = gitGlobals(gitWords);
   if (!globals) return null;
-  const out = gitOutput(globals, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const out = gitOutput(globals, ['rev-parse', '--abbrev-ref', 'HEAD'], options);
   if (!out || out === 'HEAD') return null;
   return out;
 }
 
-function remotesFromGit(gitWords) {
+function pushTargetFromGit(gitWords, options) {
+  if (!gitWords) return null;
   const globals = gitGlobals(gitWords);
   if (!globals) return null;
-  const out = gitOutput(globals, ['remote']);
+  const out = gitOutput(
+    globals,
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{push}'],
+    options,
+  );
+  if (!out || out === '@{push}') return null;
+  return out;
+}
+
+function remotesFromGit(gitWords, options) {
+  if (!gitWords) return null;
+  const globals = gitGlobals(gitWords);
+  if (!globals) return null;
+  const out = gitOutput(globals, ['remote'], options);
   if (out === null) return null;
   return out.split('\n').map((line) => line.trim()).filter(Boolean);
 }
@@ -279,6 +306,17 @@ function isProtectedBranch(name) {
   return name === 'main' || name === 'master';
 }
 
+// @{push} is origin/main, or refs/remotes/origin/main when abbrev-ref is not applied.
+function pushDestinationBranch(ref) {
+  let name = String(ref || '').trim();
+  if (name.startsWith('+')) name = name.slice(1);
+  const remoteRef = name.match(/^refs\/remotes\/[^/]+\/(.+)$/);
+  if (remoteRef) return remoteRef[1];
+  if (name.startsWith('refs/heads/') || name.startsWith('heads/')) return branchName(name);
+  if (!name.startsWith('refs/') && name.includes('/')) return name.slice(name.indexOf('/') + 1);
+  return branchName(name);
+}
+
 function refspecInfo(spec) {
   let ref = spec;
   if (ref.startsWith('+')) ref = ref.slice(1);
@@ -305,7 +343,7 @@ function classifyPositionals(positionals, options, gitWords) {
     } else {
       const remotes = Object.prototype.hasOwnProperty.call(options, 'remotes')
         ? options.remotes
-        : remotesFromGit(gitWords);
+        : remotesFromGit(gitWords, options);
       if (!Array.isArray(remotes)) return { error: true };
       if (remotes.includes(only)) return { needsBranch: true, targetsProtected: false };
       refspecs = [only];
@@ -330,6 +368,22 @@ function classifyPositionals(positionals, options, gitWords) {
 const MAIN_PUSH = 'Blocked: pushing to main or master is not allowed.';
 const UNRESOLVED = 'Blocked: the current branch could not be resolved, so the push was refused.';
 
+function implicitDestination(options, gitWords) {
+  const injectedPush = Object.prototype.hasOwnProperty.call(options, 'pushTarget');
+  const injectedBranch = Object.prototype.hasOwnProperty.call(options, 'currentBranch');
+  if (injectedPush) {
+    if (typeof options.pushTarget === 'string' && options.pushTarget !== '') {
+      return pushDestinationBranch(options.pushTarget);
+    }
+  } else if (!injectedBranch) {
+    const fromGit = pushTargetFromGit(gitWords, options);
+    if (typeof fromGit === 'string' && fromGit !== '') return pushDestinationBranch(fromGit);
+  }
+  const branch = injectedBranch ? options.currentBranch : branchFromGit(gitWords, options);
+  if (typeof branch !== 'string' || branch === '' || branch === 'HEAD') return null;
+  return branchName(branch);
+}
+
 function outsidePushReason(args, options, gitWords) {
   const parsed = parsePushArgs(args);
   if (parsed.error) return 'Blocked: the push could not be parsed, so it was refused.';
@@ -340,12 +394,38 @@ function outsidePushReason(args, options, gitWords) {
   if (spec.error) return UNRESOLVED;
   if (spec.targetsProtected) return MAIN_PUSH;
   if (!spec.needsBranch) return '';
-  const branch = Object.prototype.hasOwnProperty.call(options, 'currentBranch')
-    ? options.currentBranch
-    : branchFromGit(gitWords);
+  if (!gitWords) return UNRESOLVED;
+  const branch = implicitDestination(options, gitWords);
   if (typeof branch !== 'string' || branch === '' || branch === 'HEAD') return UNRESOLVED;
   if (isProtectedBranch(branchName(branch))) return MAIN_PUSH;
   return '';
+}
+
+function cdDirectory(segment) {
+  const words = wordsOf(segment);
+  let i = 0;
+  while (i < words.length && isAssignment(words[i])) i += 1;
+  if (baseName(words[i] || '') !== 'cd') return undefined;
+  const dest = words[i + 1];
+  if (!dest || dest === '-' || dest.startsWith('-') || words[i + 2]) return null;
+  return dest;
+}
+
+function gitWordsHaveDir(gitWords) {
+  for (let j = 1; j < gitWords.length; j += 1) {
+    const flag = gitWords[j];
+    if (!flag.startsWith('-')) return false;
+    if (flag === '-C' || flag === '--git-dir' || flag === '--work-tree') return true;
+    if (flag.startsWith('--git-dir=') || flag.startsWith('--work-tree=')) return true;
+  }
+  return false;
+}
+
+function applyWorkDir(gitWords, dir) {
+  if (!Array.isArray(gitWords) || !gitWords.length || gitWordsHaveDir(gitWords)) return gitWords;
+  const out = gitWords.slice();
+  out.splice(1, 0, '-C', dir);
+  return out;
 }
 
 function splitSegments(command) {
@@ -390,14 +470,20 @@ function withoutCommitMessage(segment) {
 export function blockReason(command, options = {}) {
   if (typeof command !== 'string' || !command.trim()) return '';
   const pushOptions = options && typeof options === 'object' ? options : {};
+  let workDir;
   for (const segment of splitSegments(command)) {
+    const cd = cdDirectory(segment);
+    if (cd !== undefined) workDir = cd;
     const words = wordsOf(segment);
     if (commandPushes(words)) {
       if (insideClaudeCode()) {
         return 'Blocked: git push is not allowed from Claude Code. Push from your own terminal.';
       }
       const context = pushContext(words) || { args: [], gitWords: words };
-      const reason = outsidePushReason(context.args, pushOptions, context.gitWords);
+      let gitWords = context.gitWords;
+      if (workDir === null) gitWords = null;
+      else if (typeof workDir === 'string' && workDir !== '') gitWords = applyWorkDir(gitWords, workDir);
+      const reason = outsidePushReason(context.args, pushOptions, gitWords);
       if (reason) return reason;
     }
     const scanned = withoutCommitMessage(segment);
