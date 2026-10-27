@@ -183,8 +183,56 @@ const implicit = [
   ['time git push origin HEAD', true, onMain],
   ["sh -c 'git push'", true, onMain],
   ["sh -c 'git push --mirror origin'", true, feature],
+  ['git push', true, { currentBranch: 'feature', pushTarget: 'refs/remotes/origin/main', remotes: ['origin'] }],
+  ['git push origin', true, { currentBranch: 'feature', pushTarget: 'refs/remotes/origin/main', remotes: ['origin'] }],
+  ['git push', true, { currentBranch: 'feature', pushTarget: 'origin/main', remotes: ['origin'] }],
+  ['git push origin', true, { currentBranch: 'feature', pushTarget: 'origin/master', remotes: ['origin'] }],
+  ['git push', false, { currentBranch: 'feature', pushTarget: 'refs/remotes/origin/cursor/hook-allow-cloud-push', remotes: ['origin'] }],
+  ['git push origin', false, { currentBranch: 'main', pushTarget: 'origin/cursor/hook-allow-cloud-push', remotes: ['origin'] }],
+  ['git push', false, { currentBranch: 'feature', pushTarget: null, remotes: ['origin'] }],
+  ['git push', true, { currentBranch: 'main', pushTarget: null, remotes: ['origin'] }],
+  ['git push origin feature', false, { currentBranch: 'feature', pushTarget: 'refs/remotes/origin/main', remotes: ['origin'] }],
+  ['cd && git push', true, feature],
+  ['cd - && git push', true, feature],
+  ['cd - && git push origin feature', false, onMain],
 ];
 for (const [command, shouldBlock, options] of implicit) check(command, shouldBlock, options);
+
+const cdCalls = [];
+function cdRunner(globals, args) {
+  cdCalls.push({ globals: globals.slice(), args: args.slice() });
+  if (args.includes('@{push}')) {
+    if (globals[1] === '/other/repo') return 'refs/remotes/origin/feature';
+    if (globals[1] === '/tracks-main') return 'origin/main';
+    return null;
+  }
+  if (args.includes('HEAD')) return 'feature';
+  if (args[0] === 'remote') return 'origin';
+  return null;
+}
+check('cd /other/repo && git push', false, { gitRunner: cdRunner });
+check('cd /other/repo && git push origin', false, { gitRunner: cdRunner });
+check('cd /tracks-main && git push', true, { gitRunner: cdRunner });
+check('cd /tracks-main && git push origin', true, { gitRunner: cdRunner });
+check('cd /other/repo && git push origin feature', false, { gitRunner: cdRunner });
+check('cd /other/repo && git -C /already push', false, {
+  gitRunner(globals, args) {
+    cdCalls.push({ globals: globals.slice(), args: args.slice() });
+    if (globals[1] !== '/already') return 'origin/main';
+    if (args.includes('@{push}')) return null;
+    if (args.includes('HEAD')) return 'feature';
+    return 'origin';
+  },
+});
+const sawOther = cdCalls.some((call) => call.globals[0] === '-C' && call.globals[1] === '/other/repo' && call.args.includes('@{push}'));
+const sawTracks = cdCalls.some((call) => call.globals[0] === '-C' && call.globals[1] === '/tracks-main');
+const sawAlready = cdCalls.some((call) => call.globals[0] === '-C' && call.globals[1] === '/already');
+const replacedExplicit = cdCalls.some((call) => call.globals.includes('/other/repo') && call.globals.includes('/already'));
+if (!sawOther || !sawTracks || !sawAlready || replacedExplicit) {
+  failed += 1;
+  console.log('cd did not pass -C to the branch lookup');
+}
+checks += 1;
 if (hookExit('git push -u origin feature') !== 0) {
   failed += 1;
   console.log('stdin hook blocked a normal branch push outside Claude Code');
