@@ -58,3 +58,17 @@ require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan-stripe
 require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan.php';
 
 add_action( 'plugins_loaded', array( 'Creature_Demo_Loan', 'boot' ), 20 );
+
+/**
+ * Drop the daily Action Scheduler job when the plugin is deactivated.
+ * Orders and their meta stay in place.
+ */
+function creature_demo_loan_deactivate() {
+	if ( class_exists( 'Creature_Demo_Loan' ) ) {
+		Creature_Demo_Loan::unschedule_daily();
+	}
+}
+
+if ( function_exists( 'register_deactivation_hook' ) ) {
+	register_deactivation_hook( CREATURE_DEMO_LOAN_FILE, 'creature_demo_loan_deactivate' );
+}

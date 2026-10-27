@@ -10,7 +10,10 @@
  * only while the gateway is in test mode.
  *
  * Refuses the live host creaturecycles.co.uk. Billing and shop mail for this
- * request are forced to the demo-loan redirect address.
+ * request are forced to the demo-loan redirect address. That address
+ * (demo-loan-test@creaturecycles.co.uk, or whatever
+ * creature_demo_loan_redirect_email returns) has to be a real inbox before
+ * this script is run.
  *
  * @package Creature_Demo_Loan
  */

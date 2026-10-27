@@ -187,6 +187,9 @@ final class Creature_Demo_Loan_Stripe {
 				'id'   => self::safe_id( $id ),
 			);
 		}
+		// `processing` counts as paid. A card PaymentIntent settles as
+		// succeeded; processing is the same outcome for this gate because
+		// the money has been taken and is no longer waiting on the rider.
 		if ( 'succeeded' === $status || 'processing' === $status ) {
 			return array(
 				'ok'   => true,

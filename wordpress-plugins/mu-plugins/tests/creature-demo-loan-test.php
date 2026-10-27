@@ -246,6 +246,26 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 	}
 }
 
+if ( ! function_exists( 'as_unschedule_all_actions' ) ) {
+	function as_unschedule_all_actions( $hook, $args = array(), $group = '' ) {
+		unset( $args );
+		$GLOBALS['creature_demo_unscheduled'][] = array( (string) $hook, (string) $group );
+		unset( $GLOBALS['creature_demo_scheduled'][ $hook ] );
+	}
+}
+
+if ( ! function_exists( 'is_order_received_page' ) ) {
+	function is_order_received_page() {
+		return ! empty( $GLOBALS['creature_demo_order_received'] );
+	}
+}
+
+if ( ! function_exists( 'register_deactivation_hook' ) ) {
+	function register_deactivation_hook( $file, $callback ) {
+		$GLOBALS['creature_demo_deactivation'] = array( (string) $file, $callback );
+	}
+}
+
 if ( ! function_exists( 'woocommerce_register_additional_checkout_field' ) ) {
 	function woocommerce_register_additional_checkout_field( $args ) {
 		$GLOBALS['creature_demo_block_fields'][] = $args;
@@ -349,6 +369,8 @@ class Creature_Demo_Test_Order {
 	public $billing_email = '';
 	public $total = '0.00';
 	public $currency = 'GBP';
+	public $transaction_id = '';
+	public $payment_completed = array();
 
 	public function __construct( $id ) {
 		$this->id = (int) $id;
@@ -413,6 +435,27 @@ class Creature_Demo_Test_Order {
 	}
 	public function get_checkout_payment_url() {
 		return 'https://staging.example/checkout/order-pay/' . $this->id . '/';
+	}
+	public function set_transaction_id( $id ) {
+		$this->transaction_id = (string) $id;
+	}
+	public function get_transaction_id() {
+		return isset( $this->transaction_id ) ? (string) $this->transaction_id : '';
+	}
+	public function payment_complete( $transaction_id = '' ) {
+		if ( '' !== (string) $transaction_id ) {
+			$this->set_transaction_id( $transaction_id );
+		}
+		$this->payment_completed[] = (string) $transaction_id;
+		if ( in_array( $this->get_status(), array( 'pending', 'on-hold', 'failed', '' ), true ) ) {
+			$this->status = 'processing';
+			if ( function_exists( 'do_action' ) ) {
+				do_action( 'woocommerce_order_status_processing', $this->id );
+			}
+		}
+		if ( function_exists( 'do_action' ) ) {
+			do_action( 'woocommerce_payment_complete', $this->id );
+		}
 	}
 }
 
@@ -569,6 +612,7 @@ function creature_demo_loan( $dispatch = '2026-03-02', $delivery = '2026-03-04' 
 	$order->set_billing_email( 'Rider@Example.com' );
 	$order->update_meta_data( '_stripe_customer_id', 'cus_test_walker' );
 	$order->update_meta_data( '_stripe_source_id', 'pm_test_walker' );
+	Creature_Demo_Loan::store_consent( $order, true, '2026-03-02T12:00:00+00:00' );
 	Creature_Demo_Loan::start_loan( $order, $dispatch, $delivery );
 	return $order;
 }
@@ -679,6 +723,16 @@ creature_demo_expect( '2026-03-04' === $started['delivery'], 'blank delivery use
 creature_demo_expect( '2026-03-24' === $started['due'], 'started loan is due 2026-03-24' );
 $again = Creature_Demo_Loan::start_loan( $plain, '2026-06-01', '2026-06-03' );
 creature_demo_expect( ! empty( $again['idempotent'] ) && '2026-03-24' === $again['due'], 'starting a loan twice keeps the first due date' );
+creature_demo_expect( ! empty( $started['estimated'] ) && 'yes' === $plain->get_meta( '_creature_demo_delivery_estimated' ), 'a blank delivery date is stored as an estimate' );
+creature_demo_expect( false !== strpos( implode( "\n", $plain->notes ), 'estimate' ), 'the order note says the delivery date is an estimate' );
+$fixed = Creature_Demo_Loan::correct_delivery_date( $plain, '2026-03-06' );
+creature_demo_expect( ! empty( $fixed['ok'] ) && '2026-03-26' === $fixed['due'], 'an admin can replace the estimate and recompute the due date' );
+creature_demo_expect( 'no' === $plain->get_meta( '_creature_demo_delivery_estimated' ), 'a tracked delivery date clears the estimate' );
+$_POST['creature_demo_loan_admin_nonce'] = 'creature_demo_loan_admin';
+$_POST['creature_demo_delivery_date']    = '2026-03-09';
+Creature_Demo_Loan::save_meta_box( $plain->get_id(), $plain );
+creature_demo_expect( '2026-03-29' === $plain->get_meta( '_creature_demo_due_date' ), 'the order screen can correct the delivery date' );
+$_POST = array();
 $may = wc_create_order();
 $may_start = Creature_Demo_Loan::start_loan( $may, '2026-05-01', '' );
 creature_demo_expect( '2026-05-06' === $may_start['delivery'], 'May dispatch delivery skips the bank holiday' );
@@ -704,8 +758,11 @@ $expected_slots = array(
 	'choice_buy_recorded',
 	'choice_return_recorded',
 	'coupon_issued',
+	'keep_confirm',
+	'choice_recorded',
 	'keep_choice_lapsed',
 	'dispute_decision',
+	'admin_dispute_nearing',
 	'admin_return_booked',
 );
 creature_demo_expect( $expected_slots === $slots, 'copy slots match the catalogue' );
@@ -719,6 +776,7 @@ $consent = Creature_Demo_Loan_Copy::text( 'consent_checkbox' );
 creature_demo_expect( false !== strpos( $consent, '£40.00' ), 'consent names the £40 late-fee maximum' );
 creature_demo_expect( false !== strpos( $consent, '£212.00' ), 'consent names the £212 deemed-purchase maximum' );
 creature_demo_expect( false !== strpos( $consent, '£35.00' ), 'consent names the £35 inverted mount kit' );
+creature_demo_expect( false !== strpos( $consent, 'damage or missing parts' ), 'consent covers damage as well as missing parts' );
 
 creature_demo_expect( array() === Creature_Demo_Loan::demo_product_ids(), 'demo product ids stay empty until configured' );
 creature_demo_expect( array( 6687 ) === Creature_Demo_Loan::coupon_product_ids(), 'coupon defaults to De-Reacher product 6687' );
@@ -1118,6 +1176,16 @@ $bare = creature_demo_loan();
 $no_notice = Creature_Demo_Loan::charge_saved_card( $bare, '2026-04-02' );
 creature_demo_expect( 'no_notice' === $no_notice['code'], 'a loan with no charge notice is refused' );
 
+$unconsented = wc_create_order();
+$unconsented->update_meta_data( '_stripe_customer_id', 'cus_test_walker' );
+$unconsented->update_meta_data( '_stripe_source_id', 'pm_test_walker' );
+Creature_Demo_Loan::start_loan( $unconsented, '2026-03-02', '2026-03-04' );
+Creature_Demo_Loan::record_return_scan( $unconsented, '2026-03-30', '2026-03-30' );
+$consent_calls = count( WC_Stripe_API::$requests );
+$refused_consent = Creature_Demo_Loan::charge_saved_card( $unconsented, '2026-04-02' );
+creature_demo_expect( 'no_consent' === $refused_consent['code'], 'a charge without recorded consent is refused' );
+creature_demo_expect( $consent_calls === count( WC_Stripe_API::$requests ), 'missing consent does not call Stripe' );
+
 WC_Stripe_API::$response = new WP_Error( 'stripe_error', 'authentication_required' );
 $auth = Creature_Demo_Loan::charge_saved_card( $late, '2026-04-02' );
 creature_demo_expect( 'authentication_required' === $auth['code'], 'authentication required does not take the money' );
@@ -1135,6 +1203,12 @@ $paid_again = Creature_Demo_Loan::charge_saved_card( $late, '2026-04-03' );
 creature_demo_expect( ! empty( $paid['ok'] ) && 'pi_test_demo_1' === $paid['id'], 'a clear gate charges the saved card once' );
 creature_demo_expect( 'already_paid' === $paid_again['code'], 'a paid charge is not taken again' );
 creature_demo_expect( '500' === (string) $late->get_meta( '_creature_demo_late_fees_paid_pence' ), 'the £5 late fee is recorded once' );
+creature_demo_expect( 'processing' === $late_charge->get_status(), 'a successful saved-card charge marks the charge order processing' );
+creature_demo_expect( 'pi_test_demo_1' === $late_charge->get_transaction_id(), 'the charge order stores the Stripe payment id' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_needs_payment( true, $late_charge ), 'the pay link cannot take a second payment' );
+creature_demo_expect( 'yes' === $late_charge->get_meta( '_creature_demo_charge_order' ), 'the charge order is marked as a demo charge' );
+creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === Creature_Demo_Loan::filter_customer_recipient( 'rider@example.com', $late_charge ), 'Woo customer mail for a charge order is redirected' );
+creature_demo_expect( 0 === strpos( Creature_Demo_Loan::filter_customer_subject( 'Your order', $late_charge ), '[TEST] ' ), 'Woo customer mail for a charge order is prefixed' );
 $success_requests = 0;
 $keys = array();
 foreach ( WC_Stripe_API::$requests as $request ) {
@@ -1195,6 +1269,48 @@ creature_demo_expect( count( WC_Stripe_API::$requests ) === $calls_before_uphold
 $decision_mail = creature_demo_last_mail( 'dispute_decision' );
 creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === $decision_mail['to'], 'the dispute decision is redirected' );
 creature_demo_expect( false !== strpos( $decision_mail['body'], 'upheld' ), 'the decision email names the outcome' );
+
+$cap_loan = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $cap_loan, '2026-03-30', '2026-03-30' );
+$cap_charge = wc_get_order( (int) $cap_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+Creature_Demo_Loan::mark_disputed( $cap_charge, '2026-03-30' );
+$cap_key = Creature_Demo_Loan::idempotency_key( $cap_charge );
+$over_cap = Creature_Demo_Loan::record_dispute_decision( $cap_charge, 'upheld', '2026-04-02', 9000 );
+creature_demo_expect( ! empty( $over_cap['capped'] ) && 500 === $over_cap['amount'], 'an upheld dispute cannot exceed the original notice' );
+creature_demo_expect( $cap_key === $cap_charge->get_meta( '_creature_demo_idempotency_key' ), 'capping to the same amount keeps the idempotency key' );
+$notice_mails = creature_demo_mail_count( 'charge_notice_late_fee' );
+$lowered = Creature_Demo_Loan::record_dispute_decision( $cap_charge, 'upheld', '2026-04-02', 200 );
+creature_demo_expect( 200 === $lowered['amount'], 'an upheld amount below the notice is kept' );
+creature_demo_expect( '' === $cap_charge->get_meta( '_creature_demo_idempotency_key' ), 'a changed amount clears the stored idempotency key' );
+creature_demo_expect( $notice_mails + 1 === creature_demo_mail_count( 'charge_notice_late_fee' ), 'a changed amount logs a fresh notice' );
+$rebuilt_key = Creature_Demo_Loan::idempotency_key( $cap_charge );
+creature_demo_expect( $rebuilt_key !== $cap_key && false !== strpos( $rebuilt_key, '200' ), 'the next idempotency key uses the new amount' );
+
+$alert_loan = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $alert_loan, '2026-03-30', '2026-03-30' );
+$alert_charge = wc_get_order( (int) $alert_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+Creature_Demo_Loan::mark_disputed( $alert_charge, '2026-03-30' );
+$alerts = creature_demo_mail_count( 'admin_dispute_nearing' );
+Creature_Demo_Loan::tick( $alert_loan, '2026-04-08' );
+creature_demo_expect( $alerts === creature_demo_mail_count( 'admin_dispute_nearing' ), 'an open dispute does not alert before day 10' );
+Creature_Demo_Loan::tick( $alert_loan, '2026-04-09' );
+creature_demo_expect( $alerts + 1 === creature_demo_mail_count( 'admin_dispute_nearing' ), 'an open dispute alerts the shop on day 10' );
+$day_ten = creature_demo_last_mail( 'admin_dispute_nearing' );
+creature_demo_expect( 'info@creaturecycles.co.uk' === $day_ten['to'] && 0 !== strpos( $day_ten['subject'], '[TEST]' ), 'the dispute alert goes to the shop without a test prefix' );
+creature_demo_expect( false !== strpos( $day_ten['body'], '2026-03-30' ), 'the dispute alert names the day it opened' );
+Creature_Demo_Loan::tick( $alert_loan, '2026-04-10' );
+creature_demo_expect( $alerts + 1 === creature_demo_mail_count( 'admin_dispute_nearing' ), 'the day-10 alert is sent once' );
+Creature_Demo_Loan::tick( $alert_loan, '2026-04-13' );
+creature_demo_expect( $alerts + 2 === creature_demo_mail_count( 'admin_dispute_nearing' ), 'an open dispute alerts again on day 14' );
+Creature_Demo_Loan::tick( $alert_loan, '2026-04-14' );
+creature_demo_expect( $alerts + 2 === creature_demo_mail_count( 'admin_dispute_nearing' ), 'the day-14 alert is sent once' );
+
+$plain_actions = Creature_Demo_Loan::filter_order_actions( array( 'send_order_details' => 'Email' ), wc_create_order() );
+creature_demo_expect( ! isset( $plain_actions['creature_demo_start_loan'] ) && isset( $plain_actions['send_order_details'] ), 'a normal order does not get demo actions' );
+$demo_actions = Creature_Demo_Loan::filter_order_actions( array(), $alert_loan );
+creature_demo_expect( isset( $demo_actions['creature_demo_start_loan'] ), 'a demo order gets the demo actions' );
+$charge_actions = Creature_Demo_Loan::filter_order_actions( array(), $alert_charge );
+creature_demo_expect( isset( $charge_actions['creature_demo_charge_saved_card'] ), 'a charge order gets the demo actions' );
 
 $waived = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $waived, '2026-03-30', '2026-03-30' );
@@ -1313,6 +1429,12 @@ $GLOBALS['creature_demo_refund_flag'] = null;
 
 $never_keep = creature_demo_loan();
 $never_raised = Creature_Demo_Loan::maybe_raise_deemed( $never_keep, '2026-04-07' );
+$never_charge = wc_get_order( $never_raised['order_id'] );
+$never_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_never' );
+WC_Stripe_API::$response = (object) array(
+	'id'     => 're_test_never_keep',
+	'status' => 'succeeded',
+);
 Creature_Demo_Loan::on_payment_complete( $never_raised['order_id'] );
 Creature_Demo_Loan::record_return_scan( $never_keep, '2026-04-08', '2026-04-08' );
 Creature_Demo_Loan::complete_inspection( $never_keep, '2026-04-08' );
@@ -1320,6 +1442,40 @@ $GLOBALS['creature_demo_refund_flag'] = false;
 $still = Creature_Demo_Loan::refund_deemed( $never_keep, '2026-04-09' );
 $GLOBALS['creature_demo_refund_flag'] = null;
 creature_demo_expect( ! empty( $still['ok'] ) && 17200 === $still['amount'], 'with the flag off, a rider who never chose keep is still refunded' );
+
+$failed_refund = creature_demo_loan();
+$failed_raised = Creature_Demo_Loan::maybe_raise_deemed( $failed_refund, '2026-04-07' );
+$failed_charge = wc_get_order( $failed_raised['order_id'] );
+$failed_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_fail' );
+Creature_Demo_Loan::on_payment_complete( $failed_raised['order_id'] );
+Creature_Demo_Loan::record_return_scan( $failed_refund, '2026-04-08', '2026-04-08' );
+Creature_Demo_Loan::complete_inspection( $failed_refund, '2026-04-08' );
+WC_Stripe_API::$response = (object) array(
+	'error' => (object) array( 'code' => 'api_error' ),
+);
+$not_confirmed = Creature_Demo_Loan::refund_deemed( $failed_refund, '2026-04-09' );
+creature_demo_expect( empty( $not_confirmed['ok'] ) && 'not_confirmed' === $not_confirmed['reason'], 'a refund is not marked done when Stripe does not confirm' );
+creature_demo_expect( 'yes' !== $failed_refund->get_meta( '_creature_demo_refund_done' ), 'the refund-done flag stays unset after a failed Stripe refund' );
+WC_Stripe_API::$response = (object) array(
+	'id'     => 're_test_demo_retry',
+	'status' => 'succeeded',
+);
+$confirmed_later = Creature_Demo_Loan::refund_deemed( $failed_refund, '2026-04-10' );
+creature_demo_expect( ! empty( $confirmed_later['ok'] ) && 'yes' === $failed_refund->get_meta( '_creature_demo_refund_done' ), 'the refund is marked done only after Stripe confirms' );
+$GLOBALS['creature_demo_options']['woocommerce_stripe_settings']['testmode'] = 'no';
+$blocked_refund = creature_demo_loan();
+$blocked_raised = Creature_Demo_Loan::maybe_raise_deemed( $blocked_refund, '2026-04-07' );
+$blocked_charge = wc_get_order( $blocked_raised['order_id'] );
+$blocked_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_blocked' );
+$GLOBALS['creature_demo_options']['woocommerce_stripe_settings']['testmode'] = 'yes';
+Creature_Demo_Loan::on_payment_complete( $blocked_raised['order_id'] );
+$GLOBALS['creature_demo_options']['woocommerce_stripe_settings']['testmode'] = 'no';
+Creature_Demo_Loan::record_return_scan( $blocked_refund, '2026-04-08', '2026-04-08' );
+Creature_Demo_Loan::complete_inspection( $blocked_refund, '2026-04-08' );
+$not_sent = Creature_Demo_Loan::refund_deemed( $blocked_refund, '2026-04-09' );
+creature_demo_expect( empty( $not_sent['ok'] ) && 'not_sent' === $not_sent['reason'], 'a refund is not marked done when the mode gate blocks Stripe' );
+creature_demo_expect( 'yes' !== $blocked_refund->get_meta( '_creature_demo_refund_done' ), 'a blocked refund can be tried again' );
+$GLOBALS['creature_demo_options']['woocommerce_stripe_settings']['testmode'] = 'yes';
 
 $damage = creature_demo_loan();
 $mount = Creature_Demo_Loan::raise_damage_charge( $damage, 3500, 'Inverted mount kit', '2026-03-20' );
@@ -1354,6 +1510,55 @@ creature_demo_absent( $encoded, $pan, 'a card number in metadata is redacted bef
 creature_demo_absent( $encoded, $secret_body, 'a secret key in metadata is redacted before the Stripe request' );
 creature_demo_expect( false !== strpos( $encoded, '[redacted-number]' ), 'the request keeps a redacted-number marker' );
 creature_demo_expect( false !== strpos( $encoded, '[redacted-key]' ), 'the request keeps a redacted-key marker' );
+
+$catchup = creature_demo_loan();
+Creature_Demo_Loan::tick( $catchup, '2026-04-03' );
+$catch_slots = array();
+foreach ( Creature_Demo_Loan_Mail::$sent as $row ) {
+	if ( false !== strpos( $row['body'], (string) $catchup->get_id() ) && 0 === strpos( $row['slot'], 'reminder_' ) ) {
+		$catch_slots[] = $row['slot'];
+	}
+}
+creature_demo_expect( array( 'reminder_deemed_warning' ) === $catch_slots, 'a late catch-up sends only the latest reminder' );
+$catch_sent = (string) $catchup->get_meta( '_creature_demo_reminders_sent' );
+foreach ( array( 'due_minus_5', 'due_day', 'grace_end', 'deemed_warning' ) as $catch_key ) {
+	creature_demo_expect( false !== strpos( $catch_sent, $catch_key ), 'the catch-up marks ' . $catch_key . ' so it is not sent later' );
+}
+
+$choices = creature_demo_loan( '2026-10-26', '2026-10-27' );
+$GLOBALS['creature_demo_user'] = 42;
+$GLOBALS['creature_demo_order_received'] = true;
+ob_start();
+Creature_Demo_Loan::render_my_account_choices( $choices );
+$thankyou = ob_get_clean();
+creature_demo_expect( '' === $thankyou, 'the thank-you page does not show the choice buttons' );
+$GLOBALS['creature_demo_order_received'] = false;
+ob_start();
+Creature_Demo_Loan::render_my_account_choices( $choices );
+$account = ob_get_clean();
+creature_demo_expect( false !== strpos( $account, 'creature_demo_choice=keep' ), 'My Account shows the keep choice' );
+$_GET = array(
+	'creature_demo_choice' => 'keep',
+	'creature_demo_order'  => (string) $choices->get_id(),
+	'_wpnonce'             => 'creature_demo_choice_' . $choices->get_id(),
+);
+Creature_Demo_Loan::maybe_handle_choice_request();
+creature_demo_expect( '' === $choices->get_meta( '_creature_demo_choice' ), 'keep is not recorded until the rider confirms' );
+ob_start();
+Creature_Demo_Loan::render_my_account_choices( $choices );
+$confirm_html = ob_get_clean();
+creature_demo_expect( false !== strpos( $confirm_html, '£212.00' ) && false !== strpos( $confirm_html, 'creature_demo_confirm=1' ), 'keep asks for confirmation and names the price' );
+$_GET['creature_demo_confirm'] = '1';
+$GLOBALS['creature_demo_notices'] = array();
+Creature_Demo_Loan::maybe_handle_choice_request();
+creature_demo_expect( 'keep' === $choices->get_meta( '_creature_demo_choice' ), 'confirming keep records the choice' );
+creature_demo_expect( 1 === count( $GLOBALS['creature_demo_notices'] ), 'confirming a choice leaves a notice' );
+$_GET = array();
+$GLOBALS['creature_demo_user'] = 0;
+
+creature_demo_expect( 'creature_demo_loan_deactivate' === $GLOBALS['creature_demo_deactivation'][1], 'deactivation is registered' );
+creature_demo_loan_deactivate();
+creature_demo_expect( empty( $GLOBALS['creature_demo_scheduled']['creature_demo_loan_daily'] ), 'deactivation unschedules the daily job' );
 
 $blob = creature_demo_sensitive_blob();
 creature_demo_absent( $blob, 'sk_live_', 'notes, mail, and Stripe bodies do not contain a live secret key' );

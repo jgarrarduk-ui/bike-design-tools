@@ -26,7 +26,7 @@ final class Creature_Demo_Loan_Copy {
 	 */
 	public static function catalogue() {
 		$consent = sprintf(
-			'[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to %s, a deemed purchase up to %s, and missing parts at the published spare-parts prices (inverted mount kit %s). This box is separate from the general terms and is not ticked for me.',
+			'[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to %s, a deemed purchase up to %s, and damage or missing parts never more than the cost of repair or replacement (inverted mount kit %s). This box is separate from the general terms and is not ticked for me.',
 			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::LATE_CAP_PENCE ),
 			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::KEEP_PENCE ),
 			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::MOUNT_KIT_PENCE )
@@ -109,6 +109,14 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => '[COPY: Cadence] Your £25 De-Reacher code is {coupon}',
 				'body'    => '[COPY: Cadence] The demo kit from order {order_id} is back. Your code is {coupon}. It is £25 off, single use, individual use, restricted to this email address, and valid for 60 days. It applies to the De-Reacher only. Choose the colour on the product page. It cannot be exchanged for cash.',
 			),
+			'keep_confirm'                  => array(
+				'subject' => '',
+				'body'    => '[COPY: Cadence] Keep this demo kit for {amount}? Confirming records that choice. The kit is yours when the keep price is paid.',
+			),
+			'choice_recorded'               => array(
+				'subject' => '',
+				'body'    => '[COPY: Cadence] That choice is recorded.',
+			),
 			'keep_choice_lapsed'            => array(
 				'subject' => '[COPY: Cadence] The link to keep your De-Reacher demo has lapsed',
 				'body'    => '[COPY: Cadence] The keep payment link for order {order_id} was not paid within 3 working days, so that choice has lapsed. The kit is on loan again and the usual dates and fees apply. If you don’t choose again, we treat it as a return.',
@@ -116,6 +124,10 @@ final class Creature_Demo_Loan_Copy {
 			'dispute_decision'              => array(
 				'subject' => '[COPY: Cadence] Our decision on the disputed De-Reacher demo charge',
 				'body'    => "[COPY: Cadence] Order {order_id}. Decision: {decision}.\nAmount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nYou can still raise this with your card issuer or take it to court. If the decision upholds a charge and it stays unpaid, we may charge the saved card.",
+			),
+			'admin_dispute_nearing'          => array(
+				'subject' => '[COPY: Cadence] Open demo dispute is at day {day} of 14 (order {order_id})',
+				'body'    => '[COPY: Cadence] Order {order_id} has an open dispute opened on {opened}. This is day {day} of 14. Record a decision before the 14 days are up.',
 			),
 			'admin_return_booked'           => array(
 				'subject' => '[COPY: Cadence] Demo return booked — send the Royal Mail QR (order {order_id})',
@@ -172,6 +184,8 @@ final class Creature_Demo_Loan_Copy {
 			'{order_id}'     => isset( $args['order_id'] ) ? (string) $args['order_id'] : '',
 			'{choice_links}' => isset( $args['choice_links'] ) ? (string) $args['choice_links'] : '',
 			'{decision}'     => isset( $args['decision'] ) ? (string) $args['decision'] : '',
+			'{day}'          => isset( $args['day'] ) ? (string) $args['day'] : '',
+			'{opened}'       => isset( $args['opened'] ) ? (string) $args['opened'] : '',
 		);
 		return strtr( (string) $text, $map );
 	}
