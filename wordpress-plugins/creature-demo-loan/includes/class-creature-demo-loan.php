@@ -329,6 +329,90 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * The bundle whose price sets the keep price. Default is 8425, the
+	 * De-Reacher Stem + Inverted Mount Kit Bundle. The constant wins, then the
+	 * filter. Zero means no usable id.
+	 *
+	 * @return int
+	 */
+	public static function bundle_product_id() {
+		if ( defined( 'CREATURE_DEMO_LOAN_BUNDLE_PRODUCT_ID' ) ) {
+			return max( 0, (int) CREATURE_DEMO_LOAN_BUNDLE_PRODUCT_ID );
+		}
+		$id = 8425;
+		if ( function_exists( 'apply_filters' ) ) {
+			$id = apply_filters( 'creature_demo_loan_bundle_product_id', $id );
+		}
+		return is_numeric( $id ) ? max( 0, (int) $id ) : 0;
+	}
+
+	/**
+	 * Bundle price today in pence, or null when there is no usable price.
+	 *
+	 * wc_get_product() hands back the variable parent, and get_price() on a
+	 * parent is the cheapest variation's price. That is deliberate. All four
+	 * variations are £249 today; if they ever diverge we would only charge less
+	 * than the kit is worth, never more, because the keep price is capped at
+	 * the ceiling. get_price() already returns the sale price when there is
+	 * one, so this does not use get_regular_price().
+	 *
+	 * @return int|null
+	 */
+	private static function bundle_price_pence_now() {
+		$id = self::bundle_product_id();
+		if ( $id < 1 || ! function_exists( 'wc_get_product' ) ) {
+			return null;
+		}
+		$product = wc_get_product( $id );
+		if ( ! is_object( $product ) || ! method_exists( $product, 'get_price' ) ) {
+			return null;
+		}
+		$price = $product->get_price();
+		if ( ! is_numeric( $price ) ) {
+			return null;
+		}
+		$pence = (int) round( (float) $price * 100 );
+		return $pence > 0 ? $pence : null;
+	}
+
+	/**
+	 * Record the bundle price at booking so a later sale cannot move a loan
+	 * that already exists. Written once; a repeat call leaves the first figure.
+	 *
+	 * @param object $order
+	 */
+	private static function capture_bundle_price( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'update_meta_data' ) ) {
+			return;
+		}
+		if ( '' !== self::meta_string( $order, '_creature_demo_bundle_price_source' ) ) {
+			return;
+		}
+		$pence = self::bundle_price_pence_now();
+		$order->update_meta_data( '_creature_demo_bundle_price_pence', null === $pence ? 0 : $pence );
+		$order->update_meta_data( '_creature_demo_bundle_price_source', null === $pence ? 'fallback' : 'bundle' );
+	}
+
+	/**
+	 * This loan's keep price in pence. The only place an order and the money
+	 * class meet. Missing meta, or a fallback booking, gives the ceiling.
+	 *
+	 * @param object $order
+	 * @return int
+	 */
+	public static function loan_keep_price_pence( $order ) {
+		$ceiling = Creature_Demo_Loan_Money::KEEP_CEILING_PENCE;
+		if ( ! is_object( $order ) ) {
+			return $ceiling;
+		}
+		$bundle = self::meta_string( $order, '_creature_demo_bundle_price_pence' );
+		if ( '' === $bundle || 'fallback' === self::meta_string( $order, '_creature_demo_bundle_price_source' ) ) {
+			return $ceiling;
+		}
+		return Creature_Demo_Loan_Money::keep_price_pence( (int) $bundle );
+	}
+
+	/**
 	 * Due −5 (choices), due day (choices), grace end (terms 7.5), deemed warning.
 	 * Charge notices are sent when a charge is raised, not on this calendar.
 	 *
@@ -805,6 +889,7 @@ final class Creature_Demo_Loan {
 		if ( ! self::cart_is_demo_only() && ! self::order_is_demo( $order ) ) {
 			return;
 		}
+		self::capture_bundle_price( $order );
 		if ( self::posted_consent() ) {
 			self::store_consent( $order, true, gmdate( 'c' ) );
 		}
@@ -818,6 +903,12 @@ final class Creature_Demo_Loan {
 		$value = self::block_consent_value( $order, $request );
 		if ( self::value_is_yes( $value ) ) {
 			self::store_consent( $order, true, gmdate( 'c' ) );
+		}
+		if ( self::cart_is_demo_only() || self::order_is_demo( $order ) ) {
+			self::capture_bundle_price( $order );
+			if ( method_exists( $order, 'save' ) ) {
+				$order->save();
+			}
 		}
 	}
 
@@ -897,9 +988,9 @@ final class Creature_Demo_Loan {
 	 * @return string
 	 */
 	public static function consent_version() {
-		$version = 'v5';
+		$version = 'v5b';
 		if ( function_exists( 'apply_filters' ) ) {
-			$filtered = apply_filters( 'creature_demo_loan_consent_version', 'v5' );
+			$filtered = apply_filters( 'creature_demo_loan_consent_version', 'v5b' );
 			if ( is_string( $filtered ) && '' !== $filtered ) {
 				$version = $filtered;
 			}
@@ -1377,7 +1468,7 @@ final class Creature_Demo_Loan {
 		self::cancel_unpaid_charge( $order, 'late_fee' );
 		self::cancel_unpaid_charge( $order, 'keep' );
 		$paid   = (int) self::meta_string( $order, '_creature_demo_late_fees_paid_pence' );
-		$amount = Creature_Demo_Loan_Money::deemed_amount_pence( $paid );
+		$amount = Creature_Demo_Loan_Money::deemed_amount_pence( self::loan_keep_price_pence( $order ), $paid );
 		$charge = self::ensure_charge_order( $order, 'deemed', $amount, 'Deemed purchase of the demo kit', $as_of );
 		if ( ! $charge ) {
 			return array(
@@ -1816,6 +1907,7 @@ final class Creature_Demo_Loan {
 			return array( 'ok' => false, 'reason' => 'keep_choice' );
 		}
 		$refund = Creature_Demo_Loan_Money::post_deemed_refund_pence(
+			self::loan_keep_price_pence( $loan ),
 			(int) self::meta_string( $loan, '_creature_demo_deemed_paid_pence' ),
 			(int) self::meta_string( $loan, '_creature_demo_late_fees_paid_pence' ),
 			(int) self::meta_string( $loan, '_creature_demo_damage_pence' )
@@ -1999,8 +2091,8 @@ final class Creature_Demo_Loan {
 			$url = self::choice_url( $order, $choice );
 			if ( 'keep' === $choice && self::keep_confirm_pending( $order ) ) {
 				$amount  = Creature_Demo_Loan_Money::keep_amount_pence(
-					(int) self::meta_string( $order, '_creature_demo_late_fees_paid_pence' ),
-					self::late_fees_due_pence( $order, $as_of )
+					self::loan_keep_price_pence( $order ),
+					(int) self::meta_string( $order, '_creature_demo_late_fees_paid_pence' )
 				);
 				$confirm = function_exists( 'add_query_arg' ) ? add_query_arg( array( 'creature_demo_confirm' => '1' ), $url ) : $url;
 				echo '<p>' . self::esc( Creature_Demo_Loan_Copy::text( 'keep_confirm', array( 'amount' => Creature_Demo_Loan_Money::format_gbp( $amount ) ) ) ) . '</p>';
@@ -2132,9 +2224,11 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * Damage or missing parts. The overall cap is £212 unless filtered, and
-	 * late fees already billed on this loan come off that cap. Creates the
-	 * charge notice. Does not charge the saved card.
+	 * Damage or missing parts. The overall cap is £212 or this loan's keep
+	 * price, whichever is less. The filter can lower the cap but never raise it
+	 * past the keep price (terms 4.2). Late fees already billed on this loan
+	 * come off that cap. Creates the charge notice. Does not charge the saved
+	 * card.
 	 *
 	 * @param object $order
 	 * @param int    $amount_pence
@@ -2150,13 +2244,15 @@ final class Creature_Demo_Loan {
 			);
 		}
 		$requested = max( 0, (int) $amount_pence );
-		$cap       = Creature_Demo_Loan_Money::KEEP_PENCE;
+		$keep      = self::loan_keep_price_pence( $order );
+		$cap       = $keep;
 		if ( function_exists( 'apply_filters' ) ) {
 			$cap = (int) apply_filters( 'creature_demo_loan_damage_cap_pence', $cap, $order );
 		}
 		if ( $cap < 0 ) {
-			$cap = Creature_Demo_Loan_Money::KEEP_PENCE;
+			$cap = $keep;
 		}
+		$cap = min( $cap, $keep );
 		$late_fees = self::billed_late_fee_pence( $order );
 		$headroom  = max( 0, $cap - $late_fees );
 		$amount    = min( $requested, $headroom );
@@ -2602,8 +2698,8 @@ final class Creature_Demo_Loan {
 		$order->save();
 		self::cancel_unpaid_charge( $order, 'late_fee' );
 		$amount = Creature_Demo_Loan_Money::keep_amount_pence(
-			(int) self::meta_string( $order, '_creature_demo_late_fees_paid_pence' ),
-			self::late_fees_due_pence( $order, $as_of )
+			self::loan_keep_price_pence( $order ),
+			(int) self::meta_string( $order, '_creature_demo_late_fees_paid_pence' )
 		);
 		$before = (int) self::meta_string( $order, '_creature_demo_keep_order_id' );
 		$charge = self::ensure_charge_order( $order, 'keep', $amount, 'Keep the demo kit', $as_of );
@@ -2702,7 +2798,10 @@ final class Creature_Demo_Loan {
 		}
 		foreach ( $due_now as $item ) {
 			if ( $item['key'] === $latest['key'] ) {
-				$args = array( 'due' => $due );
+				$args = array(
+					'due'   => $due,
+					'price' => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $order ) ),
+				);
 				if ( ! empty( $item['row']['includes_choices'] ) ) {
 					$args['choice_links'] = self::choice_links_plain( $order, $as_of );
 				}
@@ -2754,6 +2853,7 @@ final class Creature_Demo_Loan {
 			self::notice_slot( $kind ),
 			array(
 				'amount' => Creature_Demo_Loan_Money::format_gbp( $amount_pence ),
+				'price'  => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $loan ) ),
 				'reason' => $reason,
 				'link'   => self::payment_link( $charge ),
 				'due'    => self::meta_string( $loan, '_creature_demo_due_date' ),

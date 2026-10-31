@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles Demo Loan Config
  * Description: Staging settings for demo product ids, coupon product ids, and the test redirect address. Cannot enable live charges or real customer email.
- * Version: 1.2.1
+ * Version: 1.2.2
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  * Requires Plugins: woocommerce
@@ -16,8 +16,9 @@
  * CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES as boolean true.
  * Customer email stays redirected unless CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL
  * is boolean true. This screen has no control for either constant.
- * CREATURE_DEMO_LOAN_PRODUCT_IDS, CREATURE_DEMO_LOAN_COUPON_PRODUCT_IDS, and
- * CREATURE_DEMO_LOAN_REDIRECT_EMAIL win when they are defined.
+ * CREATURE_DEMO_LOAN_PRODUCT_IDS, CREATURE_DEMO_LOAN_COUPON_PRODUCT_IDS,
+ * CREATURE_DEMO_LOAN_BUNDLE_PRODUCT_ID, and CREATURE_DEMO_LOAN_REDIRECT_EMAIL
+ * win when they are defined.
  *
  * WooCommerce → Demo loan can run the staging walkthrough in-process. That
  * runner refuses creaturecycles.co.uk and www, and any host that is not
@@ -36,7 +37,7 @@ if ( defined( 'CREATURE_DEMO_LOAN_CONFIG_LOADED' ) ) {
 }
 
 define( 'CREATURE_DEMO_LOAN_CONFIG_LOADED', true );
-define( 'CREATURE_DEMO_LOAN_CONFIG_VERSION', '1.2.1' );
+define( 'CREATURE_DEMO_LOAN_CONFIG_VERSION', '1.2.2' );
 
 /**
  * Option-backed filters for the demo loan plugin.
@@ -70,6 +71,7 @@ final class Creature_Demo_Loan_Config {
 		add_action( 'admin_post_creature_demo_loan_walkthrough', array( __CLASS__, 'handle_walkthrough_admin_post' ) );
 		add_filter( 'creature_demo_loan_product_ids', array( __CLASS__, 'filter_product_ids' ) );
 		add_filter( 'creature_demo_loan_coupon_product_ids', array( __CLASS__, 'filter_coupon_ids' ) );
+		add_filter( 'creature_demo_loan_bundle_product_id', array( __CLASS__, 'filter_bundle_id' ) );
 		add_filter( 'creature_demo_loan_redirect_email', array( __CLASS__, 'filter_redirect_email' ) );
 	}
 
@@ -104,7 +106,7 @@ final class Creature_Demo_Loan_Config {
 
 	/**
 	 * @param mixed $input
-	 * @return array{product_ids: string, coupon_product_ids: string, redirect_email: string}
+	 * @return array{product_ids: string, coupon_product_ids: string, bundle_product_id: string, redirect_email: string}
 	 */
 	public static function sanitize_settings( $input ) {
 		if ( ! is_array( $input ) ) {
@@ -113,6 +115,7 @@ final class Creature_Demo_Loan_Config {
 		return array(
 			'product_ids'         => self::sanitize_id_list( isset( $input['product_ids'] ) ? $input['product_ids'] : '' ),
 			'coupon_product_ids'  => self::sanitize_id_list( isset( $input['coupon_product_ids'] ) ? $input['coupon_product_ids'] : '' ),
+			'bundle_product_id'   => self::sanitize_single_id( isset( $input['bundle_product_id'] ) ? $input['bundle_product_id'] : '' ),
 			'redirect_email'      => self::sanitize_redirect( isset( $input['redirect_email'] ) ? $input['redirect_email'] : '' ),
 		);
 	}
@@ -139,6 +142,18 @@ final class Creature_Demo_Loan_Config {
 		}
 		$stored = self::ids_from_option( 'coupon_product_ids' );
 		return $stored ? $stored : $ids;
+	}
+
+	/**
+	 * @param mixed $id
+	 * @return mixed
+	 */
+	public static function filter_bundle_id( $id ) {
+		if ( defined( 'CREATURE_DEMO_LOAN_BUNDLE_PRODUCT_ID' ) ) {
+			return $id;
+		}
+		$stored = (int) self::setting( 'bundle_product_id' );
+		return $stored > 0 ? $stored : $id;
 	}
 
 	/**
@@ -177,6 +192,7 @@ final class Creature_Demo_Loan_Config {
 		echo '<table class="form-table"><tbody>';
 		self::render_text_row( 'product_ids', 'Product IDs', $settings['product_ids'] );
 		self::render_text_row( 'coupon_product_ids', 'Coupon product IDs', $settings['coupon_product_ids'] );
+		self::render_text_row( 'bundle_product_id', 'Bundle product ID (blank: 8425)', $settings['bundle_product_id'] );
 		self::render_text_row( 'redirect_email', 'Test redirect address', $settings['redirect_email'] );
 		echo '</tbody></table>';
 		echo '<p><button type="submit" class="button button-primary">Save</button></p>';
@@ -194,7 +210,7 @@ final class Creature_Demo_Loan_Config {
 	}
 
 	/**
-	 * @return array{product_ids: string, coupon_product_ids: string, redirect_email: string}
+	 * @return array{product_ids: string, coupon_product_ids: string, bundle_product_id: string, redirect_email: string}
 	 */
 	public static function get_settings() {
 		$stored = array();
@@ -240,6 +256,20 @@ final class Creature_Demo_Loan_Config {
 			}
 		}
 		return implode( ',', array_values( array_unique( $ids ) ) );
+	}
+
+	/**
+	 * One positive id, or an empty string.
+	 *
+	 * @param mixed $raw
+	 * @return string
+	 */
+	private static function sanitize_single_id( $raw ) {
+		$raw = trim( is_array( $raw ) ? '' : (string) $raw );
+		if ( ! preg_match( '/^[0-9]+$/', $raw ) || (int) $raw < 1 ) {
+			return '';
+		}
+		return (string) (int) $raw;
 	}
 
 	/**

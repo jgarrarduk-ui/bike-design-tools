@@ -2,10 +2,12 @@
 /**
  * Pounds and pence for the De-Reacher demo loan.
  *
- * Keep and deemed purchase are £212 (bundle £249 − £25 demo fee − £12 used).
- * Late fees are £3 a day from day 6 after the due date, capped at £24, and
- * charged once. Prices are constants. Unpaid late fees are never added to
- * the keep price. The refund flag is a filter.
+ * The keep price is worked out at booking: the bundle price that day, less the
+ * £25 demo fee and £12 for used stock, never more than £212, floored at 0.
+ * £212 is the ceiling, not the price. This class takes the keep price as an
+ * argument and never reads orders or post meta. Late fees are £3 a day from
+ * day 6 after the due date, capped at £24, and charged once. Unpaid late fees
+ * are never added to the keep price. The refund flag is a filter.
  *
  * @package Creature_Demo_Loan
  */
@@ -19,12 +21,24 @@ if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
  */
 final class Creature_Demo_Loan_Money {
 
-	const KEEP_PENCE       = 21200;
-	const LATE_DAILY_PENCE = 300;
-	const LATE_CAP_PENCE   = 2400;
-	const MOUNT_KIT_PENCE  = 3500;
-	const COUPON_PENCE     = 2500;
-	const DEMO_FEE_PENCE   = 2500;
+	const KEEP_CEILING_PENCE = 21200;
+	const USED_STOCK_PENCE   = 1200;
+	const LATE_DAILY_PENCE   = 300;
+	const LATE_CAP_PENCE     = 2400;
+	const MOUNT_KIT_PENCE    = 3500;
+	const COUPON_PENCE       = 2500;
+	const DEMO_FEE_PENCE     = 2500;
+
+	/**
+	 * Keep price from the bundle price at booking: less the demo fee and the
+	 * used-stock allowance, never more than the ceiling, never below zero.
+	 *
+	 * @param int $bundle_pence
+	 * @return int
+	 */
+	public static function keep_price_pence( $bundle_pence ) {
+		return max( 0, min( self::KEEP_CEILING_PENCE, (int) $bundle_pence - self::DEMO_FEE_PENCE - self::USED_STOCK_PENCE ) );
+	}
 
 	/**
 	 * @param int $days_after_due
@@ -53,50 +67,53 @@ final class Creature_Demo_Loan_Money {
 
 	/**
 	 * Keep-link amount. Unpaid late fees are never added (terms 3A.1(b)).
-	 * Fees already paid come off £212 so a rider who has paid them stays
-	 * inside the £212 cap in 4.2.
+	 * Fees already paid come off the keep price so a rider who has paid them
+	 * stays inside the cap in 4.2.
 	 *
-	 * @param int $late_paid Pence already paid.
-	 * @param int $late_due  Accrued pence. Not added.
+	 * @param int $keep_price This loan's keep price in pence.
+	 * @param int $late_paid  Pence already paid.
 	 * @return int
 	 */
-	public static function keep_amount_pence( $late_paid, $late_due = 0 ) {
-		unset( $late_due );
+	public static function keep_amount_pence( $keep_price, $late_paid ) {
+		$price = max( 0, (int) $keep_price );
 		$paid  = max( 0, (int) $late_paid );
-		$price = self::KEEP_PENCE;
 		return $price - min( $paid, $price );
 	}
 
 	/**
-	 * Deemed purchase is always £212 less late fees already paid (terms 7.4 and 8.2).
-	 * The keep-price flag does not change this.
+	 * Deemed purchase is always the keep price less late fees already paid
+	 * (terms 7.4 and 8.2). The keep-price flag does not change this.
 	 *
+	 * @param int $keep_price This loan's keep price in pence.
 	 * @param int $late_paid
 	 * @return int
 	 */
-	public static function deemed_amount_pence( $late_paid ) {
-		$paid = max( 0, (int) $late_paid );
-		return max( 0, self::KEEP_PENCE - $paid );
+	public static function deemed_amount_pence( $keep_price, $late_paid ) {
+		$price = max( 0, (int) $keep_price );
+		$paid  = max( 0, (int) $late_paid );
+		return max( 0, $price - $paid );
 	}
 
 	/**
 	 * Refund of a paid deemed purchase after the kit comes back (terms 8.5).
 	 *
 	 * Retain the rest of the £24 late-fee cap plus recorded damage, but never
-	 * more than £212 together (terms 8.5(b)). The refund is what was paid
-	 * minus that retention, and it does not go below zero.
+	 * more than the keep price together (terms 8.5(b)). The refund is what was
+	 * paid minus that retention, and it does not go below zero.
 	 *
+	 * @param int $keep_price This loan's keep price in pence.
 	 * @param int $deemed_paid
 	 * @param int $late_already_paid
 	 * @param int $damage_pence
 	 * @return int
 	 */
-	public static function post_deemed_refund_pence( $deemed_paid, $late_already_paid, $damage_pence ) {
+	public static function post_deemed_refund_pence( $keep_price, $deemed_paid, $late_already_paid, $damage_pence ) {
+		$price       = max( 0, (int) $keep_price );
 		$paid        = max( 0, (int) $deemed_paid );
 		$already     = max( 0, (int) $late_already_paid );
 		$damage      = max( 0, (int) $damage_pence );
 		$late_retain = max( 0, self::LATE_CAP_PENCE - $already );
-		$retain      = min( self::KEEP_PENCE, $late_retain + $damage );
+		$retain      = min( $price, $late_retain + $damage );
 		return max( 0, $paid - $retain );
 	}
 

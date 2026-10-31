@@ -192,6 +192,7 @@ $_POST  = array(
 	'_wpnonce'                       => 'creature_demo_loan_config',
 	'product_ids'                    => '9001, abc, 9002, -3, 0',
 	'coupon_product_ids'             => '6688, no',
+	'bundle_product_id'              => ' 9100 ',
 	'redirect_email'                 => 'staging-redirect@creaturecycles.co.uk',
 	'allow_live_charges'             => '1',
 	'allow_customer_email'           => '1',
@@ -209,9 +210,15 @@ $_POST['_wpnonce'] = 'creature_demo_loan_config';
 do_action( 'admin_init' );
 $stored = get_option( $option );
 creature_demo_config_expect(
-	array( 'product_ids', 'coupon_product_ids', 'redirect_email' ) === array_keys( $stored ),
-	'the option keeps only the three settings'
+	array( 'product_ids', 'coupon_product_ids', 'bundle_product_id', 'redirect_email' ) === array_keys( $stored ),
+	'the option keeps only the four settings'
 );
+creature_demo_config_expect( '9100' === $stored['bundle_product_id'], 'the bundle product id is stored as one positive integer' );
+creature_demo_config_expect( '' === Creature_Demo_Loan_Config::sanitize_settings( array( 'bundle_product_id' => '12,13' ) )['bundle_product_id'], 'a list is not a bundle product id' );
+creature_demo_config_expect( '' === Creature_Demo_Loan_Config::sanitize_settings( array( 'bundle_product_id' => '0' ) )['bundle_product_id'], 'a zero bundle product id is discarded' );
+creature_demo_config_expect( '' === Creature_Demo_Loan_Config::sanitize_settings( array( 'bundle_product_id' => 'abc' ) )['bundle_product_id'], 'a non-numeric bundle product id is discarded' );
+creature_demo_config_expect( 9100 === Creature_Demo_Loan::bundle_product_id(), 'the bundle-id filter reads the option' );
+creature_demo_config_expect( 9100 === Creature_Demo_Loan_Config::filter_bundle_id( 8425 ), 'the stored bundle id replaces the default' );
 creature_demo_config_expect( '9001,9002' === $stored['product_ids'], 'product ids are sanitised to positive integers' );
 creature_demo_config_expect( '6688' === $stored['coupon_product_ids'], 'coupon ids drop anything that is not an id' );
 creature_demo_config_expect( 'staging-redirect@creaturecycles.co.uk' === $stored['redirect_email'], 'a valid redirect address is stored' );
@@ -249,6 +256,7 @@ Creature_Demo_Loan_Config::render_page();
 $html = ob_get_clean();
 creature_demo_config_expect( false !== strpos( $html, 'name="product_ids"' ), 'the page edits product ids' );
 creature_demo_config_expect( false !== strpos( $html, 'name="coupon_product_ids"' ), 'the page edits coupon ids' );
+creature_demo_config_expect( false !== strpos( $html, 'name="bundle_product_id"' ), 'the page edits the bundle product id' );
 creature_demo_config_expect( false !== strpos( $html, 'name="redirect_email"' ), 'the page edits the redirect address' );
 creature_demo_config_expect( false !== strpos( $html, 'value="creature_demo_loan_config"' ), 'the page includes the nonce' );
 creature_demo_config_expect( false === strpos( $html, 'allow_live' ), 'the page has no live-charge control' );
@@ -436,8 +444,8 @@ $config_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan-co
 $host_pos    = strpos( $config_src, 'walkthrough_home_is_live' );
 $require_pos = strpos( $config_src, 'require $creature_demo_walkthrough_script' );
 creature_demo_config_expect( false !== $host_pos && false !== $require_pos && $host_pos < $require_pos, 'the live-host check is before the walkthrough is included' );
-creature_demo_config_expect( '1.2.1' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.2.1' );
-creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.2.1' ), 'the plugin header version is 1.2.1' );
+creature_demo_config_expect( '1.2.2' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.2.2' );
+creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.2.2' ), 'the plugin header version is 1.2.2' );
 creature_demo_config_expect( false !== strpos( $config_src, 'WP_PLUGIN_DIR' ), 'the walkthrough path is resolved from the demo loan plugin directory' );
 $guard_pos = strpos( $config_src, 'walkthrough_guard_errors()' );
 creature_demo_config_expect( false !== $guard_pos && $guard_pos < $require_pos, 'an inactive demo loan plugin is refused before the script is included' );
@@ -448,7 +456,10 @@ creature_demo_config_expect( false !== strpos( $walk_src, "PHP_SAPI !== 'cli'" )
 
 define( 'CREATURE_DEMO_LOAN_PRODUCT_IDS', '111,222' );
 define( 'CREATURE_DEMO_LOAN_COUPON_PRODUCT_IDS', '333' );
+define( 'CREATURE_DEMO_LOAN_BUNDLE_PRODUCT_ID', 7777 );
 define( 'CREATURE_DEMO_LOAN_REDIRECT_EMAIL', 'constant@creaturecycles.co.uk' );
+creature_demo_config_expect( 7777 === Creature_Demo_Loan::bundle_product_id(), 'the bundle-id constant wins over the option' );
+creature_demo_config_expect( 5 === Creature_Demo_Loan_Config::filter_bundle_id( 5 ), 'the bundle filter does not replace a constant value' );
 creature_demo_config_expect( array( 111, 222 ) === Creature_Demo_Loan::demo_product_ids(), 'the product-id constant wins over the option' );
 creature_demo_config_expect( array( 333 ) === Creature_Demo_Loan::coupon_product_ids(), 'the coupon-id constant wins over the option' );
 creature_demo_config_expect( 'constant@creaturecycles.co.uk' === Creature_Demo_Loan_Mail::redirect_address(), 'the redirect constant wins over the option' );

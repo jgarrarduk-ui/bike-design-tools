@@ -6,8 +6,10 @@
  * The consent slot names the maxima from the money constants (£24, £212, £35)
  * so those figures cannot drift from the charge maths.
  *
- * Placeholders: {amount} {reason} {link} {due} {coupon} {order_id}
- * {choice_links} {decision}.
+ * Placeholders: {amount} {price} {reason} {link} {due} {coupon} {order_id}
+ * {choice_links} {decision}. {price} is the loan's keep price. Email bodies
+ * are templates filled at send time and are edited in place; only the consent
+ * wording is versioned.
  *
  * @package Creature_Demo_Loan
  */
@@ -28,7 +30,7 @@ final class Creature_Demo_Loan_Copy {
 		$late_daily = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::LATE_DAILY_PENCE );
 		$late_cap   = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::LATE_CAP_PENCE );
 		$mount_kit  = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::MOUNT_KIT_PENCE );
-		$consent    = self::consent_wording( class_exists( 'Creature_Demo_Loan' ) ? Creature_Demo_Loan::consent_version() : 'v5' );
+		$consent    = self::consent_wording( class_exists( 'Creature_Demo_Loan' ) ? Creature_Demo_Loan::consent_version() : 'v5b' );
 		$grace = sprintf(
 			'[COPY: Cadence] The 5-day grace period on order {order_id} ends on {due}. After that, a single late-fee total of %s a day applies until the kit is scanned back, capped at %s. It is not charged day by day. Booking a return is not the same as a scan.',
 			$late_daily,
@@ -86,7 +88,7 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'reminder_deemed_warning'       => array(
 				'subject' => '[COPY: Cadence] De-Reacher demo: deemed purchase warning (due {due})',
-				'body'    => '[COPY: Cadence] This is the warning about 10 days after the due date ({due}) on order {order_id}. If the kit has not been scanned back by 14 days after the due date, you will be treated as having bought it. The price is £212 less any late fees you have already paid, so the total beyond the £25 demo fee does not exceed £212. We will email a payment link before any charge to the saved card.',
+				'body'    => '[COPY: Cadence] This is the warning about 10 days after the due date ({due}) on order {order_id}. If the kit has not been scanned back by 14 days after the due date, you will be treated as having bought it. The price is {price} less any late fees you have already paid, so the total beyond the £25 demo fee does not exceed £212. We will email a payment link before any charge to the saved card.',
 			),
 			'charge_notice_keep'            => array(
 				'subject' => '[COPY: Cadence] Payment link to keep your De-Reacher demo ({amount})',
@@ -98,7 +100,7 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'charge_notice_deemed'          => array(
 				'subject' => '[COPY: Cadence] De-Reacher deemed purchase ({amount})',
-				'body'    => "[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. This is £212 less late fees already paid. Reply within 7 days to dispute it. If it is still unpaid and not disputed after 7 days, we may charge the saved card.",
+				'body'    => "[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. This is {price} less late fees already paid. Reply within 7 days to dispute it. If it is still unpaid and not disputed after 7 days, we may charge the saved card.",
 			),
 			'charge_notice_damage'          => array(
 				'subject' => '[COPY: Cadence] De-Reacher demo damage or missing parts ({amount})',
@@ -148,18 +150,25 @@ final class Creature_Demo_Loan_Copy {
 	}
 
 	/**
-	 * Fixed wording for one terms version. v5 is Appendix A. v4 stays so an
+	 * Fixed wording for one terms version. v5b is v5 with the deemed price
+	 * named as the rider's keep price, capped at £212. v4 and v5 stay so an
 	 * older order can still be read back as the text that version stored.
 	 *
 	 * @param string $version
 	 * @return string
 	 */
-	public static function consent_wording( $version = 'v5' ) {
+	public static function consent_wording( $version = 'v5b' ) {
 		$v4 = '[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to £40.00, a deemed purchase up to £212.00, and damage or missing parts, never more than the cost of repair or replacement (inverted mount kit £35.00). This box is separate from the general terms and is not ticked for me.';
 		$v5 = '[COPY: Cadence] I agree that Creature Cycles Ltd can charge this card later, without asking me again at the time, for: late fees (up to £24), the deemed purchase price if I don\'t send the kit back (£212), and damage or missing parts at published spare-parts prices, including £35 for a missing inverted mount kit. All of these together will never be more than £212. You\'ll email me the amount and the reason first, and I\'ll have 7 days to pay by link or dispute it. (Demo terms, clause 4.)';
-		if ( 'v4' === (string) $version ) {
+		$v5b = '[COPY: Cadence] I agree that Creature Cycles Ltd can charge this card later, without asking me again at the time, for: late fees (up to £24), the deemed purchase price if I don\'t send the kit back (my keep price, capped at £212), and damage or missing parts at published spare-parts prices, including £35 for a missing inverted mount kit. All of these together will never be more than £212. You\'ll email me the amount and the reason first, and I\'ll have 7 days to pay by link or dispute it. (Demo terms, clause 4.)';
+		$version = (string) $version;
+		if ( 'v4' === $version ) {
 			return $v4;
 		}
+		if ( 'v5b' === $version ) {
+			return $v5b;
+		}
+		// v5, and any version string that matches nothing, as before v5b existed.
 		return $v5;
 	}
 
@@ -204,6 +213,7 @@ final class Creature_Demo_Loan_Copy {
 	public static function fill( $text, $args ) {
 		$map = array(
 			'{amount}'       => isset( $args['amount'] ) ? (string) $args['amount'] : '',
+			'{price}'        => isset( $args['price'] ) ? (string) $args['price'] : '',
 			'{reason}'       => isset( $args['reason'] ) ? (string) $args['reason'] : '',
 			'{link}'         => isset( $args['link'] ) ? (string) $args['link'] : '',
 			'{due}'          => isset( $args['due'] ) ? (string) $args['due'] : '',

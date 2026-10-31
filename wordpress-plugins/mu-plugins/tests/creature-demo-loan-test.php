@@ -643,6 +643,35 @@ function wc_get_order( $id ) {
 	return isset( $GLOBALS['creature_demo_orders'][ $id ] ) ? $GLOBALS['creature_demo_orders'][ $id ] : false;
 }
 
+class Creature_Demo_Test_Priced_Product extends Creature_Demo_Test_Product {
+	public $price;
+
+	public function __construct( $id, $price ) {
+		parent::__construct( $id );
+		$this->price = $price;
+	}
+	public function get_price() {
+		return $this->price;
+	}
+	public function get_regular_price() {
+		throw new Exception( 'the keep price must use get_price(), not the regular price' );
+	}
+}
+
+/**
+ * Product prices by id, as the string get_price() returns. Missing id means no
+ * product.
+ */
+$GLOBALS['creature_demo_product_prices'] = array();
+
+function wc_get_product( $id ) {
+	$id = (int) $id;
+	if ( ! isset( $GLOBALS['creature_demo_product_prices'][ $id ] ) ) {
+		return false;
+	}
+	return new Creature_Demo_Test_Priced_Product( $id, $GLOBALS['creature_demo_product_prices'][ $id ] );
+}
+
 function wc_get_orders( $args = array() ) {
 	if ( isset( $args['customer'] ) ) {
 		$uid   = (int) $args['customer'];
@@ -990,16 +1019,27 @@ creature_demo_expect( 3 === Creature_Demo_Loan_Calendar::working_days_since( '20
 creature_demo_expect( 1 === Creature_Demo_Loan_Calendar::working_days_since( '2026-04-02', '2026-04-07', $holidays ), 'Easter weekend and Easter Monday add nothing' );
 creature_demo_expect( 3 === Creature_Demo_Loan_Calendar::working_days_since( '2026-04-02', '2026-04-09', $holidays ), 'three working days after Maundy Thursday land on the next Thursday' );
 
-creature_demo_expect( 19200 === Creature_Demo_Loan_Money::keep_amount_pence( 2000, 2400 ), 'paid late fees come off £212 and unpaid fees are not added' );
-creature_demo_expect( 21200 === Creature_Demo_Loan_Money::keep_amount_pence( 0, 2400 ), 'unpaid late fees are not added to the keep price' );
-creature_demo_expect( 21200 === Creature_Demo_Loan_Money::keep_amount_pence( 0, 0 ), 'a keep with no fees is £212' );
-creature_demo_expect( 19200 === Creature_Demo_Loan_Money::deemed_amount_pence( 2000 ), 'deemed purchase nets off late fees already paid' );
-creature_demo_expect( 21200 === Creature_Demo_Loan_Money::deemed_amount_pence( 0 ), 'deemed purchase with no late fees is £212' );
-creature_demo_expect( 18800 === Creature_Demo_Loan_Money::deemed_amount_pence( 2400 ), 'a full late-fee cap comes off the deemed price' );
-creature_demo_expect( 17300 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 19200, 2000, 1500 ), 'post-deemed refund keeps the rest of the £24 cap and the damage' );
-creature_demo_expect( 18800 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 0, 0 ), 'refund of £212 with no fees paid retains £24' );
-creature_demo_expect( 21200 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 2400, 0 ), 'late fees already at the cap are not retained twice' );
-creature_demo_expect( 0 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 0, 20000 ), 'late fees plus damage above £212 floor the refund at 0' );
+creature_demo_expect( 19200 === Creature_Demo_Loan_Money::keep_amount_pence( 21200, 2000 ), 'paid late fees come off £212 and unpaid fees are not added' );
+creature_demo_expect( 21200 === Creature_Demo_Loan_Money::keep_amount_pence( 21200, 0 ), 'unpaid late fees are not added to the keep price' );
+creature_demo_expect( 21200 === Creature_Demo_Loan_Money::keep_amount_pence( 21200, 0 ), 'a keep with no fees is £212' );
+creature_demo_expect( 19200 === Creature_Demo_Loan_Money::deemed_amount_pence( 21200, 2000 ), 'deemed purchase nets off late fees already paid' );
+creature_demo_expect( 21200 === Creature_Demo_Loan_Money::deemed_amount_pence( 21200, 0 ), 'deemed purchase with no late fees is £212' );
+creature_demo_expect( 18800 === Creature_Demo_Loan_Money::deemed_amount_pence( 21200, 2400 ), 'a full late-fee cap comes off the deemed price' );
+creature_demo_expect( 17300 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 19200, 2000, 1500 ), 'post-deemed refund keeps the rest of the £24 cap and the damage' );
+creature_demo_expect( 18800 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 21200, 0, 0 ), 'refund of £212 with no fees paid retains £24' );
+creature_demo_expect( 21200 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 21200, 2400, 0 ), 'late fees already at the cap are not retained twice' );
+creature_demo_expect( 0 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 21200, 0, 20000 ), 'late fees plus damage above £212 floor the refund at 0' );
+creature_demo_expect( 21200 === Creature_Demo_Loan_Money::keep_price_pence( 24900 ), 'a £249 bundle gives a £212 keep price' );
+creature_demo_expect( 19200 === Creature_Demo_Loan_Money::keep_price_pence( 22900 ), 'a £229 bundle gives a £192 keep price' );
+creature_demo_expect( 16200 === Creature_Demo_Loan_Money::keep_price_pence( 19900 ), 'a £199 bundle gives a £162 keep price' );
+creature_demo_expect( 21200 === Creature_Demo_Loan_Money::keep_price_pence( 29900 ), 'a bundle above £249 is held at the £212 ceiling' );
+creature_demo_expect( 0 === Creature_Demo_Loan_Money::keep_price_pence( 3000 ), 'a bundle below the fee and used-stock deduction floors at 0' );
+creature_demo_expect( 0 === Creature_Demo_Loan_Money::keep_price_pence( 0 ), 'a zero bundle price floors at 0' );
+creature_demo_expect( 14200 === Creature_Demo_Loan_Money::deemed_amount_pence( 16200, 2000 ), 'deemed purchase on a £162 loan nets off late fees' );
+creature_demo_expect( 16200 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 16200, 16200, 2400, 0 ), 'a £162 loan with late fees at the cap retains nothing more' );
+creature_demo_expect( 0 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 16200, 16200, 0, 20000 ), 'damage above the £162 keep price retains at most £162' );
+creature_demo_expect( 4000 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 16200, 16200, 0, 9800 ), 'retention on a £162 loan is the rest of the late-fee cap plus damage, up to £162' );
+creature_demo_expect( 100 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 16200, 16200, 0, 13700 ), 'retention just under the £162 ceiling leaves the remainder' );
 creature_demo_expect( true === Creature_Demo_Loan_Money::refund_applies( true, true ), 'refund flag on includes a rider who chose keep' );
 creature_demo_expect( false === Creature_Demo_Loan_Money::refund_applies( true, false ), 'refund flag off skips a rider who chose keep' );
 creature_demo_expect( true === Creature_Demo_Loan_Money::refund_applies( false, false ), 'refund flag off still covers a rider who never chose keep' );
@@ -1235,8 +1275,8 @@ creature_demo_expect( false === Creature_Demo_Loan::store_consent( $consent_orde
 creature_demo_expect( true === Creature_Demo_Loan::store_consent( $consent_order, true, '2026-03-02T12:00:00+00:00' ), 'a ticked box is stored' );
 creature_demo_expect( 'yes' === $consent_order->get_meta( '_creature_demo_consent' ), 'consent is recorded as yes' );
 creature_demo_expect( $consent === $consent_order->get_meta( '_creature_demo_consent_wording' ), 'the agreed wording is stored' );
-creature_demo_expect( 'v5' === $consent_order->get_meta( '_creature_demo_consent_version' ), 'the consent version is v5' );
-creature_demo_expect( false !== strpos( (string) $consent_order->get_meta( '_creature_demo_consent_wording' ), 'never be more than £212' ), 'the stored v5 wording includes the overall cap' );
+creature_demo_expect( 'v5b' === $consent_order->get_meta( '_creature_demo_consent_version' ), 'the consent version is v5b' );
+creature_demo_expect( false !== strpos( (string) $consent_order->get_meta( '_creature_demo_consent_wording' ), 'never be more than £212' ), 'the stored v5b wording includes the overall cap' );
 $v4_order = wc_create_order();
 $GLOBALS['creature_demo_consent_version'] = 'v4';
 creature_demo_expect( true === Creature_Demo_Loan::store_consent( $v4_order, true, '2026-03-02T12:00:00+00:00' ), 'a v4 consent can still be stored' );
@@ -1249,7 +1289,7 @@ creature_demo_expect( '2026-03-02T12:00:00+00:00' === $consent_order->get_meta( 
 $_POST['creature_demo_loan_consent'] = '1';
 $checkout_order = wc_create_order();
 Creature_Demo_Loan::on_checkout_create_order( $checkout_order );
-creature_demo_expect( 'v5' === $checkout_order->get_meta( '_creature_demo_consent_version' ), 'classic checkout stores the consent version' );
+creature_demo_expect( 'v5b' === $checkout_order->get_meta( '_creature_demo_consent_version' ), 'classic checkout stores the consent version' );
 $block_order = wc_create_order();
 Creature_Demo_Loan::on_store_api_order(
 	$block_order,
@@ -2476,6 +2516,253 @@ creature_demo_expect( isset( $GLOBALS['creature_demo_options']['woocommerce_stri
 creature_demo_expect( 'creature_demo_loan_deactivate' === $GLOBALS['creature_demo_deactivation'][1], 'deactivation is registered' );
 creature_demo_loan_deactivate();
 creature_demo_expect( empty( $GLOBALS['creature_demo_scheduled']['creature_demo_loan_daily'] ), 'deactivation unschedules the daily job' );
+
+// ---- Keep price worked out from the bundle price at booking ----
+
+$GLOBALS['creature_demo_bundle_id_override'] = null;
+$GLOBALS['creature_demo_damage_cap_override'] = null;
+add_filter(
+	'creature_demo_loan_bundle_product_id',
+	static function ( $id ) {
+		return null === $GLOBALS['creature_demo_bundle_id_override'] ? $id : $GLOBALS['creature_demo_bundle_id_override'];
+	}
+);
+add_filter(
+	'creature_demo_loan_damage_cap_pence',
+	static function ( $cap ) {
+		return null === $GLOBALS['creature_demo_damage_cap_override'] ? $cap : $GLOBALS['creature_demo_damage_cap_override'];
+	}
+);
+
+/**
+ * Book a demo the way checkout does: a demo-only cart, the box ticked, the
+ * order created through on_checkout_create_order, then started.
+ *
+ * @param string|null $bundle_price get_price() string for product 8425, or null for no product.
+ */
+function creature_demo_booked_loan( $bundle_price ) {
+	if ( null === $bundle_price ) {
+		unset( $GLOBALS['creature_demo_product_prices'][8425] );
+	} else {
+		$GLOBALS['creature_demo_product_prices'][8425] = $bundle_price;
+	}
+	$saved_cart    = $GLOBALS['creature_demo_cart'];
+	$saved_use     = $GLOBALS['creature_demo_use_product'];
+	$saved_post    = $_POST;
+	$GLOBALS['creature_demo_use_product'] = true;
+	$GLOBALS['creature_demo_cart']        = array(
+		array(
+			'product_id'   => 9001,
+			'variation_id' => 0,
+		),
+	);
+	$_POST = array( 'creature_demo_loan_consent' => '1' );
+	$order = wc_create_order(
+		array(
+			'customer_id' => 42,
+			'status'      => 'processing',
+		)
+	);
+	$order->set_billing_email( 'Rider@Example.com' );
+	$order->update_meta_data( '_stripe_customer_id', 'cus_test_walker' );
+	$order->update_meta_data( '_stripe_source_id', 'pm_test_walker' );
+	Creature_Demo_Loan::on_checkout_create_order( $order );
+	Creature_Demo_Loan::start_loan( $order, '2026-03-02', '2026-03-04' );
+	$GLOBALS['creature_demo_cart']        = $saved_cart;
+	$GLOBALS['creature_demo_use_product'] = $saved_use;
+	$_POST                                = $saved_post;
+	return $order;
+}
+
+creature_demo_expect( 8425 === Creature_Demo_Loan::bundle_product_id(), 'the bundle product id defaults to 8425' );
+$GLOBALS['creature_demo_bundle_id_override'] = 8430;
+creature_demo_expect( 8430 === Creature_Demo_Loan::bundle_product_id(), 'the bundle product id filter overrides the default' );
+$GLOBALS['creature_demo_bundle_id_override'] = null;
+
+// Keep price from a stored bundle price.
+foreach ( array(
+	array( '249.00', 24900, 21200 ),
+	array( '229.00', 22900, 19200 ),
+	array( '199', 19900, 16200 ),
+) as $case ) {
+	$booked = creature_demo_booked_loan( $case[0] );
+	creature_demo_expect( $case[1] === (int) $booked->get_meta( '_creature_demo_bundle_price_pence' ), "the bundle price {$case[0]} is stored in pence" );
+	creature_demo_expect( 'bundle' === $booked->get_meta( '_creature_demo_bundle_price_source' ), "the bundle price {$case[0]} is recorded with source bundle" );
+	creature_demo_expect( $case[2] === Creature_Demo_Loan::loan_keep_price_pence( $booked ), "a {$case[0]} bundle gives a keep price of {$case[2]}" );
+}
+
+// A price change after booking does not move an existing loan.
+$GLOBALS['creature_demo_product_prices'][8425] = '249.00';
+$steady = creature_demo_booked_loan( '249.00' );
+$GLOBALS['creature_demo_product_prices'][8425] = '199.00';
+creature_demo_expect( 21200 === Creature_Demo_Loan::loan_keep_price_pence( $steady ), 'a later sale does not move the keep price of an existing loan' );
+$steady_keep = Creature_Demo_Loan::choose( $steady, 'keep', '2026-03-10' );
+creature_demo_expect( 21200 === $steady_keep['amount'], 'the keep link on an existing loan ignores a later price change' );
+Creature_Demo_Loan::on_store_api_order( $steady, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '1' ) ) );
+creature_demo_expect( 24900 === (int) $steady->get_meta( '_creature_demo_bundle_price_pence' ), 'a repeat booking hook does not recapture the bundle price' );
+$after_sale = creature_demo_booked_loan( '199.00' );
+creature_demo_expect( 16200 === Creature_Demo_Loan::loan_keep_price_pence( $after_sale ), 'a booking made during the sale gets the sale keep price' );
+
+// Capture is for demo carts only, and the Store API path captures too.
+$GLOBALS['creature_demo_product_prices'][8425] = '229.00';
+creature_demo_clear_cart();
+$plain_order = wc_create_order();
+Creature_Demo_Loan::on_checkout_create_order( $plain_order );
+creature_demo_expect( '' === $plain_order->get_meta( '_creature_demo_bundle_price_source' ), 'a non-demo checkout order captures no bundle price' );
+$plain_block = wc_create_order();
+Creature_Demo_Loan::on_store_api_order( $plain_block, array() );
+creature_demo_expect( '' === $plain_block->get_meta( '_creature_demo_bundle_price_source' ), 'a non-demo Store API order captures no bundle price' );
+$block_demo = wc_create_order();
+Creature_Demo_Loan::on_store_api_order( $block_demo, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '1' ) ) );
+creature_demo_expect( 22900 === (int) $block_demo->get_meta( '_creature_demo_bundle_price_pence' ) && 'bundle' === $block_demo->get_meta( '_creature_demo_bundle_price_source' ), 'a demo Store API order captures the bundle price at booking' );
+
+// The cap is the lower of £212 and the loan's keep price, and the filter is clamped.
+$cap192 = creature_demo_booked_loan( '229.00' );
+$cap_r  = Creature_Demo_Loan::raise_damage_charge( $cap192, 30000, 'Damage', '2026-03-20' );
+creature_demo_expect( 19200 === $cap_r['amount'], 'damage on a £192 loan is capped at £192' );
+$cap162 = creature_demo_booked_loan( '199.00' );
+$cap_r  = Creature_Demo_Loan::raise_damage_charge( $cap162, 30000, 'Damage', '2026-03-20' );
+creature_demo_expect( 16200 === $cap_r['amount'], 'damage on a £162 loan is capped at £162' );
+$cap212 = creature_demo_booked_loan( '249.00' );
+$cap_r  = Creature_Demo_Loan::raise_damage_charge( $cap212, 30000, 'Damage', '2026-03-20' );
+creature_demo_expect( 21200 === $cap_r['amount'], 'damage on a £212 loan is capped at £212' );
+$GLOBALS['creature_demo_damage_cap_override'] = 99999;
+$cap_up = creature_demo_booked_loan( '229.00' );
+$cap_r  = Creature_Demo_Loan::raise_damage_charge( $cap_up, 30000, 'Damage', '2026-03-20' );
+creature_demo_expect( 19200 === $cap_r['amount'], 'a filter above the keep price cannot lift the damage cap on a £192 loan' );
+$cap_up212 = creature_demo_booked_loan( '249.00' );
+$cap_r     = Creature_Demo_Loan::raise_damage_charge( $cap_up212, 30000, 'Damage', '2026-03-20' );
+creature_demo_expect( 21200 === $cap_r['amount'], 'a filter above £212 cannot lift the damage cap past £212' );
+$GLOBALS['creature_demo_damage_cap_override'] = 10000;
+$cap_down = creature_demo_booked_loan( '229.00' );
+$cap_r    = Creature_Demo_Loan::raise_damage_charge( $cap_down, 30000, 'Damage', '2026-03-20' );
+creature_demo_expect( 10000 === $cap_r['amount'], 'a filter below the keep price still lowers the damage cap' );
+$GLOBALS['creature_demo_damage_cap_override'] = -5;
+$cap_neg = creature_demo_booked_loan( '229.00' );
+$cap_r   = Creature_Demo_Loan::raise_damage_charge( $cap_neg, 30000, 'Damage', '2026-03-20' );
+creature_demo_expect( 19200 === $cap_r['amount'], 'a negative filter falls back to the keep price' );
+$GLOBALS['creature_demo_damage_cap_override'] = null;
+
+// Missing meta, no product, no id, or a price of zero fall back to £212.
+$legacy = creature_demo_loan();
+creature_demo_expect( '' === $legacy->get_meta( '_creature_demo_bundle_price_source' ), 'a loan made without the booking hook has no bundle meta' );
+creature_demo_expect( 21200 === Creature_Demo_Loan::loan_keep_price_pence( $legacy ), 'missing meta falls back to a £212 keep price' );
+$no_product = creature_demo_booked_loan( null );
+creature_demo_expect( 'fallback' === $no_product->get_meta( '_creature_demo_bundle_price_source' ), 'no product records the fallback source' );
+creature_demo_expect( 21200 === Creature_Demo_Loan::loan_keep_price_pence( $no_product ), 'no product gives a £212 keep price' );
+$zero_price = creature_demo_booked_loan( '0' );
+creature_demo_expect( 'fallback' === $zero_price->get_meta( '_creature_demo_bundle_price_source' ) && 21200 === Creature_Demo_Loan::loan_keep_price_pence( $zero_price ), 'a price of zero records fallback and gives £212' );
+$blank_price = creature_demo_booked_loan( '' );
+creature_demo_expect( 'fallback' === $blank_price->get_meta( '_creature_demo_bundle_price_source' ) && 21200 === Creature_Demo_Loan::loan_keep_price_pence( $blank_price ), 'a blank price records fallback and gives £212' );
+$GLOBALS['creature_demo_bundle_id_override'] = 0;
+$no_id = creature_demo_booked_loan( '199.00' );
+creature_demo_expect( 'fallback' === $no_id->get_meta( '_creature_demo_bundle_price_source' ) && 21200 === Creature_Demo_Loan::loan_keep_price_pence( $no_id ), 'no bundle id records fallback and gives £212' );
+$GLOBALS['creature_demo_bundle_id_override'] = null;
+$bundle_only = creature_demo_booked_loan( '10.00' );
+creature_demo_expect( 'bundle' === $bundle_only->get_meta( '_creature_demo_bundle_price_source' ) && 0 === Creature_Demo_Loan::loan_keep_price_pence( $bundle_only ), 'a real bundle price below the deductions gives a keep price of 0, not the fallback' );
+
+// Keep, deemed purchase and the 8.5(b) refund use the computed figure.
+$keep192 = creature_demo_booked_loan( '229.00' );
+$keep192_r = Creature_Demo_Loan::choose( $keep192, 'keep', '2026-03-10' );
+creature_demo_expect( 19200 === $keep192_r['amount'], 'the keep link on a £192 loan is £192' );
+$deemed192 = creature_demo_booked_loan( '229.00' );
+$deemed192_r = Creature_Demo_Loan::maybe_raise_deemed( $deemed192, '2026-04-07' );
+creature_demo_expect( 19200 === $deemed192_r['amount'], 'the deemed purchase on a £192 loan is £192' );
+$deemed162 = creature_demo_booked_loan( '199.00' );
+$deemed162->update_meta_data( '_creature_demo_late_fees_paid_pence', 2000 );
+$deemed162_r = Creature_Demo_Loan::maybe_raise_deemed( $deemed162, '2026-04-07' );
+creature_demo_expect( 14200 === $deemed162_r['amount'], 'the deemed purchase on a £162 loan nets off late fees' );
+
+$refund192 = creature_demo_booked_loan( '229.00' );
+$refund192->update_meta_data( '_creature_demo_late_fees_paid_pence', 2000 );
+$refund192->update_meta_data( '_creature_demo_ever_chose_keep', 'yes' );
+$refund192_r = Creature_Demo_Loan::maybe_raise_deemed( $refund192, '2026-04-07' );
+creature_demo_expect( 17200 === $refund192_r['amount'], 'the deemed purchase on a £192 loan with £20 of late fees paid is £172' );
+$refund192_charge = wc_get_order( $refund192_r['order_id'] );
+$refund192_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_192' );
+Creature_Demo_Loan::on_payment_complete( $refund192_r['order_id'] );
+Creature_Demo_Loan::record_return_scan( $refund192, '2026-04-08', '2026-04-08' );
+Creature_Demo_Loan::complete_inspection( $refund192, '2026-04-08' );
+$refund192->update_meta_data( '_creature_demo_damage_pence', 1500 );
+$GLOBALS['creature_demo_refund_flag'] = true;
+WC_Stripe_API::$response = (object) array(
+	'id'     => 're_test_demo_192',
+	'status' => 'succeeded',
+);
+$refund192_done = Creature_Demo_Loan::refund_deemed( $refund192, '2026-04-09' );
+creature_demo_expect( ! empty( $refund192_done['ok'] ) && 15300 === $refund192_done['amount'], 'the 8.5(b) refund on a £192 loan keeps the rest of the £24 and the damage out of £172' );
+$GLOBALS['creature_demo_refund_flag'] = null;
+
+// A £35 mount kit inside reduced headroom.
+$room_fee = wc_create_order();
+$room_fee->update_meta_data( '_creature_demo_charge_amount_pence', 900 );
+$room_fee->save();
+$room_loan = creature_demo_booked_loan( '90.00' );
+creature_demo_expect( 5300 === Creature_Demo_Loan::loan_keep_price_pence( $room_loan ), 'a £90 bundle gives a £53 keep price' );
+$room_loan->update_meta_data( '_creature_demo_late_fee_order_id', $room_fee->get_id() );
+$room_r = Creature_Demo_Loan::raise_damage_charge( $room_loan, 3500, 'Inverted mount kit', '2026-03-20' );
+creature_demo_expect( ! empty( $room_r['ok'] ) && 3500 === $room_r['amount'] && empty( $room_r['clamped'] ), 'a £35 mount kit is charged in full when £44 of headroom is left' );
+$tight_fee = wc_create_order();
+$tight_fee->update_meta_data( '_creature_demo_charge_amount_pence', 2400 );
+$tight_fee->save();
+$tight_loan = creature_demo_booked_loan( '90.00' );
+$tight_loan->update_meta_data( '_creature_demo_late_fee_order_id', $tight_fee->get_id() );
+$tight_r = Creature_Demo_Loan::raise_damage_charge( $tight_loan, 3500, 'Inverted mount kit', '2026-03-20' );
+creature_demo_expect( ! empty( $tight_r['ok'] ) && 2900 === $tight_r['amount'] && ! empty( $tight_r['clamped'] ) && 600 === $tight_r['reduced_pence'], 'a £35 mount kit is clamped to the £29 of headroom left on a £53 loan' );
+$wide_loan = creature_demo_booked_loan( '249.00' );
+$wide_loan->update_meta_data( '_creature_demo_late_fee_order_id', $tight_fee->get_id() );
+$wide_r = Creature_Demo_Loan::raise_damage_charge( $wide_loan, 3500, 'Inverted mount kit', '2026-03-20' );
+creature_demo_expect( ! empty( $wide_r['ok'] ) && 3500 === $wide_r['amount'] && empty( $wide_r['clamped'] ), 'a £35 mount kit still charges in full on a £212 loan with £24 of late fees' );
+
+// Consent versions read back as the text they stored.
+$v4_text  = '[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to £40.00, a deemed purchase up to £212.00, and damage or missing parts, never more than the cost of repair or replacement (inverted mount kit £35.00). This box is separate from the general terms and is not ticked for me.';
+$v5_text  = '[COPY: Cadence] I agree that Creature Cycles Ltd can charge this card later, without asking me again at the time, for: late fees (up to £24), the deemed purchase price if I don\'t send the kit back (£212), and damage or missing parts at published spare-parts prices, including £35 for a missing inverted mount kit. All of these together will never be more than £212. You\'ll email me the amount and the reason first, and I\'ll have 7 days to pay by link or dispute it. (Demo terms, clause 4.)';
+$v5b_text = '[COPY: Cadence] I agree that Creature Cycles Ltd can charge this card later, without asking me again at the time, for: late fees (up to £24), the deemed purchase price if I don\'t send the kit back (my keep price, capped at £212), and damage or missing parts at published spare-parts prices, including £35 for a missing inverted mount kit. All of these together will never be more than £212. You\'ll email me the amount and the reason first, and I\'ll have 7 days to pay by link or dispute it. (Demo terms, clause 4.)';
+creature_demo_expect( $v4_text === Creature_Demo_Loan_Copy::consent_wording( 'v4' ), 'v4 wording is byte-for-byte what it was' );
+creature_demo_expect( $v5_text === Creature_Demo_Loan_Copy::consent_wording( 'v5' ), 'v5 wording is byte-for-byte what it was' );
+creature_demo_expect( $v5b_text === Creature_Demo_Loan_Copy::consent_wording( 'v5b' ), 'v5b wording is exactly the agreed text' );
+creature_demo_expect( $v5b_text === Creature_Demo_Loan_Copy::consent_wording(), 'v5b is the default wording' );
+creature_demo_expect( $v5_text === str_replace( '(my keep price, capped at £212)', '(£212)', $v5b_text ) && $v5b_text !== $v5_text, 'v5b differs from v5 only in the one phrase' );
+creature_demo_expect( 1 === substr_count( $v5b_text, 'my keep price, capped at £212' ), 'v5b names the keep price once' );
+creature_demo_expect( $v5_text === Creature_Demo_Loan_Copy::consent_wording( 'v9-unknown' ), 'a version that matches nothing behaves as it did before v5b (the v5 text)' );
+creature_demo_expect( $v5_text === Creature_Demo_Loan_Copy::consent_wording( '' ), 'an empty version behaves as it did before v5b (the v5 text)' );
+creature_demo_expect( $v4_text !== Creature_Demo_Loan_Copy::consent_wording( 'v5b' ) && $v4_text !== $v5_text, 'the three versions are three different texts' );
+foreach ( array( 'v4' => $v4_text, 'v5' => $v5_text ) as $ver => $text ) {
+	$GLOBALS['creature_demo_consent_version'] = $ver;
+	$old_order = wc_create_order();
+	Creature_Demo_Loan::store_consent( $old_order, true, '2026-03-02T12:00:00+00:00' );
+	creature_demo_expect( $ver === $old_order->get_meta( '_creature_demo_consent_version' ), "an order stored as {$ver} reads back {$ver}" );
+	creature_demo_expect( $text === $old_order->get_meta( '_creature_demo_consent_wording' ), "an order stored as {$ver} keeps the {$ver} wording" );
+}
+$GLOBALS['creature_demo_consent_version'] = null;
+$new_order = creature_demo_booked_loan( '249.00' );
+creature_demo_expect( 'v5b' === $new_order->get_meta( '_creature_demo_consent_version' ), 'a new order reads back v5b' );
+
+// The two deemed emails quote the computed price.
+$mail192 = creature_demo_booked_loan( '229.00' );
+Creature_Demo_Loan::tick( $mail192, '2026-04-03' );
+$warn192 = creature_demo_last_mail( 'reminder_deemed_warning' );
+creature_demo_expect( is_array( $warn192 ) && false !== strpos( $warn192['body'], 'The price is £192.00 less any late fees' ), 'the deemed warning on a £192 loan quotes £192.00' );
+creature_demo_expect( false === strpos( $warn192['body'], 'price is £212' ), 'the deemed warning does not quote £212 as the price' );
+creature_demo_expect( false !== strpos( $warn192['body'], 'does not exceed £212' ), 'the deemed warning still says the total does not exceed £212' );
+creature_demo_expect( false === strpos( $warn192['body'], '{price}' ), 'the deemed warning leaves no placeholder behind' );
+$notice192 = creature_demo_booked_loan( '229.00' );
+$notice192->update_meta_data( '_creature_demo_late_fees_paid_pence', 2000 );
+$notice192_r = Creature_Demo_Loan::maybe_raise_deemed( $notice192, '2026-04-07' );
+$deemed_mail = creature_demo_last_mail( 'charge_notice_deemed' );
+creature_demo_expect( ! empty( $notice192_r['ok'] ) && is_array( $deemed_mail ), 'the deemed charge notice is sent' );
+creature_demo_expect( false !== strpos( $deemed_mail['body'], 'Amount: £172.00' ), 'the deemed notice quotes the amount in the payment link' );
+creature_demo_expect( false !== strpos( $deemed_mail['body'], 'This is £192.00 less late fees already paid' ), 'the deemed notice quotes the £192.00 keep price' );
+creature_demo_expect( false === strpos( $deemed_mail['body'], '£212' ), 'the deemed notice on a £192 loan does not quote £212' );
+creature_demo_expect( false === strpos( $deemed_mail['body'], '{price}' ), 'the deemed notice leaves no placeholder behind' );
+$mail_fallback = creature_demo_loan();
+Creature_Demo_Loan::tick( $mail_fallback, '2026-04-03' );
+$warn_fallback = creature_demo_last_mail( 'reminder_deemed_warning' );
+creature_demo_expect( false !== strpos( $warn_fallback['body'], 'The price is £212.00 less any late fees' ), 'the deemed warning on a fallback loan quotes £212.00' );
+$template = Creature_Demo_Loan_Copy::catalogue();
+creature_demo_expect( false !== strpos( $template['reminder_deemed_warning']['body'], 'The price is {price} less' ) && false !== strpos( $template['charge_notice_deemed']['body'], 'This is {price} less' ), 'both deemed emails are templates with a price placeholder' );
+
+$GLOBALS['creature_demo_product_prices'] = array();
 
 $blob = creature_demo_sensitive_blob();
 creature_demo_absent( $blob, 'sk_live_', 'notes, mail, and Stripe bodies do not contain a live secret key' );
