@@ -779,6 +779,7 @@ class Creature_Demo_Test_Wpdb {
 				'name'     => $name,
 				'autoload' => $autoload,
 				'sql'      => $sql,
+				'inserted' => false,
 			);
 			if ( array_key_exists( $name, $GLOBALS['creature_demo_options'] ) ) {
 				$this->rows_affected = 0;
@@ -792,6 +793,7 @@ class Creature_Demo_Test_Wpdb {
 			$GLOBALS['creature_demo_options'][ $name ]    = maybe_unserialize( $raw );
 			$GLOBALS['creature_demo_option_raw'][ $name ] = $raw;
 			$this->rows_affected = 1;
+			$this->inserts[ count( $this->inserts ) - 1 ]['inserted'] = true;
 			return 1;
 		}
 		if ( false !== strpos( $sql, 'DELETE' ) && false !== strpos( $sql, 'option_value' ) ) {
@@ -2202,7 +2204,7 @@ foreach ( $wpdb->inserts as $insert ) {
 creature_demo_expect( $contender_inserted, 'the charge lock is stored by INSERT IGNORE' );
 $notoptions_after = wp_cache_get( 'notoptions', 'options' );
 creature_demo_expect( is_array( $notoptions_after ) && ! array_key_exists( $contender_name, $notoptions_after ) && ! empty( $notoptions_after['keep-me'] ), 'acquire removes the lock name from the notoptions cache' );
-creature_demo_expect( false === wp_cache_get( 'alloptions', 'options' ), 'acquire clears alloptions when that cache is present' );
+creature_demo_expect( array( $contender_name => 'cached', 'siteurl' => 'https://example.test' ) === wp_cache_get( 'alloptions', 'options' ), 'an autoload-off lock does not delete the alloptions cache' );
 creature_demo_expect( false === wp_cache_get( $contender_name, 'options' ), 'acquire deletes the per-option cache' );
 $lock_cache_deleted = false;
 foreach ( array_slice( $GLOBALS['creature_demo_cache_deletes'], $cache_deletes_before ) as $cache_delete ) {
@@ -2247,12 +2249,63 @@ $raced_token = Creature_Demo_Loan::acquire_charge_lock( $raced, 'pay_link' );
 creature_demo_expect( false === $raced_token, 'a stale takeover does not win when a fresh lock arrives first' );
 creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $raced ) && 'fresh-during-takeover' === creature_demo_lock_row( $raced )['token'], 'a stale takeover cannot delete the fresh lock' );
 
+$pair = wc_create_order();
+creature_demo_plant_lock( $pair, 'pay_link', Creature_Demo_Loan::charge_lock_now() - 900, 'stale-shared' );
+$pair_name = Creature_Demo_Loan::charge_lock_option_name( $pair->get_id() );
+wp_cache_set( 'alloptions', array( 'siteurl' => 'https://example.test' ), 'options' );
+wp_cache_set( 'notoptions', array( $pair_name => true, 'keep-me' => true ), 'options' );
+wp_cache_set( $pair_name, 'cached-row', 'options' );
+$pair_inserts_before = count( $wpdb->inserts );
+$pair_second         = false;
+$pair_saw_stale      = false;
+$GLOBALS['creature_demo_before_lock_delete'] = static function () use ( $pair, $pair_name, &$pair_second, &$pair_saw_stale ) {
+	$raw            = isset( $GLOBALS['creature_demo_option_raw'][ $pair_name ] ) ? (string) $GLOBALS['creature_demo_option_raw'][ $pair_name ] : '';
+	$pair_saw_stale = false !== strpos( $raw, 'stale-shared' );
+	$pair_second    = Creature_Demo_Loan::acquire_charge_lock( $pair, 'saved_card' );
+};
+$pair_first = Creature_Demo_Loan::acquire_charge_lock( $pair, 'pay_link' );
+$GLOBALS['creature_demo_before_lock_delete'] = null;
+$pair_inserted = 0;
+foreach ( array_slice( $wpdb->inserts, $pair_inserts_before ) as $pair_insert ) {
+	if ( $pair_name === $pair_insert['name'] && ! empty( $pair_insert['inserted'] ) ) {
+		$pair_inserted++;
+	}
+}
+creature_demo_expect( $pair_saw_stale, 'both stale takers observe the same stale row' );
+creature_demo_expect( 1 === $pair_inserted, 'two stale takers get exactly one INSERT IGNORE win' );
+creature_demo_expect( false === $pair_first, 'the stale taker that loses the race does not hold the lock' );
+creature_demo_expect( is_string( $pair_second ) && '' !== $pair_second, 'the stale taker whose insert affects one row wins' );
+creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $pair ) && $pair_second === creature_demo_lock_row( $pair )['token'], 'the losing stale taker stays locked out' );
+creature_demo_expect( false === Creature_Demo_Loan::acquire_charge_lock( $pair, 'pay_link' ), 'a later acquire stays locked while the winner holds the row' );
+$pair_alloptions = wp_cache_get( 'alloptions', 'options' );
+creature_demo_expect( is_array( $pair_alloptions ) && 'https://example.test' === $pair_alloptions['siteurl'], 'a stale takeover does not delete alloptions' );
+$pair_notoptions = wp_cache_get( 'notoptions', 'options' );
+creature_demo_expect( is_array( $pair_notoptions ) && ! array_key_exists( $pair_name, $pair_notoptions ) && ! empty( $pair_notoptions['keep-me'] ), 'a stale takeover removes the lock name from notoptions' );
+creature_demo_expect( false === wp_cache_get( $pair_name, 'options' ), 'a stale takeover clears the lock option cache' );
+
 $mismatch = wc_create_order();
 $mismatch_token = Creature_Demo_Loan::acquire_charge_lock( $mismatch, 'pay_link' );
 creature_demo_expect( false === Creature_Demo_Loan::release_charge_lock( $mismatch, 'pay_link', 'wrong-token' ), 'a token mismatch does not release the lock' );
 creature_demo_expect( 'pay_link' === creature_demo_lock_owner( $mismatch ), 'the lock stays after a token mismatch' );
 creature_demo_expect( false === Creature_Demo_Loan::release_charge_lock( $mismatch, 'saved_card', $mismatch_token ), 'the other owner cannot release the lock' );
+$mismatch_name = Creature_Demo_Loan::charge_lock_option_name( $mismatch->get_id() );
+wp_cache_set( 'alloptions', array( 'siteurl' => 'https://example.test', 'blogname' => 'keep' ), 'options' );
+wp_cache_set( 'notoptions', array( $mismatch_name => true, 'keep-me' => true ), 'options' );
+wp_cache_set( $mismatch_name, 'cached-row', 'options' );
+$release_deletes_before = count( $GLOBALS['creature_demo_cache_deletes'] );
 creature_demo_expect( true === Creature_Demo_Loan::release_charge_lock( $mismatch, 'pay_link', $mismatch_token ), 'the matching token releases the lock' );
+$release_alloptions = wp_cache_get( 'alloptions', 'options' );
+creature_demo_expect( is_array( $release_alloptions ) && 'keep' === $release_alloptions['blogname'], 'release does not delete alloptions' );
+$release_notoptions = wp_cache_get( 'notoptions', 'options' );
+creature_demo_expect( is_array( $release_notoptions ) && ! array_key_exists( $mismatch_name, $release_notoptions ) && ! empty( $release_notoptions['keep-me'] ), 'release removes the lock name from notoptions' );
+creature_demo_expect( false === wp_cache_get( $mismatch_name, 'options' ), 'release clears the lock option cache' );
+$release_deleted_alloptions = false;
+foreach ( array_slice( $GLOBALS['creature_demo_cache_deletes'], $release_deletes_before ) as $release_delete ) {
+	if ( 'alloptions' === $release_delete[0] && 'options' === $release_delete[1] ) {
+		$release_deleted_alloptions = true;
+	}
+}
+creature_demo_expect( ! $release_deleted_alloptions, 'release does not call wp_cache_delete for alloptions' );
 creature_demo_expect( false === creature_demo_lock_row( $mismatch ), 'a matching release deletes the option' );
 
 $hpos_before = count( $GLOBALS['creature_demo_postmeta'] );

@@ -3374,7 +3374,9 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * Drop the per-key cache, this name in notoptions, and alloptions when that cache exists.
+	 * Drop the per-key cache and this name in notoptions.
+	 *
+	 * The row is stored with autoload off, so it is never in alloptions.
 	 *
 	 * @param string $name
 	 */
@@ -3389,10 +3391,6 @@ final class Creature_Demo_Loan {
 		if ( is_array( $notoptions ) && array_key_exists( $name, $notoptions ) ) {
 			unset( $notoptions[ $name ] );
 			wp_cache_set( 'notoptions', $notoptions, 'options' );
-		}
-		$alloptions = wp_cache_get( 'alloptions', 'options' );
-		if ( false !== $alloptions && null !== $alloptions ) {
-			wp_cache_delete( 'alloptions', 'options' );
 		}
 	}
 

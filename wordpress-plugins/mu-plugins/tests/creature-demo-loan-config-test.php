@@ -143,6 +143,27 @@ if ( ! function_exists( 'sanitize_email' ) ) {
 	}
 }
 
+if ( ! function_exists( 'home_url' ) ) {
+	function home_url( $path = '' ) {
+		unset( $path );
+		return isset( $GLOBALS['creature_demo_home_url'] ) ? (string) $GLOBALS['creature_demo_home_url'] : 'https://staging.example.test/';
+	}
+}
+
+if ( ! function_exists( 'check_admin_referer' ) ) {
+	function check_admin_referer( $action = -1, $query_arg = '_wpnonce' ) {
+		$nonce = '';
+		if ( isset( $_POST[ $query_arg ] ) ) {
+			$nonce = $_POST[ $query_arg ];
+		} elseif ( isset( $_GET[ $query_arg ] ) ) {
+			$nonce = $_GET[ $query_arg ];
+		} elseif ( isset( $_REQUEST[ $query_arg ] ) ) {
+			$nonce = $_REQUEST[ $query_arg ];
+		}
+		return wp_verify_nonce( $nonce, $action );
+	}
+}
+
 if ( ! class_exists( 'WooCommerce' ) ) {
 	class WooCommerce {}
 }
@@ -233,7 +254,163 @@ creature_demo_config_expect( false !== strpos( $html, 'value="creature_demo_loan
 creature_demo_config_expect( false === strpos( $html, 'allow_live' ), 'the page has no live-charge control' );
 creature_demo_config_expect( false === strpos( $html, 'customer_email' ), 'the page has no real-email control' );
 creature_demo_config_expect( false === strpos( $html, 'ALLOW_LIVE' ), 'the page does not expose the live-charge constant' );
+creature_demo_config_expect( false !== strpos( $html, 'Staging walkthrough' ), 'the page has a staging walkthrough section' );
+creature_demo_config_expect( false !== strpos( $html, 'name="creature_demo_loan_walkthrough_run"' ), 'the page posts a walkthrough run' );
+creature_demo_config_expect( 1 === preg_match( '/<input name="creature_demo_loan_walkthrough_charge" type="checkbox" value="1" \/>/', $html ), 'the charge tick box is on the page' );
+creature_demo_config_expect( 0 === preg_match( '/creature_demo_loan_walkthrough_charge"[^>]*checked/', $html ), 'the charge tick box is unticked' );
+creature_demo_config_expect( false !== strpos( $html, 'value="creature_demo_loan_walkthrough"' ), 'the walkthrough form has its own nonce' );
 $_POST = array();
+
+function creature_demo_config_blank_redirect( $address ) {
+	if ( ! empty( $GLOBALS['creature_demo_blank_redirect'] ) ) {
+		return '';
+	}
+	return $address;
+}
+
+function creature_demo_config_walkthrough_script( $path ) {
+	if ( ! empty( $GLOBALS['creature_demo_walkthrough_script'] ) ) {
+		return $GLOBALS['creature_demo_walkthrough_script'];
+	}
+	return $path;
+}
+
+add_filter( 'creature_demo_loan_redirect_email', 'creature_demo_config_blank_redirect', 99 );
+add_filter( 'creature_demo_loan_config_walkthrough_script', 'creature_demo_config_walkthrough_script' );
+
+$GLOBALS['creature_demo_home_url'] = 'https://staging.example.test/';
+$_POST = array(
+	'creature_demo_loan_walkthrough_run' => '1',
+	'_wpnonce'                           => 'creature_demo_loan_walkthrough',
+);
+$_GET  = array();
+$GLOBALS['creature_demo_caps']['manage_woocommerce'] = false;
+Creature_Demo_Loan_Config::handle_walkthrough();
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'a user without manage_woocommerce cannot run the walkthrough' );
+creature_demo_config_expect( ! defined( 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER' ), 'a refused walkthrough does not open the runner' );
+
+$GLOBALS['creature_demo_caps']['manage_woocommerce'] = true;
+$_POST['_wpnonce'] = 'wrong';
+Creature_Demo_Loan_Config::handle_walkthrough();
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'a bad nonce cannot run the walkthrough' );
+Creature_Demo_Loan_Config::handle_walkthrough_admin_post();
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'admin-post with a bad nonce cannot run the walkthrough' );
+
+$_POST['_wpnonce'] = 'creature_demo_loan_walkthrough';
+update_option(
+	'woocommerce_stripe_settings',
+	array(
+		'testmode'        => 'yes',
+		'test_secret_key' => 'sk_test_' . 'placeholder',
+	)
+);
+foreach ( array(
+	'https://creaturecycles.co.uk/',
+	'https://www.creaturecycles.co.uk/shop',
+	'https://staging.creaturecycles.co.uk/',
+	'https://a.b.creaturecycles.co.uk/apps',
+	'https://CREATURECYCLES.CO.UK/',
+) as $live_url ) {
+	$GLOBALS['creature_demo_home_url'] = $live_url;
+	Creature_Demo_Loan_Config::handle_walkthrough();
+	creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'the live host is refused before the walkthrough is included: ' . $live_url );
+	creature_demo_config_expect( false !== strpos( Creature_Demo_Loan_Config::walkthrough_notice(), 'creaturecycles.co.uk' ), 'the live-host refusal names the shop: ' . $live_url );
+}
+creature_demo_config_expect( ! defined( 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER' ), 'a live-host refusal does not define the runner' );
+creature_demo_config_expect( Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://user:pass@www.creaturecycles.co.uk:443/path' ), 'www with a port is still the live shop' );
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://notcreaturecycles.co.uk/' ), 'a different host that ends with the same letters is not the live shop' );
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://creaturecycles.co.uk.example.test/' ), 'a host that only starts with the live name is not the live shop' );
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://staging.example.test/' ), 'staging.example.test is not the live shop' );
+
+$GLOBALS['creature_demo_home_url'] = 'https://staging.example.test/';
+update_option(
+	'woocommerce_stripe_settings',
+	array(
+		'testmode'   => 'no',
+		'secret_key' => 'sk_test_' . 'placeholder',
+	)
+);
+Creature_Demo_Loan_Config::handle_walkthrough();
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'Stripe test mode is required before the walkthrough is included' );
+creature_demo_config_expect( false !== strpos( Creature_Demo_Loan_Config::walkthrough_notice(), 'not in test mode' ), 'the test-mode refusal is an admin notice' );
+
+update_option(
+	'woocommerce_stripe_settings',
+	array(
+		'testmode'        => 'yes',
+		'test_secret_key' => 'sk_live_' . 'placeholder',
+	)
+);
+Creature_Demo_Loan_Config::handle_walkthrough();
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'a key that does not start with sk_test_ is refused' );
+creature_demo_config_expect( false !== strpos( Creature_Demo_Loan_Config::walkthrough_notice(), 'sk_test_' ), 'the key refusal names sk_test_' );
+
+update_option(
+	'woocommerce_stripe_settings',
+	array(
+		'testmode'        => 'yes',
+		'test_secret_key' => 'sk_test_' . 'placeholder',
+	)
+);
+$GLOBALS['creature_demo_blank_redirect'] = true;
+Creature_Demo_Loan_Config::handle_walkthrough();
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'an empty redirect address is refused' );
+creature_demo_config_expect( false !== strpos( Creature_Demo_Loan_Config::walkthrough_notice(), 'redirect address is empty' ), 'the redirect refusal is an admin notice' );
+$GLOBALS['creature_demo_blank_redirect'] = false;
+ob_start();
+Creature_Demo_Loan_Config::render_page();
+$refused_html = ob_get_clean();
+creature_demo_config_expect( false !== strpos( $refused_html, 'redirect address is empty' ), 'the settings page shows the walkthrough refusal' );
+
+$charge_before = getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' );
+$stub          = tempnam( sys_get_temp_dir(), 'cdw' );
+file_put_contents(
+	$stub,
+	"<?php\necho 'charge=' . getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' ) . \"\\n\";\necho \"<tag>\\nline<two>\";\n"
+);
+$GLOBALS['creature_demo_walkthrough_script'] = $stub;
+$_POST['creature_demo_loan_walkthrough_charge'] = '';
+ob_start();
+Creature_Demo_Loan_Config::handle_walkthrough();
+$unticked = ob_get_clean();
+creature_demo_config_expect( Creature_Demo_Loan_Config::walkthrough_included(), 'a staging request with the guards clear includes the walkthrough' );
+creature_demo_config_expect( false !== strpos( $unticked, '<pre>' ) && false !== strpos( $unticked, 'charge=0' ), 'an unticked box does not enable the charge' );
+creature_demo_config_expect( false !== strpos( $unticked, "&lt;tag&gt;\nline&lt;two&gt;" ), 'the captured output is escaped as one blob' );
+creature_demo_config_expect( false === strpos( $unticked, '<tag>' ), 'the captured output is not written raw' );
+creature_demo_config_expect( $charge_before === getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' ), 'an unticked run does not leave the charge variable set' );
+
+$_POST['creature_demo_loan_walkthrough_charge'] = '1';
+ob_start();
+Creature_Demo_Loan_Config::handle_walkthrough();
+$ticked = ob_get_clean();
+creature_demo_config_expect( false !== strpos( $ticked, 'charge=1' ), 'a ticked box enables the charge for that run' );
+creature_demo_config_expect( $charge_before === getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' ), 'a ticked run does not leave the charge variable set' );
+
+$_POST = array();
+$_GET  = array(
+	'creature_demo_loan_walkthrough_run'     => '1',
+	'creature_demo_loan_walkthrough_charge'  => '1',
+	'_wpnonce'                               => 'creature_demo_loan_walkthrough',
+);
+ob_start();
+Creature_Demo_Loan_Config::handle_walkthrough();
+$fetched = ob_get_clean();
+creature_demo_config_expect( false !== strpos( $fetched, 'charge=0' ), 'a direct URL cannot tick the charge box' );
+$_GET  = array();
+$_POST = array();
+$GLOBALS['creature_demo_walkthrough_script'] = '';
+unlink( $stub );
+unset( $GLOBALS['creature_demo_options']['woocommerce_stripe_settings'] );
+
+$config_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan-config/creature-demo-loan-config.php' );
+$host_pos    = strpos( $config_src, 'walkthrough_home_is_live' );
+$require_pos = strpos( $config_src, 'require $creature_demo_walkthrough_script' );
+creature_demo_config_expect( false !== $host_pos && false !== $require_pos && $host_pos < $require_pos, 'the live-host check is before the walkthrough is included' );
+creature_demo_config_expect( '1.1.0' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.1.0' );
+creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.1.0' ), 'the plugin header version is 1.1.0' );
+$walk_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/bin/staging-walkthrough.php' );
+creature_demo_config_expect( false !== strpos( $walk_src, 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER' ), 'the walkthrough script accepts the admin runner' );
+creature_demo_config_expect( false !== strpos( $walk_src, "PHP_SAPI !== 'cli'" ), 'the walkthrough script keeps its CLI guard' );
 
 define( 'CREATURE_DEMO_LOAN_PRODUCT_IDS', '111,222' );
 define( 'CREATURE_DEMO_LOAN_COUPON_PRODUCT_IDS', '333' );

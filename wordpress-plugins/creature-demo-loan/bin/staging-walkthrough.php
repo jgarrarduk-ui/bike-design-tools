@@ -18,11 +18,13 @@
  * @package Creature_Demo_Loan
  */
 
-if ( PHP_SAPI !== 'cli' ) {
+$creature_demo_walkthrough_runner = defined( 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER' ) && CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER;
+
+if ( PHP_SAPI !== 'cli' && ! $creature_demo_walkthrough_runner ) {
 	return;
 }
 
-if ( ! defined( 'ABSPATH' ) || ! defined( 'WP_CLI' ) || ! WP_CLI ) {
+if ( ! $creature_demo_walkthrough_runner && ( ! defined( 'ABSPATH' ) || ! defined( 'WP_CLI' ) || ! WP_CLI ) ) {
 	echo "Run this inside WP-CLI on staging:\n";
 	echo "  wp eval-file wordpress-plugins/creature-demo-loan/bin/staging-walkthrough.php\n";
 	echo "It creates test orders. It does not charge Stripe unless CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE=1.\n";
