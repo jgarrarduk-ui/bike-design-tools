@@ -31,10 +31,7 @@ if ( ! $creature_demo_walkthrough_runner && ( ! defined( 'ABSPATH' ) || ! define
 	exit( 0 );
 }
 
-if ( ! function_exists( 'wc_create_order' ) || ! class_exists( 'Creature_Demo_Loan' ) ) {
-	echo "WooCommerce and the De-Reacher demo loan plugin must be loaded.\n";
-	exit( 1 );
-}
+if ( ! function_exists( 'creature_demo_walkthrough_run' ) ) {
 
 /**
  * @param string $url
@@ -44,35 +41,6 @@ function creature_demo_walkthrough_host( $url ) {
 	$host = wp_parse_url( (string) $url, PHP_URL_HOST );
 	return is_string( $host ) ? strtolower( $host ) : '';
 }
-
-$site = function_exists( 'home_url' ) ? home_url( '/' ) : '';
-$host = creature_demo_walkthrough_host( $site );
-if ( 'creaturecycles.co.uk' === $host || 'www.creaturecycles.co.uk' === $host ) {
-	echo "Refusing the live shop host. Run this on staging.\n";
-	exit( 1 );
-}
-
-$mode = Creature_Demo_Loan::stripe_mode_flags();
-if ( empty( $mode['test_mode'] ) || empty( $mode['test_key'] ) ) {
-	echo "Refusing because Stripe is not in test mode with a test secret key.\n";
-	exit( 1 );
-}
-
-$redirect = Creature_Demo_Loan_Mail::redirect_address();
-if ( '' === $redirect ) {
-	echo "Refusing because the demo-loan redirect address is empty.\n";
-	exit( 1 );
-}
-
-add_filter(
-	'creature_demo_loan_admin_email',
-	static function () use ( $redirect ) {
-		return $redirect;
-	}
-);
-
-$charge = getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' );
-$may_charge = ( '1' === $charge );
 
 /**
  * @param string $label
@@ -100,7 +68,7 @@ function creature_demo_walkthrough_order( $email_suffix ) {
 	);
 	if ( ! is_object( $order ) ) {
 		echo "wc_create_order did not return an order.\n";
-		exit( 1 );
+		return null;
 	}
 	if ( method_exists( $order, 'set_billing_email' ) ) {
 		$order->set_billing_email( $redirect );
@@ -123,7 +91,48 @@ function creature_demo_walkthrough_order( $email_suffix ) {
 	return $order;
 }
 
-echo "De-Reacher demo loan walkthrough\n";
+/**
+ * Run the scenarios. Returns 0 when the script finishes and 1 when it refuses.
+ * The caller exits with that code on the CLI. The wp-admin runner does not.
+ *
+ * @return int
+ */
+function creature_demo_walkthrough_run() {
+	if ( ! function_exists( 'wc_create_order' ) || ! class_exists( 'Creature_Demo_Loan' ) ) {
+		echo "WooCommerce and the De-Reacher demo loan plugin must be loaded.\n";
+		return 1;
+	}
+
+	$site = function_exists( 'home_url' ) ? home_url( '/' ) : '';
+	$host = creature_demo_walkthrough_host( $site );
+	if ( 'creaturecycles.co.uk' === $host || 'www.creaturecycles.co.uk' === $host ) {
+		echo "Refusing the live shop host. Run this on staging.\n";
+		return 1;
+	}
+
+	$mode = Creature_Demo_Loan::stripe_mode_flags();
+	if ( empty( $mode['test_mode'] ) || empty( $mode['test_key'] ) ) {
+		echo "Refusing because Stripe is not in test mode with a test secret key.\n";
+		return 1;
+	}
+
+	$redirect = Creature_Demo_Loan_Mail::redirect_address();
+	if ( '' === $redirect ) {
+		echo "Refusing because the demo-loan redirect address is empty.\n";
+		return 1;
+	}
+
+	add_filter(
+		'creature_demo_loan_admin_email',
+		static function () use ( $redirect ) {
+			return $redirect;
+		}
+	);
+
+	$charge     = getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' );
+	$may_charge = ( '1' === $charge );
+
+	echo "De-Reacher demo loan walkthrough\n";
 creature_demo_walkthrough_line( 'site', $site );
 creature_demo_walkthrough_line( 'mail', $redirect );
 creature_demo_walkthrough_line( 'stripe charge enabled', $may_charge );
@@ -131,6 +140,9 @@ echo "Dates are passed in. The shop clock is not changed.\n\n";
 
 echo "== Buy a new one ==\n";
 $buy = creature_demo_walkthrough_order( 'buy' );
+if ( ! is_object( $buy ) ) {
+	return 1;
+}
 $choice = Creature_Demo_Loan::choose( $buy, 'buy', '2026-03-10' );
 creature_demo_walkthrough_line( 'choice', isset( $choice['choice'] ) ? $choice['choice'] : $choice['reason'] );
 creature_demo_walkthrough_line( 'status', $buy->get_status() );
@@ -144,6 +156,9 @@ echo "\n";
 
 echo "== Return, don't buy ==\n";
 $back = creature_demo_walkthrough_order( 'return' );
+if ( ! is_object( $back ) ) {
+	return 1;
+}
 Creature_Demo_Loan::choose( $back, 'return', '2026-03-10' );
 creature_demo_walkthrough_line( 'status', $back->get_status() );
 creature_demo_walkthrough_line( 'choice', $back->get_meta( '_creature_demo_choice' ) );
@@ -151,6 +166,9 @@ echo "Shop mail for the Royal Mail QR was redirected to the test inbox.\n\n";
 
 echo "== Keep the demo unit ==\n";
 $keep = creature_demo_walkthrough_order( 'keep' );
+if ( ! is_object( $keep ) ) {
+	return 1;
+}
 $kept = Creature_Demo_Loan::choose( $keep, 'keep', '2026-03-10' );
 creature_demo_walkthrough_line( 'keep pence', isset( $kept['amount'] ) ? $kept['amount'] : 0 );
 creature_demo_walkthrough_line( 'charge order', isset( $kept['order_id'] ) ? $kept['order_id'] : 0 );
@@ -175,6 +193,9 @@ echo "\n";
 
 echo "== Disputed late fee ==\n";
 $late = creature_demo_walkthrough_order( 'late' );
+if ( ! is_object( $late ) ) {
+	return 1;
+}
 Creature_Demo_Loan::record_return_scan( $late, '2026-03-30', '2026-03-30' );
 $late_charge_id = (int) $late->get_meta( '_creature_demo_late_fee_order_id' );
 $late_charge    = $late_charge_id ? wc_get_order( $late_charge_id ) : null;
@@ -198,6 +219,9 @@ echo "\n";
 
 echo "== Deemed purchase ==\n";
 $deemed = creature_demo_walkthrough_order( 'deemed' );
+if ( ! is_object( $deemed ) ) {
+	return 1;
+}
 $raised = Creature_Demo_Loan::maybe_raise_deemed( $deemed, '2026-04-07' );
 creature_demo_walkthrough_line( 'deemed pence', isset( $raised['amount'] ) ? $raised['amount'] : 0 );
 creature_demo_walkthrough_line( 'status', $deemed->get_status() );
@@ -210,4 +234,13 @@ if ( $may_charge ) {
 } else {
 	echo "\nDone. Orders are test loans on this site. Stripe was not called.\n";
 }
-exit( 0 );
+	return 0;
+}
+
+}
+
+if ( $creature_demo_walkthrough_runner ) {
+	return creature_demo_walkthrough_run();
+}
+
+exit( creature_demo_walkthrough_run() );

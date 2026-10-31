@@ -367,29 +367,52 @@ Creature_Demo_Loan_Config::render_page();
 $refused_html = ob_get_clean();
 creature_demo_config_expect( false !== strpos( $refused_html, 'redirect address is empty' ), 'the settings page shows the walkthrough refusal' );
 
+$GLOBALS['creature_demo_walkthrough_script'] = '/tmp/creature-demo-walkthrough-missing.php';
+Creature_Demo_Loan_Config::handle_walkthrough();
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'a missing walkthrough file is not included' );
+creature_demo_config_expect( false !== strpos( Creature_Demo_Loan_Config::walkthrough_notice(), 'not installed' ), 'a missing walkthrough file is a plain admin notice' );
+creature_demo_config_expect( ! defined( 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER' ), 'a missing file does not open the runner' );
+
 $charge_before = getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' );
 $stub          = tempnam( sys_get_temp_dir(), 'cdw' );
 file_put_contents(
 	$stub,
-	"<?php\necho 'charge=' . getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' ) . \"\\n\";\necho \"<tag>\\nline<two>\";\n"
+	"<?php\necho 'charge=' . getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' ) . \"\\n\";\necho \"<tag>\\nline<two>\";\nreturn 0;\n"
 );
 $GLOBALS['creature_demo_walkthrough_script'] = $stub;
 $_POST['creature_demo_loan_walkthrough_charge'] = '';
-ob_start();
 Creature_Demo_Loan_Config::handle_walkthrough();
+ob_start();
+Creature_Demo_Loan_Config::render_page();
 $unticked = ob_get_clean();
 creature_demo_config_expect( Creature_Demo_Loan_Config::walkthrough_included(), 'a staging request with the guards clear includes the walkthrough' );
+creature_demo_config_expect( false !== strpos( $unticked, 'The staging walkthrough finished.' ), 'a finished walkthrough stays on the settings page' );
+creature_demo_config_expect( false !== strpos( $unticked, 'Run staging walkthrough' ), 'a finished walkthrough keeps the page controls' );
 creature_demo_config_expect( false !== strpos( $unticked, '<pre>' ) && false !== strpos( $unticked, 'charge=0' ), 'an unticked box does not enable the charge' );
 creature_demo_config_expect( false !== strpos( $unticked, "&lt;tag&gt;\nline&lt;two&gt;" ), 'the captured output is escaped as one blob' );
 creature_demo_config_expect( false === strpos( $unticked, '<tag>' ), 'the captured output is not written raw' );
 creature_demo_config_expect( $charge_before === getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' ), 'an unticked run does not leave the charge variable set' );
 
 $_POST['creature_demo_loan_walkthrough_charge'] = '1';
-ob_start();
 Creature_Demo_Loan_Config::handle_walkthrough();
+ob_start();
+Creature_Demo_Loan_Config::render_page();
 $ticked = ob_get_clean();
 creature_demo_config_expect( false !== strpos( $ticked, 'charge=1' ), 'a ticked box enables the charge for that run' );
 creature_demo_config_expect( $charge_before === getenv( 'CREATURE_DEMO_LOAN_WALKTHROUGH_CHARGE' ), 'a ticked run does not leave the charge variable set' );
+
+$refuse = tempnam( sys_get_temp_dir(), 'cdw' );
+file_put_contents( $refuse, "<?php\necho \"Refusing because the demo-loan redirect address is empty.\\n<nope>\";\nreturn 1;\n" );
+$GLOBALS['creature_demo_walkthrough_script'] = $refuse;
+$_POST['creature_demo_loan_walkthrough_charge'] = '';
+Creature_Demo_Loan_Config::handle_walkthrough();
+ob_start();
+Creature_Demo_Loan_Config::render_page();
+$refused_run = ob_get_clean();
+creature_demo_config_expect( false !== strpos( $refused_run, 'The staging walkthrough refused to run.' ), 'a script refusal stays on the settings page' );
+creature_demo_config_expect( false !== strpos( $refused_run, 'Run staging walkthrough' ), 'a script refusal keeps the page controls' );
+creature_demo_config_expect( false !== strpos( $refused_run, '&lt;nope&gt;' ), 'a script refusal escapes its output' );
+unlink( $refuse );
 
 $_POST = array();
 $_GET  = array(
@@ -397,8 +420,10 @@ $_GET  = array(
 	'creature_demo_loan_walkthrough_charge'  => '1',
 	'_wpnonce'                               => 'creature_demo_loan_walkthrough',
 );
-ob_start();
+$GLOBALS['creature_demo_walkthrough_script'] = $stub;
 Creature_Demo_Loan_Config::handle_walkthrough();
+ob_start();
+Creature_Demo_Loan_Config::render_page();
 $fetched = ob_get_clean();
 creature_demo_config_expect( false !== strpos( $fetched, 'charge=0' ), 'a direct URL cannot tick the charge box' );
 $_GET  = array();
@@ -411,8 +436,12 @@ $config_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan-co
 $host_pos    = strpos( $config_src, 'walkthrough_home_is_live' );
 $require_pos = strpos( $config_src, 'require $creature_demo_walkthrough_script' );
 creature_demo_config_expect( false !== $host_pos && false !== $require_pos && $host_pos < $require_pos, 'the live-host check is before the walkthrough is included' );
-creature_demo_config_expect( '1.2.0' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.2.0' );
-creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.2.0' ), 'the plugin header version is 1.2.0' );
+creature_demo_config_expect( '1.2.1' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.2.1' );
+creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.2.1' ), 'the plugin header version is 1.2.1' );
+creature_demo_config_expect( false !== strpos( $config_src, 'WP_PLUGIN_DIR' ), 'the walkthrough path is resolved from the demo loan plugin directory' );
+$guard_pos = strpos( $config_src, 'walkthrough_guard_errors()' );
+creature_demo_config_expect( false !== $guard_pos && $guard_pos < $require_pos, 'an inactive demo loan plugin is refused before the script is included' );
+creature_demo_config_expect( false !== strpos( $config_src, "class_exists( 'Creature_Demo_Loan' )" ), 'the walkthrough guard checks that the demo loan plugin is active' );
 $walk_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/bin/staging-walkthrough.php' );
 creature_demo_config_expect( false !== strpos( $walk_src, 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER' ), 'the walkthrough script accepts the admin runner' );
 creature_demo_config_expect( false !== strpos( $walk_src, "PHP_SAPI !== 'cli'" ), 'the walkthrough script keeps its CLI guard' );

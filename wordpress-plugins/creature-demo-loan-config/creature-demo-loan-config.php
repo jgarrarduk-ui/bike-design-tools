@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles Demo Loan Config
  * Description: Staging settings for demo product ids, coupon product ids, and the test redirect address. Cannot enable live charges or real customer email.
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  * Requires Plugins: woocommerce
@@ -36,7 +36,7 @@ if ( defined( 'CREATURE_DEMO_LOAN_CONFIG_LOADED' ) ) {
 }
 
 define( 'CREATURE_DEMO_LOAN_CONFIG_LOADED', true );
-define( 'CREATURE_DEMO_LOAN_CONFIG_VERSION', '1.2.0' );
+define( 'CREATURE_DEMO_LOAN_CONFIG_VERSION', '1.2.1' );
 
 /**
  * Option-backed filters for the demo loan plugin.
@@ -58,6 +58,10 @@ final class Creature_Demo_Loan_Config {
 	private static $charge_env_pushed = false;
 
 	private static $charge_env_previous = false;
+
+	private static $walkthrough_output = '';
+
+	private static $walkthrough_status = null;
 
 	public static function boot() {
 		add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
@@ -163,6 +167,7 @@ final class Creature_Demo_Loan_Config {
 		if ( '' !== self::$walkthrough_notice ) {
 			echo '<div class="notice notice-error"><p>' . esc_html( self::$walkthrough_notice ) . '</p></div>';
 		}
+		self::render_walkthrough_result();
 		echo '<p>Live charges and real customer email stay off unless the wp-config constants are true. This screen cannot change them.</p>';
 		echo '<form method="post">';
 		if ( function_exists( 'wp_nonce_field' ) ) {
@@ -363,17 +368,18 @@ final class Creature_Demo_Loan_Config {
 	 *
 	 * @param string $blob
 	 */
-	public static function finish_walkthrough_output() {
+	public static function finish_walkthrough_output( $code = null ) {
 		if ( self::$walkthrough_finished ) {
 			return;
 		}
 		if ( ! self::$walkthrough_running && ! self::$charge_env_pushed ) {
 			return;
 		}
+		$ended_by_exit              = self::$walkthrough_running && null === $code;
 		self::$walkthrough_finished = true;
 		self::$walkthrough_running  = false;
-		$blob  = '';
-		$floor = (int) self::$walkthrough_ob_level;
+		$blob                       = '';
+		$floor                      = (int) self::$walkthrough_ob_level;
 		while ( ob_get_level() > $floor ) {
 			$piece = ob_get_clean();
 			if ( is_string( $piece ) ) {
@@ -384,7 +390,26 @@ final class Creature_Demo_Loan_Config {
 		if ( ! self::$walkthrough_included ) {
 			return;
 		}
+		self::$walkthrough_output = $blob;
+		self::$walkthrough_status = null === $code ? 1 : (int) $code;
+		if ( ! $ended_by_exit ) {
+			return;
+		}
 		$safe = function_exists( 'esc_html' ) ? esc_html( $blob ) : htmlspecialchars( $blob, ENT_QUOTES, 'UTF-8' );
+		echo '<div class="wrap"><div class="notice notice-error"><p>';
+		echo function_exists( 'esc_html' ) ? esc_html( 'The staging walkthrough ended the request before the page could finish.' ) : 'The staging walkthrough ended the request before the page could finish.';
+		echo '</p></div><pre>' . $safe . '</pre></div>';
+	}
+
+	private static function render_walkthrough_result() {
+		if ( null === self::$walkthrough_status ) {
+			return;
+		}
+		$finished = 0 === (int) self::$walkthrough_status;
+		$class    = $finished ? 'notice notice-success' : 'notice notice-error';
+		$label    = $finished ? 'The staging walkthrough finished.' : 'The staging walkthrough refused to run.';
+		$safe     = function_exists( 'esc_html' ) ? esc_html( self::$walkthrough_output ) : htmlspecialchars( self::$walkthrough_output, ENT_QUOTES, 'UTF-8' );
+		echo '<div class="' . esc_attr( $class ) . '"><p>' . esc_html( $label ) . '</p></div>';
 		echo '<pre>' . $safe . '</pre>';
 	}
 
@@ -418,22 +443,25 @@ final class Creature_Demo_Loan_Config {
 			return;
 		}
 		$creature_demo_walkthrough_script = self::walkthrough_script_path();
-		if ( ! is_readable( $creature_demo_walkthrough_script ) ) {
-			self::present_walkthrough_refusal( 'The staging walkthrough script is not installed.' );
+		if ( ! is_string( $creature_demo_walkthrough_script ) || ! is_readable( $creature_demo_walkthrough_script ) ) {
+			self::present_walkthrough_refusal( 'The staging walkthrough script is not installed. The De-Reacher demo loan plugin has to be on this site.' );
 			return;
 		}
 		self::push_charge_env( self::walkthrough_charge_requested() );
 		if ( ! defined( 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER' ) ) {
 			define( 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER', true );
 		}
+		self::$walkthrough_notice   = '';
 		self::$walkthrough_included = true;
 		self::$walkthrough_finished = false;
 		self::$walkthrough_running  = true;
+		self::$walkthrough_status   = null;
+		self::$walkthrough_output   = '';
 		self::$walkthrough_ob_level = ob_get_level();
 		ob_start();
 		register_shutdown_function( array( __CLASS__, 'finish_walkthrough_output' ) );
-		require $creature_demo_walkthrough_script;
-		self::finish_walkthrough_output();
+		$code = require $creature_demo_walkthrough_script;
+		self::finish_walkthrough_output( (int) $code );
 	}
 
 	/**
@@ -494,7 +522,12 @@ final class Creature_Demo_Loan_Config {
 	 * @return string
 	 */
 	private static function walkthrough_script_path() {
-		$path = dirname( __FILE__ ) . '/../creature-demo-loan/bin/staging-walkthrough.php';
+		$path = '';
+		if ( defined( 'WP_PLUGIN_DIR' ) ) {
+			$path = rtrim( WP_PLUGIN_DIR, '/\\' ) . '/creature-demo-loan/bin/staging-walkthrough.php';
+		} elseif ( defined( 'CREATURE_DEMO_LOAN_FILE' ) ) {
+			$path = dirname( CREATURE_DEMO_LOAN_FILE ) . '/bin/staging-walkthrough.php';
+		}
 		if ( function_exists( 'apply_filters' ) ) {
 			$filtered = apply_filters( 'creature_demo_loan_config_walkthrough_script', $path );
 			if ( is_string( $filtered ) && '' !== $filtered ) {
