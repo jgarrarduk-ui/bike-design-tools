@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles De-Reacher Demo Loan
  * Description: Postal demo loan for the De-Reacher. Consent, saved card, loan statuses, reminders, and charge-later on the WooCommerce Stripe Gateway. Test mode unless live charges are explicitly enabled.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  * Requires Plugins: woocommerce
@@ -37,7 +37,7 @@ if ( defined( 'CREATURE_DEMO_LOAN_LOADED' ) ) {
 define( 'CREATURE_DEMO_LOAN_LOADED', true );
 define( 'CREATURE_DEMO_LOAN_FILE', __FILE__ );
 define( 'CREATURE_DEMO_LOAN_DIR', __DIR__ );
-define( 'CREATURE_DEMO_LOAN_VERSION', '1.0.0' );
+define( 'CREATURE_DEMO_LOAN_VERSION', '1.1.0' );
 
 if ( ! defined( 'CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES' ) ) {
 	define( 'CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES', false );

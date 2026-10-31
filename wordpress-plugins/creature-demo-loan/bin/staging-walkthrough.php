@@ -157,12 +157,15 @@ creature_demo_walkthrough_line( 'charge order', isset( $kept['order_id'] ) ? $ke
 $gate = array( 'code' => 'no-charge-order' );
 if ( ! empty( $kept['order_id'] ) ) {
 	$charge_order = wc_get_order( $kept['order_id'] );
-	$gate         = Creature_Demo_Loan::evaluate_charge( $keep, $charge_order, '2026-03-13' );
+	$early        = Creature_Demo_Loan::evaluate_charge( $keep, $charge_order, '2026-03-16' );
+	$early_code   = isset( $early['code'] ) ? (string) $early['code'] : '';
+	creature_demo_walkthrough_line( 'gate on 2026-03-16', '' === $early_code ? 'clear' : $early_code );
+	$gate         = Creature_Demo_Loan::evaluate_charge( $keep, $charge_order, '2026-03-17' );
 }
 $gate_code = isset( $gate['code'] ) ? (string) $gate['code'] : '';
-creature_demo_walkthrough_line( 'gate on 2026-03-13', '' === $gate_code ? 'clear' : $gate_code );
+creature_demo_walkthrough_line( 'gate on 2026-03-17', '' === $gate_code ? 'clear' : $gate_code );
 if ( $may_charge && '' === $gate['code'] ) {
-	$result = Creature_Demo_Loan::charge_saved_card( $keep, '2026-03-13' );
+	$result = Creature_Demo_Loan::charge_saved_card( $keep, '2026-03-17' );
 	creature_demo_walkthrough_line( 'charge', isset( $result['code'] ) ? $result['code'] : '' );
 } else {
 	echo "Saved card not charged. The keep link is the pending order's pay URL.\n";
@@ -178,14 +181,14 @@ $late_charge    = $late_charge_id ? wc_get_order( $late_charge_id ) : null;
 creature_demo_walkthrough_line( 'late fee order', $late_charge_id );
 if ( $late_charge ) {
 	Creature_Demo_Loan::mark_disputed( $late_charge, '2026-03-30' );
-	$blocked = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-02' );
+	$blocked = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-06' );
 	creature_demo_walkthrough_line( 'gate while disputed', $blocked['code'] );
-	$decision = Creature_Demo_Loan::record_dispute_decision( $late_charge, 'upheld', '2026-04-02', null );
+	$decision = Creature_Demo_Loan::record_dispute_decision( $late_charge, 'upheld', '2026-04-06', null );
 	creature_demo_walkthrough_line( 'decision within 14 days', ! empty( $decision['timely'] ) );
-	$open = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-02' );
+	$open = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-06' );
 	creature_demo_walkthrough_line( 'gate after uphold', '' === $open['code'] ? 'clear' : $open['code'] );
 	if ( $may_charge && '' === $open['code'] ) {
-		$result = Creature_Demo_Loan::charge_saved_card( $late, '2026-04-02' );
+		$result = Creature_Demo_Loan::charge_saved_card( $late, '2026-04-06' );
 		creature_demo_walkthrough_line( 'charge', isset( $result['code'] ) ? $result['code'] : '' );
 	} else {
 		echo "Saved card not charged.\n";

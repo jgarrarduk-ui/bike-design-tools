@@ -245,7 +245,7 @@ final class Creature_Demo_Loan_Calendar {
 
 	/**
 	 * Billable late days for a return that many days after the due date.
-	 * Days 0–5 are grace. Days 6–13 are £5 each (8 days). Later offsets stay
+	 * Days 0–5 are grace. Days 6–13 are £3 each (8 days, the £24 cap). Later offsets stay
 	 * at 8 because the cap is reached at the deemed-purchase point.
 	 *
 	 * @param int $days_after_due

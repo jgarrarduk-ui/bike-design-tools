@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles Demo Loan Config
  * Description: Staging settings for demo product ids, coupon product ids, and the test redirect address. Cannot enable live charges or real customer email.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  * Requires Plugins: woocommerce
@@ -20,8 +20,9 @@
  * CREATURE_DEMO_LOAN_REDIRECT_EMAIL win when they are defined.
  *
  * WooCommerce → Demo loan can run the staging walkthrough in-process. That
- * runner refuses creaturecycles.co.uk and any subdomain of it before the
- * script is included. The charge box stays off unless it is ticked.
+ * runner refuses creaturecycles.co.uk and www, and any host that is not
+ * staging or local, before the script is included. The charge box stays off
+ * unless it is ticked.
  *
  * @package Creature_Demo_Loan_Config
  */
@@ -35,7 +36,7 @@ if ( defined( 'CREATURE_DEMO_LOAN_CONFIG_LOADED' ) ) {
 }
 
 define( 'CREATURE_DEMO_LOAN_CONFIG_LOADED', true );
-define( 'CREATURE_DEMO_LOAN_CONFIG_VERSION', '1.1.0' );
+define( 'CREATURE_DEMO_LOAN_CONFIG_VERSION', '1.2.0' );
 
 /**
  * Option-backed filters for the demo loan plugin.
@@ -312,7 +313,9 @@ final class Creature_Demo_Loan_Config {
 	}
 
 	/**
-	 * creaturecycles.co.uk, www, and any other subdomain.
+	 * True when the runner must refuse this URL before including the script.
+	 * The live shop is creaturecycles.co.uk and www. Other hosts are refused
+	 * unless they are local or clearly staging.
 	 *
 	 * @param mixed $url
 	 * @return bool
@@ -324,12 +327,35 @@ final class Creature_Demo_Loan_Config {
 			$parsed = parse_url( (string) $url, PHP_URL_HOST );
 		}
 		$host = is_string( $parsed ) ? strtolower( rtrim( $parsed, '.' ) ) : '';
-		if ( 'creaturecycles.co.uk' === $host ) {
+		if ( '' === $host || self::walkthrough_host_is_shop( $host ) ) {
 			return true;
 		}
-		$suffix = '.creaturecycles.co.uk';
-		$length = strlen( $suffix );
-		return strlen( $host ) > $length && $suffix === substr( $host, -1 * $length );
+		return ! self::walkthrough_host_is_staging_or_local( $host );
+	}
+
+	/**
+	 * @param string $host
+	 * @return bool
+	 */
+	private static function walkthrough_host_is_shop( $host ) {
+		return 'creaturecycles.co.uk' === $host || 'www.creaturecycles.co.uk' === $host;
+	}
+
+	/**
+	 * @param string $host
+	 * @return bool
+	 */
+	private static function walkthrough_host_is_staging_or_local( $host ) {
+		if ( in_array( $host, array( 'localhost', '127.0.0.1', '::1' ), true ) ) {
+			return true;
+		}
+		foreach ( array( '.test', '.local', '.localhost' ) as $suffix ) {
+			$length = strlen( $suffix );
+			if ( strlen( $host ) > $length && $suffix === substr( $host, -1 * $length ) ) {
+				return true;
+			}
+		}
+		return false !== strpos( $host, 'staging' );
 	}
 
 	/**
@@ -371,7 +397,19 @@ final class Creature_Demo_Loan_Config {
 			return;
 		}
 		if ( self::walkthrough_home_is_live() ) {
-			self::present_walkthrough_refusal( 'Refusing the live shop. The walkthrough does not run on creaturecycles.co.uk or any subdomain of it.' );
+			$url  = function_exists( 'home_url' ) ? home_url( '/' ) : '';
+			$host = '';
+			if ( function_exists( 'wp_parse_url' ) ) {
+				$parsed = wp_parse_url( (string) $url, PHP_URL_HOST );
+			} else {
+				$parsed = parse_url( (string) $url, PHP_URL_HOST );
+			}
+			$host = is_string( $parsed ) ? strtolower( rtrim( $parsed, '.' ) ) : '';
+			if ( self::walkthrough_host_is_shop( $host ) ) {
+				self::present_walkthrough_refusal( 'Refusing the live shop. The walkthrough does not run on creaturecycles.co.uk.' );
+			} else {
+				self::present_walkthrough_refusal( 'Refusing this host. The walkthrough runs on staging or a local site.' );
+			}
 			return;
 		}
 		$missing = self::walkthrough_guard_errors();

@@ -3,7 +3,7 @@
  * Placeholder customer copy for the De-Reacher demo loan.
  *
  * Every slot is marked [COPY: Cadence]. Cadence replaces the wording.
- * The consent slot names the maxima from the money constants (£40, £212, £35)
+ * The consent slot names the maxima from the money constants (£24, £212, £35)
  * so those figures cannot drift from the charge maths.
  *
  * Placeholders: {amount} {reason} {link} {due} {coupon} {order_id}
@@ -25,11 +25,23 @@ final class Creature_Demo_Loan_Copy {
 	 * @return array<string, array{subject: string, body: string}>
 	 */
 	public static function catalogue() {
-		$consent = sprintf(
+		$late_daily = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::LATE_DAILY_PENCE );
+		$late_cap   = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::LATE_CAP_PENCE );
+		$mount_kit  = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::MOUNT_KIT_PENCE );
+		$consent    = sprintf(
 			'[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to %s, a deemed purchase up to %s, and damage or missing parts, never more than the cost of repair or replacement (inverted mount kit %s). This box is separate from the general terms and is not ticked for me.',
-			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::LATE_CAP_PENCE ),
+			$late_cap,
 			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::KEEP_PENCE ),
-			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::MOUNT_KIT_PENCE )
+			$mount_kit
+		);
+		$grace = sprintf(
+			'[COPY: Cadence] The 5-day grace period on order {order_id} ends on {due}. After that, a single late-fee total of %s a day applies until the kit is scanned back, capped at %s. It is not charged day by day. Booking a return is not the same as a scan.',
+			$late_daily,
+			$late_cap
+		);
+		$damage = sprintf(
+			"[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. Missing parts are charged at published spare-parts prices (inverted mount kit %s). Reply within 7 days to dispute it. If it is still unpaid and not disputed after 7 days, we may charge the saved card.",
+			$mount_kit
 		);
 
 		return array(
@@ -44,6 +56,10 @@ final class Creature_Demo_Loan_Copy {
 			'mixed_basket_error'            => array(
 				'subject' => '',
 				'body'    => '[COPY: Cadence] A demo loan has to be ordered on its own. Remove the other items, or remove the demo, and try again.',
+			),
+			'service_area_error'            => array(
+				'subject' => '',
+				'body'    => '[COPY: Cadence] The demo loan is only available in England, Scotland, Wales and Northern Ireland. Jersey, Guernsey and the Isle of Man are outside this service area.',
 			),
 			'my_account_heading'            => array(
 				'subject' => '',
@@ -71,7 +87,7 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'reminder_grace_end'            => array(
 				'subject' => '[COPY: Cadence] De-Reacher demo grace period ends {due}',
-				'body'    => '[COPY: Cadence] The 5-day grace period on order {order_id} ends on {due}. After that, a single late-fee total of £5 a day applies until the kit is scanned back, capped at £40. It is not charged day by day. Booking a return is not the same as a scan.',
+				'body'    => $grace,
 			),
 			'reminder_deemed_warning'       => array(
 				'subject' => '[COPY: Cadence] De-Reacher demo: deemed purchase warning (due {due})',
@@ -79,19 +95,19 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'charge_notice_keep'            => array(
 				'subject' => '[COPY: Cadence] Payment link to keep your De-Reacher demo ({amount})',
-				'body'    => "[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. If this is not paid within 3 working days the keep choice lapses and the loan carries on. We will not charge the saved card for a lapsed keep choice.",
+				'body'    => "[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. If this is not paid within 7 days the keep choice lapses and the loan carries on. We will not charge the saved card for a lapsed keep choice.",
 			),
 			'charge_notice_late_fee'        => array(
 				'subject' => '[COPY: Cadence] De-Reacher demo late fees ({amount})',
-				'body'    => "[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. This is one total, not a daily charge. If you think it is wrong, reply within 3 working days to dispute it. If it is still unpaid and not disputed after 3 working days, we may charge the saved card.",
+				'body'    => "[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. This is one total, not a daily charge. If you think it is wrong, reply within 7 days to dispute it. If it is still unpaid and not disputed after 7 days, we may charge the saved card.",
 			),
 			'charge_notice_deemed'          => array(
 				'subject' => '[COPY: Cadence] De-Reacher deemed purchase ({amount})',
-				'body'    => "[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. This is £212 less late fees already paid. Reply within 3 working days to dispute it. If it is still unpaid and not disputed after 3 working days, we may charge the saved card.",
+				'body'    => "[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. This is £212 less late fees already paid. Reply within 7 days to dispute it. If it is still unpaid and not disputed after 7 days, we may charge the saved card.",
 			),
 			'charge_notice_damage'          => array(
 				'subject' => '[COPY: Cadence] De-Reacher demo damage or missing parts ({amount})',
-				'body'    => "[COPY: Cadence] Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. Missing parts are charged at published spare-parts prices (inverted mount kit £35). Reply within 3 working days to dispute it. If it is still unpaid and not disputed after 3 working days, we may charge the saved card.",
+				'body'    => $damage,
 			),
 			'charge_authentication_required' => array(
 				'subject' => '[COPY: Cadence] Please authenticate the De-Reacher demo charge ({amount})',
@@ -119,7 +135,7 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'keep_choice_lapsed'            => array(
 				'subject' => '[COPY: Cadence] The link to keep your De-Reacher demo has lapsed',
-				'body'    => '[COPY: Cadence] The keep payment link for order {order_id} was not paid within 3 working days, so that choice has lapsed. The kit is on loan again and the usual dates and fees apply. If you don’t choose again, we treat it as a return.',
+				'body'    => '[COPY: Cadence] The keep payment link for order {order_id} was not paid within 7 days, so that choice has lapsed. The kit is on loan again and the usual dates and fees apply. If you don’t choose again, we treat it as a return.',
 			),
 			'dispute_decision'              => array(
 				'subject' => '[COPY: Cadence] Our decision on the disputed De-Reacher demo charge',

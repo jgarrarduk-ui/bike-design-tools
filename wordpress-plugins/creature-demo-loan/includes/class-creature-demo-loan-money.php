@@ -3,8 +3,9 @@
  * Pounds and pence for the De-Reacher demo loan.
  *
  * Keep and deemed purchase are £212 (bundle £249 − £25 demo fee − £12 used).
- * Late fees are £5 a day from day 6 after the due date, capped at £40, and
- * charged once. Prices are constants. The two James flags are filters.
+ * Late fees are £3 a day from day 6 after the due date, capped at £24, and
+ * charged once. Prices are constants. Unpaid late fees are never added to
+ * the keep price. The refund flag is a filter.
  *
  * @package Creature_Demo_Loan
  */
@@ -19,8 +20,8 @@ if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
 final class Creature_Demo_Loan_Money {
 
 	const KEEP_PENCE       = 21200;
-	const LATE_DAILY_PENCE = 500;
-	const LATE_CAP_PENCE   = 4000;
+	const LATE_DAILY_PENCE = 300;
+	const LATE_CAP_PENCE   = 2400;
 	const MOUNT_KIT_PENCE  = 3500;
 	const COUPON_PENCE     = 2500;
 	const DEMO_FEE_PENCE   = 2500;
@@ -51,29 +52,19 @@ final class Creature_Demo_Loan_Money {
 	}
 
 	/**
-	 * Keep-link amount.
+	 * Keep-link amount. Unpaid late fees are never added (terms 3A.1(b)).
+	 * Fees already paid come off £212 so a rider who has paid them stays
+	 * inside the £212 cap in 4.2.
 	 *
-	 * Included (default, terms 3A.1(c)): late fees sit inside £212. Fees
-	 * already paid are taken off so the total beyond the £25 does not pass
-	 * £212. Fees that are only accrued are not added.
-	 *
-	 * Not included: unpaid late fees are added on top of £212.
-	 *
-	 * @param int  $late_paid Pence already paid.
-	 * @param int  $late_due  Pence accrued, paid and unpaid.
-	 * @param bool $included  creature_demo_loan_late_fees_included_in_keep.
+	 * @param int $late_paid Pence already paid.
+	 * @param int $late_due  Accrued pence. Not added.
 	 * @return int
 	 */
-	public static function keep_amount_pence( $late_paid, $late_due, $included ) {
+	public static function keep_amount_pence( $late_paid, $late_due = 0 ) {
+		unset( $late_due );
 		$paid  = max( 0, (int) $late_paid );
-		$due   = max( 0, (int) $late_due );
 		$price = self::KEEP_PENCE;
-		if ( $included ) {
-			$credit = min( $paid, $price );
-			return $price - $credit;
-		}
-		$unpaid = max( 0, $due - $paid );
-		return $price + $unpaid;
+		return $price - min( $paid, $price );
 	}
 
 	/**
@@ -91,7 +82,7 @@ final class Creature_Demo_Loan_Money {
 	/**
 	 * Refund of a paid deemed purchase after the kit comes back (terms 8.5).
 	 *
-	 * Retain the £40 late-fee cap, counting fees already paid towards that
+	 * Retain the £24 late-fee cap, counting fees already paid towards that
 	 * cap, then retain the recorded damage. Never refund more than was paid.
 	 *
 	 * @param int $deemed_paid

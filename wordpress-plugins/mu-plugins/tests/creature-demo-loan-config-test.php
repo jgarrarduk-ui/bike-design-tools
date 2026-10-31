@@ -307,8 +307,6 @@ update_option(
 foreach ( array(
 	'https://creaturecycles.co.uk/',
 	'https://www.creaturecycles.co.uk/shop',
-	'https://staging.creaturecycles.co.uk/',
-	'https://a.b.creaturecycles.co.uk/apps',
 	'https://CREATURECYCLES.CO.UK/',
 ) as $live_url ) {
 	$GLOBALS['creature_demo_home_url'] = $live_url;
@@ -316,11 +314,18 @@ foreach ( array(
 	creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'the live host is refused before the walkthrough is included: ' . $live_url );
 	creature_demo_config_expect( false !== strpos( Creature_Demo_Loan_Config::walkthrough_notice(), 'creaturecycles.co.uk' ), 'the live-host refusal names the shop: ' . $live_url );
 }
+$GLOBALS['creature_demo_home_url'] = 'https://example.com/';
+Creature_Demo_Loan_Config::handle_walkthrough();
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_included(), 'a host that is not staging or local is refused before the walkthrough is included' );
+creature_demo_config_expect( false !== strpos( Creature_Demo_Loan_Config::walkthrough_notice(), 'staging or a local site' ), 'a non-staging host is told to use staging or local' );
 creature_demo_config_expect( ! defined( 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER' ), 'a live-host refusal does not define the runner' );
 creature_demo_config_expect( Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://user:pass@www.creaturecycles.co.uk:443/path' ), 'www with a port is still the live shop' );
-creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://notcreaturecycles.co.uk/' ), 'a different host that ends with the same letters is not the live shop' );
-creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://creaturecycles.co.uk.example.test/' ), 'a host that only starts with the live name is not the live shop' );
-creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://staging.example.test/' ), 'staging.example.test is not the live shop' );
+creature_demo_config_expect( Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://a.b.creaturecycles.co.uk/apps' ), 'a production subdomain is not a staging host' );
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://staging.creaturecycles.co.uk/' ), 'staging.creaturecycles.co.uk can run the walkthrough' );
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://creaturecycles.co.uk.example.test/' ), 'a local .test host is not the live shop' );
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'https://staging.example.test/' ), 'staging.example.test can run the walkthrough' );
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'http://localhost/' ), 'localhost can run the walkthrough' );
+creature_demo_config_expect( ! Creature_Demo_Loan_Config::walkthrough_host_is_live( 'http://127.0.0.1:8080/' ), '127.0.0.1 can run the walkthrough' );
 
 $GLOBALS['creature_demo_home_url'] = 'https://staging.example.test/';
 update_option(
@@ -406,8 +411,8 @@ $config_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan-co
 $host_pos    = strpos( $config_src, 'walkthrough_home_is_live' );
 $require_pos = strpos( $config_src, 'require $creature_demo_walkthrough_script' );
 creature_demo_config_expect( false !== $host_pos && false !== $require_pos && $host_pos < $require_pos, 'the live-host check is before the walkthrough is included' );
-creature_demo_config_expect( '1.1.0' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.1.0' );
-creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.1.0' ), 'the plugin header version is 1.1.0' );
+creature_demo_config_expect( '1.2.0' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.2.0' );
+creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.2.0' ), 'the plugin header version is 1.2.0' );
 $walk_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/bin/staging-walkthrough.php' );
 creature_demo_config_expect( false !== strpos( $walk_src, 'CREATURE_DEMO_LOAN_WALKTHROUGH_RUNNER' ), 'the walkthrough script accepts the admin runner' );
 creature_demo_config_expect( false !== strpos( $walk_src, "PHP_SAPI !== 'cli'" ), 'the walkthrough script keeps its CLI guard' );

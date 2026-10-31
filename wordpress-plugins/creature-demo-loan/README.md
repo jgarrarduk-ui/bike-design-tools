@@ -63,23 +63,23 @@ Choices, from the email link or My Account → view order. The link needs the ac
 
 1. **Buy a new one.** Choice stays `buy`. The return is booked and the shop is emailed to send the Royal Mail QR. When the kit is scanned and inspected, one £25 coupon is emailed: fixed cart, single use, individual use, billing email only, product 6687, 60 days from issue. No coupon after a keep payment or a deemed purchase.
 2. **Return it, and don’t buy.** Status becomes Return booked. The shop is emailed once. No coupon.
-3. **Keep this kit.** A pending order is emailed with a payment link for £212, less late fees already paid when those fees sit inside the £212. Paying it marks the loan Kept (purchased), records the unit sold, fires `creature_demo_loan_unit_removed_from_fleet`, and does not issue a coupon. An unpaid keep link lapses after 3 working days and the earlier choice (or “no choice”, which means return) is restored.
+3. **Keep this kit.** A pending order is emailed with a payment link for £212, less late fees already paid. Unpaid late fees are not added. Paying it marks the loan Kept (purchased), records the unit sold, fires `creature_demo_loan_unit_removed_from_fleet`, and does not issue a coupon. An unpaid keep link lapses after 7 calendar days and the earlier choice (or “no choice”, which means return) is restored.
 
 No stored choice is treated as return. Buy and return can be switched until the return scan, or until the due date if `creature_demo_loan_buy_return_switch_until` is `due_date`. Keep stays available until the deemed-purchase day.
 
-Late fees are £5 a day from day 6 after the due date through day 13, capped at £40, and charged once as a single total when the return is scanned. A scan on or after day 14 raises the deemed purchase instead: £212 less late fees already paid. Paying that marks the unit sold. If the kit then comes back, is inspected, and the refund flag allows it, the plugin records a refund of the deemed amount less the rest of the £40 cap and any damage amount saved on the order.
+Late fees are £3 a day from day 6 after the due date through day 13, capped at £24, and charged once as a single total when the return is scanned. A scan on or after day 14 raises the deemed purchase instead: £212 less late fees already paid. Paying that marks the unit sold. If the kit then comes back, is inspected, and the refund flag allows it, the plugin records a refund of the deemed amount less the rest of the £24 cap and any damage amount saved on the order.
 
-Before any saved-card charge the plugin emails the amount, the reason, and the payment link, and logs that notice on the order. The charge runs only when the notice is at least 3 UK working days old (weekends and England & Wales bank holidays do not count), the charge is unpaid, any dispute is resolved by upholding it, and Stripe is in test mode with an `sk_test_` key. A dispute blocks the charge. Upholding or waiving it emails the decision. `authentication_required` emails the payment link and does not mark the charge paid. Card numbers and secret keys are redacted out of notes and mail.
+Before any saved-card charge the plugin emails the amount, the reason, and the payment link, and logs that notice on the order. The charge runs only when 7 calendar days have passed since the notice, the charge is unpaid, any dispute is resolved by upholding it, and Stripe is in test mode with an `sk_test_` key. A dispute blocks the charge. Upholding or waiving it emails the decision. `authentication_required` emails the payment link and does not mark the charge paid. Card numbers and secret keys are redacted out of notes and mail. A demo-only checkout must bill and ship to the UK (England, Scotland, Wales and Northern Ireland). Jersey, Guernsey and Isle of Man postcodes are refused. Other orders are not restricted.
 
 ## James’s flags
 
-Each default matches the v4 terms. A filter can flip it. Both values are covered by the PHP checks.
+Each default matches the v5 terms.
 
 | Filter | Default | Effect |
 | --- | --- | --- |
-| `creature_demo_loan_late_fees_included_in_keep` | `true` | Late fees sit inside £212. Fees already paid are taken off. Unpaid fees are not added. `false` adds unpaid late fees on top of £212. |
+| `creature_demo_loan_notice_days` | `7` | Calendar days after the charge notice before the saved card may be charged. |
 | `creature_demo_loan_buy_return_switch_until` | `return_scan` | `due_date` stops buy/return switching after the due date. |
-| `creature_demo_loan_keep_lapse_working_days` | `3` | Working days before an unpaid keep link lapses. |
+| `creature_demo_loan_keep_lapse_days` | `7` | Calendar days before an unpaid keep link lapses. |
 | `creature_demo_loan_keep_choice_open` | `true` | Return `false` to close the keep choice early. |
 | `creature_demo_loan_refund_includes_keep_choosers` | `true` | A post-deemed refund applies to anyone who sends the kit back. `false` limits it to riders who never chose keep. |
 

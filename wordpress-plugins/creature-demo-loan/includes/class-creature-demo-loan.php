@@ -103,6 +103,7 @@ final class Creature_Demo_Loan {
 		add_action( 'woocommerce_checkout_create_order', array( __CLASS__, 'on_checkout_create_order' ), 10, 2 );
 		add_action( 'woocommerce_store_api_checkout_order_processed', array( __CLASS__, 'on_store_api_order' ), 10, 1 );
 		add_action( 'woocommerce_store_api_checkout_update_order_meta', array( __CLASS__, 'on_store_api_order' ), 10, 2 );
+		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'on_store_api_service_area' ), 10, 2 );
 
 		add_filter( 'woocommerce_order_actions', array( __CLASS__, 'filter_order_actions' ), 10, 2 );
 		add_action( 'woocommerce_order_action_creature_demo_start_loan', array( __CLASS__, 'action_start' ) );
@@ -204,17 +205,6 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * @return bool
-	 */
-	public static function late_fees_included_in_keep() {
-		$value = true;
-		if ( function_exists( 'apply_filters' ) ) {
-			$value = apply_filters( 'creature_demo_loan_late_fees_included_in_keep', true );
-		}
-		return (bool) $value;
-	}
-
-	/**
 	 * Terms 8.5 applies to anyone when this is true. When false, only riders
 	 * who never chose keep.
 	 *
@@ -264,23 +254,25 @@ final class Creature_Demo_Loan {
 	/**
 	 * @return int
 	 */
-	public static function notice_working_days() {
-		$days = 3;
+	public static function notice_days() {
+		$days = 7;
 		if ( function_exists( 'apply_filters' ) ) {
-			$days = (int) apply_filters( 'creature_demo_loan_notice_working_days', 3 );
+			$days = (int) apply_filters( 'creature_demo_loan_notice_days', 7 );
 		}
-		return $days > 0 ? $days : 3;
+		return $days > 0 ? $days : 7;
 	}
 
 	/**
+	 * Calendar days after the keep link is sent (terms 3A.2).
+	 *
 	 * @return int
 	 */
-	public static function keep_lapse_working_days() {
-		$days = 3;
+	public static function keep_lapse_days() {
+		$days = 7;
 		if ( function_exists( 'apply_filters' ) ) {
-			$days = (int) apply_filters( 'creature_demo_loan_keep_lapse_working_days', 3 );
+			$days = (int) apply_filters( 'creature_demo_loan_keep_lapse_days', 7 );
 		}
-		return $days >= 0 ? $days : 3;
+		return $days >= 0 ? $days : 7;
 	}
 
 	/**
@@ -412,8 +404,9 @@ final class Creature_Demo_Loan {
 		if ( empty( $state['notice_logged'] ) ) {
 			return 'no_notice';
 		}
-		$need = isset( $state['required_working_days'] ) ? (int) $state['required_working_days'] : 3;
-		if ( (int) $state['working_days_since_notice'] < $need ) {
+		$need = isset( $state['required_days'] ) ? (int) $state['required_days'] : 7;
+		$since = isset( $state['days_since_notice'] ) ? (int) $state['days_since_notice'] : 0;
+		if ( $since < $need ) {
 			return 'notice_too_recent';
 		}
 		$dispute = isset( $state['dispute'] ) ? (string) $state['dispute'] : '';
@@ -441,10 +434,10 @@ final class Creature_Demo_Loan {
 	 * @return string
 	 */
 	public static function refusal_message( $code ) {
-		$need = self::notice_working_days();
+		$need = self::notice_days();
 		$map  = array(
 			'no_notice'          => 'Charge refused: no charge notice is logged on the order.',
-			'notice_too_recent'  => 'Charge refused: fewer than ' . $need . ' working days have passed since the notice.',
+			'notice_too_recent'  => 'Charge refused: fewer than ' . $need . ' days have passed since the notice.',
 			'disputed'           => 'Charge refused: a dispute is open.',
 			'dispute_waived'     => 'Charge refused: the dispute decision did not uphold the charge.',
 			'already_paid'         => 'Charge refused: this charge is already paid.',
@@ -665,6 +658,115 @@ final class Creature_Demo_Loan {
 		if ( ! self::posted_consent() && function_exists( 'wc_add_notice' ) ) {
 			wc_add_notice( Creature_Demo_Loan_Copy::text( 'consent_error' ), 'error' );
 		}
+		$problem = self::service_area_problem(
+			self::posted_field( 'billing_country' ),
+			self::posted_field( 'billing_postcode' ),
+			self::posted_field( 'shipping_country' ),
+			self::posted_field( 'shipping_postcode' )
+		);
+		if ( '' !== $problem && function_exists( 'wc_add_notice' ) ) {
+			wc_add_notice( $problem, 'error' );
+		}
+	}
+
+	/**
+	 * Demo loans ship only to England, Scotland, Wales and Northern Ireland.
+	 * An empty string means the address is inside that area.
+	 *
+	 * @param mixed $billing_country
+	 * @param mixed $billing_postcode
+	 * @param mixed $shipping_country
+	 * @param mixed $shipping_postcode
+	 * @return string
+	 */
+	public static function service_area_problem( $billing_country, $billing_postcode, $shipping_country = '', $shipping_postcode = '' ) {
+		$shipping_country = trim( (string) $shipping_country );
+		if ( ! self::country_is_gb( $billing_country ) || ( '' !== $shipping_country && ! self::country_is_gb( $shipping_country ) ) ) {
+			return Creature_Demo_Loan_Copy::text( 'service_area_error' );
+		}
+		if ( self::postcode_outside_uk( $billing_postcode ) || self::postcode_outside_uk( $shipping_postcode ) ) {
+			return Creature_Demo_Loan_Copy::text( 'service_area_error' );
+		}
+		return '';
+	}
+
+	/**
+	 * Block checkout. Classic checkout uses on_checkout_process.
+	 *
+	 * @param object $order
+	 * @param mixed  $request
+	 */
+	public static function on_store_api_service_area( $order, $request = null ) {
+		unset( $order );
+		if ( ! self::cart_is_demo_only() ) {
+			return;
+		}
+		$billing  = self::request_address( $request, 'billing_address' );
+		$shipping = self::request_address( $request, 'shipping_address' );
+		$problem  = self::service_area_problem(
+			isset( $billing['country'] ) ? $billing['country'] : '',
+			isset( $billing['postcode'] ) ? $billing['postcode'] : '',
+			isset( $shipping['country'] ) ? $shipping['country'] : '',
+			isset( $shipping['postcode'] ) ? $shipping['postcode'] : ''
+		);
+		if ( '' === $problem ) {
+			return;
+		}
+		if ( class_exists( 'Automattic\WooCommerce\StoreApi\Exceptions\RouteException' ) ) {
+			throw new Automattic\WooCommerce\StoreApi\Exceptions\RouteException( 'creature_demo_service_area', $problem, 400 );
+		}
+		if ( function_exists( 'wc_add_notice' ) ) {
+			wc_add_notice( $problem, 'error' );
+		}
+	}
+
+	/**
+	 * @param mixed $country
+	 * @return bool
+	 */
+	private static function country_is_gb( $country ) {
+		return 'GB' === strtoupper( trim( (string) $country ) );
+	}
+
+	/**
+	 * GY, JE and IM are the Channel Islands and the Isle of Man. WooCommerce
+	 * files them under GB. IP and IV are mainland postcodes and are allowed.
+	 *
+	 * @param mixed $postcode
+	 * @return bool
+	 */
+	private static function postcode_outside_uk( $postcode ) {
+		$norm = strtoupper( (string) preg_replace( '/\s+/', '', (string) $postcode ) );
+		if ( '' === $norm ) {
+			return false;
+		}
+		return 1 === preg_match( '/^(GY|JE|IM)(\d|$)/', $norm );
+	}
+
+	/**
+	 * @param string $key
+	 * @return string
+	 */
+	private static function posted_field( $key ) {
+		if ( ! isset( $_POST[ $key ] ) ) {
+			return '';
+		}
+		return self::unslash_string( $_POST[ $key ] );
+	}
+
+	/**
+	 * @param mixed  $request
+	 * @param string $key
+	 * @return array<string, mixed>
+	 */
+	private static function request_address( $request, $key ) {
+		$value = array();
+		if ( is_object( $request ) && method_exists( $request, 'get_param' ) ) {
+			$value = $request->get_param( $key );
+		} elseif ( is_array( $request ) && isset( $request[ $key ] ) ) {
+			$value = $request[ $key ];
+		}
+		return is_array( $value ) ? $value : array();
 	}
 
 	public static function on_before_submit() {
@@ -779,9 +881,9 @@ final class Creature_Demo_Loan {
 			return false;
 		}
 		$when    = is_string( $when ) && '' !== $when ? $when : gmdate( 'c' );
-		$version = 'v4';
+		$version = 'v5';
 		if ( function_exists( 'apply_filters' ) ) {
-			$filtered = apply_filters( 'creature_demo_loan_consent_version', 'v4' );
+			$filtered = apply_filters( 'creature_demo_loan_consent_version', 'v5' );
 			if ( is_string( $filtered ) && '' !== $filtered ) {
 				$version = $filtered;
 			}
@@ -1044,8 +1146,8 @@ final class Creature_Demo_Loan {
 			return array( 'ok' => true, 'idempotent' => true );
 		}
 		$sent = self::meta_string( $order, '_creature_demo_keep_link_sent_at' );
-		$days = Creature_Demo_Loan_Calendar::working_days_since( $sent, $as_of, self::holidays() );
-		if ( $days < self::keep_lapse_working_days() ) {
+		$days = Creature_Demo_Loan_Calendar::days_between( $sent, $as_of );
+		if ( $days < self::keep_lapse_days() ) {
 			return array(
 				'ok'     => false,
 				'reason' => 'too_soon',
@@ -1373,12 +1475,12 @@ final class Creature_Demo_Loan {
 		$as_of   = Creature_Demo_Loan_Calendar::today( $as_of );
 		$logged  = $charge && 'yes' === self::meta_string( $charge, '_creature_demo_charge_notice_logged' );
 		$notice  = $charge ? self::meta_string( $charge, '_creature_demo_charge_notice_at' ) : '';
-		$days    = '' !== $notice ? Creature_Demo_Loan_Calendar::working_days_since( $notice, $as_of, self::holidays() ) : 0;
+		$days    = '' !== $notice ? Creature_Demo_Loan_Calendar::days_between( $notice, $as_of ) : 0;
 		$mode    = self::stripe_mode_flags();
 		$state   = array(
-			'notice_logged'             => $logged,
-			'working_days_since_notice' => $days,
-			'required_working_days'     => self::notice_working_days(),
+			'notice_logged'     => $logged,
+			'days_since_notice' => $days,
+			'required_days'     => self::notice_days(),
 			'dispute'                   => $charge ? self::meta_string( $charge, '_creature_demo_dispute_status' ) : '',
 			'paid'                      => $charge && 'yes' === self::meta_string( $charge, '_creature_demo_charge_paid' ),
 			'consent'                   => is_object( $loan ) && 'yes' === self::meta_string( $loan, '_creature_demo_consent' ),
@@ -1890,8 +1992,7 @@ final class Creature_Demo_Loan {
 			if ( 'keep' === $choice && self::keep_confirm_pending( $order ) ) {
 				$amount  = Creature_Demo_Loan_Money::keep_amount_pence(
 					(int) self::meta_string( $order, '_creature_demo_late_fees_paid_pence' ),
-					self::late_fees_due_pence( $order, $as_of ),
-					self::late_fees_included_in_keep()
+					self::late_fees_due_pence( $order, $as_of )
 				);
 				$confirm = function_exists( 'add_query_arg' ) ? add_query_arg( array( 'creature_demo_confirm' => '1' ), $url ) : $url;
 				echo '<p>' . self::esc( Creature_Demo_Loan_Copy::text( 'keep_confirm', array( 'amount' => Creature_Demo_Loan_Money::format_gbp( $amount ) ) ) ) . '</p>';
@@ -2453,8 +2554,7 @@ final class Creature_Demo_Loan {
 		self::cancel_unpaid_charge( $order, 'late_fee' );
 		$amount = Creature_Demo_Loan_Money::keep_amount_pence(
 			(int) self::meta_string( $order, '_creature_demo_late_fees_paid_pence' ),
-			self::late_fees_due_pence( $order, $as_of ),
-			self::late_fees_included_in_keep()
+			self::late_fees_due_pence( $order, $as_of )
 		);
 		$before = (int) self::meta_string( $order, '_creature_demo_keep_order_id' );
 		$charge = self::ensure_charge_order( $order, 'keep', $amount, 'Keep the demo kit', $as_of );
