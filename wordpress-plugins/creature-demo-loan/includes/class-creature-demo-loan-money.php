@@ -82,8 +82,9 @@ final class Creature_Demo_Loan_Money {
 	/**
 	 * Refund of a paid deemed purchase after the kit comes back (terms 8.5).
 	 *
-	 * Retain the £24 late-fee cap, counting fees already paid towards that
-	 * cap, then retain the recorded damage. Never refund more than was paid.
+	 * Retain the rest of the £24 late-fee cap plus recorded damage, but never
+	 * more than £212 together (terms 8.5(b)). The refund is what was paid
+	 * minus that retention, and it does not go below zero.
 	 *
 	 * @param int $deemed_paid
 	 * @param int $late_already_paid
@@ -91,11 +92,12 @@ final class Creature_Demo_Loan_Money {
 	 * @return int
 	 */
 	public static function post_deemed_refund_pence( $deemed_paid, $late_already_paid, $damage_pence ) {
-		$paid    = max( 0, (int) $deemed_paid );
-		$already = max( 0, (int) $late_already_paid );
-		$damage  = max( 0, (int) $damage_pence );
-		$retain  = max( 0, self::LATE_CAP_PENCE - $already );
-		return max( 0, $paid - $retain - $damage );
+		$paid        = max( 0, (int) $deemed_paid );
+		$already     = max( 0, (int) $late_already_paid );
+		$damage      = max( 0, (int) $damage_pence );
+		$late_retain = max( 0, self::LATE_CAP_PENCE - $already );
+		$retain      = min( self::KEEP_PENCE, $late_retain + $damage );
+		return max( 0, $paid - $retain );
 	}
 
 	/**

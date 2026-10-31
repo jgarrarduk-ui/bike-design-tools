@@ -689,6 +689,13 @@ function creature_demo_filter_switch_until( $until ) {
 	return $until;
 }
 
+function creature_demo_filter_consent_version( $version ) {
+	if ( isset( $GLOBALS['creature_demo_consent_version'] ) && is_string( $GLOBALS['creature_demo_consent_version'] ) && '' !== $GLOBALS['creature_demo_consent_version'] ) {
+		return $GLOBALS['creature_demo_consent_version'];
+	}
+	return $version;
+}
+
 function creature_demo_filter_lapse( $days ) {
 	if ( null !== $GLOBALS['creature_demo_lapse_days'] ) {
 		return $GLOBALS['creature_demo_lapse_days'];
@@ -842,6 +849,7 @@ add_filter( 'creature_demo_loan_cart_items', 'creature_demo_filter_cart' );
 add_filter( 'creature_demo_loan_refund_includes_keep_choosers', 'creature_demo_filter_refund_flag' );
 add_filter( 'creature_demo_loan_buy_return_switch_until', 'creature_demo_filter_switch_until' );
 add_filter( 'creature_demo_loan_keep_lapse_days', 'creature_demo_filter_lapse' );
+add_filter( 'creature_demo_loan_consent_version', 'creature_demo_filter_consent_version' );
 add_filter( 'creature_demo_loan_charge_lock_now', 'creature_demo_filter_lock_now' );
 add_action( 'creature_demo_loan_unit_removed_from_fleet', 'creature_demo_record_fleet', 10, 3 );
 
@@ -991,6 +999,7 @@ creature_demo_expect( 18800 === Creature_Demo_Loan_Money::deemed_amount_pence( 2
 creature_demo_expect( 17300 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 19200, 2000, 1500 ), 'post-deemed refund keeps the rest of the £24 cap and the damage' );
 creature_demo_expect( 18800 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 0, 0 ), 'refund of £212 with no fees paid retains £24' );
 creature_demo_expect( 21200 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 2400, 0 ), 'late fees already at the cap are not retained twice' );
+creature_demo_expect( 0 === Creature_Demo_Loan_Money::post_deemed_refund_pence( 21200, 0, 20000 ), 'late fees plus damage above £212 floor the refund at 0' );
 creature_demo_expect( true === Creature_Demo_Loan_Money::refund_applies( true, true ), 'refund flag on includes a rider who chose keep' );
 creature_demo_expect( false === Creature_Demo_Loan_Money::refund_applies( true, false ), 'refund flag off skips a rider who chose keep' );
 creature_demo_expect( true === Creature_Demo_Loan_Money::refund_applies( false, false ), 'refund flag off still covers a rider who never chose keep' );
@@ -1057,11 +1066,13 @@ foreach ( $slots as $slot ) {
 	creature_demo_expect( false !== strpos( $joined, '[COPY: Cadence]' ), 'slot ' . $slot . ' is marked for Cadence' );
 }
 $consent = Creature_Demo_Loan_Copy::text( 'consent_checkbox' );
-creature_demo_expect( false !== strpos( $consent, '£24.00' ), 'consent names the £24 late-fee maximum' );
-creature_demo_expect( false !== strpos( $consent, '£212.00' ), 'consent names the £212 deemed-purchase maximum' );
-creature_demo_expect( false !== strpos( $consent, '£35.00' ), 'consent names the £35 inverted mount kit' );
+creature_demo_expect( false !== strpos( $consent, '£24' ), 'consent names the £24 late-fee maximum' );
+creature_demo_expect( false !== strpos( $consent, '£212' ), 'consent names the £212 deemed-purchase maximum' );
+creature_demo_expect( false !== strpos( $consent, '£35' ), 'consent names the £35 inverted mount kit' );
+creature_demo_expect( false !== strpos( $consent, 'never be more than £212' ), 'consent caps late fees, the deemed price and damage together at £212' );
+creature_demo_expect( false !== strpos( $consent, '7 days to pay by link or dispute' ), 'consent gives 7 days to pay by link or dispute' );
 creature_demo_expect( false !== strpos( $consent, 'damage or missing parts' ), 'consent covers damage as well as missing parts' );
-creature_demo_expect( false !== strpos( $consent, 'damage or missing parts, never' ), 'consent has a comma after missing parts' );
+creature_demo_expect( false !== strpos( $consent, 'damage or missing parts at published spare-parts prices' ), 'consent prices damage and missing parts from the spare-parts list' );
 
 creature_demo_expect( array() === Creature_Demo_Loan::demo_product_ids(), 'demo product ids stay empty until configured' );
 creature_demo_expect( array( 6687 ) === Creature_Demo_Loan::coupon_product_ids(), 'coupon defaults to De-Reacher product 6687' );
@@ -1206,7 +1217,9 @@ $checkbox = ob_get_clean();
 creature_demo_expect( false === strpos( $checkbox, 'checked' ), 'the consent checkbox is not pre-ticked' );
 creature_demo_expect( false !== strpos( $checkbox, 'name="creature_demo_loan_consent"' ), 'the consent checkbox has its own name' );
 creature_demo_expect( false === strpos( $checkbox, 'name="terms"' ), 'the consent checkbox is not the terms checkbox' );
-creature_demo_expect( false !== strpos( $checkbox, '£24.00' ) && false !== strpos( $checkbox, '£212.00' ) && false !== strpos( $checkbox, '£35.00' ), 'the checkbox names the three maxima' );
+creature_demo_expect( false !== strpos( $checkbox, '£24' ) && false !== strpos( $checkbox, '£212' ) && false !== strpos( $checkbox, '£35' ), 'the checkbox names the three maxima' );
+creature_demo_expect( false !== strpos( $checkbox, 'never be more than £212' ), 'the checkbox states the overall £212 cap' );
+creature_demo_expect( false !== strpos( $checkbox, '7 days to pay by link or dispute' ), 'the checkbox states the 7 day pay-or-dispute window' );
 
 $field = Creature_Demo_Loan::$block_field;
 creature_demo_expect( is_array( $field ) && 'creature/demo-loan-consent' === $field['id'], 'block field id is registered' );
@@ -1223,6 +1236,14 @@ creature_demo_expect( true === Creature_Demo_Loan::store_consent( $consent_order
 creature_demo_expect( 'yes' === $consent_order->get_meta( '_creature_demo_consent' ), 'consent is recorded as yes' );
 creature_demo_expect( $consent === $consent_order->get_meta( '_creature_demo_consent_wording' ), 'the agreed wording is stored' );
 creature_demo_expect( 'v5' === $consent_order->get_meta( '_creature_demo_consent_version' ), 'the consent version is v5' );
+creature_demo_expect( false !== strpos( (string) $consent_order->get_meta( '_creature_demo_consent_wording' ), 'never be more than £212' ), 'the stored v5 wording includes the overall cap' );
+$v4_order = wc_create_order();
+$GLOBALS['creature_demo_consent_version'] = 'v4';
+creature_demo_expect( true === Creature_Demo_Loan::store_consent( $v4_order, true, '2026-03-02T12:00:00+00:00' ), 'a v4 consent can still be stored' );
+creature_demo_expect( 'v4' === $v4_order->get_meta( '_creature_demo_consent_version' ), 'the stored consent version follows the filter' );
+creature_demo_expect( Creature_Demo_Loan_Copy::consent_wording( 'v4' ) === $v4_order->get_meta( '_creature_demo_consent_wording' ), 'a v4 order stores the v4 wording' );
+creature_demo_expect( false === strpos( (string) $v4_order->get_meta( '_creature_demo_consent_wording' ), 'never be more than £212' ), 'v4 wording is not rewritten as v5' );
+$GLOBALS['creature_demo_consent_version'] = null;
 creature_demo_expect( '2026-03-02T12:00:00+00:00' === $consent_order->get_meta( '_creature_demo_consent_at' ), 'the consent timestamp is stored' );
 
 $_POST['creature_demo_loan_consent'] = '1';
@@ -1865,7 +1886,31 @@ creature_demo_expect( 'notice_too_recent' === $same_day['code'], 'the damage not
 creature_demo_expect( false !== strpos( $damage_mail['body'], '£35.00' ) && false !== strpos( $damage_mail['body'], 'inverted mount kit' ), 'the damage notice names the mount kit from the constant' );
 $capped = creature_demo_loan();
 $cap = Creature_Demo_Loan::raise_damage_charge( $capped, 30000, 'Damage', '2026-03-20' );
-creature_demo_expect( 21200 === $cap['amount'], 'damage is capped at £212' );
+creature_demo_expect( 21200 === $cap['amount'], 'damage with no late fees is capped at £212' );
+$fee24 = wc_create_order();
+$fee24->update_meta_data( '_creature_demo_charge_amount_pence', 2400 );
+$fee24->save();
+$with24 = creature_demo_loan();
+$with24->update_meta_data( '_creature_demo_late_fee_order_id', $fee24->get_id() );
+$with24->save();
+$room24 = Creature_Demo_Loan::raise_damage_charge( $with24, 30000, 'Damage', '2026-03-20' );
+creature_demo_expect( ! empty( $room24['ok'] ) && 18800 === $room24['amount'], '£24 of late fees leaves £188 of damage' );
+creature_demo_expect( ! empty( $room24['clamped'] ) && 11200 === $room24['reduced_pence'], 'a damage request above that headroom is clamped' );
+creature_demo_expect( '2400' === (string) $fee24->get_meta( '_creature_demo_charge_amount_pence' ), 'clamping damage leaves the late fee as billed' );
+$fee9 = wc_create_order();
+$fee9->update_meta_data( '_creature_demo_charge_amount_pence', 900 );
+$fee9->save();
+$with9 = creature_demo_loan();
+$with9->update_meta_data( '_creature_demo_late_fee_order_id', $fee9->get_id() );
+$with9->save();
+$room9 = Creature_Demo_Loan::raise_damage_charge( $with9, 3500, 'Inverted mount kit', '2026-03-20' );
+creature_demo_expect( ! empty( $room9['ok'] ) && 3500 === $room9['amount'] && empty( $room9['clamped'] ), '£9 of late fees still leaves room for the £35 mount kit' );
+$with9_over = creature_demo_loan();
+$with9_over->update_meta_data( '_creature_demo_late_fee_order_id', $fee9->get_id() );
+$with9_over->save();
+$room9_over = Creature_Demo_Loan::raise_damage_charge( $with9_over, 30000, 'Damage', '2026-03-20' );
+creature_demo_expect( 20300 === $room9_over['amount'] && ! empty( $room9_over['clamped'] ), '£9 of late fees leaves £203 of damage' );
+creature_demo_expect( '900' === (string) $fee9->get_meta( '_creature_demo_charge_amount_pence' ), 'the £9 late fee stays as billed' );
 $zero = Creature_Demo_Loan::raise_damage_charge( $capped, 0, 'Damage', '2026-03-20' );
 creature_demo_expect( empty( $zero['ok'] ) && 'no_amount' === $zero['reason'], 'a zero damage amount does not create a charge' );
 

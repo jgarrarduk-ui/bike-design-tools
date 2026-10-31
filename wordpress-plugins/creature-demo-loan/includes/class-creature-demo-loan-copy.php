@@ -28,12 +28,7 @@ final class Creature_Demo_Loan_Copy {
 		$late_daily = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::LATE_DAILY_PENCE );
 		$late_cap   = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::LATE_CAP_PENCE );
 		$mount_kit  = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::MOUNT_KIT_PENCE );
-		$consent    = sprintf(
-			'[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to %s, a deemed purchase up to %s, and damage or missing parts, never more than the cost of repair or replacement (inverted mount kit %s). This box is separate from the general terms and is not ticked for me.',
-			$late_cap,
-			Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::KEEP_PENCE ),
-			$mount_kit
-		);
+		$consent    = self::consent_wording( class_exists( 'Creature_Demo_Loan' ) ? Creature_Demo_Loan::consent_version() : 'v5' );
 		$grace = sprintf(
 			'[COPY: Cadence] The 5-day grace period on order {order_id} ends on {due}. After that, a single late-fee total of %s a day applies until the kit is scanned back, capped at %s. It is not charged day by day. Booking a return is not the same as a scan.',
 			$late_daily,
@@ -150,6 +145,22 @@ final class Creature_Demo_Loan_Copy {
 				'body'    => '[COPY: Cadence] The rider on order {order_id} booked a return and chose not to buy, or booked the return that a new purchase still needs. Forward the Royal Mail Tracked 48 QR within 1 working day. This email is to the shop, not the rider.',
 			),
 		);
+	}
+
+	/**
+	 * Fixed wording for one terms version. v5 is Appendix A. v4 stays so an
+	 * older order can still be read back as the text that version stored.
+	 *
+	 * @param string $version
+	 * @return string
+	 */
+	public static function consent_wording( $version = 'v5' ) {
+		$v4 = '[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to £40.00, a deemed purchase up to £212.00, and damage or missing parts, never more than the cost of repair or replacement (inverted mount kit £35.00). This box is separate from the general terms and is not ticked for me.';
+		$v5 = '[COPY: Cadence] I agree that Creature Cycles Ltd can charge this card later, without asking me again at the time, for: late fees (up to £24), the deemed purchase price if I don\'t send the kit back (£212), and damage or missing parts at published spare-parts prices, including £35 for a missing inverted mount kit. All of these together will never be more than £212. You\'ll email me the amount and the reason first, and I\'ll have 7 days to pay by link or dispute it. (Demo terms, clause 4.)';
+		if ( 'v4' === (string) $version ) {
+			return $v4;
+		}
+		return $v5;
 	}
 
 	/**

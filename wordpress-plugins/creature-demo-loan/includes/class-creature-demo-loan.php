@@ -881,15 +881,9 @@ final class Creature_Demo_Loan {
 			return false;
 		}
 		$when    = is_string( $when ) && '' !== $when ? $when : gmdate( 'c' );
-		$version = 'v5';
-		if ( function_exists( 'apply_filters' ) ) {
-			$filtered = apply_filters( 'creature_demo_loan_consent_version', 'v5' );
-			if ( is_string( $filtered ) && '' !== $filtered ) {
-				$version = $filtered;
-			}
-		}
+		$version = self::consent_version();
 		$order->update_meta_data( '_creature_demo_consent', 'yes' );
-		$order->update_meta_data( '_creature_demo_consent_wording', Creature_Demo_Loan_Copy::text( 'consent_checkbox' ) );
+		$order->update_meta_data( '_creature_demo_consent_wording', Creature_Demo_Loan_Copy::consent_wording( $version ) );
 		$order->update_meta_data( '_creature_demo_consent_version', $version );
 		$order->update_meta_data( '_creature_demo_consent_at', $when );
 		$order->update_meta_data( '_creature_demo_loan', 'yes' );
@@ -897,6 +891,20 @@ final class Creature_Demo_Loan {
 			$order->save();
 		}
 		return true;
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function consent_version() {
+		$version = 'v5';
+		if ( function_exists( 'apply_filters' ) ) {
+			$filtered = apply_filters( 'creature_demo_loan_consent_version', 'v5' );
+			if ( is_string( $filtered ) && '' !== $filtered ) {
+				$version = $filtered;
+			}
+		}
+		return $version;
 	}
 
 	/**
@@ -2124,8 +2132,9 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * Damage or missing parts, capped at the £212 keep price unless filtered.
-	 * Creates the charge notice. Does not charge the saved card.
+	 * Damage or missing parts. The overall cap is £212 unless filtered, and
+	 * late fees already billed on this loan come off that cap. Creates the
+	 * charge notice. Does not charge the saved card.
 	 *
 	 * @param object $order
 	 * @param int    $amount_pence
@@ -2140,21 +2149,37 @@ final class Creature_Demo_Loan {
 				'reason' => 'not_loan',
 			);
 		}
-		$amount = max( 0, (int) $amount_pence );
-		$cap    = Creature_Demo_Loan_Money::KEEP_PENCE;
+		$requested = max( 0, (int) $amount_pence );
+		$cap       = Creature_Demo_Loan_Money::KEEP_PENCE;
 		if ( function_exists( 'apply_filters' ) ) {
 			$cap = (int) apply_filters( 'creature_demo_loan_damage_cap_pence', $cap, $order );
 		}
 		if ( $cap < 0 ) {
 			$cap = Creature_Demo_Loan_Money::KEEP_PENCE;
 		}
-		if ( $amount > $cap ) {
-			$amount = $cap;
+		$late_fees = self::billed_late_fee_pence( $order );
+		$headroom  = max( 0, $cap - $late_fees );
+		$amount    = min( $requested, $headroom );
+		$reduced   = $requested - $amount;
+		$clamp     = array(
+			'clamped'          => $reduced > 0,
+			'reduced_pence'    => $reduced,
+			'late_fees_pence'  => $late_fees,
+			'headroom_pence'   => $headroom,
+		);
+		if ( $reduced > 0 ) {
+			self::note(
+				$order,
+				'Damage request of ' . Creature_Demo_Loan_Money::format_gbp( $requested ) . ' was clamped by ' . Creature_Demo_Loan_Money::format_gbp( $reduced ) . '. Late fees of ' . Creature_Demo_Loan_Money::format_gbp( $late_fees ) . ' leave ' . Creature_Demo_Loan_Money::format_gbp( $headroom ) . ' under the overall cap.'
+			);
 		}
 		if ( $amount < 1 ) {
-			return array(
-				'ok'     => false,
-				'reason' => 'no_amount',
+			return array_merge(
+				array(
+					'ok'     => false,
+					'reason' => 'no_amount',
+				),
+				$clamp
 			);
 		}
 		$as_of  = Creature_Demo_Loan_Calendar::today( $as_of );
@@ -2169,11 +2194,35 @@ final class Creature_Demo_Loan {
 				'reason' => 'order_failed',
 			);
 		}
-		return array(
-			'ok'       => true,
-			'amount'   => (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' ),
-			'order_id' => (int) $charge->get_id(),
+		return array_merge(
+			array(
+				'ok'       => true,
+				'amount'   => (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' ),
+				'order_id' => (int) $charge->get_id(),
+			),
+			$clamp
 		);
+	}
+
+	/**
+	 * Late fees already on this loan. The late-fee charge order wins, then
+	 * fees already paid, then zero.
+	 *
+	 * @param object $order
+	 * @return int
+	 */
+	private static function billed_late_fee_pence( $order ) {
+		$id = (int) self::meta_string( $order, '_creature_demo_late_fee_order_id' );
+		if ( $id > 0 && function_exists( 'wc_get_order' ) ) {
+			$charge = wc_get_order( $id );
+			if ( is_object( $charge ) ) {
+				$amount = (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' );
+				if ( $amount > 0 ) {
+					return $amount;
+				}
+			}
+		}
+		return max( 0, (int) self::meta_string( $order, '_creature_demo_late_fees_paid_pence' ) );
 	}
 
 	/**
