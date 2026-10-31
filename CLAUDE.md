@@ -19,6 +19,7 @@ James runs Claude Code locally against this repo. Four static browser tools live
 | `test/` | Notch and frame-shop checks |
 | `fusion-import/` | Fusion 360 scripts. They run only inside Fusion |
 | `server/` | Designs, WooCommerce checkout, `GET /api/prices`, Resend email, SQLite, `/admin` |
+| `wordpress-plugins/creature-demo-loan/` | De-Reacher demo loan. Normal plugin; `build-zip.sh` writes the upload zip. Optional loader sits in `mu-plugins/` |
 | `wordpress-plugins/mu-plugins/` | Must-use PHP. Copy each plugin file into `wp-content/mu-plugins/` (not a subfolder) |
 | `.nojekyll` | Stops GitHub Pages/Jekyll ignoring `_` directories |
 
@@ -54,6 +55,7 @@ node test/notch-tests.mjs
 node suspension-designer/test/flexstay-tests.mjs
 php wordpress-plugins/mu-plugins/tests/creature-fd-only-purchase-test.php
 php wordpress-plugins/mu-plugins/tests/creature-fd-order-experience-test.php
+php wordpress-plugins/mu-plugins/tests/creature-demo-loan-test.php
 node .claude/hooks/block-secrets.test.mjs
 ```
 
