@@ -2369,7 +2369,9 @@ creature_demo_expect( false === $raced_token, 'a stale takeover does not win whe
 creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $raced ) && 'fresh-during-takeover' === creature_demo_lock_row( $raced )['token'], 'a stale takeover cannot delete the fresh lock' );
 
 $pair = wc_create_order();
-creature_demo_plant_lock( $pair, 'pay_link', Creature_Demo_Loan::charge_lock_now() - 900, 'stale-shared' );
+$pair_stale_at = Creature_Demo_Loan::charge_lock_now() - Creature_Demo_Loan::CHARGE_LOCK_STALE_SECONDS;
+creature_demo_plant_lock( $pair, 'pay_link', $pair_stale_at, 'stale-shared' );
+creature_demo_expect( Creature_Demo_Loan::charge_lock_now() - $pair_stale_at >= Creature_Demo_Loan::CHARGE_LOCK_STALE_SECONDS, 'the raced lock is at least one stale window old' );
 $pair_name = Creature_Demo_Loan::charge_lock_option_name( $pair->get_id() );
 wp_cache_set( 'alloptions', array( 'siteurl' => 'https://example.test' ), 'options' );
 wp_cache_set( 'notoptions', array( $pair_name => true, 'keep-me' => true ), 'options' );
@@ -2396,6 +2398,11 @@ creature_demo_expect( false === $pair_first, 'the stale taker that loses the rac
 creature_demo_expect( is_string( $pair_second ) && '' !== $pair_second, 'the stale taker whose insert affects one row wins' );
 creature_demo_expect( 'saved_card' === creature_demo_lock_owner( $pair ) && $pair_second === creature_demo_lock_row( $pair )['token'], 'the losing stale taker stays locked out' );
 creature_demo_expect( false === Creature_Demo_Loan::acquire_charge_lock( $pair, 'pay_link' ), 'a later acquire stays locked while the winner holds the row' );
+creature_demo_expect( false === Creature_Demo_Loan::release_charge_lock( $pair, 'pay_link', 'stale-shared' ), 'the losing stale taker cannot release the winner lock' );
+creature_demo_expect( false === Creature_Demo_Loan::release_charge_lock( $pair, 'saved_card', 'not-the-winner' ), 'a wrong token cannot release the winner lock' );
+creature_demo_expect( $pair_second === creature_demo_lock_row( $pair )['token'], 'the winner lock is still held after the loser tries to release it' );
+creature_demo_expect( true === Creature_Demo_Loan::release_charge_lock( $pair, 'saved_card', $pair_second ), 'the winning stale taker can release the lock' );
+creature_demo_expect( false === creature_demo_lock_row( $pair ), 'the winner release deletes the lock' );
 $pair_alloptions = wp_cache_get( 'alloptions', 'options' );
 creature_demo_expect( is_array( $pair_alloptions ) && 'https://example.test' === $pair_alloptions['siteurl'], 'a stale takeover does not delete alloptions' );
 $pair_notoptions = wp_cache_get( 'notoptions', 'options' );

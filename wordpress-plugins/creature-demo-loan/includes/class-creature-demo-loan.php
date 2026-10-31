@@ -3525,7 +3525,9 @@ final class Creature_Demo_Loan {
 	/**
 	 * Drop the per-key cache and this name in notoptions.
 	 *
-	 * The row is stored with autoload off, so it is never in alloptions.
+	 * The row is inserted with autoload off, so it is never stored in
+	 * alloptions. Deleting that cache entry does nothing useful. The single
+	 * option key and the notoptions entry are the ones that can go stale.
 	 *
 	 * @param string $name
 	 */
