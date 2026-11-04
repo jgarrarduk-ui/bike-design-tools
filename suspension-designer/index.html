@@ -81,6 +81,7 @@
   --on-accent:#fff; --accent:#1f5f8b; --accent-hi:#2a7ab0;
   --btn:#fff; --btn-hover:#e9eef1; --field:#fff; --field-disabled:#eef1f3;
   --msg-bg:#fbeceb;
+  --scroll-thumb:#b9c3ca; --scroll-thumb-hi:#8f9ba4;
   --art-chain:#39424a; --art-ring:#5c6b78;
   --art-ground:#e2e7ea; --art-ground-line:#aab6bd;
   --art-stanchion-fill:#cfd5da; --art-stanchion-stroke:#7b848c;
@@ -108,6 +109,7 @@
   --on-accent:#052e16; --accent:#166534; --accent-hi:#16a34a;
   --btn:#2e2d31; --btn-hover:#3a393e; --field:#28272a; --field-disabled:#1a191c;
   --msg-bg:#1a2820;
+  --scroll-thumb:#38373c; --scroll-thumb-hi:#2f4a37;
   /* One green family. Front triangle matches the frame designer's dark fill
      and bright edge; the swingarm is lighter so it still separates. */
   --art-chain:#24382c; --art-ring:#3d6b4f;
@@ -151,7 +153,28 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
 .rail.left{border-right:1px solid var(--rule);scrollbar-gutter:stable}
 .rail.right{border-left:1px solid var(--rule)}
 #stage{display:flex;flex-direction:column;min-width:0}
-#canvas{flex:1;min-height:230px;max-height:56vh;position:relative;min-width:0}
+/* The canvas and the chart strip share the stage by flex-grow ratio, set by
+   dragging #splitter (default 65/35, remembered per browser in localStorage,
+   double-click to restore). Ratio rather than pixels so a window resize keeps
+   the proportion; the ResizeObserver on both panels refits the drawing. */
+#canvas{flex:65 1 0;min-height:200px;position:relative;min-width:0}
+/* One pixel of rule on screen; the ::after strip is the 9px grab target, laid
+   over the panels either side so the visible divider stays hairline thin. */
+#splitter{flex:none;height:1px;background:var(--rule);position:relative;z-index:10;
+  cursor:row-resize;touch-action:none}
+#splitter::after{content:"";position:absolute;left:0;right:0;top:-4px;bottom:-4px}
+#splitter:hover,#splitter.dragging{background:var(--accent-hi)}
+/* Left rail scrollbar: themed and about 20% narrower than the 15px default.
+   WebKit/Blink take the pseudo-elements; Firefox has no pixel width, so it
+   gets scrollbar-width:thin and the same colours instead. */
+.rail.left::-webkit-scrollbar{width:12px}
+.rail.left::-webkit-scrollbar-track{background:var(--panel)}
+.rail.left::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:6px;
+  border:3px solid var(--panel)}
+.rail.left::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hi)}
+@supports not selector(::-webkit-scrollbar){
+  .rail.left{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) var(--panel)}
+}
 /* absolute so the SVG's own aspect ratio cannot drive the canvas height */
 #draw{position:absolute;inset:0;width:100%;height:100%;display:block;
   background:var(--paper);touch-action:none;user-select:none}
@@ -211,8 +234,20 @@ h1{font-size:14px;margin:0 0 2px;font-weight:650;letter-spacing:.2px}
 [data-theme="dark"] #tools-nav .brand-logo{filter:url(#creature-logo-green)}
 a.all-tools{color:var(--ink);text-decoration:none;font:12px var(--sans);
   letter-spacing:.2px;white-space:nowrap;padding:4px 8px;border-radius:3px;
-  flex:none;margin-left:auto}
+  flex:none}
 a.all-tools:hover{background:var(--btn-hover)}
+/* Build stamp and About sit straight after the title; file actions, theme and
+   all tools are pushed to the far right as one group. */
+#build{font:11px var(--mono);color:var(--ink-soft);white-space:nowrap;flex:none}
+#aboutOpen{flex:none}
+#nav-right{margin-left:auto;display:flex;align-items:center;gap:6px;flex:none}
+#nav-right .navsep{width:1px;height:18px;background:var(--rule);margin:0 4px}
+/* Export and About dialogs reuse the dialog/.dlg-hdr styling above. */
+.dlg-body{padding:10px 12px 12px}
+.dlg-body label input{width:170px}
+.dlg-body .btnrow{margin-top:12px}
+#exportMsg{margin:8px 0 0;font-size:12px;color:var(--ok)}
+#aboutDlg p{margin:0 0 8px;font-size:12px}
 /* Intro copy stays in the document for crawlers and screen readers. */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
   clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
@@ -301,7 +336,7 @@ select{width:auto}
    by that row's own gap like everything else on it, instead of being spaced
    only among themselves inside a sub-box. */
 .bargroup{display:contents}
-#theme-switch{margin-left:auto;display:flex;gap:6px;flex:none}
+#theme-switch{display:flex;gap:6px;flex:none}
 #bar input[type=checkbox]{accent-color:var(--rear)}
 /* Fixed width and centred text so switching the label between "Cycle" and
    "Stop" never changes the button's own size — sized to the wider of the
@@ -365,7 +400,7 @@ input[type=range]{width:220px;accent-color:var(--rear)}
 /* One chart at a time, full width, so it is as large as the stage allows; the
    arrows page through all four. */
 #charts{display:grid;grid-template-columns:26px 1fr 26px;gap:1px;background:var(--rule);
-  border-top:1px solid var(--rule);height:320px;flex:none;position:relative}
+  flex:35 1 0;min-height:150px;position:relative}
 .chart{background:var(--panel);position:relative;min-width:0;margin:0}
 .chart figcaption{position:absolute;top:8px;left:14px;font-size:12px;font-weight:650;color:var(--ink-soft)}
 .chart svg{width:100%;height:100%;display:block}
@@ -390,7 +425,11 @@ svg text{font-family:var(--mono)}
   .rail.right{border-left:none;border-top:1px solid var(--rule)}
   /* keep the canvas landscape so the fitted bike stays a side view */
   #canvas{height:min(46vh,66vw);min-height:210px;flex:none}
-  #charts{grid-template-columns:24px 1fr 24px;height:250px}
+  #charts{grid-template-columns:24px 1fr 24px;height:250px;flex:none;min-height:0}
+  /* The split is desktop only: phones keep the fixed canvas and chart heights. */
+  #splitter{display:none}
+  #charts{border-top:1px solid var(--rule)}
+  #tools-nav{flex-wrap:wrap}
   input[type=range]{width:auto;flex:1 1 90px;min-width:90px}
   /* The no-spillover rule is a desktop-toolbar fix — eleven buttons forced
      onto one unbreakable row would just overflow off a phone screen, so
@@ -417,7 +456,21 @@ svg text{font-family:var(--mono)}
 </svg>
 <div id="app">
 
-<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles"><h1>Suspension Designer</h1><p class="sr-only">Four-bar flex-stay suspension kinematics: leverage ratio, anti-squat/rise and stay stress. Drag pivots; validated against Linkage X3.</p><a class="all-tools" href="https://creaturecycles.co.uk/apps/">&#9664; all tools</a></div>
+<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles"><h1>Suspension Designer</h1><p class="sr-only">Four-bar flex-stay suspension kinematics: leverage ratio, anti-squat/rise and stay stress. Drag pivots; validated against Linkage X3.</p>
+  <span id="build">build 2.1, 4 Nov 2026</span>
+  <button type="button" id="aboutOpen">about</button>
+  <div id="nav-right">
+    <button type="button" id="importJson">Import</button>
+    <button type="button" id="exportJson">Export</button>
+    <button type="button" id="reset">Reset</button>
+    <span class="navsep" aria-hidden="true"></span>
+    <div id="theme-switch" role="group" aria-label="Theme">
+      <button type="button" id="theme-light" aria-pressed="false">light</button>
+      <button type="button" id="theme-dark" aria-pressed="true">dark</button>
+    </div>
+    <a class="all-tools" href="https://creaturecycles.co.uk/apps/">&#9664; all tools</a>
+  </div>
+</div>
 <div class="rail left">
   <!-- The working set: what you move while watching the graph. Everything else
        is setup, folded away until it is wanted. -->
@@ -450,9 +503,7 @@ svg text{font-family:var(--mono)}
       <button class="tabbtn" role="tab" aria-selected="true"  data-tab="frame">Frame geometry</button>
       <button class="tabbtn" role="tab" aria-selected="false" data-tab="stay">Seat stay section</button>
       <button class="tabbtn" role="tab" aria-selected="false" data-tab="drive">Transmission</button>
-      <button class="tabbtn" role="tab" aria-selected="false" data-tab="rider">Rider and load</button>
-      <button class="tabbtn" role="tab" aria-selected="false" data-tab="design">Design file</button>
-    </div>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="rider">Rider and load</button>    </div>
 
     <div class="tabpanel" data-panel="frame">
       <div class="btnrow"><button id="resetGeom">Reset geometry</button></div>
@@ -527,17 +578,6 @@ svg text{font-family:var(--mono)}
       <label><span>Rear wheel share, %</span><input type="number" id="bias" step="1"></label>
       <label><span>Centre of mass height</span><input type="number" id="cogh" step="10"></label>
     </div>
-
-    <div class="tabpanel" data-panel="design" hidden>
-      <label><span>Design name</span><input type="text" id="designName" placeholder="untitled"></label>
-      <label><span>Designer</span><input type="text" id="designer" placeholder="your name"></label>
-      <div class="btnrow">
-        <button id="exportJson">Export</button>
-        <button id="importJson">Import</button>
-        <button id="reset">Reset</button>
-      </div>
-      <p class="note" id="build">build 2.0</p>
-    </div>
   </div>
 </div>
 
@@ -554,10 +594,6 @@ svg text{font-family:var(--mono)}
       <label id="speedctl"><span>speed %</span>
         <input type="number" id="animSpeed" min="0" max="100" step="1" value="100"></label>
       <span id="poslabel"></span>
-      <div id="theme-switch" role="group" aria-label="Theme">
-        <button type="button" id="theme-light" aria-pressed="false">light</button>
-        <button type="button" id="theme-dark" aria-pressed="true">dark</button>
-      </div>
     </div>
   </div>
   <div id="canvas">
@@ -590,6 +626,7 @@ svg text{font-family:var(--mono)}
     </div>
   </div>
   <div id="msg"></div>
+  <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize drawing and chart" title="Drag to resize, double-click to reset"></div>
   <div id="charts">
     <button class="pager" id="cprev" aria-label="Previous chart">&lsaquo;</button>
     <figure class="chart"><figcaption id="cap-a"></figcaption><svg id="c-a"></svg></figure>
@@ -647,6 +684,29 @@ svg text{font-family:var(--mono)}
   <div class="dlg-hdr"><span>Suspension configuration</span>
     <button class="iconbtn" id="configClose" aria-label="Close configurations">✕</button></div>
   <div id="configList"></div>
+</dialog>
+
+<dialog id="exportDlg">
+  <div class="dlg-hdr"><span>Export design</span>
+    <button class="iconbtn" id="exportClose" aria-label="Close export">✕</button></div>
+  <form class="dlg-body" id="exportForm" method="dialog">
+    <label><span>Design name</span><input type="text" id="expName" placeholder="untitled" autocomplete="off"></label>
+    <label><span>Version</span><input type="text" id="expVersion" placeholder="1" autocomplete="off"></label>
+    <label><span>Author</span><input type="text" id="expAuthor" placeholder="your name" autocomplete="off"></label>
+    <p class="note" id="expFile"></p>
+    <div class="btnrow"><button type="submit" id="exportGo">Export</button></div>
+    <p id="exportMsg" role="status" hidden>Export successful</p>
+  </form>
+</dialog>
+
+<dialog id="aboutDlg">
+  <div class="dlg-hdr"><span>About</span>
+    <button class="iconbtn" id="aboutClose" aria-label="Close about">✕</button></div>
+  <div class="dlg-body">
+    <p><strong>Suspension Designer</strong> is a project by Creature Cycles.</p>
+    <p>November 2026 &middot; build 2.1</p>
+    <p>It is a project to build an open-source full-suspension frame design tool.</p>
+  </div>
 </dialog>
 
 <dialog id="flexWorkings">
@@ -1492,7 +1552,9 @@ let G=structuredClone(DEF.geom), C=structuredClone(DEF.cfg);
 let result=null, posT=0, playing=false, holdSag=false;
 // Free text, so it lives outside C: fillCfg() reads every field with parseFloat,
 // which would permanently NaN-reject a name the moment it looks up the box.
-let META={name:'', designer:''};
+// version is the design's own version (what the export dialog shows), not the
+// file format version written as _meta.version.
+let META={name:'', designer:'', version:''};
 
 // A configuration's own name for a point, or the generic one.
 const labelFor=(k,fallback)=>{const p=PRESETS[C.config]; return (p&&p.labels&&p.labels[k])||fallback;};
@@ -3652,19 +3714,64 @@ document.getElementById('resetPoints').onclick=()=>{
    Same shape as DEF (geom + cfg) so a saved file can be dropped straight into
    G/C on import, then run through the exact startup sequence the reset button
    and page load already use. */
-document.getElementById('designName').oninput=e=>META.name=e.target.value;
-document.getElementById('designer').oninput=e=>META.designer=e.target.value;
+/* Name, version and author are asked for at export time in #exportDlg. The
+   last values exported (or imported) are kept in sessionStorage, so a second
+   export in the same tab offers the same name and author with the version
+   bumped by one; the user can overwrite any of them. A fresh tab starts at 1. */
+const META_KEY='sd.exportMeta';
+try{ const s=JSON.parse(sessionStorage.getItem(META_KEY)||'null');
+     if(s) META={name:s.name||'', designer:s.designer||'', version:s.version||''}; }catch(e){}
+function saveMeta(){ try{ sessionStorage.setItem(META_KEY, JSON.stringify(META)); }catch(e){} }
+// Bump the last run of digits: 1 -> 2, 1.2 -> 1.3, v3 -> v4. No digits: unchanged.
+function nextVersion(v){
+  v=String(v||'').trim();
+  if(!v) return '1';
+  const m=v.match(/^(.*?)(\d+)(\D*)$/);
+  return m ? m[1]+(parseInt(m[2],10)+1)+m[3] : v;
+}
+// Hyphens separate the three parts, so each part maps spaces and other
+// characters to underscores and never contains a hyphen of its own.
+const filePart=s=>String(s||'').trim().replace(/[^A-Za-z0-9.]+/g,'_').replace(/^_+|_+$/g,'');
+function exportFileName(name, version, author){
+  return [filePart(name)||'untitled', filePart(version)||'1', filePart(author)]
+    .filter(Boolean).join('-')+'.json';
+}
+const expEls={dlg:document.getElementById('exportDlg'), name:document.getElementById('expName'),
+  version:document.getElementById('expVersion'), author:document.getElementById('expAuthor'),
+  file:document.getElementById('expFile'), msg:document.getElementById('exportMsg')};
+function showExportFile(){
+  expEls.file.textContent='File: '+exportFileName(expEls.name.value, expEls.version.value, expEls.author.value);
+  expEls.msg.hidden=true;
+}
+function openExport(){
+  expEls.name.value=META.name;
+  expEls.author.value=META.designer;
+  expEls.version.value=nextVersion(META.version);
+  showExportFile();
+  expEls.dlg.showModal();
+  expEls.name.focus();
+}
+['name','version','author'].forEach(k=>expEls[k].oninput=showExportFile);
+document.getElementById('exportForm').onsubmit=e=>{
+  e.preventDefault();          // keep the dialog open to show the result
+  META.name=expEls.name.value.trim();
+  META.version=expEls.version.value.trim()||'1';
+  META.designer=expEls.author.value.trim();
+  exportJSON(exportFileName(META.name, META.version, META.designer));
+  saveMeta();
+  expEls.msg.hidden=false;
+};
+document.getElementById('exportClose').onclick=()=>expEls.dlg.close();
 
-function exportJSON(){
+function exportJSON(fileName){
   const out={
-    _meta:{ name:META.name, designer:META.designer,
+    _meta:{ name:META.name, designer:META.designer, designVersion:META.version,
             date:new Date().toISOString(), version:'1.0' },
     geom:G, cfg:C
   };
   const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
   const a=document.createElement('a');
-  const slug=(META.name||'flexstay-design').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'')||'flexstay-design';
-  a.href=URL.createObjectURL(blob); a.download=slug+'.json'; a.click();
+  a.href=URL.createObjectURL(blob); a.download=fileName; a.click();
   // Deferred, not synchronous -- some browsers (Safari in particular) start
   // the download asynchronously, and revoking the URL immediately after
   // .click() can race it and cancel the save.
@@ -3685,10 +3792,13 @@ function importJSON(){
            throws on the idler row. */
         G=Object.assign(structuredClone(DEF.geom), structuredClone(data.geom));
         C=Object.assign(structuredClone(DEF.cfg), structuredClone(data.cfg));
-        META.name=(data._meta&&data._meta.name)||'';
-        META.designer=(data._meta&&data._meta.designer)||'';
-        document.getElementById('designName').value=META.name;
-        document.getElementById('designer').value=META.designer;
+        // The file's name, author and version become the export defaults, so
+        // re-exporting an opened design offers the next version of it.
+        const m=data._meta||{};
+        META.name=m.name||'';
+        META.designer=m.designer||'';
+        META.version=m.designVersion||'';
+        saveMeta();
         posT=0; holdSag=false;
         refillAll(); recompute();
       }catch(err){ alert('Invalid JSON: '+err.message); }
@@ -3697,7 +3807,43 @@ function importJSON(){
   };
   inp.click();
 }
-document.getElementById('exportJson').onclick=exportJSON;
+document.getElementById('exportJson').onclick=openExport;
+const aboutDlg=document.getElementById('aboutDlg');
+document.getElementById('aboutOpen').onclick=()=>aboutDlg.showModal();
+document.getElementById('aboutClose').onclick=()=>aboutDlg.close();
+
+/* Drag the hairline between the drawing and the chart strip. The split is a
+   pair of flex-grow values (see #canvas/#charts CSS); the ResizeObserver on
+   both panels already refits and redraws them as they change size. */
+(function initSplitter(){
+  const sp=document.getElementById('splitter'), cv=document.getElementById('canvas'),
+        ch=document.getElementById('charts'), KEY='sd.split', DEF_SPLIT=0.65;
+  const MIN_CANVAS=200, MIN_CHARTS=150;
+  const apply=r=>{ cv.style.flexGrow=r*100; ch.style.flexGrow=(1-r)*100; };
+  let saved=NaN;
+  try{ saved=parseFloat(localStorage.getItem(KEY)); }catch(e){}
+  apply(saved>0&&saved<1 ? saved : DEF_SPLIT);
+  const store=r=>{ try{ localStorage.setItem(KEY, String(r)); }catch(e){} };
+  let drag=null;
+  sp.addEventListener('pointerdown',e=>{
+    if(e.button!==0) return;
+    const a=cv.getBoundingClientRect(), b=ch.getBoundingClientRect();
+    drag={top:a.top, total:a.height+b.height, ratio:null};
+    sp.setPointerCapture(e.pointerId); sp.classList.add('dragging');
+    e.preventDefault();
+  });
+  sp.addEventListener('pointermove',e=>{
+    if(!drag) return;
+    const lo=MIN_CANVAS, hi=drag.total-MIN_CHARTS;
+    const h=Math.min(Math.max(e.clientY-drag.top, lo), Math.max(lo,hi));
+    drag.ratio=h/drag.total; apply(drag.ratio);
+  });
+  const end=()=>{ if(!drag) return; if(drag.ratio!=null) store(drag.ratio);
+                  drag=null; sp.classList.remove('dragging'); };
+  sp.addEventListener('pointerup',end);
+  sp.addEventListener('pointercancel',end);
+  sp.addEventListener('dblclick',()=>{ apply(DEF_SPLIT); store(DEF_SPLIT); });
+})();
 document.getElementById('importJson').onclick=importJSON;
 
 /* ---------- suspension configuration ----------

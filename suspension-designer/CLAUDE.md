@@ -183,8 +183,19 @@ children are plain flex-column siblings with no order-dependent CSS anywhere
 still visually separates the toolbar from what's below it instead of sitting
 uselessly against the page edge.
 
+**Build 2.1: the canvas/chart split is user-set.** `#splitter`, a 1px rule with
+a 9px invisible grab strip (`::after`), sits between `#msg` and `#charts`.
+`#canvas` and `#charts` share the stage by `flex-grow` (default 65/35), so the
+ratio survives a window resize; dragging sets both values, clamped to 200px of
+canvas and 150px of chart, and stores the ratio in `localStorage` (`sd.split`).
+Double-click restores 65/35. The `max-height:56vh` cap described below is gone.
+Desktop only: under 900px the splitter is hidden and the old fixed heights apply.
+The top bar also carries the build stamp (`#build`, "build X, date" — bump it
+and the About text together) and an About dialog (`#aboutDlg`). The left rail's
+scrollbar is themed through `--scroll-thumb`/`--scroll-thumb-hi` at 12px wide.
+
 **The canvas got shorter on purpose, to leave more of the chart carousel
-visible without scrolling.** `#canvas{flex:1;min-height:230px;max-height:56vh}`
+visible without scrolling.** (Superseded by the splitter above.) `#canvas{flex:1;min-height:230px;max-height:56vh}`
 — the `max-height` is what actually does it: without a cap, `flex:1` lets the
 canvas claim every pixel `#stage` has spare, however tall that leaves the
 carousel. `fitView` contains the whole bike in that box with a screen-pixel
@@ -1032,10 +1043,28 @@ anti-rise reference, and the flex configs keep `A`.
 
 ## Save / load
 
-Design name and designer are free text, so they live in `META`, outside `C` —
-`fillCfg()` runs every field in `C` through `parseFloat` when it wires up its
-input, which would permanently reject a name the moment it looked at the box.
-Export writes `{_meta:{name, designer, date, version}, geom:G, cfg:C}`; import
+Design name, author and design version are free text, so they live in `META`
+(`name`, `designer`, `version`), outside `C` — `fillCfg()` runs every field in
+`C` through `parseFloat` when it wires up its input, which would permanently
+reject a name the moment it looked at the box.
+
+**Build 2.1: there is no Design file tab any more.** Import, Export and the
+whole-tool Reset sit in the top bar (`#nav-right`), beside the theme switch and
+"all tools". Export opens `#exportDlg`, which asks for design name, version and
+author, previews the file name, and shows "Export successful" under its button
+after the download starts (the dialog stays open). The file is
+`name-version-author.json`; `filePart()` maps spaces and anything else outside
+`[A-Za-z0-9.]` to `_` inside each part, so the hyphens only ever separate the
+three parts. A blank name becomes `untitled`, a blank version `1`, and a blank
+author is dropped. `META` is kept in `sessionStorage` (`sd.exportMeta`): the next
+export in the same tab, reload included, offers the same name and author and
+`nextVersion()` of the last version (the last run of digits goes up by one: 1→2,
+1.2→1.3, v3→v4). Import writes the file's `_meta` into `META` the same way, so
+re-exporting an opened design offers its next version. A new tab starts at 1.
+
+Export writes `{_meta:{name, designer, designVersion, date, version}, geom:G,
+cfg:C}`. `version` is the file format (`'1.0'`), not the design's version, which
+is `designVersion`. Import
 parses that same shape and then runs the exact startup sequence the reset button
 uses — `refillAll()` — so a file with an old or partial `cfg` still comes out
 through the same derivation the app applies on every other input change.
