@@ -188,7 +188,7 @@ a 9px invisible grab strip (`::after`), sits between `#msg` and `#charts`.
 `#canvas` and `#charts` share the stage by `flex-grow` (default 65/35), so the
 ratio survives a window resize; dragging sets both values, clamped to 200px of
 canvas and 150px of chart, and stores the ratio in `localStorage` (`sd.split`).
-Double-click restores 65/35. The `max-height:56vh` cap described below is gone.
+Double-click restores 65/35. The `max-height:56vh` cap described below is gone. The chart SVG is `position:absolute;inset:0` inside `.chart` (and `#charts` has `grid-template-rows:minmax(0,1fr)`), the same fix as `#draw`: in flow it sized itself from its viewBox aspect, so dragging the split down left the old-height chart hanging below the window. The chart now keeps the full width and only its height follows the split; the page never scrolls.
 Desktop only: under 900px the splitter is hidden and the old fixed heights apply.
 The top bar also carries the build stamp (`#build`, "build X, date" — bump it
 and the About text together) and an About dialog (`#aboutDlg`). The left rail's
