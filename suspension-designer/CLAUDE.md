@@ -809,8 +809,16 @@ already worked.
 Three different locks in this tool now share one small glyph-only button
 (`.iconbtn`, 22×22, no colour rules of its own — it inherits the base
 `button`/`button[aria-pressed=true]` recolour every other button already
-uses) — 🔓 unlocked, 🔒 locked, `aria-pressed` carrying the real state either
-way. They are NOT the same lock, deliberately, even the two that land on the
+uses) — `aria-pressed` carrying the real state either way.
+
+**The glyph is a drawn SVG padlock (`LOCK_SVG`, open/closed), not an emoji,
+and `.lockbtn` gives locks their own colours.** Colour emoji ignore CSS colour,
+so the old 🔓/🔒 could never follow the theme. The padlock is filled and
+stroked in `currentColor`, and the `--lock-*` tokens make both states
+monochrome, each the inverse of the other. Dark: unlocked is the light
+`--ctl-fg` on the dark `--ctl-bg` (the canvas controls' pair), locked inverts.
+Light: locked is white on the blue, unlocked is blue on white. `#locklen` is
+painted once at boot by `paintLock`, since its markup now starts empty. They are NOT the same lock, deliberately, even the two that land on the
 same point (SG/SP):
 
 - **`sgLock`/`spLock`** (down-tube standoff, "Down tube mounts" panel) —

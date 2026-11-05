@@ -83,6 +83,9 @@
   --msg-bg:#fbeceb;
   --scroll-thumb:#b9c3ca; --scroll-thumb-hi:#8f9ba4;
   --ctl-bg:#1f5f8b; --ctl-bg-hi:#2a7ab0; --ctl-fg:#ffffff;
+  /* Lock buttons: monochrome, blue and white. Locked is the filled blue. */
+  --lock-off-bg:#ffffff; --lock-off-fg:#1f5f8b; --lock-on-bg:#1f5f8b; --lock-on-fg:#ffffff;
+  --lock-line:#1f5f8b;
   --art-chain:#39424a; --art-ring:#5c6b78;
   --art-ground:#e2e7ea; --art-ground-line:#aab6bd;
   --art-stanchion-fill:#cfd5da; --art-stanchion-stroke:#7b848c;
@@ -112,6 +115,9 @@
   --msg-bg:#1a2820;
   --scroll-thumb:#38373c; --scroll-thumb-hi:#2f4a37;
   --ctl-bg:#1a191c; --ctl-bg-hi:#24382c; --ctl-fg:#bbf7d0;
+  /* Lock buttons: the canvas controls' pair. Unlocked is light on dark, locked inverts. */
+  --lock-off-bg:#1a191c; --lock-off-fg:#bbf7d0; --lock-on-bg:#bbf7d0; --lock-on-fg:#1a191c;
+  --lock-line:#bbf7d0;
   /* One green family. Front triangle matches the frame designer's dark fill
      and bright edge; the swingarm is lighter so it still separates. */
   --art-chain:#24382c; --art-ring:#3d6b4f;
@@ -361,6 +367,15 @@ button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:
    size/shape and inherit the base button's colour rules above (including
    the pressed-state recolour) rather than getting their own. */
 .iconbtn{width:22px;height:22px;padding:0;font-size:12px;line-height:1;flex:none}
+/* Locks are monochrome: a drawn padlock in currentColor (paintLock), not an
+   emoji, so the glyph takes the theme's colour. Two states, each the other
+   inverted; the --lock-* tokens set which one is filled per theme. */
+.lockbtn{display:inline-grid;place-items:center;background:var(--lock-off-bg);
+  color:var(--lock-off-fg);border-color:var(--lock-line)}
+.lockbtn:hover{background:var(--lock-off-bg);filter:brightness(1.15)}
+.lockbtn[aria-pressed=true],.lockbtn[aria-pressed=true]:hover{background:var(--lock-on-bg);
+  color:var(--lock-on-fg);border-color:var(--lock-line)}
+.lockbtn svg{width:13px;height:13px;display:block}
 input[type=range]{width:220px;accent-color:var(--rear)}
 /* Dark travel slider: a pale green track and thumb, same family as the
    buttons above. The sag tick switches to the dark green text colour so it
@@ -488,9 +503,9 @@ svg text{font-family:var(--mono)}
   <h2>Pivots and mounts<span class="h2btns" id="pivotBtns"><button id="configOpen" title="Suspension configuration">config</button><button id="resetPoints">Reset</button></span></h2>
   <div id="points"></div>
   <label id="sgStandRow"><span id="sgStandLabel">Shock mount off down tube</span><input type="number" id="sgStand" step="1">
-    <button class="iconbtn" id="sgLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock shock mount standoff">🔒</button></label>
+    <button class="iconbtn lockbtn" id="sgLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock shock mount standoff"></button></label>
   <label id="spStandRow"><span id="spStandLabel">Link pivot off down tube</span><input type="number" id="spStand" step="1">
-    <button class="iconbtn" id="spLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock link pivot standoff">🔒</button></label>
+    <button class="iconbtn lockbtn" id="spLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock link pivot standoff"></button></label>
 
   <p class="note">Datum:
     <select id="datum">
@@ -502,7 +517,7 @@ svg text{font-family:var(--mono)}
 
   <h2>Shock</h2>
   <label><span>Eye to eye</span><input type="number" id="eye" step="1">
-    <button class="iconbtn" id="locklen" aria-pressed="true" title="Keep the shock eye to eye fixed while dragging its mounts" aria-label="Lock shock eye to eye">🔒</button></label>
+    <button class="iconbtn lockbtn" id="locklen" aria-pressed="true" title="Keep the shock eye to eye fixed while dragging its mounts" aria-label="Lock shock eye to eye"></button></label>
   <label><span>Stroke</span><input type="number" id="stroke" step="0.5"></label>
   <label><span>Rear sag, % of travel</span><input type="number" id="sag" step="1"></label>
   <label id="shockMountRow"><span>Shock connected to</span><select id="shockMount">
@@ -3351,9 +3366,14 @@ function debounce(fn,ms){
    `titles` is [lockedTitle, unlockedTitle]; the caller still owns whatever
    side effect the toggle itself has (disabling inputs, re-running the
    sweep, or nothing at all), since those genuinely differ per lock. */
+/* [unlocked, locked] padlocks, stroked in currentColor so the button's own
+   colour rules (.lockbtn) decide the glyph colour in either theme. */
+const LOCK_SVG=[
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="7.5" width="10" height="7" rx="1.2" fill="currentColor" stroke="none"/><path d="M5.5 7.5V5a2.5 2.5 0 0 1 4.9-.7" stroke-linecap="round"/></svg>',
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="7.5" width="10" height="7" rx="1.2" fill="currentColor" stroke="none"/><path d="M5.5 7.5V5a2.5 2.5 0 0 1 5 0v2.5"/></svg>'];
 function paintLock(btn,locked,titles){
   btn.setAttribute('aria-pressed', !!locked);
-  btn.textContent = locked ? '🔒' : '🔓';
+  btn.innerHTML = LOCK_SVG[locked?1:0];
   btn.title = locked ? titles[0] : titles[1];
 }
 function datumOffset(){
@@ -3377,7 +3397,7 @@ function fillPoints(){
   host.innerHTML=PTS.map(([k,label,col])=>
     `<div class="pt" data-k="${k}"><span><i class="sw" style="background:${col}"></i><span class="ptl">${label}</span></span>
      <input type="number" step="1" data-f="${k}-x"><input type="number" step="1" data-f="${k}-y">
-     <button class="iconbtn" data-lockrow="${k}" aria-pressed="false" title="Lock this point" aria-label="Lock ${label}">🔓</button></div>`
+     <button class="iconbtn lockbtn" data-lockrow="${k}" aria-pressed="false" title="Lock this point" aria-label="Lock ${label}">${LOCK_SVG[0]}</button></div>`
   ).join('');
   host.dataset.built='1';
   host.querySelectorAll('input').forEach(inp=>{
@@ -3635,11 +3655,13 @@ document.getElementById('pos').oninput=e=>{
   posT=e.target.value/1000; holdSag=false;
   draw(); syncPos(); charts();
 };
+const LOCKLEN_TITLES=['Keep the shock eye to eye fixed while dragging its mounts',
+  'Shock eye to eye is free while dragging its mounts'];
 document.getElementById('locklen').onclick=e=>{
   lockLen=!lockLen;
-  paintLock(e.target, lockLen, ['Keep the shock eye to eye fixed while dragging its mounts',
-    'Shock eye to eye is free while dragging its mounts']);
+  paintLock(e.currentTarget, lockLen, LOCKLEN_TITLES);
 };
+paintLock(document.getElementById('locklen'), lockLen, LOCKLEN_TITLES);
 document.getElementById('showsag').onclick=()=>{
   stopAnimation();
   holdSag=!holdSag;
