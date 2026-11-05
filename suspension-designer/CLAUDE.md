@@ -204,8 +204,8 @@ readout is rear-wheel travel only ("71/142mm rear travel"); the shock stroke
 figures are gone from it. `config` sits beside Reset in the Pivots and mounts
 heading (`#pivotBtns`); `placeConfig()` still moves it into the options sheet
 on phones. The view-options button is an eye icon at the top of the `#zoomctl`
-stack, and the four canvas controls share the `--ctl-bg`/`--ctl-fg` tokens (dark
-fill, light outline and symbol; the eye inverts while its panel is open). The
+stack, and the four canvas controls share the lock buttons' `--icon-*` tokens (the off
+state at rest; the eye takes the on state while its panel is open). The
 options panel opens to the left of that stack, bottom-aligned. Parts of the
 "toolbar" section further down describe the old two-row `#bar`.
 
@@ -814,9 +814,9 @@ uses) — `aria-pressed` carrying the real state either way.
 **The glyph is a drawn SVG padlock (`LOCK_SVG`, open/closed), not an emoji,
 and `.lockbtn` gives locks their own colours.** Colour emoji ignore CSS colour,
 so the old 🔓/🔒 could never follow the theme. The padlock is filled and
-stroked in `currentColor`, and the `--lock-*` tokens make both states
+stroked in `currentColor`, and the `--icon-*` tokens make both states
 monochrome, each the inverse of the other. Dark: unlocked is the
-pressed-button green (`--rear`, #4ade80) on the dark `--ctl-bg`, locked inverts
+pressed-button green (`--rear`, #4ade80) on the dark control fill, locked inverts
 to green with `--on-accent`, the same pair as any pressed button.
 Light: locked is white on the blue, unlocked is blue on white. `#locklen` is
 painted once at boot by `paintLock`, since its markup now starts empty. They are NOT the same lock, deliberately, even the two that land on the

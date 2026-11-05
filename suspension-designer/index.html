@@ -87,10 +87,9 @@
   --btn:#fff; --btn-hover:#e9eef1; --field:#fff; --field-disabled:#eef1f3;
   --msg-bg:#fbeceb;
   --scroll-thumb:#b9c3ca; --scroll-thumb-hi:#8f9ba4;
-  --ctl-bg:#1f5f8b; --ctl-bg-hi:#2a7ab0; --ctl-fg:#ffffff;
-  /* Lock buttons: monochrome, blue and white. Locked is the filled blue. */
-  --lock-off-bg:#ffffff; --lock-off-fg:#1f5f8b; --lock-on-bg:#1f5f8b; --lock-on-fg:#ffffff;
-  --lock-line:#1f5f8b;
+  /* Icon buttons (locks, canvas controls): monochrome blue and white. On/locked is the filled blue. */
+  --icon-off-bg:#ffffff; --icon-off-fg:#1f5f8b; --icon-on-bg:#1f5f8b; --icon-on-fg:#ffffff;
+  --icon-line:#1f5f8b;
   --art-chain:#39424a; --art-ring:#5c6b78;
   --art-ground:#e2e7ea; --art-ground-line:#aab6bd;
   --art-stanchion-fill:#cfd5da; --art-stanchion-stroke:#7b848c;
@@ -119,11 +118,10 @@
   --btn:#2e2d31; --btn-hover:#3a393e; --field:#28272a; --field-disabled:#1a191c;
   --msg-bg:#1a2820;
   --scroll-thumb:#38373c; --scroll-thumb-hi:#2f4a37;
-  --ctl-bg:#1a191c; --ctl-bg-hi:#24382c; --ctl-fg:#bbf7d0;
-  /* Lock buttons: the pressed-button green (--rear) on the dark control fill.
-     Unlocked is green on dark, locked inverts to a pressed button's own pair. */
-  --lock-off-bg:#1a191c; --lock-off-fg:#4ade80; --lock-on-bg:#4ade80; --lock-on-fg:#052e16;
-  --lock-line:#4ade80;
+  /* Icon buttons (locks, canvas controls): the pressed-button green (--rear) on the
+     dark control fill. Off is green on dark, on/locked inverts to a pressed button's own pair. */
+  --icon-off-bg:#1a191c; --icon-off-fg:#4ade80; --icon-on-bg:#4ade80; --icon-on-fg:#052e16;
+  --icon-line:#4ade80;
   /* One green family. Front triangle matches the frame designer's dark fill
      and bright edge; the swingarm is lighter so it still separates. */
   --art-chain:#24382c; --art-ring:#3d6b4f;
@@ -195,16 +193,16 @@ body{margin:0;background:var(--paper);color:var(--ink);font:12px/1.45 var(--sans
 #draw.panning{cursor:grabbing}
 #zoomctl{position:absolute;bottom:10px;right:10px;display:flex;flex-direction:column;gap:4px;z-index:6}
 /* The four canvas controls (view options, zoom in, zoom out, fit) are one
-   square set: a dark filled box, light outline and light symbol, from the
-   --ctl-* tokens of each theme. The eye opens the overlay and parts panel and
-   reads inverted while that panel is open. Siblings of #draw, not children, so
+   square set coloured like the lock buttons, from the --icon-* tokens: the off
+   state at rest (dark: green on dark; light: blue on white). The eye opens the
+   overlay and parts panel and takes the on state while that panel is open. Siblings of #draw, not children, so
    they never compete with initDrag()'s pointer and wheel handlers. */
 #zoomctl button{width:26px;height:26px;padding:0;font-size:14px;line-height:1;
-  display:grid;place-items:center;background:var(--ctl-bg);color:var(--ctl-fg);
-  border:1px solid var(--ctl-fg);border-radius:3px}
-#zoomctl button:hover{background:var(--ctl-bg-hi)}
+  display:grid;place-items:center;background:var(--icon-off-bg);color:var(--icon-off-fg);
+  border:1px solid var(--icon-line);border-radius:3px}
+#zoomctl button:hover{background:var(--icon-off-bg);filter:brightness(1.15)}
 #zoomctl #options-btn{margin-bottom:6px;-webkit-tap-highlight-color:transparent}
-#zoomctl #options-btn.active{background:var(--ctl-fg);color:var(--ctl-bg)}
+#zoomctl #options-btn.active,#zoomctl #options-btn.active:hover{background:var(--icon-on-bg);color:var(--icon-on-fg)}
 #options-btn svg{width:16px;height:16px;display:block}
 /* Config sits beside Reset in the Pivots and mounts heading (desktop). */
 .h2btns{display:flex;gap:6px;flex:none}
@@ -376,12 +374,12 @@ button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:
 .iconbtn{width:22px;height:22px;padding:0;font-size:12px;line-height:1;flex:none}
 /* Locks are monochrome: a drawn padlock in currentColor (paintLock), not an
    emoji, so the glyph takes the theme's colour. Two states, each the other
-   inverted; the --lock-* tokens set which one is filled per theme. */
-.lockbtn{display:inline-grid;place-items:center;background:var(--lock-off-bg);
-  color:var(--lock-off-fg);border-color:var(--lock-line)}
-.lockbtn:hover{background:var(--lock-off-bg);filter:brightness(1.15)}
-.lockbtn[aria-pressed=true],.lockbtn[aria-pressed=true]:hover{background:var(--lock-on-bg);
-  color:var(--lock-on-fg);border-color:var(--lock-line)}
+   inverted; the --icon-* tokens set which one is filled per theme. */
+.lockbtn{display:inline-grid;place-items:center;background:var(--icon-off-bg);
+  color:var(--icon-off-fg);border-color:var(--icon-line)}
+.lockbtn:hover{background:var(--icon-off-bg);filter:brightness(1.15)}
+.lockbtn[aria-pressed=true],.lockbtn[aria-pressed=true]:hover{background:var(--icon-on-bg);
+  color:var(--icon-on-fg);border-color:var(--icon-line)}
 .lockbtn svg{width:13px;height:13px;display:block}
 input[type=range]{width:220px;accent-color:var(--rear)}
 /* Dark travel slider: a pale green track and thumb, same family as the
