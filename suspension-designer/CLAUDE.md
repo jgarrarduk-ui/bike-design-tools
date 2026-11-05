@@ -194,6 +194,21 @@ The top bar also carries the build stamp (`#build`, "build X" — bump it
 and the About text together) and an About dialog (`#aboutDlg`). The left rail's
 scrollbar is themed through `--scroll-thumb`/`--scroll-thumb-hi` at 12px wide.
 
+**Build 2.1, later the same week: one bar, no `#bar`.** The playback controls
+(`#playbar`: cycle, sag, static, the travel slider, speed, and `#poslabel`) moved
+out of the stage toolbar into the top bar after About, and `#bar` is gone, so the
+canvas starts straight under the top bar. The bar must never wrap or overflow on
+desktop: the title, build stamp and About are `flex:none`, and the slider
+(`#poswrap`, 70–220px) is what gives way, which holds from 1280px wide up. The
+readout is rear-wheel travel only ("71/142mm rear travel"); the shock stroke
+figures are gone from it. `config` sits beside Reset in the Pivots and mounts
+heading (`#pivotBtns`); `placeConfig()` still moves it into the options sheet
+on phones. The view-options button is an eye icon at the top of the `#zoomctl`
+stack, and the four canvas controls share the `--ctl-bg`/`--ctl-fg` tokens (dark
+fill, light outline and symbol; the eye inverts while its panel is open). The
+options panel opens to the left of that stack, bottom-aligned. Parts of the
+"toolbar" section further down describe the old two-row `#bar`.
+
 **The canvas got shorter on purpose, to leave more of the chart carousel
 visible without scrolling.** (Superseded by the splitter above.) `#canvas{flex:1;min-height:230px;max-height:56vh}`
 — the `max-height` is what actually does it: without a cap, `flex:1` lets the

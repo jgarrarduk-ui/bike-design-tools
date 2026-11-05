@@ -82,6 +82,7 @@
   --btn:#fff; --btn-hover:#e9eef1; --field:#fff; --field-disabled:#eef1f3;
   --msg-bg:#fbeceb;
   --scroll-thumb:#b9c3ca; --scroll-thumb-hi:#8f9ba4;
+  --ctl-bg:#1f5f8b; --ctl-bg-hi:#2a7ab0; --ctl-fg:#ffffff;
   --art-chain:#39424a; --art-ring:#5c6b78;
   --art-ground:#e2e7ea; --art-ground-line:#aab6bd;
   --art-stanchion-fill:#cfd5da; --art-stanchion-stroke:#7b848c;
@@ -110,6 +111,7 @@
   --btn:#2e2d31; --btn-hover:#3a393e; --field:#28272a; --field-disabled:#1a191c;
   --msg-bg:#1a2820;
   --scroll-thumb:#38373c; --scroll-thumb-hi:#2f4a37;
+  --ctl-bg:#1a191c; --ctl-bg-hi:#24382c; --ctl-fg:#bbf7d0;
   /* One green family. Front triangle matches the frame designer's dark fill
      and bright edge; the swingarm is lighter so it still separates. */
   --art-chain:#24382c; --art-ring:#3d6b4f;
@@ -180,30 +182,24 @@ body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans
   background:var(--paper);touch-action:none;user-select:none}
 #draw.panning{cursor:grabbing}
 #zoomctl{position:absolute;bottom:10px;right:10px;display:flex;flex-direction:column;gap:4px;z-index:6}
+/* The four canvas controls (view options, zoom in, zoom out, fit) are one
+   square set: a dark filled box, light outline and light symbol, from the
+   --ctl-* tokens of each theme. The eye opens the overlay and parts panel and
+   reads inverted while that panel is open. Siblings of #draw, not children, so
+   they never compete with initDrag()'s pointer and wheel handlers. */
 #zoomctl button{width:26px;height:26px;padding:0;font-size:14px;line-height:1;
-  background:#fffc;color:#16202a;backdrop-filter:blur(2px)}
-/* Config stays on the canvas. Options sits beside it and opens the overlay
-   and parts toggles. Both are siblings of #draw, not children, so they never
-   compete with initDrag()'s pointer and wheel handlers on the SVG itself. */
-#canvas-btns{position:absolute;top:10px;left:10px;z-index:9;display:flex;gap:4px;align-items:flex-start}
-#configOpen{background:#fffc;color:#16202a;backdrop-filter:blur(2px)}
-/* Dark only: these three controls were still the light-theme white/grey.
-   Pale green matches the pressed cycle/sag/static buttons and the light text. */
-[data-theme="dark"] #zoomctl button,
-[data-theme="dark"] #configOpen{
-  background:var(--anim);color:var(--on-accent);border-color:var(--shock)}
-[data-theme="dark"] #zoomctl button:hover,
-[data-theme="dark"] #configOpen:hover{
-  background:var(--ink);border-color:var(--ink)}
-#options-btn{background:var(--accent);border:none;color:#fff;
-  font-family:var(--sans);font-size:10px;font-weight:700;
-  padding:5px 12px;border-radius:11px;letter-spacing:.5px;cursor:pointer;
-  -webkit-tap-highlight-color:transparent}
-#options-btn.active{background:var(--accent-hi)}
+  display:grid;place-items:center;background:var(--ctl-bg);color:var(--ctl-fg);
+  border:1px solid var(--ctl-fg);border-radius:3px}
+#zoomctl button:hover{background:var(--ctl-bg-hi)}
+#zoomctl #options-btn{margin-bottom:6px;-webkit-tap-highlight-color:transparent}
+#zoomctl #options-btn.active{background:var(--ctl-fg);color:var(--ctl-bg)}
+#options-btn svg{width:16px;height:16px;display:block}
+/* Config sits beside Reset in the Pivots and mounts heading (desktop). */
+.h2btns{display:flex;gap:6px;flex:none}
 #ov-backdrop{display:none;position:absolute;inset:0;z-index:7}
 #ov-backdrop.open{display:block}
-#ov-panel{display:none;position:absolute;top:44px;left:10px;z-index:8;
-  width:max-content;max-width:calc(100% - 56px);max-height:calc(100% - 56px);
+#ov-panel{display:none;position:absolute;bottom:10px;right:46px;z-index:8;
+  width:max-content;max-width:calc(100% - 66px);max-height:calc(100% - 20px);
   overflow-y:auto;flex-wrap:wrap;gap:4px;align-items:flex-start;
   background:var(--panel);border:1px solid var(--rule);
   border-bottom:2px solid var(--accent);
@@ -318,26 +314,25 @@ select{width:auto}
    container, so a button can never migrate from one row to the other just
    because something else on its row changed width — the two rows are
    simply two separate boxes, not one flow that reflows across a break. */
-#bar{display:flex;flex-direction:column;gap:7px;
-  padding:7px 14px;border-bottom:1px solid var(--rule);
-  background:var(--panel)}
+/* Playback (cycle, sag, static, travel slider, speed, travel readout) sits
+   in the top bar, after About. The slider is the part that gives way when the
+   window is narrow, so the bar never wraps or overflows on desktop. */
+#playbar{flex:1 1 auto;min-width:0;margin-left:14px}
+#tools-nav h1,#build,#aboutOpen{flex:none}
 /* Constant gap, left-justified — buttons stack from the left edge with the
    same spacing whatever room is left over, rather than stretching that
    leftover space out between them. */
 .barrow{display:flex;align-items:center;justify-content:flex-start;gap:8px;
   flex-wrap:nowrap}
-#bar label{margin:0;gap:6px}
 /* white-space:pre keeps the padding syncPos() adds, so the readout stays one
    width while animating and never pushes the theme buttons onto a new line. */
-#poslabel{font:12px var(--mono);color:var(--ink-soft);white-space:pre;
-  min-width:0;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
+#poslabel{font:12px var(--mono);color:var(--ink-soft);white-space:pre;flex:none}
 /* .bargroup is a semantic/ARIA grouping only now — display:contents drops its
    own box so its buttons become direct flex children of its .barrow, spaced
    by that row's own gap like everything else on it, instead of being spaced
    only among themselves inside a sub-box. */
 .bargroup{display:contents}
 #theme-switch{display:flex;gap:6px;flex:none}
-#bar input[type=checkbox]{accent-color:var(--rear)}
 /* Fixed width and centred text so switching the label between "Cycle" and
    "Stop" never changes the button's own size — sized to the wider of the
    two plus the button's own padding, not a guess. */
@@ -391,7 +386,7 @@ input[type=range]{width:220px;accent-color:var(--rear)}
    this thumb size, and simple. updateSagMark() keeps its left% tied to
    C.sag whenever that can have changed. */
 #poswrap{position:relative;display:inline-flex;align-items:center;
-  flex:1 1 160px;min-width:110px;max-width:220px}
+  flex:1 1 200px;min-width:70px;max-width:220px}
 #poswrap input[type=range]{width:100%}
 #sagmark{position:absolute;top:3px;bottom:3px;width:2px;background:var(--flex);
   pointer-events:none}
@@ -441,7 +436,7 @@ svg text{font-family:var(--mono)}
   .barrow{gap:8px 10px;flex-wrap:wrap}
   .pt{grid-template-columns:1fr 72px 72px 24px}
   /* Mobile keeps config inside the options sheet, so the sheet spans the canvas. */
-  #ov-panel{left:8px;right:8px;width:auto;top:40px}
+  #ov-panel{left:8px;right:8px;width:auto;top:10px;bottom:auto}
 }
 </style>
 </head>
@@ -463,6 +458,18 @@ svg text{font-family:var(--mono)}
 <div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles"><h1>Suspension Designer</h1><p class="sr-only">Four-bar flex-stay suspension kinematics: leverage ratio, anti-squat/rise and stay stress. Drag pivots; validated against Linkage X3.</p>
   <span id="build">build 2.1</span>
   <button type="button" id="aboutOpen">about</button>
+  <div class="barrow" id="playbar">
+    <button id="play" aria-pressed="false">cycle</button>
+    <button id="showsag" aria-pressed="false">sag</button>
+    <button id="staticPos" aria-pressed="true">static</button>
+    <div id="poswrap">
+      <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
+      <div id="sagmark" title="Sag point"></div>
+    </div>
+    <label id="speedctl"><span>speed %</span>
+      <input type="number" id="animSpeed" min="0" max="100" step="1" value="100"></label>
+    <span id="poslabel"></span>
+  </div>
   <div id="nav-right">
     <button type="button" id="importJson">Import</button>
     <button type="button" id="exportJson">Export</button>
@@ -478,7 +485,7 @@ svg text{font-family:var(--mono)}
 <div class="rail left">
   <!-- The working set: what you move while watching the graph. Everything else
        is setup, folded away until it is wanted. -->
-  <h2>Pivots and mounts<button id="resetPoints">Reset</button></h2>
+  <h2>Pivots and mounts<span class="h2btns" id="pivotBtns"><button id="configOpen" title="Suspension configuration">config</button><button id="resetPoints">Reset</button></span></h2>
   <div id="points"></div>
   <label id="sgStandRow"><span id="sgStandLabel">Shock mount off down tube</span><input type="number" id="sgStand" step="1">
     <button class="iconbtn" id="sgLock" aria-pressed="true" title="Unlock from the down tube" aria-label="Lock shock mount standoff">🔒</button></label>
@@ -586,26 +593,8 @@ svg text{font-family:var(--mono)}
 </div>
 
 <div id="stage">
-  <div id="bar">
-    <div class="barrow" id="bar-top">
-      <button id="play" aria-pressed="false">cycle</button>
-      <button id="showsag" aria-pressed="false">sag</button>
-      <button id="staticPos" aria-pressed="true">static</button>
-      <div id="poswrap">
-        <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Suspension position">
-        <div id="sagmark" title="Sag point"></div>
-      </div>
-      <label id="speedctl"><span>speed %</span>
-        <input type="number" id="animSpeed" min="0" max="100" step="1" value="100"></label>
-      <span id="poslabel"></span>
-    </div>
-  </div>
   <div id="canvas">
     <svg id="draw" preserveAspectRatio="xMidYMid meet"></svg>
-    <div id="canvas-btns">
-      <button id="configOpen" title="Suspension configuration">config</button>
-      <button type="button" id="options-btn" aria-expanded="false">options</button>
-    </div>
     <div id="ov-backdrop"></div>
     <div id="ov-panel">
       <span class="bargroup" role="group" aria-label="Overlays and parts drawn">
@@ -624,6 +613,7 @@ svg text{font-family:var(--mono)}
       </span>
     </div>
     <div id="zoomctl">
+      <button type="button" id="options-btn" aria-expanded="false" title="View options" aria-label="View options"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
       <button id="zin"  title="Zoom in"       aria-label="Zoom in">+</button>
       <button id="zout" title="Zoom out"      aria-label="Zoom out">&minus;</button>
       <button id="zfit" title="Fit to window" aria-label="Fit to window">&#9974;</button>
@@ -3633,15 +3623,12 @@ function syncPos(){
   const wheelMax=frames.length?frames[frames.length-1].rise:null;
   // Padded to the width of the totals so the text never changes width mid-cycle.
   const pad=(v,w)=>v.padStart(w);
-  const maxTxt=wheelMax!=null?wheelMax.toFixed(0):null, strokeTxt=C.stroke.toFixed(1);
+  const maxTxt=wheelMax!=null?wheelMax.toFixed(0):null;
   // (Math.round(v)||0): a rise of -1e-15 at top-out is float residue, not travel, and must not print "-0".
   const riseTxt=(Math.round(f.rise)||0).toFixed(0);
   const wheelTxt=maxTxt!=null?`${pad(riseTxt,maxTxt.length)}/${maxTxt}mm`:`${riseTxt}mm`;
-  const shockTxt=`${pad(f.stroke.toFixed(1),strokeTxt.length)}/${strokeTxt}mm`;
-  lbl.textContent=`${wheelTxt} wheel · ${shockTxt} shock`;
-  lbl.title=wheelMax!=null
-    ? `${riseTxt} of ${maxTxt}mm wheel travel · ${f.stroke.toFixed(1)} of ${C.stroke.toFixed(1)}mm shock stroke`
-    : `${riseTxt}mm wheel travel · ${f.stroke.toFixed(1)} of ${C.stroke.toFixed(1)}mm shock stroke`;
+  lbl.textContent=`${wheelTxt} rear travel`;
+  lbl.title=wheelMax!=null ? `${riseTxt} of ${maxTxt}mm rear wheel travel` : `${riseTxt}mm rear wheel travel`;
 }
 
 document.getElementById('pos').oninput=e=>{
@@ -4059,11 +4046,11 @@ function placeConfig(){
   const config=document.getElementById('configOpen');
   const mobile=window.matchMedia('(max-width:900px)').matches;
   const panel=document.getElementById('ov-panel');
-  const btns=document.getElementById('canvas-btns');
+  const home=document.getElementById('pivotBtns');
   if(mobile){
     if(config.parentElement!==panel) panel.insertBefore(config, panel.firstChild);
-  }else if(config.parentElement!==btns){
-    btns.insertBefore(config, document.getElementById('options-btn'));
+  }else if(config.parentElement!==home){
+    home.insertBefore(config, document.getElementById('resetPoints'));
   }
 }
 placeConfig();
