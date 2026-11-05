@@ -4034,19 +4034,63 @@ if(window.ResizeObserver){
 
 /* Dark theme swaps in the green artwork. CSS variables cover the drawn
    strokes; the PNGs have to be real recolored files. The query strings reload
-   PNGs whose black-background fringe was recoloured; the draw path is unchanged. */
+   PNGs whose black-background fringe was recoloured; the draw path is unchanged.
+
+   Each PNG is fetched once, decoded, and held as a blob: URL for the life of the
+   page, and a theme's artwork is only swapped in once every one of its files is
+   ready. draw() rebuilds every <image> on every frame, so pointing them at a
+   network URL that was still downloading (the light set, fetched only on the
+   first switch, the wheel alone ~1 MB) showed the art missing, or Chrome's
+   broken-image icon stretched to wheel size, until the download landed --
+   and a failed or cut-off download stayed broken. Fetches retry three times; if
+   they all fail, or the page is opened from file:// where fetch is refused,
+   the plain path is used as before. The other theme is preloaded afterwards so
+   switching is instant. */
+const ART_FILES=(dark)=>{
+  const src=name=>(dark?'img/dark/':'img/')+name;
+  return [
+    [u=>FORKART.src=u,        src('fork-lowers.png')+'?v=1'],
+    [u=>SHOCKART.tail.src=u,  src('shock-tail.png')],
+    [u=>SHOCKART.resv.src=u,  src('shock-reservoir.png')],
+    [u=>SHOCKART.spring.src=u,src('shock-spring.png')],
+    [u=>SHOCKART.body.src=u,  src('shock-body.png')],
+    [u=>STEMART.src=u,        src('stem.png')+(dark?'?v=4':'?v=1')],
+    [u=>WHEELART.src=u,       src('wheel.png')+(dark?'?v=4':'?v=1')],
+    [u=>JOCKEYART.src=u,      src('jockey-wheel.png')],
+    [u=>SADDLEART.src=u,      src('saddle.png')+'?v=1'],
+  ];
+};
+const ART_CACHE={};
+function loadArt(path){
+  if(location.protocol==='file:') return Promise.resolve(path);
+  if(!ART_CACHE[path]) ART_CACHE[path]=(async()=>{
+    for(let i=0;i<3;i++){
+      try{
+        const r=await fetch(path);
+        if(!r.ok) throw new Error(r.status);
+        const url=URL.createObjectURL(await r.blob());
+        const im=new Image(); im.src=url; await im.decode();
+        return url;
+      }catch(e){ await new Promise(res=>setTimeout(res,600*(i+1))); }
+    }
+    delete ART_CACHE[path];   // let a later theme switch try again
+    return path;
+  })();
+  return ART_CACHE[path];
+}
+let artGen=0;
 function applyArtTheme(){
   const dark=document.documentElement.getAttribute('data-theme')==='dark';
-  const src=name=>(dark?'img/dark/':'img/')+name;
-  FORKART.src=src('fork-lowers.png')+'?v=1';
-  SHOCKART.tail.src=src('shock-tail.png');
-  SHOCKART.resv.src=src('shock-reservoir.png');
-  SHOCKART.spring.src=src('shock-spring.png');
-  SHOCKART.body.src=src('shock-body.png');
-  STEMART.src=src('stem.png')+(dark?'?v=4':'?v=1');
-  WHEELART.src=src('wheel.png')+(dark?'?v=4':'?v=1');
-  JOCKEYART.src=src('jockey-wheel.png');
-  SADDLEART.src=src('saddle.png')+'?v=1';
+  const files=ART_FILES(dark), gen=++artGen;
+  // first paint: the plain paths, as before, so boot draws this theme at once;
+  // a later switch keeps the current (already loaded) set until the new one is in
+  if(gen===1) files.forEach(([set,p])=>set(p));
+  Promise.all(files.map(([,p])=>loadArt(p))).then(urls=>{
+    if(gen!==artGen) return;          // a later switch has already won
+    files.forEach(([set],i)=>set(urls[i]));
+    try{ draw(); }catch(e){}
+    ART_FILES(!dark).forEach(([,p])=>loadArt(p));   // warm the other theme
+  });
 }
 function setUiTheme(name){
   document.documentElement.setAttribute('data-theme', name);
