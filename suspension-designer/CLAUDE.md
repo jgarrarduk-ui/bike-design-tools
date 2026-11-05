@@ -815,8 +815,9 @@ uses) — `aria-pressed` carrying the real state either way.
 and `.lockbtn` gives locks their own colours.** Colour emoji ignore CSS colour,
 so the old 🔓/🔒 could never follow the theme. The padlock is filled and
 stroked in `currentColor`, and the `--lock-*` tokens make both states
-monochrome, each the inverse of the other. Dark: unlocked is the light
-`--ctl-fg` on the dark `--ctl-bg` (the canvas controls' pair), locked inverts.
+monochrome, each the inverse of the other. Dark: unlocked is the
+pressed-button green (`--rear`, #4ade80) on the dark `--ctl-bg`, locked inverts
+to green with `--on-accent`, the same pair as any pressed button.
 Light: locked is white on the blue, unlocked is blue on white. `#locklen` is
 painted once at boot by `paintLock`, since its markup now starts empty. They are NOT the same lock, deliberately, even the two that land on the
 same point (SG/SP):
