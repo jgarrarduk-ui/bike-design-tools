@@ -2242,3 +2242,19 @@ headings and notes, 12px everything else, 14px the title and icon glyphs) and
 two weights (400, 600). The drawing's own labels scale with zoom
 (`Math.max(11,13*mmPerPx)`) and are outside this scale on purpose. At 12px the
 left rail's four setup tabs wrap 2×2.
+
+## Artwork files
+
+The PNGs in `img/` and `img/dark/` are compressed (256-colour palettes; the
+wheels also scaled to 1024 px): about 0.9 MB in all, down from 3.6 MB.
+`img-original/` holds the untouched originals and its README says how to
+revert. Image size on screen comes from the `*ART` constants' `w`/`h`, never
+from the file, so a file can be rescaled without touching any anchor. A new or
+edited PNG should be compressed the same way, keeping its original in
+`img-original/`.
+
+`applyArtTheme()` fetches each PNG once, decodes it, and keeps it as a blob:
+URL; a theme's set is swapped in only when all of it has loaded, and the other
+theme preloads afterwards. draw() rebuilds every `<image>` each frame, so
+pointing them at a still-downloading URL showed missing or broken art on the
+first switch to light. Opened from file://, it falls back to plain paths.
