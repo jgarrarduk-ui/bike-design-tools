@@ -2228,3 +2228,16 @@ how far the cage swings, which is what the drawing depends on.
   `if(C.shockMount)` and emitted by both branches. The seat-stay branch is
   otherwise untouched, including its own identical row, so that mode stays a
   strict regression baseline.
+
+## Type
+
+Inter for words and JetBrains Mono for numbers, loaded from Google Fonts by the
+`@import` at the top of the stylesheet (the same pair as `frame-designer.html`
+and the tools index), with system fonts behind them in `--sans`/`--mono` for
+offline use. Mono is for numbers only: number inputs, `.readout b`,
+`#poslabel` and chart tick labels (`svg text.num`). Selects, text inputs, the
+build stamp, drawing labels and chart legends are sans. Three sizes (11px small
+headings and notes, 12px everything else, 14px the title and icon glyphs) and
+two weights (400, 600). The drawing's own labels scale with zoom
+(`Math.max(11,13*mmPerPx)`) and are outside this scale on purpose. At 12px the
+left rail's four setup tabs wrap 2×2.
