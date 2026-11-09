@@ -1697,16 +1697,20 @@ final class Creature_Demo_Loan {
 				$clamp
 			);
 		}
-		// Terms 6.4(b): no damage or missing-parts line without what we found.
-		if ( ( $damage_line + $missing_line ) > 0 && '' === self::findings_text( $order ) ) {
-			self::note( $order, 'Bill not sent: it has a damage or missing-parts line and the inspection findings are empty (terms 6.4(b)). Enter what you found and try again.' );
-			return array_merge(
-				array(
-					'ok'     => false,
-					'reason' => 'no_findings',
-				),
-				$clamp
-			);
+		// Terms 6.4(b): no damage or missing-parts line without what we found and
+		// the photos. Nothing is created and nothing is emailed until both are in.
+		if ( ( $damage_line + $missing_line ) > 0 ) {
+			$evidence = self::damage_evidence_problem( $order );
+			if ( '' !== $evidence ) {
+				self::note( $order, 'Bill not sent: it has a damage or missing-parts line and ' . ( 'no_findings' === $evidence ? 'the inspection findings are empty' : 'there is no photo' ) . ' (terms 6.4(b)). ' . ( 'no_findings' === $evidence ? 'Enter what you found' : 'Add at least one photo' ) . ' and try again.' );
+				return array_merge(
+					array(
+						'ok'     => false,
+						'reason' => $evidence,
+					),
+					$clamp
+				);
+			}
 		}
 
 		$lines = array();
@@ -1751,6 +1755,24 @@ final class Creature_Demo_Loan {
 			),
 			$clamp
 		);
+	}
+
+	/**
+	 * Terms 6.4(b): a damage or missing-parts line needs the findings and at
+	 * least one photo that resolves to a link (a media id that does not resolve
+	 * would leave the photo line of the email blank).
+	 *
+	 * @param object $order
+	 * @return string '' when the evidence is there, else no_findings or no_photos.
+	 */
+	public static function damage_evidence_problem( $order ) {
+		if ( '' === self::findings_text( $order ) ) {
+			return 'no_findings';
+		}
+		if ( '' === trim( self::photo_lines( $order ) ) ) {
+			return 'no_photos';
+		}
+		return '';
 	}
 
 	/**
@@ -3323,9 +3345,9 @@ final class Creature_Demo_Loan {
 		$missing = self::meta_string( $order, '_creature_demo_missing_pence' );
 		$m_pound = '' === $missing ? '' : Creature_Demo_Loan_Money::pence_to_decimal( (int) $missing );
 		echo '<p><label>Missing parts amount (GBP) <input type="text" name="creature_demo_missing" value="' . self::esc( $m_pound ) . '" /></label></p>';
-		echo '<p><label>What the inspection found (required for a damage or missing-parts line)<br /><textarea name="creature_demo_findings" rows="4" cols="60">' . self::esc( self::findings_text( $order ) ) . '</textarea></label></p>';
+		echo '<p><label>What the inspection found (required for a damage or missing-parts line, with at least one photo below)<br /><textarea name="creature_demo_findings" rows="4" cols="60">' . self::esc( self::findings_text( $order ) ) . '</textarea></label></p>';
 		$photos = self::photo_slots( $order );
-		echo '<p>Photos (up to ' . (int) self::PHOTO_SLOTS . '): a media library ID or a full https:// link in each slot.</p>';
+		echo '<p>Photos (up to ' . (int) self::PHOTO_SLOTS . '): a media library ID or a full https:// link in each slot. A damage or missing-parts charge needs at least one, and the bill will not send without it (terms 6.4(b)).</p>';
 		for ( $i = 1; $i <= self::PHOTO_SLOTS; $i++ ) {
 			$value = isset( $photos[ $i - 1 ] ) ? $photos[ $i - 1 ] : '';
 			echo '<p><label>Photo ' . (int) $i . ' <input type="text" name="creature_demo_photo_' . (int) $i . '" value="' . self::esc( $value ) . '" /></label></p>';

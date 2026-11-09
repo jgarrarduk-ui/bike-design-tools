@@ -973,9 +973,10 @@ function creature_demo_loan( $dispatch = '2026-03-02', $delivery = '2026-03-04' 
 	$order->update_meta_data( '_stripe_source_id', 'pm_test_walker' );
 	Creature_Demo_Loan::store_consent( $order, true, '2026-03-02T12:00:00+00:00' );
 	Creature_Demo_Loan::start_loan( $order, $dispatch, $delivery );
-	// A damage or missing-parts line needs findings (terms 6.4(b)). Tests of the
-	// refusal clear this on purpose.
+	// A damage or missing-parts line needs findings and a photo (terms 6.4(b)).
+	// Tests of the refusal clear these on purpose.
 	$order->update_meta_data( '_creature_demo_findings', 'Test findings: dented clamp face.' );
+	$order->update_meta_data( '_creature_demo_photos', array( 'https://example.com/uploads/demo-clamp-1.jpg' ) );
 	return $order;
 }
 
@@ -2756,6 +2757,7 @@ function creature_demo_booked_loan( $bundle_price ) {
 	Creature_Demo_Loan::on_checkout_create_order( $order );
 	Creature_Demo_Loan::start_loan( $order, '2026-03-02', '2026-03-04' );
 	$order->update_meta_data( '_creature_demo_findings', 'Test findings: dented clamp face.' );
+	$order->update_meta_data( '_creature_demo_photos', array( 'https://example.com/uploads/demo-clamp-1.jpg' ) );
 	$GLOBALS['creature_demo_cart']        = $saved_cart;
 	$GLOBALS['creature_demo_use_product'] = $saved_use;
 	$_POST                                = $saved_post;
@@ -3243,6 +3245,36 @@ $nl->update_meta_data( '_creature_demo_findings', '' );
 Creature_Demo_Loan::record_return_scan( $nl, '2026-04-02', '2026-04-02' );
 $nl_r = Creature_Demo_Loan::raise_bill( $nl, '2026-04-02' );
 creature_demo_expect( ! empty( $nl_r['ok'] ) && 1200 === $nl_r['amount'], 'a late-fee-only bill needs no findings' );
+// Item 7: findings alone are not enough. A damage or missing-parts line needs at least one photo.
+$np = creature_demo_loan();
+$np->update_meta_data( '_creature_demo_photos', array() );
+Creature_Demo_Loan::record_return_scan( $np, '2026-03-30', '2026-03-30' );
+$np->update_meta_data( '_creature_demo_damage_pence', 2000 );
+$np_mails = creature_demo_charge_mail_count();
+$np_r     = Creature_Demo_Loan::complete_inspection( $np, '2026-03-30' );
+creature_demo_expect( empty( $np_r['ok'] ) && 'no_photos' === $np_r['reason'], 'a damage line with findings but no photo is refused' );
+creature_demo_expect( 0 === creature_demo_charge_orders_for( $np ) && $np_mails === creature_demo_charge_mail_count() && '' === $np->get_meta( '_creature_demo_bill_state' ) && '' === $np->get_meta( '_creature_demo_inspection_done' ), 'the refused bill makes no order, sends no email and leaves the inspection open' );
+creature_demo_expect( false !== strpos( implode( "\n", $np->notes ), 'there is no photo' ), 'the refusal says a photo is missing' );
+$np->update_meta_data( '_creature_demo_photos', array( 'not a url', 'ftp://example.com/x.jpg', '0' ) );
+creature_demo_expect( 'no_photos' === Creature_Demo_Loan::raise_bill( $np, '2026-03-30' )['reason'], 'photo slots that are not valid photos do not count' );
+creature_demo_expect( 'no_photos' === Creature_Demo_Loan::raise_damage_charge( $np, 2000, 'Damage', '2026-03-30' )['reason'], 'raise_damage_charge needs a photo too' );
+Creature_Demo_Loan::action_damage( $np );
+creature_demo_expect( 0 === creature_demo_charge_orders_for( $np ) && $np_mails === creature_demo_charge_mail_count(), 'the admin Email a damage charge action sends nothing without a photo' );
+$npm = creature_demo_loan();
+$npm->update_meta_data( '_creature_demo_photos', array() );
+$npm->update_meta_data( '_creature_demo_missing_pence', 3500 );
+creature_demo_expect( 'no_photos' === Creature_Demo_Loan::raise_bill( $npm, '2026-03-30' )['reason'], 'a missing-parts line needs a photo too' );
+$npl = creature_demo_loan();
+$npl->update_meta_data( '_creature_demo_photos', array() );
+Creature_Demo_Loan::record_return_scan( $npl, '2026-04-02', '2026-04-02' );
+creature_demo_expect( ! empty( Creature_Demo_Loan::raise_bill( $npl, '2026-04-02' )['ok'] ), 'a late-fee-only bill needs no photo' );
+$np->update_meta_data( '_creature_demo_photos', array( 'https://example.com/uploads/crack.jpg' ) );
+$np_r2 = Creature_Demo_Loan::complete_inspection( $np, '2026-03-30' );
+creature_demo_expect( ! empty( $np_r2['ok'] ) && 1 === creature_demo_charge_orders_for( $np ), 'with a photo added the same bill goes out' );
+ob_start();
+Creature_Demo_Loan::render_meta_box( $np );
+$np_html = ob_get_clean();
+creature_demo_expect( false !== strpos( $np_html, 'at least one photo' ), 'the order screen tells the admin a photo is required' );
 $nf->update_meta_data( '_creature_demo_findings', 'Steerer cap cracked at the slot.' );
 $nf->update_meta_data( '_creature_demo_photos', array( '123', 'https://example.com/a.jpg', 'ftp://example.com/b.jpg', 'javascript:alert(1)', 'not a url', '0', '456 789' ) );
 $nf_r2 = Creature_Demo_Loan::complete_inspection( $nf, '2026-03-30' );
