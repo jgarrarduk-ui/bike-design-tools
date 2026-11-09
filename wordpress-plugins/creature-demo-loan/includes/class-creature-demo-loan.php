@@ -3208,6 +3208,8 @@ final class Creature_Demo_Loan {
 			'booking_confirmation',
 			array(
 				'order_id'        => (string) $order->get_id(),
+				// Terms: "Your keep price is on your booking confirmation". Formatted like the other emails.
+				'price'           => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $order ) ),
 				'consent'         => $record['wording'],
 				'consent_version' => $record['label'],
 				'consent_at'      => $record['date'],

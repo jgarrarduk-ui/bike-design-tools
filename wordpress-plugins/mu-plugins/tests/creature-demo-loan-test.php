@@ -3838,6 +3838,21 @@ creature_demo_clear_cart();
 $GLOBALS['creature_demo_use_product'] = false;
 $GLOBALS['creature_demo_copy_override'] = array();
 
+// Item C: the keep price is on the booking confirmation, formatted like the other emails.
+$kp_212 = creature_demo_booked_loan( '249.00' );
+$kp_192 = creature_demo_booked_loan( '229.00' );
+$kp_fb  = creature_demo_booked_loan( null );
+foreach ( array( array( $kp_212, '£212.00' ), array( $kp_192, '£192.00' ), array( $kp_fb, '£212.00' ) ) as $kp_case ) {
+	ob_start();
+	Creature_Demo_Loan::render_booking_confirmation( $kp_case[0], false, true, $bc_email );
+	$kp_out = ob_get_clean();
+	creature_demo_expect( false !== strpos( $kp_out, 'Your keep price: ' . $kp_case[1] ) && false === strpos( $kp_out, '{price}' ), 'the booking confirmation shows the loan\'s keep price ' . $kp_case[1] );
+}
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $kp_192, false, false, $bc_email );
+creature_demo_expect( false !== strpos( ob_get_clean(), 'Your keep price: £192.00' ), 'the HTML confirmation shows it too' );
+creature_demo_expect( Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan::loan_keep_price_pence( $kp_192 ) ) === '£192.00', 'it uses the same money format as the reminder and bill emails (£x.xx)' );
+
 // The attachments: media ids or file paths, set through the filter (the config screen sets it).
 $up = sys_get_temp_dir() . '/creature-demo-uploads-' . getmypid();
 @mkdir( $up, 0777, true );
