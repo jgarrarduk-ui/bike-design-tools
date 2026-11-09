@@ -592,6 +592,11 @@ final class Creature_Demo_Loan {
 			'stripe_error'       => 'Charge failed. The saved card was not charged. A payment link remains available.',
 		);
 		$msg = isset( $map[ $code ] ) ? $map[ $code ] : 'Charge refused.';
+		if ( 'crash_hold' === $code ) {
+			// Shown to the rider. Cadence's v2 has no wording for it, so the slot is empty.
+			$slot = trim( Creature_Demo_Loan_Copy::text( 'crash_hold_notice' ) );
+			$msg  = '' !== $slot ? $slot : 'Charge refused.';
+		}
 		return self::redact( $msg );
 	}
 
@@ -1328,6 +1333,12 @@ final class Creature_Demo_Loan {
 		// A stored `buy` (the old third choice) reads as return.
 		$current = self::normalize_choice( self::meta_string( $order, '_creature_demo_choice' ) );
 		$lapsed  = 'yes' === self::meta_string( $order, '_creature_demo_keep_lapsed' );
+		if ( 'keep' === $choice && self::crash_hold( $order ) ) {
+			return array(
+				'ok'     => false,
+				'reason' => 'crash_hold',
+			);
+		}
 		if ( $current === $choice && ! ( 'keep' === $choice && $lapsed ) ) {
 			return array(
 				'ok'         => true,
@@ -1360,6 +1371,11 @@ final class Creature_Demo_Loan {
 		}
 		$choice = self::normalize_choice( $choice );
 		if ( '' === $choice ) {
+			return false;
+		}
+		// Terms 3A.3: after a reported crash, impact or failure the kit cannot be
+		// kept until it has been inspected.
+		if ( 'keep' === $choice && self::crash_hold( $order ) ) {
 			return false;
 		}
 		$status = (string) $order->get_status();
@@ -1411,6 +1427,18 @@ final class Creature_Demo_Loan {
 			return (bool) apply_filters( 'creature_demo_loan_buy_return_switch_open', true, $order, $as_of );
 		}
 		return true;
+	}
+
+	/**
+	 * Terms 3A.3: a crash, impact or failure is flagged on the order and the
+	 * inspection is not recorded yet. While true the keep choice is hidden or
+	 * refused.
+	 *
+	 * @param object $order
+	 * @return bool
+	 */
+	public static function crash_hold( $order ) {
+		return is_object( $order ) && 'yes' === self::meta_string( $order, '_creature_demo_crash_reported' ) && 'yes' !== self::meta_string( $order, '_creature_demo_inspection_done' );
 	}
 
 	/**
@@ -3045,6 +3073,9 @@ final class Creature_Demo_Loan {
 		if ( 'yes' === self::meta_string( $order, '_creature_demo_charge_paid' ) ) {
 			return false;
 		}
+		if ( self::keep_payment_on_crash_hold( $order ) ) {
+			return false;
+		}
 		if ( self::saved_card_lock_active( $order ) ) {
 			return false;
 		}
@@ -3169,6 +3200,9 @@ final class Creature_Demo_Loan {
 		$as_of = Creature_Demo_Loan_Calendar::today( null );
 		foreach ( array( 'return', 'keep' ) as $choice ) {
 			$current = self::normalize_choice( self::meta_string( $order, '_creature_demo_choice' ) );
+			if ( 'keep' === $choice && self::crash_hold( $order ) ) {
+				continue;
+			}
 			if ( ! self::choice_allowed( $order, $choice, $as_of ) && $current !== $choice ) {
 				continue;
 			}
@@ -3602,6 +3636,31 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * Admin checkboxes on the order screen: crash reported (terms 3A.3) and
+	 * refunded under 10.4/11 (terms 3A.4). An unticked box is not posted, so the
+	 * hidden creature_demo_flags_present field says the boxes were on the form.
+	 *
+	 * @param object $order
+	 */
+	private static function save_flags_from_post( $order ) {
+		if ( ! isset( $_POST['creature_demo_flags_present'] ) ) {
+			return;
+		}
+		foreach ( array(
+			'creature_demo_crash_reported'  => array( '_creature_demo_crash_reported', 'Crash, impact or failure reported: the keep choice is hidden until the inspection is recorded (terms 3A.3).', 'Crash flag cleared.' ),
+			'creature_demo_refunded_10411' => array( '_creature_demo_fee_refunded_admin', 'Marked as refunded under 10.4/11: no £25 code will be issued (terms 3A.4).', 'Refunded under 10.4/11 mark cleared.' ),
+		) as $field => $row ) {
+			$want = isset( $_POST[ $field ] ) && '1' === self::unslash_string( $_POST[ $field ] ) ? 'yes' : '';
+			if ( $want === self::meta_string( $order, $row[0] ) ) {
+				continue;
+			}
+			$order->update_meta_data( $row[0], $want );
+			$order->save();
+			self::note( $order, '' !== $want ? $row[1] : $row[2] );
+		}
+	}
+
+	/**
 	 * Proof of posting date and kit received date from the order screen.
 	 *
 	 * @param object $order
@@ -3621,6 +3680,7 @@ final class Creature_Demo_Loan {
 	 * @param object $order
 	 */
 	public static function action_inspect( $order ) {
+		self::save_flags_from_post( $order );
 		self::save_return_dates_from_post( $order );
 		self::save_damage_from_post( $order );
 		self::complete_inspection( $order, null );
@@ -3805,6 +3865,8 @@ final class Creature_Demo_Loan {
 				echo '<details><summary>Wording agreed</summary><p>' . self::esc( $record['wording'] ) . '</p></details>';
 			}
 		}
+		echo '<input type="hidden" name="creature_demo_flags_present" value="1" />';
+		echo '<p><label><input type="checkbox" name="creature_demo_crash_reported" value="1"' . ( 'yes' === self::meta_string( $order, '_creature_demo_crash_reported' ) ? ' checked="checked"' : '' ) . ' /> Crash, impact or failure reported (terms 3A.3): the keep choice stays hidden until the inspection is recorded</label></p>';
 		$express = self::express_answer( $order );
 		echo '<p>Send my kit now (terms 11.3, asked at checkout): ' . self::esc( '' !== $express ? $express : 'not asked' ) . '. ' . ( 'Yes' === $express ? 'The rider asked for the kit within the 14-day cancellation period. If they cancel after dispatch, the pro-rata refund is worked out by hand.' : '' ) . '</p>';
 		self::date_input( 'creature_demo_dispatch_date', 'Dispatch date', self::meta_string( $order, '_creature_demo_dispatch_date' ) );
@@ -3874,6 +3936,7 @@ final class Creature_Demo_Loan {
 		}
 		self::save_damage_from_post( $order );
 		self::save_return_dates_from_post( $order );
+		self::save_flags_from_post( $order );
 		$delivery = self::posted_date( 'creature_demo_delivery_date' );
 		if ( '' !== $delivery ) {
 			self::correct_delivery_date( $order, $delivery );
@@ -4407,6 +4470,9 @@ final class Creature_Demo_Loan {
 		);
 		$stored = self::normalize_choice( self::meta_string( $order, '_creature_demo_choice' ) );
 		foreach ( $names as $choice => $label ) {
+			if ( 'keep' === $choice && self::crash_hold( $order ) ) {
+				continue;
+			}
 			if ( ! self::choice_allowed( $order, $choice, $as_of ) && $stored !== $choice ) {
 				continue;
 			}
@@ -4778,6 +4844,9 @@ final class Creature_Demo_Loan {
 	 * @return string
 	 */
 	private static function pay_link_blocked_by( $order ) {
+		if ( self::keep_payment_on_crash_hold( $order ) ) {
+			return 'crash_hold';
+		}
 		$settled = self::charge_already_settled( $order );
 		if ( '' !== $settled ) {
 			return $settled;
@@ -4786,6 +4855,21 @@ final class Creature_Demo_Loan {
 			return 'payment_in_progress';
 		}
 		return self::pay_link_intent_conflict( $order );
+	}
+
+	/**
+	 * Terms 3A.3: is this the keep payment of a loan with a reported crash that
+	 * has not been inspected yet?
+	 *
+	 * @param object $charge
+	 * @return bool
+	 */
+	private static function keep_payment_on_crash_hold( $charge ) {
+		if ( ! is_object( $charge ) || 'keep' !== self::meta_string( $charge, '_creature_demo_charge_kind' ) ) {
+			return false;
+		}
+		$loan = self::parent_loan( $charge );
+		return $loan && self::crash_hold( $loan );
 	}
 
 	/**

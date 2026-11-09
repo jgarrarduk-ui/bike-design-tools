@@ -76,6 +76,11 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => '',
 				'body'    => '',
 			),
+			// Terms 3A.3: shown when the keep payment is refused after a reported crash. No wording in v2, so empty.
+			'crash_hold_notice'             => array(
+				'subject' => '',
+				'body'    => '',
+			),
 			'consent_error'                 => array(
 				'subject' => '',
 				'body'    => 'To book a demo, tick the box agreeing that we can charge your saved card later under clause 4 of the demo terms. It’s separate from accepting the terms.',

@@ -1176,6 +1176,7 @@ $expected_slots = array(
 	'admin_received_date_missing',
 	'express_request_checkbox',
 	'admin_attachments_missing',
+	'crash_hold_notice',
 );
 // The three emails Cadence has not written yet are slots with no wording.
 $expected_slots = array_merge( $expected_slots, array() );
@@ -1194,7 +1195,7 @@ foreach ( $slots as $slot ) {
 	}
 }
 sort( $empty_slots );
-creature_demo_expect( array( 'express_request_checkbox' ) === $empty_slots, 'every slot has wording except the Appendix B checkbox label, which v2 does not give and stays empty' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
+creature_demo_expect( array( 'crash_hold_notice', 'express_request_checkbox' ) === $empty_slots, 'every slot has wording except the two v2 does not give (the Appendix B checkbox label and the crash-hold refusal), which stay empty' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
 $v2_cat = Creature_Demo_Loan_Copy::catalogue();
 $v2_has = static function ( $slot, $needle ) use ( $v2_cat ) {
 	return false !== strpos( $v2_cat[ $slot ]['body'], $needle );
@@ -2405,6 +2406,53 @@ Creature_Demo_Loan::maybe_handle_choice_request();
 creature_demo_expect( 'keep' === $choices->get_meta( '_creature_demo_choice' ), 'confirming keep records the choice' );
 creature_demo_expect( 1 === count( $GLOBALS['creature_demo_notices'] ), 'confirming a choice leaves a notice' );
 $_GET = array();
+$GLOBALS['creature_demo_user'] = 0;
+
+// Item D, terms 3A.3: a reported crash hides the keep choice until the inspection is recorded.
+$cr = creature_demo_loan( '2026-10-26', '2026-10-27' );
+$GLOBALS['creature_demo_user'] = 42;
+creature_demo_expect( true === Creature_Demo_Loan::choice_allowed( $cr, 'keep', '2026-11-01' ) && false === Creature_Demo_Loan::crash_hold( $cr ), 'before a crash is flagged, keep is open' );
+$_POST = array(
+	'creature_demo_loan_admin_nonce' => 'creature_demo_loan_admin',
+	'creature_demo_flags_present'    => '1',
+	'creature_demo_crash_reported'   => '1',
+);
+Creature_Demo_Loan::save_meta_box( $cr->get_id(), $cr );
+$_POST = array();
+creature_demo_expect( 'yes' === $cr->get_meta( '_creature_demo_crash_reported' ) && true === Creature_Demo_Loan::crash_hold( $cr ) && false !== strpos( implode( "\n", $cr->notes ), '3A.3' ), 'the admin checkbox sets the crash flag and notes it' );
+creature_demo_expect( false === Creature_Demo_Loan::choice_allowed( $cr, 'keep', '2026-11-01' ) && true === Creature_Demo_Loan::choice_allowed( $cr, 'return', '2026-11-01' ), 'the keep choice is closed, return is not' );
+$cr_try = Creature_Demo_Loan::choose( $cr, 'keep', '2026-11-01' );
+creature_demo_expect( empty( $cr_try['ok'] ) && 'crash_hold' === $cr_try['reason'] && '' === $cr->get_meta( '_creature_demo_choice' ), 'choosing keep is refused' );
+ob_start();
+Creature_Demo_Loan::render_my_account_choices( $cr );
+$cr_account = ob_get_clean();
+creature_demo_expect( false === strpos( $cr_account, 'creature_demo_choice=keep' ) && false !== strpos( $cr_account, 'creature_demo_choice=return' ), 'My Account hides the keep link and still shows return' );
+$cr_reminder_before = creature_demo_mail_count( 'reminder_choices_due_minus_5' );
+Creature_Demo_Loan::tick( $cr, '2026-11-11' );
+$cr_mail = creature_demo_last_mail( 'reminder_choices_due_minus_5' );
+creature_demo_expect( creature_demo_mail_count( 'reminder_choices_due_minus_5' ) > $cr_reminder_before && false === strpos( $cr_mail['body'], 'Keep it for your keep price:' ) && false !== strpos( $cr_mail['body'], 'Return it' ), 'the emailed choice links leave out keep' );
+// Keep already chosen, crash reported afterwards: the keep payment is refused.
+$cr2 = creature_demo_loan( '2026-10-26', '2026-10-27' );
+Creature_Demo_Loan::choose( $cr2, 'keep', '2026-11-01' );
+$cr2_charge = wc_get_order( (int) $cr2->get_meta( '_creature_demo_keep_order_id' ) );
+creature_demo_expect( true === Creature_Demo_Loan::filter_needs_payment( true, $cr2_charge ) && true === Creature_Demo_Loan::begin_pay_link( $cr2_charge )['ok'], 'with no crash the keep link can be paid' );
+Creature_Demo_Loan::on_pay_link_failed( $cr2_charge->get_id(), $cr2_charge );
+$cr2->update_meta_data( '_creature_demo_crash_reported', 'yes' );
+$cr2_pay = Creature_Demo_Loan::begin_pay_link( $cr2_charge );
+creature_demo_expect( empty( $cr2_pay['ok'] ) && 'crash_hold' === $cr2_pay['code'] && false === Creature_Demo_Loan::filter_needs_payment( true, $cr2_charge ), 'a flagged loan: the keep payment is refused and the link no longer needs payment' );
+ob_start();
+Creature_Demo_Loan::render_my_account_choices( $cr2 );
+creature_demo_expect( false === strpos( ob_get_clean(), 'creature_demo_choice=keep' ), 'a keep that was chosen is hidden too while the hold lasts' );
+creature_demo_expect( 'Charge refused.' === Creature_Demo_Loan::refusal_message( 'crash_hold' ), 'the rider-facing refusal has no invented wording (slot is empty)' );
+// Inspection recorded: the hold ends.
+Creature_Demo_Loan::record_return_scan( $cr2, '2026-11-02', '2026-11-02' );
+Creature_Demo_Loan::complete_inspection( $cr2, '2026-11-02' );
+creature_demo_expect( false === Creature_Demo_Loan::crash_hold( $cr2 ) && 'yes' === $cr2->get_meta( '_creature_demo_crash_reported' ), 'once the inspection is recorded the hold is lifted (the report stays on file)' );
+// Unticking clears it.
+$_POST = array( 'creature_demo_loan_admin_nonce' => 'creature_demo_loan_admin', 'creature_demo_flags_present' => '1' );
+Creature_Demo_Loan::save_meta_box( $cr->get_id(), $cr );
+$_POST = array();
+creature_demo_expect( false === Creature_Demo_Loan::crash_hold( $cr ) && true === Creature_Demo_Loan::choice_allowed( $cr, 'keep', '2026-11-01' ), 'unticking the box reopens keep' );
 $GLOBALS['creature_demo_user'] = 0;
 
 $mail_hooks = array();
