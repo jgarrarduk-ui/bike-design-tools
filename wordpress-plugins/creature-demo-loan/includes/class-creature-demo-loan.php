@@ -2162,7 +2162,7 @@ final class Creature_Demo_Loan {
 		$loan->update_meta_data( '_creature_demo_deduction_settle_alert_sent', 'yes' );
 		$loan->save();
 		Creature_Demo_Loan_Mail::send_admin( $loan, 'admin_deduction_settle_due', array() );
-		self::note( $loan, 'The 7 days after the decision on the deduction have passed. Re-run Refund deemed purchase to settle the deduction.' );
+		self::note( $loan, 'Deduction ready to settle (waived, or 7 days since the notice or final decision). Run Refund deemed purchase (after inspection) again.' );
 	}
 
 	/**

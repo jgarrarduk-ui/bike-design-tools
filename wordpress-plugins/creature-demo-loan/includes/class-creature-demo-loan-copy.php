@@ -243,7 +243,7 @@ final class Creature_Demo_Loan_Copy {
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_deduction_settle_due'  => array(
 				'subject' => 'Demo deduction ready to settle (order {order_id})',
-				'body'    => 'The deduction on order {order_id} can now be settled: it was waived, or 7 days have passed since the deduction notice or the final decision. Re-run Refund deemed purchase to settle it. On a waiver this refunds the whole amount held. This email goes to the shop, not the rider.',
+				'body'    => 'The deduction held back from the deemed purchase refund on order {order_id} can now be settled. Either the rider’s dispute was waived, or 7 days have passed since the deduction notice (not disputed) or since our final decision (upheld or upheld in part). To settle it, open the order and run the order action "Refund deemed purchase (after inspection)" again. This refunds the part of the held amount we’re not keeping: all of it on a waiver, the part we cut on a partial uphold, and nothing on a full uphold or an undisputed deduction. This email goes to the shop, not the rider.',
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_received_date_missing'   => array(
