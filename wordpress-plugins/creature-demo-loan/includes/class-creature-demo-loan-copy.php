@@ -144,6 +144,14 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => 'De-Reacher demo: {amount} to come off your refund (order {order_id})',
 				'body'    => "Your demo kit (order {order_id}) is back with us and has been inspected. You’d paid the deemed purchase price and posted the kit back within 30 days, so under clause 8.5(b) we’re refunding your keep price of {price}, less late fees of £24 and any charge for damage or missing parts. The late fees are the £24 maximum because the kit was posted after the deemed purchase date.\n\nWhat we found:\n{findings}\nOur photos:\n{photos}\n\nDamage or missing parts: {reason}.\nAmount we’ll keep from your refund for this: {amount}.\nWe charge the lower of the reasonable cost of repair and the price on our spare-parts list (creaturecycles.co.uk/spare-parts/). A missing inverted mount kit is £35 rather than the price of its separate parts. We don’t charge for fair wear and tear, or for anything shown in our photos from before we sent the kit.\n\nWe’re refunding the rest to the card you paid with now. There’s nothing to pay, and we won’t charge your saved card.\n\nIf you think it’s wrong, reply to this email or email info@creaturecycles.co.uk within 7 days and tell us why. We’ll hold the {amount} while we look again, email you our decision and refund any part we don’t uphold. If you don’t reply within 7 days, we’ll keep it from your refund.",
 			),
+			// Terms 4.4(b) and 8.5(b): the final decision email when the disputed charge is a deduction from a
+			// deemed purchase refund. No pay link and no saved-card line. v3 has no wording for it, so the slot is
+			// empty. While it is empty the decision cannot be recorded or sent. Tags: {decision} {amount} {reason}
+			// {price} {findings} {photos} {order_id}.
+			'dispute_decision_deemed'       => array(
+				'subject' => '',
+				'body'    => '',
+			),
 			'charge_authentication_required' => array(
 				'subject' => 'Action needed: pay your De-Reacher demo charge ({amount})',
 				'body'    => "Your bank asked to confirm this payment, so your saved card wasn’t charged.\nAmount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. The amount is still owed. Please pay it using the link.",
@@ -198,7 +206,12 @@ final class Creature_Demo_Loan_Copy {
 				'body'    => 'The deemed purchase refund on order {order_id} has a damage or missing-parts deduction, but the deduction_notice_deemed wording is empty, so the notice cannot be sent and nothing was refunded or deducted. Add the wording, then run Refund deemed purchase again. This email goes to the shop, not the rider.',
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
-			'admin_deduction_settle_due'    => array(
+			'admin_dispute_decision_missing' => array(
+				'subject' => 'Demo dispute decision held: no deduction decision wording (order {order_id})',
+				'body'    => 'A dispute decision was recorded on a deemed-refund deduction on order {order_id}, but the dispute_decision_deemed wording is empty, so the decision email cannot be sent and the decision was not recorded. Add the wording, then record the decision again. This email goes to the shop, not the rider.',
+			),
+			// Shop alert, not rider copy. Plain wording, not Cadence's.
+			'admin_deduction_settle_due'   => array(
 				'subject' => 'Demo deduction ready to settle (order {order_id})',
 				'body'    => 'The 7 days since the decision on the deduction for order {order_id} have passed: re-run Refund deemed purchase to settle the deduction. This email goes to the shop, not the rider.',
 			),

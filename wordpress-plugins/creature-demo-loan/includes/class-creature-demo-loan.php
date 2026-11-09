@@ -2689,6 +2689,26 @@ final class Creature_Demo_Loan {
 	public static function record_dispute_decision( $charge, $decision, $as_of = null, $amount_pence = null ) {
 		$as_of    = Creature_Demo_Loan_Calendar::today( $as_of );
 		$decision = 'upheld' === $decision ? 'upheld' : 'waived';
+		// A deemed-refund deduction has its own decision email: no pay link and no saved-card line
+		// (it comes out of the refund). While that wording is empty nothing is recorded or sent,
+		// and the shop is told once, as for deduction_notice_deemed. The dispute stays open.
+		$deduction = 'yes' === self::meta_string( $charge, '_creature_demo_charge_netted' );
+		if ( $deduction && '' === trim( Creature_Demo_Loan_Copy::text( 'dispute_decision_deemed' ) ) ) {
+			$loan = self::parent_loan( $charge );
+			if ( $loan && 'yes' !== self::meta_string( $loan, '_creature_demo_decision_wording_notice_sent' ) ) {
+				$loan->update_meta_data( '_creature_demo_decision_wording_notice_sent', 'yes' );
+				$loan->save();
+				Creature_Demo_Loan_Mail::send_admin( $loan, 'admin_dispute_decision_missing', array() );
+			}
+			self::note( $charge, 'Decision not recorded or sent: the dispute_decision_deemed wording is empty, so the decision email for a deemed-refund deduction cannot be sent. Add the wording, then record the decision again.' );
+			if ( $loan ) {
+				self::note( $loan, 'Dispute decision not recorded: the dispute_decision_deemed wording is empty. Add the wording, then record the decision again.' );
+			}
+			return array(
+				'ok'     => false,
+				'reason' => 'no_decision_wording',
+			);
+		}
 		$opened   = self::meta_string( $charge, '_creature_demo_dispute_opened_at' );
 		$within   = true;
 		if ( Creature_Demo_Loan_Calendar::is_ymd( $opened ) ) {
@@ -2738,12 +2758,16 @@ final class Creature_Demo_Loan {
 		$amount = (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' );
 		$row    = Creature_Demo_Loan_Mail::send_customer(
 			$target,
-			'dispute_decision',
+			$deduction ? 'dispute_decision_deemed' : 'dispute_decision',
 			array(
 				'decision' => $decision,
 				'amount'   => Creature_Demo_Loan_Money::format_gbp( $amount ),
 				'reason'   => self::meta_string( $charge, '_creature_demo_charge_notice_reason' ),
-				'link'     => self::payment_link( $charge ),
+				// A deduction comes out of the refund, so its decision email never has a pay link.
+				'link'     => $deduction ? '' : self::payment_link( $charge ),
+				'price'    => $loan ? Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $loan ) ) : '',
+				'findings' => $loan ? self::findings_text( $loan ) : '',
+				'photos'   => $loan ? self::photo_lines( $loan ) : '',
 			)
 		);
 		// The 7 days before an upheld charge can be taken run from this email.

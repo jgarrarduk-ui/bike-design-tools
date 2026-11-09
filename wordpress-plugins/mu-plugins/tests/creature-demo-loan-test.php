@@ -64,6 +64,12 @@ function creature_demo_empty_copy_baseline() {
 		'express_request_checkbox' => $empty,
 		'crash_hold_notice'        => $empty,
 		'deduction_notice_deemed'  => $empty,
+		// v3 has no wording for this one. Tests that decide a deduction dispute need a body, so the
+		// baseline gives a test body; the E3 tests set it empty to test the block.
+		'dispute_decision_deemed'  => array(
+			'subject' => 'Test deduction decision for {order_id}',
+			'body'    => 'Test deduction decision: {decision}. Amount: {amount}.',
+		),
 	);
 }
 $GLOBALS['creature_demo_copy_override'] = creature_demo_empty_copy_baseline();
@@ -1232,6 +1238,8 @@ $expected_slots = array(
 	'deduction_notice_deemed',
 	'admin_deduction_notice_missing',
 	'admin_deduction_settle_due',
+	'dispute_decision_deemed',
+	'admin_dispute_decision_missing',
 );
 // The three emails Cadence has not written yet are slots with no wording.
 $expected_slots = array_merge( $expected_slots, array() );
@@ -1253,7 +1261,7 @@ foreach ( $slots as $slot ) {
 	}
 }
 sort( $empty_slots );
-creature_demo_expect( array() === $empty_slots, 'v3 copy: every slot has wording (v3 fills the checkbox label, the crash notice and the deemed deduction notice)' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
+creature_demo_expect( array( 'dispute_decision_deemed' ) === $empty_slots, 'v3 copy: every slot has wording except dispute_decision_deemed, which v3 does not give (v3 fills the checkbox label, the crash notice and the deemed deduction notice)' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
 $v3_express = Creature_Demo_Loan_Copy::text( 'express_request_checkbox' );
 creature_demo_expect( 'Send my kit now. I understand that if I cancel within the 14-day cancellation period after the kit has been sent, I’ll need to send it back, and you’ll keep part of the £25 for the days I’ve had it.' === $v3_express, 'v3 copy: the express checkbox label is the Appendix B text, curly apostrophes' );
 creature_demo_absent( $v3_express, "'", 'v3 copy: no straight apostrophe in the checkbox label' );
@@ -2511,6 +2519,33 @@ $e1_ok  = Creature_Demo_Loan::refund_deemed( $e1, '2026-04-11' );
 creature_demo_expect( ! empty( $e1_ok['pending'] ) && 1500 === $e1_ok['held'] && 'deduction_notice_deemed' === creature_demo_last_charge_slot(), 'D3: once the wording is filled the notice sends and the refund goes ahead' );
 $e1_mail = creature_demo_last_mail( 'deduction_notice_deemed' );
 creature_demo_expect( $e1_dmg === creature_demo_mail_count( 'charge_notice_damage' ) && 'Deduction £15.00. Link: []' === $e1_mail['body'], 'D3: the deduction does not reuse charge_notice_damage, and its notice has no pay link' );
+// E3: the decision on a disputed deemed-refund deduction is its own slot, dispute_decision_deemed, with no pay link.
+$GLOBALS['creature_demo_copy_override']['dispute_decision_deemed'] = array(
+	'subject' => '',
+	'body'    => '',
+);
+$e3_charge = wc_get_order( (int) $e1->get_meta( '_creature_demo_damage_order_id' ) );
+Creature_Demo_Loan::mark_disputed( $e3_charge, '2026-04-12' );
+$e3_plain   = creature_demo_mail_count( 'dispute_decision' );
+$e3_deemed  = creature_demo_mail_count( 'dispute_decision_deemed' );
+$e3_admin   = creature_demo_mail_count( 'admin_dispute_decision_missing' );
+$e3_blocked = Creature_Demo_Loan::record_dispute_decision( $e3_charge, 'upheld', '2026-04-14', null );
+creature_demo_expect( empty( $e3_blocked['ok'] ) && 'no_decision_wording' === $e3_blocked['reason'], 'E3: with dispute_decision_deemed empty the decision is blocked' );
+creature_demo_expect( $e3_plain === creature_demo_mail_count( 'dispute_decision' ) && $e3_deemed === creature_demo_mail_count( 'dispute_decision_deemed' ), 'E3: blocked: no decision email of either kind goes out (never the plain one with a pay link)' );
+creature_demo_expect( 'open' === $e3_charge->get_meta( '_creature_demo_dispute_status' ) && '' === $e3_charge->get_meta( '_creature_demo_decision_sent_at' ), 'E3: blocked: the dispute stays open and no 7-day clock starts' );
+creature_demo_expect( $e3_admin + 1 === creature_demo_mail_count( 'admin_dispute_decision_missing' ) && false !== strpos( implode( "\n", $e3_charge->notes ), 'dispute_decision_deemed' ), 'E3: blocked: the shop is emailed and the order note says why' );
+Creature_Demo_Loan::record_dispute_decision( $e3_charge, 'upheld', '2026-04-14', null );
+creature_demo_expect( $e3_admin + 1 === creature_demo_mail_count( 'admin_dispute_decision_missing' ), 'E3: blocked: the shop email is sent once, not on every retry' );
+$GLOBALS['creature_demo_copy_override']['dispute_decision_deemed'] = array(
+	'subject' => 'Test decision for {order_id}',
+	'body'    => 'Decision {decision}. Amount {amount}. Link: [{link}] Price {price}.',
+);
+$e3_ok = Creature_Demo_Loan::record_dispute_decision( $e3_charge, 'upheld', '2026-04-14', null );
+creature_demo_expect( ! empty( $e3_ok['ok'] ) && 'upheld' === $e3_charge->get_meta( '_creature_demo_dispute_status' ), 'E3: once the wording is filled the decision is recorded' );
+$e3_mail = creature_demo_last_mail( 'dispute_decision_deemed' );
+creature_demo_expect( $e3_deemed + 1 === creature_demo_mail_count( 'dispute_decision_deemed' ) && $e3_plain === creature_demo_mail_count( 'dispute_decision' ), 'E3: filled: the deduction decision goes out as dispute_decision_deemed, not dispute_decision' );
+creature_demo_expect( 'Decision upheld. Amount £15.00. Link: [] Price £212.00.' === $e3_mail['body'] && false === stripos( $e3_mail['body'], 'http' ), 'E3: filled: the decision has no pay link, even though the test body has a {link} tag' );
+$GLOBALS['creature_demo_copy_override']['dispute_decision_deemed'] = creature_demo_empty_copy_baseline()['dispute_decision_deemed'];
 $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array(
 	'subject' => '',
 	'body'    => '',
