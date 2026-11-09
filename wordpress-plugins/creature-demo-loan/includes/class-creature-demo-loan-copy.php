@@ -243,7 +243,7 @@ final class Creature_Demo_Loan_Copy {
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_deduction_settle_due'  => array(
 				'subject' => 'Demo deduction ready to settle (order {order_id})',
-				'body'    => 'The 7 days after the deduction notice, or after the dispute decision, have passed for order {order_id}. Re-run Refund deemed purchase to settle the deduction. This email goes to the shop, not the rider.',
+				'body'    => 'The deduction on order {order_id} can now be settled: it was waived, or 7 days have passed since the deduction notice or the final decision. Re-run Refund deemed purchase to settle it. On a waiver this refunds the whole amount held. This email goes to the shop, not the rider.',
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_received_date_missing'   => array(

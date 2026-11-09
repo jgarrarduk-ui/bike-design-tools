@@ -2483,7 +2483,7 @@ creature_demo_expect( $s1_set === creature_demo_mail_count( 'admin_deduction_set
 Creature_Demo_Loan::tick( $s1, '2026-04-16' );
 Creature_Demo_Loan::tick( $s1, '2026-04-17' );
 $s1_mail = creature_demo_last_mail( 'admin_deduction_settle_due' );
-creature_demo_expect( $s1_set + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ) && 'info@creaturecycles.co.uk' === $s1_mail['to'] && 'The 7 days after the deduction notice, or after the dispute decision, have passed for order ' . $s1->get_id() . '. Re-run Refund deemed purchase to settle the deduction. This email goes to the shop, not the rider.' === $s1_mail['body'], 'D2: one shop alert 7 days after the notice says to re-run Refund deemed purchase (round 4 wording)' );
+creature_demo_expect( $s1_set + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ) && 'info@creaturecycles.co.uk' === $s1_mail['to'] && 'The deduction on order ' . $s1->get_id() . ' can now be settled: it was waived, or 7 days have passed since the deduction notice or the final decision. Re-run Refund deemed purchase to settle it. On a waiver this refunds the whole amount held. This email goes to the shop, not the rider.' === $s1_mail['body'], 'D2: one shop alert 7 days after the notice says to re-run Refund deemed purchase (round 5 wording)' );
 $s2 = creature_demo_paid_deemed_returned( '2026-04-08' );
 $s2->update_meta_data( '_creature_demo_damage_pence', 1500 );
 Creature_Demo_Loan::refund_deemed( $s2, '2026-04-09' );
