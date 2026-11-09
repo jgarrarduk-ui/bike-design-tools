@@ -2808,7 +2808,7 @@ creature_demo_expect( $v5_amt - 100 === (int) $v5_c->get_meta( '_creature_demo_c
 list( $v5_loan, $v5_c ) = $v5_ord();
 Creature_Demo_Loan::record_dispute_decision( $v5_c, 'waived', '2026-04-02', null, 'We billed the wrong day.' );
 $v5_m = creature_demo_last_mail( 'dispute_decision' );
-creature_demo_expect( 'dispute_decision_waived' === $v5_m['slot'] && false !== strpos( $v5_m['body'], "Our decision: the charge is waived, because:\nWe billed the wrong day.\n\nYou have nothing to pay, and we won’t charge your saved card. The payment link in our earlier email may still work, so please ignore it.\n\n" . $v5_tail ) && false === strpos( $v5_m['body'], 'http' ) && false === strpos( $v5_m['body'], '{' ), 'v5 ordinary waived: variant word for word, no link in the email' );
+creature_demo_expect( 'dispute_decision_waived' === $v5_m['slot'] && false !== strpos( $v5_m['body'], "Our decision: the charge is waived, because:\nWe billed the wrong day.\n\nYou have nothing to pay, and we won’t charge your saved card.\n\n" . $v5_tail ) && false === strpos( $v5_m['body'], 'ignore it' ) && false === strpos( $v5_m['body'], 'http' ) && false === strpos( $v5_m['body'], '{' ), 'v5 ordinary waived: variant word for word, no link in the email' );
 creature_demo_expect( 'cancelled' === $v5_c->get_status(), 'C1: the waived charge order is cancelled' );
 $v5_pay_after = Creature_Demo_Loan::begin_pay_link( wc_get_order( $v5_c->get_id() ) );
 creature_demo_expect( empty( $v5_pay_after['ok'] ) && 'dispute_waived' === $v5_pay_after['code'], 'C1: the payment link no longer works (pay-for-order is refused as dispute_waived)' );
@@ -4238,6 +4238,7 @@ creature_demo_expect( ! empty( $notice192_r['ok'] ) && is_array( $deemed_mail ),
 creature_demo_expect( false !== strpos( $deemed_mail['body'], 'Amount: £172.00' ), 'the deemed notice quotes the amount in the payment link' );
 creature_demo_expect( false !== strpos( $deemed_mail['body'], 'for your keep price of £192.00 less any late fees you’ve already paid' ), 'the deemed notice quotes the £192.00 keep price' );
 creature_demo_expect( false === strpos( $deemed_mail['body'], '£212' ), 'the deemed notice on a £192 loan does not quote £212' );
+creature_demo_expect( false !== strpos( $deemed_mail['body'], "refund the keep price less late fees of £24 and any damage charge. To post it back, email info@creaturecycles.co.uk for a return code.\n\nTo dispute this" ), 'the deemed notice tells the rider to email for a return code' );
 creature_demo_expect( false === strpos( $deemed_mail['body'], '{price}' ), 'the deemed notice leaves no placeholder behind' );
 $mail_fallback = creature_demo_loan();
 Creature_Demo_Loan::tick( $mail_fallback, '2026-04-03' );

@@ -154,7 +154,7 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'charge_notice_deemed'          => array(
 				'subject' => 'De-Reacher demo treated as bought: {amount} to pay',
-				'body'    => "Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. The kit wasn’t posted back by the end of the 13th day after your due date ({due}), so under clause 8 of the demo terms it’s treated as bought, for your keep price of {price} less any late fees you’ve already paid. No late fees are added. The kit is yours once this is paid. It’s sold as used, with our standard 2-year warranty from the date of payment.\n\nIf you post it back before paying, we’ll cancel this and bill late fees of £24 instead, plus any charge for damage or missing parts. If you post it back within 30 days of paying, we’ll inspect it and refund the keep price less late fees of £24 and any damage charge.\n\nTo dispute this, reply to this email or email info@creaturecycles.co.uk within 7 days. If it isn’t paid or disputed within 7 days, we’ll charge your saved card.",
+				'body'    => "Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. The kit wasn’t posted back by the end of the 13th day after your due date ({due}), so under clause 8 of the demo terms it’s treated as bought, for your keep price of {price} less any late fees you’ve already paid. No late fees are added. The kit is yours once this is paid. It’s sold as used, with our standard 2-year warranty from the date of payment.\n\nIf you post it back before paying, we’ll cancel this and bill late fees of £24 instead, plus any charge for damage or missing parts. If you post it back within 30 days of paying, we’ll inspect it and refund the keep price less late fees of £24 and any damage charge. To post it back, email info@creaturecycles.co.uk for a return code.\n\nTo dispute this, reply to this email or email info@creaturecycles.co.uk within 7 days. If it isn’t paid or disputed within 7 days, we’ll charge your saved card.",
 			),
 			'charge_notice_damage'          => array(
 				'subject' => 'De-Reacher demo bill: {amount} to pay (order {order_id})',
@@ -240,7 +240,7 @@ final class Creature_Demo_Loan_Copy {
 			// No {link}: the plugin also cancels the charge order, so the earlier link stops working.
 			'dispute_decision_waived'       => array(
 				'subject' => 'De-Reacher demo: our final decision on your disputed charge (order {order_id})',
-				'body'    => "Thanks for your reply about your De-Reacher demo charge (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the charge is waived, because:\n{decision_reasons}\n\nYou have nothing to pay, and we won’t charge your saved card. The payment link in our earlier email may still work, so please ignore it.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
+				'body'    => "Thanks for your reply about your De-Reacher demo charge (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the charge is waived, because:\n{decision_reasons}\n\nYou have nothing to pay, and we won’t charge your saved card.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_attachments_missing'     => array(
