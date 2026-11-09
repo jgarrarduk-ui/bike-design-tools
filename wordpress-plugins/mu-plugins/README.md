@@ -91,6 +91,14 @@ Filter `creature_fd_lead_time` to change the phrase (default `5 working days`). 
 php wordpress-plugins/mu-plugins/tests/creature-fd-order-experience-test.php
 ```
 
+## De-Reacher demo loan
+
+The postal demo loan is a normal plugin in `wordpress-plugins/creature-demo-loan/`, installed from the zip `build-zip.sh` writes. `creature-demo-loan-loader.php` in this folder is optional. Copy that file alone into `wp-content/mu-plugins/` when the plugin should load without an activate click. Leave the plugin folder in `wp-content/plugins/creature-demo-loan/`. Install steps, the staging walkthrough, and the James flags are in the plugin README.
+
+```bash
+php wordpress-plugins/mu-plugins/tests/creature-demo-loan-test.php
+```
+
 ## Smoke test
 
 Use a pending order, then cancel it. Do not take payment.

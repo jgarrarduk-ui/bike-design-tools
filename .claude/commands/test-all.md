@@ -14,6 +14,7 @@ node test/notch-tests.mjs
 node suspension-designer/test/flexstay-tests.mjs
 php wordpress-plugins/mu-plugins/tests/creature-fd-only-purchase-test.php
 php wordpress-plugins/mu-plugins/tests/creature-fd-order-experience-test.php
+php wordpress-plugins/mu-plugins/tests/creature-demo-loan-test.php
 node .claude/hooks/block-secrets.test.mjs
 ```
 
