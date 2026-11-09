@@ -575,6 +575,7 @@ final class Creature_Demo_Loan {
 			'disputed'           => 'Charge refused: a dispute is open.',
 			'dispute_waived'     => 'Charge refused: the dispute decision did not uphold the charge.',
 			'already_paid'         => 'Charge refused: this charge is already paid.',
+			'charge_cancelled'     => 'Charge refused: this charge order is cancelled, so the saved card is not charged for it.',
 			'payment_in_progress'  => 'Charge refused: a pay-link payment is already in progress on this charge order.',
 			'no_consent'           => 'Charge refused: the loan has no recorded consent for a later charge.',
 			'live_mode'          => 'Charge refused: the Stripe gateway is not in test mode.',
@@ -1408,14 +1409,18 @@ final class Creature_Demo_Loan {
 		// posting and the first scan, using whichever is set.
 		$dispatch  = self::dispatch_date( $order );
 		$deemed_on = '' !== $due ? self::deemed_on_for( $order ) : '';
-		$after     = ( '' !== $deemed_on && $dispatch >= $deemed_on ) || 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' );
+		$posted_after = '' !== $deemed_on && '' !== $dispatch && $dispatch >= $deemed_on;
+		$after        = $posted_after || 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' );
+		if ( $after && 'yes' !== self::meta_string( $order, '_creature_demo_deemed_paid' ) ) {
+			// Terms 8.5(a): the deemed price is not paid, so it is cancelled and
+			// the kit is a late return.
+			return self::return_after_deemed_unpaid( $order, $scan, $dispatch, $posted_after );
+		}
 		if ( $after ) {
+			// Deemed price already paid: 8.5(b) and (c). Inspect, then refund by hand.
 			$order->update_meta_data( '_creature_demo_arrived_after_deemed', 'yes' );
 			$order->save();
-			self::note( $order, 'Return scan recorded after the deemed-purchase point (' . $scan . '). Inspect the kit before any refund.' );
-			if ( 'yes' !== self::meta_string( $order, '_creature_demo_deemed_raised' ) ) {
-				self::maybe_raise_deemed( $order, $scan );
-			}
+			self::note( $order, 'Return scan recorded after the deemed purchase was paid (' . $scan . '). Inspect the kit before any refund.' );
 			return array(
 				'ok'           => true,
 				'after_deemed' => true,
@@ -1432,6 +1437,53 @@ final class Creature_Demo_Loan {
 			'late_fee'     => $fee,
 			'dispatch'     => $dispatch,
 			'after_deemed' => false,
+		);
+	}
+
+	/**
+	 * Terms 8.5(a): the kit came back after the deemed purchase date (or a
+	 * deemed charge was raised before the posting date was known) and the deemed
+	 * price has not been paid.
+	 *
+	 * The deemed charge is cancelled, so no payment link stays open and the saved
+	 * card cannot be charged for it, and the kit goes through the one bill as a
+	 * late return: the late fee (£24 at most) plus any damage or missing parts.
+	 *
+	 * No £25 code follows when the kit was posted on or after the deemed
+	 * purchase date. Terms 3A.4: "We don't issue the £25 code ... if clause 8
+	 * applies", and 8.5 is part of clause 8. A kit posted by the end of day 13,
+	 * where the deemed charge was only raised early, is a normal return and still
+	 * gets the code.
+	 *
+	 * @param object $order
+	 * @param string $scan
+	 * @param string $dispatch
+	 * @param bool   $posted_after True when the dispatch date is on or after the deemed purchase date.
+	 * @return array<string, mixed>
+	 */
+	private static function return_after_deemed_unpaid( $order, $scan, $dispatch, $posted_after ) {
+		$had_charge = (int) self::meta_string( $order, '_creature_demo_deemed_order_id' ) > 0;
+		self::cancel_unpaid_charge( $order, 'deemed' );
+		$order->update_meta_data( '_creature_demo_deemed_raised', '' );
+		$order->update_meta_data( '_creature_demo_deemed_cancelled', 'yes' );
+		if ( $posted_after ) {
+			$order->update_meta_data( '_creature_demo_clause8_return', 'yes' );
+		}
+		$order->save();
+		$due = self::meta_string( $order, '_creature_demo_due_date' );
+		$fee = Creature_Demo_Loan_Money::late_fee_pence_for_dates( $due, $dispatch );
+		self::note(
+			$order,
+			'Return scan ' . $scan . ' recorded after the deemed purchase date.' . ( $had_charge ? ' The unpaid deemed purchase was cancelled (no payment link, no saved-card charge).' : ' No deemed purchase is raised.' ) . ' The kit is a late return (terms 8.5(a)): one bill for late fees' . ( $posted_after ? ' and any damage or missing parts, with no £25 code (terms 3A.4).' : ' and any damage or missing parts.' )
+		);
+		$order->update_status( self::STATUS_INSPECT, 'Kit is being inspected. Return dispatch date ' . $dispatch . '.' );
+		$order->save();
+		return array(
+			'ok'              => true,
+			'after_deemed'    => true,
+			'deemed_cancelled' => true,
+			'late_fee'        => $fee,
+			'dispatch'        => $dispatch,
 		);
 	}
 
@@ -1934,6 +1986,14 @@ final class Creature_Demo_Loan {
 				'reason' => 'no_coupon',
 			);
 		}
+		// Terms 3A.4: no code if clause 8 applies. That includes a kit posted back
+		// after the deemed purchase date and billed as a late return (8.5(a)).
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_clause8_return' ) ) {
+			return array(
+				'ok'     => false,
+				'reason' => 'no_coupon',
+			);
+		}
 		// Terms 3A.4: no code if any of the £25 was refunded under clause 10.4 or 11.
 		if ( self::fee_was_refunded( $order ) ) {
 			if ( 'yes' !== self::meta_string( $order, '_creature_demo_coupon_refused_noted' ) ) {
@@ -2065,6 +2125,10 @@ final class Creature_Demo_Loan {
 		}
 		if ( 'yes' === self::meta_string( $order, '_creature_demo_keep_paid' ) ) {
 			return array( 'ok' => false, 'reason' => 'kept' );
+		}
+		// Terms 8.5(a): a kit that came back unpaid was billed as a late return.
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_deemed_cancelled' ) ) {
+			return array( 'ok' => false, 'reason' => 'cancelled' );
 		}
 		$status = (string) $order->get_status();
 		if ( in_array( $status, array( self::STATUS_KEPT, self::STATUS_CLOSED, self::STATUS_RETURNED, self::STATUS_INSPECT ), true ) ) {
@@ -2265,6 +2329,12 @@ final class Creature_Demo_Loan {
 		if ( ! $charge ) {
 			self::note( $loan, self::refusal_message( 'no_notice' ) );
 			return array( 'ok' => false, 'code' => 'no_notice' );
+		}
+		// A cancelled charge (for example an unpaid deemed purchase cancelled
+		// under terms 8.5(a)) is never taken from the saved card.
+		if ( method_exists( $charge, 'get_status' ) && in_array( (string) $charge->get_status(), array( 'cancelled', 'refunded', 'trash' ), true ) ) {
+			self::note( $loan, self::refusal_message( 'charge_cancelled' ) );
+			return array( 'ok' => false, 'code' => 'charge_cancelled' );
 		}
 		$eval = self::evaluate_charge( $loan, $charge, $as_of );
 		if ( '' !== $eval['code'] ) {
@@ -2522,6 +2592,11 @@ final class Creature_Demo_Loan {
 			return self::close_as_kept( $loan );
 		}
 		if ( 'deemed' === $kind ) {
+			if ( 'yes' === self::meta_string( $loan, '_creature_demo_deemed_cancelled' ) ) {
+				// Paid after it was cancelled (terms 8.5(a)). Do not sell the unit.
+				self::note( $loan, 'A payment of ' . Creature_Demo_Loan_Money::format_gbp( $amount ) . ' arrived on the deemed purchase after it was cancelled for a late return. It is not treated as a purchase. Refund it by hand.' );
+				return array( 'ok' => true, 'kind' => 'deemed', 'cancelled' => true );
+			}
 			$pi = self::payment_intent_id( $charge );
 			if ( '' !== $pi && '' === self::meta_string( $loan, '_creature_demo_deemed_payment_intent' ) ) {
 				$loan->update_meta_data( '_creature_demo_deemed_payment_intent', $pi );
@@ -2563,11 +2638,13 @@ final class Creature_Demo_Loan {
 	 * @param int    $amount
 	 * @return array<string, mixed>
 	 */
-	public static function mark_deemed_paid( $loan, $amount ) {
+	public static function mark_deemed_paid( $loan, $amount, $as_of = null ) {
 		if ( 'yes' === self::meta_string( $loan, '_creature_demo_deemed_paid' ) ) {
 			return array( 'ok' => true, 'idempotent' => true );
 		}
 		$loan->update_meta_data( '_creature_demo_deemed_paid', 'yes' );
+		// The 30 days in terms 8.5(b) and (c) run from this date.
+		$loan->update_meta_data( '_creature_demo_deemed_paid_at', Creature_Demo_Loan_Calendar::today( $as_of ) );
 		$loan->update_meta_data( '_creature_demo_deemed_paid_pence', (int) $amount );
 		$loan->update_meta_data( '_creature_demo_unit_sold', 'yes' );
 		$loan->update_meta_data( '_creature_demo_fleet_status', 'sold' );

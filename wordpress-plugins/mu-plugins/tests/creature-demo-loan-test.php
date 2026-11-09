@@ -961,6 +961,17 @@ function creature_demo_last_mail( $slot ) {
 	return $found;
 }
 
+/** Slot of the most recent charge_notice_* email. */
+function creature_demo_last_charge_slot() {
+	$found = '';
+	foreach ( Creature_Demo_Loan_Mail::$sent as $row ) {
+		if ( 0 === strpos( $row['slot'], 'charge_notice_' ) ) {
+			$found = $row['slot'];
+		}
+	}
+	return $found;
+}
+
 function creature_demo_clear_cart() {
 	$GLOBALS['creature_demo_cart'] = null;
 }
@@ -1602,7 +1613,7 @@ Creature_Demo_Loan::maybe_raise_deemed( $deemed_back, '2026-04-07' );
 $coupons_before = count( $GLOBALS['creature_demo_coupons'] );
 Creature_Demo_Loan::record_return_scan( $deemed_back, '2026-04-09', '2026-04-09' );
 $deemed_back_done = Creature_Demo_Loan::complete_inspection( $deemed_back, '2026-04-09' );
-creature_demo_expect( empty( $deemed_back_done['coupon'] ), 'no code after a deemed purchase, even when the kit comes back' );
+creature_demo_expect( empty( $deemed_back_done['coupon']['ok'] ), 'no code after clause 8 applies, even when the kit comes back and the unpaid deemed purchase is cancelled' );
 creature_demo_expect( $coupons_before === count( $GLOBALS['creature_demo_coupons'] ), 'a deemed purchase saves no coupon' );
 
 // Terms 3A.4: no code once any of the £25 was refunded under clause 10.4 (lost or damaged on the way out) or 11 (cancelling).
@@ -1733,10 +1744,11 @@ creature_demo_expect( 1 === $return_sent, 'this return booking emails the rider 
 
 creature_demo_stripe_test();
 $late = creature_demo_loan();
+$late_mails_before_scan = creature_demo_mail_count( 'charge_notice_late_fee' );
 $scanned = Creature_Demo_Loan::record_return_scan( $late, '2026-03-30', '2026-03-30' );
 creature_demo_expect( 300 === $scanned['late_fee'], 'the day-6 scan works out a £3 late fee' );
 creature_demo_expect( '' === $late->get_meta( '_creature_demo_bill_order_id' ) && '' === $late->get_meta( '_creature_demo_late_fee_order_id' ), 'the scan does not charge the late fee on its own (terms 4.4: one bill)' );
-creature_demo_expect( 0 === creature_demo_mail_count( 'charge_notice_late_fee' ), 'no late-fee email goes out at the scan' );
+creature_demo_expect( $late_mails_before_scan === creature_demo_mail_count( 'charge_notice_late_fee' ), 'no late-fee email goes out at the scan' );
 $repeat_scan = Creature_Demo_Loan::record_return_scan( $late, '2026-04-06', '2026-04-06' );
 creature_demo_expect( ! empty( $repeat_scan['idempotent'] ) && '2026-03-30' === $repeat_scan['scan'], 'a second scan keeps the first date' );
 $late_charge = creature_demo_bill_charge( $late );
@@ -2059,6 +2071,61 @@ foreach ( $GLOBALS['creature_demo_fleet'] as $row ) {
 	}
 }
 creature_demo_expect( $deemed_fleet, 'a paid deemed purchase removes the unit from the fleet' );
+
+// Item 5, terms 8.5(a): the kit comes back after the deemed purchase date and the deemed price is not paid.
+creature_demo_stripe_test();
+$ua = creature_demo_loan();
+$ua_raised = Creature_Demo_Loan::maybe_raise_deemed( $ua, '2026-04-07' );
+$ua_charge = wc_get_order( $ua_raised['order_id'] );
+creature_demo_expect( 'demo-deemed' === $ua->get_status() && 'yes' === $ua->get_meta( '_creature_demo_deemed_raised' ) && 'pending' === $ua_charge->get_status(), 'the unpaid deemed purchase is open with a payment link' );
+$ua_requests = count( WC_Stripe_API::$requests );
+$ua_coupons  = count( $GLOBALS['creature_demo_coupons'] );
+$ua_scan     = Creature_Demo_Loan::record_return_scan( $ua, '2026-04-09', '2026-04-09' );
+creature_demo_expect( ! empty( $ua_scan['deemed_cancelled'] ) && 'cancelled' === $ua_charge->get_status(), '8.5(a): the unpaid deemed charge is cancelled' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_needs_payment( true, $ua_charge ), 'no payment link is open on the cancelled deemed charge' );
+$ua_card_direct = Creature_Demo_Loan::charge_saved_card( $ua_charge, '2026-04-20' );
+$ua_card_loan   = Creature_Demo_Loan::charge_saved_card( $ua, '2026-04-20' );
+creature_demo_expect( 'charge_cancelled' === $ua_card_direct['code'] && empty( $ua_card_loan['ok'] ) && $ua_requests === count( WC_Stripe_API::$requests ), 'the saved card is not charged for the cancelled deemed purchase' );
+creature_demo_expect( 'yes' !== $ua->get_meta( '_creature_demo_deemed_raised' ) && 'demo-inspect' === $ua->get_status(), 'the kit is treated as a late return, in inspection' );
+$ua_again = Creature_Demo_Loan::maybe_raise_deemed( $ua, '2026-04-20' );
+creature_demo_expect( empty( $ua_again['ok'] ) && 'cancelled' === $ua_again['reason'], 'a cancelled deemed purchase is not raised again' );
+Creature_Demo_Loan::tick( $ua, '2026-04-21' );
+creature_demo_expect( 'cancelled' === $ua_charge->get_status() && 'yes' !== $ua->get_meta( '_creature_demo_deemed_raised' ), 'the daily check does not bring it back' );
+$ua->update_meta_data( '_creature_demo_damage_pence', 2000 );
+$ua_done   = Creature_Demo_Loan::complete_inspection( $ua, '2026-04-09' );
+$ua_bill   = wc_get_order( (int) $ua->get_meta( '_creature_demo_bill_order_id' ) );
+$ua_lines  = $ua_bill ? $ua_bill->get_meta( '_creature_demo_charge_lines' ) : array();
+creature_demo_expect( ! empty( $ua_done['ok'] ) && 4400 === (int) $ua_bill->get_meta( '_creature_demo_charge_amount_pence' ), 'the late return goes through the one bill: £24 late fee plus £20 damage' );
+creature_demo_expect( array( 'late_fee', 'damage' ) === array_column( $ua_lines, 'kind' ) && array( 2400, 2000 ) === array_column( $ua_lines, 'pence' ), 'the bill has a £24 late-fee line and a damage line' );
+creature_demo_expect( 'bill' === $ua_bill->get_meta( '_creature_demo_charge_kind' ) && 'charge_notice_damage' === creature_demo_last_charge_slot(), 'it is a normal bill, with the combined bill email' );
+creature_demo_expect( empty( $ua_done['coupon']['ok'] ) && $ua_coupons === count( $GLOBALS['creature_demo_coupons'] ) && '' === $ua->get_meta( '_creature_demo_coupon_code' ), 'no £25 code after clause 8 applies (3A.4)' );
+creature_demo_expect( 'cancelled' === $ua_charge->get_status() && 2 === creature_demo_charge_orders_for( $ua ), 'the only charge orders are the cancelled deemed one and the bill' );
+// Not raised yet when the scan is recorded.
+$ub = creature_demo_loan();
+$ub_coupons = count( $GLOBALS['creature_demo_coupons'] );
+$ub_scan = Creature_Demo_Loan::record_return_scan( $ub, '2026-04-20', '2026-04-20' );
+creature_demo_expect( 0 === creature_demo_charge_orders_for( $ub ) && 'demo-inspect' === $ub->get_status() && ! empty( $ub_scan['after_deemed'] ), 'a scan after day 14 with no deemed charge yet raises none' );
+$ub_done = Creature_Demo_Loan::complete_inspection( $ub, '2026-04-20' );
+creature_demo_expect( 2400 === (int) wc_get_order( (int) $ub->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_amount_pence' ) && $ub_coupons === count( $GLOBALS['creature_demo_coupons'] ), 'that late return is billed £24 and gets no code' );
+// Paid: 8.5(b), nothing is cancelled and nothing is billed. The refund is a separate action.
+$pa = creature_demo_loan();
+$pa_raised = Creature_Demo_Loan::maybe_raise_deemed( $pa, '2026-04-07' );
+$pa_charge = wc_get_order( $pa_raised['order_id'] );
+$pa_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_paid_85' );
+Creature_Demo_Loan::on_payment_complete( $pa_raised['order_id'] );
+creature_demo_expect( 'yes' === $pa->get_meta( '_creature_demo_deemed_paid' ) && '' !== $pa->get_meta( '_creature_demo_deemed_paid_at' ), 'a paid deemed purchase records the date it was paid' );
+$pa_scan = Creature_Demo_Loan::record_return_scan( $pa, '2026-04-10', '2026-04-10' );
+creature_demo_expect( ! empty( $pa_scan['after_deemed'] ) && empty( $pa_scan['deemed_cancelled'] ) && 'cancelled' !== $pa_charge->get_status() && 'demo-deemed' === $pa->get_status(), 'a paid deemed purchase is not cancelled when the kit comes back' );
+$pa_done = Creature_Demo_Loan::complete_inspection( $pa, '2026-04-10' );
+creature_demo_expect( ! empty( $pa_done['awaiting_refund'] ) && '' === $pa->get_meta( '_creature_demo_bill_state' ) && '' === $pa->get_meta( '_creature_demo_bill_order_id' ) && '' === $pa->get_meta( '_creature_demo_coupon_code' ), 'paid: no late-return bill and no code, the refund waits for the refund action' );
+// Posted by the end of day 13 but the deemed charge was raised before anyone knew: a normal return, with the code.
+$pd = creature_demo_loan();
+$pd_raised = Creature_Demo_Loan::maybe_raise_deemed( $pd, '2026-04-07' );
+$pd_charge = wc_get_order( $pd_raised['order_id'] );
+Creature_Demo_Loan::record_return_posted( $pd, '2026-04-06' );
+Creature_Demo_Loan::record_return_scan( $pd, '2026-04-09', '2026-04-09' );
+$pd_done = Creature_Demo_Loan::complete_inspection( $pd, '2026-04-09' );
+creature_demo_expect( 'cancelled' === $pd_charge->get_status() && ! empty( $pd_done['coupon']['code'] ), 'posted in time: the early deemed charge is cancelled and the return gets the £25 code' );
 
 $back_after = creature_demo_loan();
 $back_after->update_meta_data( '_creature_demo_late_fees_paid_pence', 2000 );
@@ -3050,7 +3117,7 @@ creature_demo_expect( 2400 === $dp_ok_r['late_fee'], 'the late fee runs to the p
 $dp_late = creature_demo_loan();
 Creature_Demo_Loan::record_return_posted( $dp_late, '2026-04-07' );
 $dp_late_r = Creature_Demo_Loan::record_return_scan( $dp_late, '2026-04-07', '2026-04-07' );
-creature_demo_expect( ! empty( $dp_late_r['after_deemed'] ) && 'demo-deemed' === $dp_late->get_status(), 'a dispatch date on day 14 is a deemed purchase' );
+creature_demo_expect( ! empty( $dp_late_r['after_deemed'] ) && 'demo-inspect' === $dp_late->get_status() && '' === $dp_late->get_meta( '_creature_demo_deemed_order_id' ), 'a dispatch date on day 14 is after the deemed purchase date: a late return (8.5(a)), no deemed charge raised' );
 $dp_wait = creature_demo_loan();
 Creature_Demo_Loan::record_return_posted( $dp_wait, '2026-04-05' );
 $dp_wait_r = Creature_Demo_Loan::maybe_raise_deemed( $dp_wait, '2026-04-08' );
@@ -3125,7 +3192,7 @@ $cp_small_done = Creature_Demo_Loan::complete_inspection( $cp_small, '2026-04-06
 creature_demo_expect( 1300 === $cp_small_done['bill']['amount'] && array( 1300 ) === array_column( wc_get_order( (int) $cp_small->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_lines' ), 'pence' ), 'the late fee is held to the overall cap on a small keep price, and damage gets nothing' );
 $cp_cheap = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $cp_cheap, '2026-04-20', '2026-04-20' );
-creature_demo_expect( 'demo-deemed' === $cp_cheap->get_status(), 'a scan after day 14 is still a deemed purchase, not a bill' );
+creature_demo_expect( 'demo-inspect' === $cp_cheap->get_status() && '' === $cp_cheap->get_meta( '_creature_demo_deemed_order_id' ), 'a scan after day 14 with nothing paid is a late return, billed once, not a deemed purchase' );
 
 // Day 5 working days: the shop is warned on day 4 and a late-fee-only bill goes out after day 5.
 // 2026-04-02 is a Thursday. Day 4 is Wed 04-08, day 5 is Thu 04-09 (Saturday and Sunday are skipped).
