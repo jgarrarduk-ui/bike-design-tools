@@ -173,9 +173,20 @@ final class Creature_Demo_Loan_Copy {
 			// waived) {amount} {reason} {price} {findings} {photos} {released} {kept} {decision_reasons} {order_id}.
 			// {released} is refunded to the rider on a waiver or a partial uphold (£0.00 on a full uphold). {kept}
 			// is what is finally kept (£0.00 on a waiver). v4 has no {decision_reasons} tag in its wording.
-			'dispute_decision_deemed'       => array(
+			// v5: three variants, picked by decision_slot(). The old single slot is gone; see resolve_slot().
+			// None of them uses {decision}. {decision_reasons} sits on its own line after "because:".
+			'dispute_decision_deemed_upheld' => array(
 				'subject' => 'De-Reacher demo: our final decision on the deduction from your refund (order {order_id})',
-				'body'    => "Thanks for your reply about the amount we held back from your deemed purchase refund (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the deduction is {decision}.\nWhat the deduction was for: {reason}.\nWhat we found:\n{findings}\nOur photos:\n{photos}\n\nWe’re keeping {kept} and refunding {released} of the amount we held to the card you paid the deemed purchase price with. If we’re keeping anything, we’ll settle it no sooner than 7 days after this email.\n\nThere’s nothing to pay, and we won’t charge your saved card.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
+				'body'    => "Thanks for your reply about the amount we held back from your deemed purchase refund (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the deduction is upheld, because:\n{decision_reasons}\n\nWe’re keeping the {kept} we held back. We’ll settle it no sooner than 7 days after this email.\n\nWhat we held it back for: {reason}.\n\nOur evidence\nWhat we found:\n{findings}\nOur photos:\n{photos}\n\nThere’s nothing to pay, and we won’t charge your saved card.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
+			),
+			'dispute_decision_deemed_partial' => array(
+				'subject' => 'De-Reacher demo: our final decision on the deduction from your refund (order {order_id})',
+				'body'    => "Thanks for your reply about the amount we held back from your deemed purchase refund (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the deduction is upheld in part, because:\n{decision_reasons}\n\nWe’re keeping {kept} of the amount we held back and refunding {released} to the card you paid the deemed purchase price with. We’ll settle both no sooner than 7 days after this email.\n\nWhat we held it back for: {reason}.\n\nOur evidence\nWhat we found:\n{findings}\nOur photos:\n{photos}\n\nThere’s nothing to pay, and we won’t charge your saved card.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
+			),
+			// No evidence block and no refund date on a waiver (James, 9 Nov 2026: promise no timescale).
+			'dispute_decision_deemed_waived' => array(
+				'subject' => 'De-Reacher demo: our final decision on the deduction from your refund (order {order_id})',
+				'body'    => "Thanks for your reply about the amount we held back from your deemed purchase refund (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the deduction is waived, because:\n{decision_reasons}\n\nWe’re refunding the {released} we held back to the card you paid the deemed purchase price with.\n\nWhat we held it back for: {reason}.\n\nThere’s nothing to pay, and we won’t charge your saved card.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
 			),
 			'charge_authentication_required' => array(
 				'subject' => 'Action needed: pay your De-Reacher demo charge ({amount})',
@@ -216,9 +227,20 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => 'Your De-Reacher demo keep link has lapsed',
 				'body'    => 'The payment link to keep your demo kit (order {order_id}) wasn’t paid within 7 days, so that choice has lapsed. The kit is on loan again, and the usual dates and fees apply as if you hadn’t chosen to keep it. You can still choose to keep it up to the end of the 13th day after your due date. If you don’t choose, we treat it as a return. Book it in My account, under Demo loan.',
 			),
-			'dispute_decision'              => array(
-				'subject' => 'De-Reacher demo: our final decision on your disputed charge',
-				'body'    => "Order {order_id}. We’ve looked again at the charge you disputed.\nDecision: charge {decision}.\nAmount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nIf the charge is waived, you have nothing to pay. If it’s upheld, you can pay using the link. If it isn’t paid, we’ll charge your saved card no sooner than 7 days after this email.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
+			// v5: three variants for the ordinary final decision, picked by decision_slot(). On the ordinary
+			// email {kept} is the amount to pay (not {amount}); {released} is what a partial uphold cut.
+			'dispute_decision_upheld'       => array(
+				'subject' => 'De-Reacher demo: our final decision on your disputed charge (order {order_id})',
+				'body'    => "Thanks for your reply about your De-Reacher demo charge (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the charge is upheld, because:\n{decision_reasons}\n\nYou owe {kept} for: {reason}.\n\nYou can pay here: {link}\nIf it isn’t paid, we’ll charge your saved card no sooner than 7 days after this email.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
+			),
+			'dispute_decision_partial'      => array(
+				'subject' => 'De-Reacher demo: our final decision on your disputed charge (order {order_id})',
+				'body'    => "Thanks for your reply about your De-Reacher demo charge (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the charge is upheld in part, because:\n{decision_reasons}\n\nWe’ve reduced the charge by {released}, so you now owe {kept}. The original charge was for: {reason}.\n\nYou can pay here: {link}\nIf it isn’t paid, we’ll charge your saved card no sooner than 7 days after this email.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
+			),
+			// No {link}: the plugin also cancels the charge order, so the earlier link stops working.
+			'dispute_decision_waived'       => array(
+				'subject' => 'De-Reacher demo: our final decision on your disputed charge (order {order_id})',
+				'body'    => "Thanks for your reply about your De-Reacher demo charge (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the charge is waived, because:\n{decision_reasons}\n\nYou have nothing to pay, and we won’t charge your saved card. The payment link in our earlier email may still work, so please ignore it.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_attachments_missing'     => array(
@@ -233,7 +255,7 @@ final class Creature_Demo_Loan_Copy {
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_dispute_decision_missing' => array(
 				'subject' => 'Demo dispute decision held: no deduction decision wording (order {order_id})',
-				'body'    => 'A dispute decision was recorded on a deemed-refund deduction on order {order_id}, but the dispute_decision_deemed wording is empty, so the decision email cannot be sent and the decision was not recorded. Add the wording, then record the decision again. The 14 days for a final decision (4.4(b)) are still running. This email goes to the shop, not the rider.',
+				'body'    => 'A dispute decision was recorded on a deemed-refund deduction on order {order_id}, but one of the dispute_decision_deemed_upheld, dispute_decision_deemed_partial or dispute_decision_deemed_waived wordings is empty, so the decision email cannot be sent and the decision was not recorded. Add the wording, then record the decision again. The 14 days for a final decision (4.4(b)) are still running. This email goes to the shop, not the rider.',
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's. The daily job is meant to run at 22:00 London.
 			'admin_daily_job_late'          => array(
@@ -327,12 +349,66 @@ final class Creature_Demo_Loan_Copy {
 	}
 
 	/**
+	 * The final-decision email has three variants (Cadence v5). Deemed deduction:
+	 * waived when nothing is kept, upheld in part when something is kept and
+	 * something is released, otherwise upheld. Ordinary charge: waived when the
+	 * decision is waived, upheld in part when upheld with something released,
+	 * otherwise upheld.
+	 *
+	 * @param bool   $deduction     True for a deduction from a deemed purchase refund.
+	 * @param string $decision      upheld|waived
+	 * @param int    $kept_pence    Finally kept (0 on a waiver).
+	 * @param int    $released_pence Released back (the whole notice on a waiver).
+	 * @return string Slot key.
+	 */
+	public static function decision_slot( $deduction, $decision, $kept_pence, $released_pence ) {
+		$base = $deduction ? 'dispute_decision_deemed' : 'dispute_decision';
+		if ( $deduction ? (int) $kept_pence <= 0 : 'waived' === $decision ) {
+			return $base . '_waived';
+		}
+		return $base . ( (int) $released_pence > 0 ? '_partial' : '_upheld' );
+	}
+
+	/**
+	 * Slot keys of the three variants for one kind of decision email.
+	 *
+	 * @param bool $deduction
+	 * @return string[]
+	 */
+	public static function decision_slots( $deduction ) {
+		$base = $deduction ? 'dispute_decision_deemed' : 'dispute_decision';
+		return array( $base . '_upheld', $base . '_partial', $base . '_waived' );
+	}
+
+	/**
+	 * The old single slots `dispute_decision` and `dispute_decision_deemed` no longer
+	 * hold any wording. A call that still names one is sent through the picker when it
+	 * carries kept_pence, released_pence and decision; otherwise it reads empty, so the
+	 * old body can never go out.
+	 *
 	 * @param string               $slot
 	 * @param array<string, mixed> $args
 	 * @return string
 	 */
-	public static function text( $slot, $args = array() ) {
-		$all = self::catalogue();
+	private static function resolve_slot( $slot, $args ) {
+		if ( 'dispute_decision' !== $slot && 'dispute_decision_deemed' !== $slot ) {
+			return $slot;
+		}
+		if ( ! is_array( $args ) || ! isset( $args['kept_pence'], $args['released_pence'], $args['decision'] ) ) {
+			return $slot;
+		}
+		$decision = 0 === strpos( (string) $args['decision'], 'waived' ) ? 'waived' : 'upheld';
+		return self::decision_slot( 'dispute_decision_deemed' === $slot, $decision, (int) $args['kept_pence'], (int) $args['released_pence'] );
+	}
+
+	/**
+	 * @param string               $slot
+	 * @param array<string, mixed> $args
+	 * @return string
+	 */
+	public static function text($slot, $args = array() ) {
+		$all  = self::catalogue();
+		$slot = self::resolve_slot( $slot, $args );
 		if ( ! isset( $all[ $slot ] ) ) {
 			return '';
 		}
@@ -345,7 +421,8 @@ final class Creature_Demo_Loan_Copy {
 	 * @return string
 	 */
 	public static function subject( $slot, $args = array() ) {
-		$all = self::catalogue();
+		$all  = self::catalogue();
+		$slot = self::resolve_slot( $slot, $args );
 		if ( ! isset( $all[ $slot ] ) ) {
 			return '';
 		}

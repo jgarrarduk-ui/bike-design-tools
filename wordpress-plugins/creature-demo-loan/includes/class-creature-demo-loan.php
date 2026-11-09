@@ -2733,16 +2733,24 @@ final class Creature_Demo_Loan {
 		// (it comes out of the refund). While that wording is empty nothing is recorded or sent,
 		// and the shop is told once, as for deduction_notice_deemed. The dispute stays open.
 		$deduction = 'yes' === self::meta_string( $charge, '_creature_demo_charge_netted' );
-		if ( $deduction && '' === trim( Creature_Demo_Loan_Copy::text( 'dispute_decision_deemed' ) ) ) {
+		$missing   = false;
+		if ( $deduction ) {
+			foreach ( Creature_Demo_Loan_Copy::decision_slots( true ) as $variant ) {
+				if ( '' === trim( Creature_Demo_Loan_Copy::text( $variant ) ) ) {
+					$missing = true;
+				}
+			}
+		}
+		if ( $missing ) {
 			$loan = self::parent_loan( $charge );
 			if ( $loan && 'yes' !== self::meta_string( $loan, '_creature_demo_decision_wording_notice_sent' ) ) {
 				$loan->update_meta_data( '_creature_demo_decision_wording_notice_sent', 'yes' );
 				$loan->save();
 				Creature_Demo_Loan_Mail::send_admin( $loan, 'admin_dispute_decision_missing', array() );
 			}
-			self::note( $charge, 'Decision not recorded or sent: the dispute_decision_deemed wording is empty, so the decision email for a deemed-refund deduction cannot be sent. Add the wording, then record the decision again.' );
+			self::note( $charge, 'Decision not recorded or sent: a dispute_decision_deemed_upheld, _partial or _waived wording is empty, so the decision email for a deemed-refund deduction cannot be sent. Add the wording, then record the decision again.' );
 			if ( $loan ) {
-				self::note( $loan, 'Dispute decision not recorded: the dispute_decision_deemed wording is empty. Add the wording, then record the decision again.' );
+				self::note( $loan, 'Dispute decision not recorded: a dispute_decision_deemed_upheld, _partial or _waived wording is empty. Add the wording, then record the decision again.' );
 			}
 			return array(
 				'ok'     => false,
@@ -2793,17 +2801,14 @@ final class Creature_Demo_Loan {
 		$charge->save();
 		if ( $changed ) {
 			$loan = self::parent_loan( $charge );
-			if ( $loan && $deduction ) {
-				// A deemed-refund deduction is not re-noticed as a damage charge (that email has a pay link and
-				// says the saved card will be charged). dispute_decision_deemed below carries the amount.
-				// Keep the notice record in step without sending anything.
+			if ( $loan ) {
+				// A reduced charge is never re-noticed, whether it is a deduction from a deemed refund or an
+				// ordinary bill: a second charge_notice_* email straight after a "final response" would invite a
+				// new dispute. The decision email below carries the new amount. Keep the notice record in
+				// step so later caps follow the cut, and send nothing.
 				$charge->update_meta_data( '_creature_demo_charge_notice_at', $as_of );
 				$charge->update_meta_data( '_creature_demo_charge_notice_amount', (int) $amount );
 				$charge->save();
-			} elseif ( $loan ) {
-				$kind   = self::meta_string( $charge, '_creature_demo_charge_kind' );
-				$reason = self::meta_string( $charge, '_creature_demo_charge_notice_reason' );
-				self::log_charge_notice( $loan, $charge, $amount, $reason, $as_of, $kind );
 			}
 		}
 		$loan   = self::parent_loan( $charge );
@@ -2812,14 +2817,21 @@ final class Creature_Demo_Loan {
 		// What is finally kept: nothing on a waiver, otherwise the (possibly cut) amount.
 		$kept     = 'waived' === $decision ? 0 : $amount;
 		$released = 'waived' === $decision ? $noticed : max( 0, $noticed - $amount );
-		// The deduction email names three outcomes; the plain charge email keeps upheld or waived.
+		// Cadence v5: one of three wordings per email (upheld, upheld in part, waived), picked here.
+		$slot = Creature_Demo_Loan_Copy::decision_slot( $deduction, $decision, $kept, $released );
+		// {decision} is not used by the v5 wording; it is still passed for a site that edits the slots.
 		$outcome = $decision;
 		if ( $deduction && 'upheld' === $decision && $released > 0 ) {
 			$outcome = 'upheld in part';
 		}
+		// A waived ordinary charge has no pay link in the email and the charge order is cancelled,
+		// so the link from the original notice stops working too.
+		if ( ! $deduction && 'waived' === $decision ) {
+			self::cancel_waived_charge( $charge );
+		}
 		$row    = Creature_Demo_Loan_Mail::send_customer(
 			$target,
-			$deduction ? 'dispute_decision_deemed' : 'dispute_decision',
+			$slot,
 			array(
 				'decision' => $deduction ? $outcome : $decision,
 				'amount'   => Creature_Demo_Loan_Money::format_gbp( $amount ),
@@ -2830,7 +2842,7 @@ final class Creature_Demo_Loan {
 				'decision_reasons' => $reasons,
 				'reason'   => self::meta_string( $charge, '_creature_demo_charge_notice_reason' ),
 				// A deduction comes out of the refund, so its decision email never has a pay link.
-				'link'     => $deduction ? '' : self::payment_link( $charge ),
+				'link'     => ( $deduction || 'waived' === $decision ) ? '' : self::payment_link( $charge ),
 				'price'    => $loan ? Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $loan ) ) : '',
 				'findings' => $loan ? self::findings_text( $loan ) : '',
 				'photos'   => $loan ? self::photo_lines( $loan ) : '',
@@ -5157,6 +5169,25 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * C1: a waived ordinary charge can no longer be paid. The unpaid charge order is cancelled,
+	 * so the pay link from the original notice stops working. A paid order is left alone.
+	 *
+	 * @param object $charge
+	 */
+	private static function cancel_waived_charge( $charge ) {
+		if ( ! is_object( $charge ) || 'yes' === self::meta_string( $charge, '_creature_demo_charge_paid' ) || ! method_exists( $charge, 'update_status' ) ) {
+			return;
+		}
+		$status = method_exists( $charge, 'get_status' ) ? (string) $charge->get_status() : '';
+		if ( in_array( $status, array( 'cancelled', 'refunded', 'processing', 'completed' ), true ) ) {
+			return;
+		}
+		// The loan keeps its open-charge id: a cancelled order reads as no open charge, and a saved-card
+		// charge on it is refused as cancelled.
+		$charge->update_status( 'cancelled', 'Charge waived at the final decision, so it can no longer be paid.' );
+	}
+
+	/**
 	 * @param object $loan
 	 * @param string $kind
 	 */
@@ -5493,6 +5524,10 @@ final class Creature_Demo_Loan {
 		$settled = self::charge_already_settled( $order );
 		if ( '' !== $settled ) {
 			return $settled;
+		}
+		// C1: a waived charge cannot be paid by the old link either.
+		if ( 'waived' === self::meta_string( $order, '_creature_demo_dispute_status' ) ) {
+			return 'dispute_waived';
 		}
 		if ( self::saved_card_lock_active( $order ) ) {
 			return 'payment_in_progress';
