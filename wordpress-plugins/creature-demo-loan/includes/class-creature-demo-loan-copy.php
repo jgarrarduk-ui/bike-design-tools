@@ -137,6 +137,13 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => 'De-Reacher demo bill: {amount} to pay (order {order_id})',
 				'body'    => $damage,
 			),
+			// Terms 6.4(b) and 8.5(b): the notice for a damage or missing-parts deduction taken from a deemed
+			// purchase refund. It must not carry a pay link or say we will charge the saved card. Cadence's v2
+			// has no wording for it, so the slot is empty. While it is empty the notice is not sent.
+			'deduction_notice_deemed'       => array(
+				'subject' => '',
+				'body'    => '',
+			),
 			'charge_authentication_required' => array(
 				'subject' => 'Action needed: pay your De-Reacher demo charge ({amount})',
 				'body'    => "Your bank asked to confirm this payment, so your saved card wasn’t charged.\nAmount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. The amount is still owed. Please pay it using the link.",
@@ -184,6 +191,16 @@ final class Creature_Demo_Loan_Copy {
 			'admin_attachments_missing'     => array(
 				'subject' => 'Demo booking confirmation sent without attachments (order {order_id})',
 				'body'    => 'The booking confirmation for order {order_id} went out without the attachment wording because no file can be attached for: {missing}. Set the files under WooCommerce → Demo loan. This email goes to the shop, not the rider.',
+			),
+			// Shop alert, not rider copy. Plain wording, not Cadence's.
+			'admin_deduction_notice_missing' => array(
+				'subject' => 'Demo deemed refund held: no deduction notice wording (order {order_id})',
+				'body'    => 'The deemed purchase refund on order {order_id} has a damage or missing-parts deduction, but the deduction_notice_deemed wording is empty, so the notice cannot be sent and nothing was refunded or deducted. Add the wording, then run Refund deemed purchase again. This email goes to the shop, not the rider.',
+			),
+			// Shop alert, not rider copy. Plain wording, not Cadence's.
+			'admin_deduction_settle_due'    => array(
+				'subject' => 'Demo deduction ready to settle (order {order_id})',
+				'body'    => 'The 7 days since the decision on the deduction for order {order_id} have passed: re-run Refund deemed purchase to settle the deduction. This email goes to the shop, not the rider.',
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_received_date_missing'   => array(

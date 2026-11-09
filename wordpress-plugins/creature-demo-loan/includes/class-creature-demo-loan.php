@@ -2836,6 +2836,17 @@ final class Creature_Demo_Loan {
 			$loan->save();
 			return array_merge( self::finish_deemed_refund( $loan, $base ), array( 'deduction_blocked' => true ) );
 		}
+		// While the deduction notice has no wording it cannot be sent, so nothing is
+		// refunded, held or billed. The shop is told, once, like the 11.3 label gap.
+		if ( '' === trim( Creature_Demo_Loan_Copy::text( 'deduction_notice_deemed' ) ) ) {
+			if ( 'yes' !== self::meta_string( $loan, '_creature_demo_deduction_wording_notice_sent' ) ) {
+				$loan->update_meta_data( '_creature_demo_deduction_wording_notice_sent', 'yes' );
+				$loan->save();
+				Creature_Demo_Loan_Mail::send_admin( $loan, 'admin_deduction_notice_missing', array() );
+			}
+			self::note( $loan, 'Refund not sent: it has a damage or missing-parts deduction of ' . Creature_Demo_Loan_Money::format_gbp( $held ) . ' and the deduction_notice_deemed wording is empty, so the notice cannot be sent. Add the wording, or clear the deduction, then try again.' );
+			return array( 'ok' => false, 'reason' => 'no_deduction_wording', 'held' => $held );
+		}
 		if ( ! self::raise_deduction_notice( $loan, $held, $base - $held, $as_of ) ) {
 			return array( 'ok' => false, 'reason' => 'order_failed' );
 		}
@@ -2873,7 +2884,7 @@ final class Creature_Demo_Loan {
 				'pence' => $missing,
 			);
 		}
-		$charge = self::ensure_charge_order( $loan, 'damage', $held, self::bill_reason( $lines ), $as_of, $lines );
+		$charge = self::ensure_charge_order( $loan, 'damage', $held, self::bill_reason( $lines ), $as_of, $lines, 'deduction_deemed' );
 		if ( ! $charge ) {
 			return false;
 		}
@@ -4210,7 +4221,7 @@ final class Creature_Demo_Loan {
 	 * @param array<int, array<string, mixed>>|null   $lines One entry per fee line (name, pence, kind). The bill has one line per item.
 	 * @return object|null
 	 */
-	public static function ensure_charge_order( $loan, $kind, $amount_pence, $reason, $as_of, $lines = null ) {
+	public static function ensure_charge_order( $loan, $kind, $amount_pence, $reason, $as_of, $lines = null, $notice_kind = '' ) {
 		$kind = preg_replace( '/[^a-z_]/', '', (string) $kind );
 		if ( ! in_array( $kind, array( 'keep', 'late_fee', 'deemed', 'damage', 'bill' ), true ) ) {
 			return null;
@@ -4302,7 +4313,7 @@ final class Creature_Demo_Loan {
 		$loan->update_meta_data( $meta_key, (int) $created->get_id() );
 		$loan->update_meta_data( '_creature_demo_open_charge_id', (int) $created->get_id() );
 		$loan->save();
-		self::log_charge_notice( $loan, $created, (int) $amount_pence, $reason, $as_of, $kind );
+		self::log_charge_notice( $loan, $created, (int) $amount_pence, $reason, $as_of, '' !== $notice_kind ? $notice_kind : $kind );
 		return $created;
 	}
 
@@ -4338,6 +4349,8 @@ final class Creature_Demo_Loan {
 			'late_fee' => 'charge_notice_late_fee',
 			'deemed'   => 'charge_notice_deemed',
 			'damage'   => 'charge_notice_damage',
+			// A deduction from the deemed refund: no pay link, no saved-card wording.
+			'deduction_deemed' => 'deduction_notice_deemed',
 			'bill'     => 'charge_notice_late_fee',
 		);
 		$slot = isset( $map[ $kind ] ) ? $map[ $kind ] : 'charge_notice_late_fee';
@@ -4500,7 +4513,8 @@ final class Creature_Demo_Loan {
 		$charge->update_meta_data( '_creature_demo_charge_notice_amount', (int) $amount_pence );
 		$charge->update_meta_data( '_creature_demo_charge_notice_reason', $reason );
 		$charge->save();
-		$lines = $charge->get_meta( '_creature_demo_charge_lines', true );
+		$lines     = $charge->get_meta( '_creature_demo_charge_lines', true );
+		$deduction = 'deduction_deemed' === $kind;
 		Creature_Demo_Loan_Mail::send_customer(
 			$loan,
 			self::notice_slot( $kind, is_array( $lines ) ? $lines : null ),
@@ -4508,12 +4522,18 @@ final class Creature_Demo_Loan {
 				'amount'   => Creature_Demo_Loan_Money::format_gbp( $amount_pence ),
 				'price'    => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $loan ) ),
 				'reason'   => $reason,
-				'link'     => self::payment_link( $charge ),
+				// A deduction comes out of money already held. It never carries a pay link.
+				'link'     => $deduction ? '' : self::payment_link( $charge ),
 				'due'      => self::meta_string( $loan, '_creature_demo_due_date' ),
 				'findings' => self::findings_text( $loan ),
 				'photos'   => self::photo_lines( $loan ),
 			)
 		);
+		if ( $deduction ) {
+			self::note( $loan, 'Deduction notice logged for ' . Creature_Demo_Loan_Money::format_gbp( $amount_pence ) . ' (' . $reason . '). No payment link is sent. Saved card not charged.' );
+			self::note( $charge, 'Deduction notice logged. Saved card not charged.' );
+			return;
+		}
 		self::note( $loan, 'Charge notice logged for ' . Creature_Demo_Loan_Money::format_gbp( $amount_pence ) . ' (' . $reason . '). Payment link emailed. Saved card not charged.' );
 		self::note( $charge, 'Charge notice logged. Saved card not charged.' );
 	}

@@ -911,6 +911,16 @@ global $wpdb;
 $wpdb = new Creature_Demo_Test_Wpdb();
 
 require dirname( __DIR__, 2 ) . '/creature-demo-loan/creature-demo-loan.php';
+// A test can replace a copy slot through $GLOBALS['creature_demo_copy_override'].
+add_filter(
+	'creature_demo_loan_copy_catalogue',
+	static function ( $catalogue ) {
+		foreach ( $GLOBALS['creature_demo_copy_override'] as $slot => $row ) {
+			$catalogue[ $slot ] = $row;
+		}
+		return $catalogue;
+	}
+);
 
 add_filter( 'creature_demo_loan_product_ids', 'creature_demo_filter_products' );
 add_filter( 'creature_demo_loan_cart_items', 'creature_demo_filter_cart' );
@@ -978,7 +988,7 @@ function creature_demo_paid_deemed_returned( $scan = '2026-04-08' ) {
 function creature_demo_last_charge_slot() {
 	$found = '';
 	foreach ( Creature_Demo_Loan_Mail::$sent as $row ) {
-		if ( 0 === strpos( $row['slot'], 'charge_notice_' ) ) {
+		if ( 0 === strpos( $row['slot'], 'charge_notice_' ) || 'deduction_notice_deemed' === $row['slot'] ) {
 			$found = $row['slot'];
 		}
 	}
@@ -1177,6 +1187,9 @@ $expected_slots = array(
 	'express_request_checkbox',
 	'admin_attachments_missing',
 	'crash_hold_notice',
+	'deduction_notice_deemed',
+	'admin_deduction_notice_missing',
+	'admin_deduction_settle_due',
 );
 // The three emails Cadence has not written yet are slots with no wording.
 $expected_slots = array_merge( $expected_slots, array() );
@@ -1195,7 +1208,7 @@ foreach ( $slots as $slot ) {
 	}
 }
 sort( $empty_slots );
-creature_demo_expect( array( 'crash_hold_notice', 'express_request_checkbox' ) === $empty_slots, 'every slot has wording except the two v2 does not give (the Appendix B checkbox label and the crash-hold refusal), which stay empty' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
+creature_demo_expect( array( 'crash_hold_notice', 'deduction_notice_deemed', 'express_request_checkbox' ) === $empty_slots, 'every slot has wording except the three v2 does not give (the Appendix B checkbox label, the crash-hold refusal and the deemed deduction notice), which stay empty' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
 $v2_cat = Creature_Demo_Loan_Copy::catalogue();
 $v2_has = static function ( $slot, $needle ) use ( $v2_cat ) {
 	return false !== strpos( $v2_cat[ $slot ]['body'], $needle );
@@ -2167,6 +2180,12 @@ Creature_Demo_Loan::record_return_scan( $pd, '2026-04-09', '2026-04-09' );
 $pd_done = Creature_Demo_Loan::complete_inspection( $pd, '2026-04-09' );
 creature_demo_expect( 'cancelled' === $pd_charge->get_status() && ! empty( $pd_done['coupon']['code'] ), 'posted in time: the early deemed charge is cancelled and the return gets the £25 code' );
 
+// The deemed deduction notice has no v2 wording (the slot is empty). These tests of the refund flow
+// give it a test body, with a {link} on purpose to show that the link is never filled in.
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array(
+	'subject' => 'Test deduction notice for order {order_id}',
+	'body'    => 'Test deduction notice. Amount: {amount}. Reason: {reason}. Link: [{link}]',
+);
 $back_after = creature_demo_loan();
 $back_after->update_meta_data( '_creature_demo_late_fees_paid_pence', 2000 );
 $back_after->update_meta_data( '_creature_demo_ever_chose_keep', 'yes' );
@@ -2191,7 +2210,9 @@ $ba_requests = count( WC_Stripe_API::$requests );
 $refunded = Creature_Demo_Loan::refund_deemed( $back_after, '2026-04-09' );
 creature_demo_expect( ! empty( $refunded['ok'] ) && ! empty( $refunded['pending'] ) && 17300 === $refunded['amount'] && 1500 === $refunded['held'], 'with the flag on, the keep chooser is refunded the undisputed £173 and £15 of damage is held' );
 $ba_charge = wc_get_order( (int) $back_after->get_meta( '_creature_demo_damage_order_id' ) );
-creature_demo_expect( is_object( $ba_charge ) && 1500 === (int) $ba_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 'charge_notice_damage' === creature_demo_last_charge_slot(), 'the deduction goes out as a normal bill email (charge_notice_damage), not silently' );
+creature_demo_expect( is_object( $ba_charge ) && 1500 === (int) $ba_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 'deduction_notice_deemed' === creature_demo_last_charge_slot(), 'D3: the deduction goes out as its own notice (deduction_notice_deemed), not silently and not as the charge_notice_damage bill' );
+$ba_notice = creature_demo_last_mail( 'deduction_notice_deemed' );
+creature_demo_expect( false !== strpos( $ba_notice['body'], 'Amount: £15.00.' ) && false !== strpos( $ba_notice['body'], 'Link: []' ) && false === stripos( $ba_notice['body'], 'http' ) && false === stripos( $ba_notice['body'], 'saved card' ), 'D3: a filled deduction notice has no pay link and no saved-card wording' );
 creature_demo_expect( $ba_requests + 1 === count( WC_Stripe_API::$requests ) && 17300 === (int) WC_Stripe_API::$requests[ $ba_requests ]['body']['amount'], 'only the undisputed amount goes to Stripe now' );
 $refunded_again = Creature_Demo_Loan::refund_deemed( $back_after, '2026-04-10' );
 creature_demo_expect( empty( $refunded_again['ok'] ) && 'deduction_pending' === $refunded_again['reason'] && 'yes' !== $back_after->get_meta( '_creature_demo_refund_done' ), 'the deduction waits for the 7 days to pass' );
@@ -2322,6 +2343,26 @@ $d7 = creature_demo_paid_deemed_returned( '2026-04-08' );
 $d7->update_meta_data( '_creature_demo_deemed_paid_at', '2026-03-01' );
 $d7_r = Creature_Demo_Loan::refund_deemed( $d7, '2026-04-09' );
 creature_demo_expect( empty( $d7_r['ok'] ) && 'after_30_days' === $d7_r['reason'] && 'yes' !== $d7->get_meta( '_creature_demo_refund_done' ), '8.5(c): a kit posted more than 30 days after payment is not refunded' );
+// D3: while deduction_notice_deemed is empty the deduction notice is blocked, and the shop is told.
+unset( $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] );
+$e1 = creature_demo_paid_deemed_returned();
+$e1->update_meta_data( '_creature_demo_damage_pence', 1500 );
+$e1_req    = count( WC_Stripe_API::$requests );
+$e1_mails  = creature_demo_charge_mail_count();
+$e1_admin  = creature_demo_mail_count( 'admin_deduction_notice_missing' );
+$e1_r      = Creature_Demo_Loan::refund_deemed( $e1, '2026-04-09' );
+creature_demo_expect( empty( $e1_r['ok'] ) && 'no_deduction_wording' === $e1_r['reason'], 'D3: with deduction_notice_deemed empty the deduction is refused' );
+creature_demo_expect( $e1_mails === creature_demo_charge_mail_count() && $e1_req === count( WC_Stripe_API::$requests ) && '' === $e1->get_meta( '_creature_demo_damage_order_id' ) && '' === $e1->get_meta( '_creature_demo_deduction_state' ) && 'yes' !== $e1->get_meta( '_creature_demo_refund_done' ), 'D3: nothing is sent, created, refunded or held while it is empty' );
+creature_demo_expect( $e1_admin + 1 === creature_demo_mail_count( 'admin_deduction_notice_missing' ) && false !== strpos( implode( "\n", $e1->notes ), 'deduction_notice_deemed' ), 'D3: the shop is emailed and the order note says why' );
+Creature_Demo_Loan::refund_deemed( $e1, '2026-04-10' );
+creature_demo_expect( $e1_admin + 1 === creature_demo_mail_count( 'admin_deduction_notice_missing' ), 'D3: the shop email is sent once, not on every retry' );
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array( 'subject' => 'Test deduction for {order_id}', 'body' => 'Deduction {amount}. Link: [{link}]' );
+$e1_dmg = creature_demo_mail_count( 'charge_notice_damage' );
+$e1_ok  = Creature_Demo_Loan::refund_deemed( $e1, '2026-04-11' );
+creature_demo_expect( ! empty( $e1_ok['pending'] ) && 1500 === $e1_ok['held'] && 'deduction_notice_deemed' === creature_demo_last_charge_slot(), 'D3: once the wording is filled the notice sends and the refund goes ahead' );
+$e1_mail = creature_demo_last_mail( 'deduction_notice_deemed' );
+creature_demo_expect( $e1_dmg === creature_demo_mail_count( 'charge_notice_damage' ) && 'Deduction £15.00. Link: []' === $e1_mail['body'], 'D3: the deduction does not reuse charge_notice_damage, and its notice has no pay link' );
+unset( $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] );
 $GLOBALS['creature_demo_refund_flag'] = null;
 
 $damage = creature_demo_loan();
@@ -3225,7 +3266,7 @@ function creature_demo_charge_orders_for( $loan ) {
 }
 
 function creature_demo_charge_mail_count() {
-	return creature_demo_mail_count( 'charge_notice_late_fee' ) + creature_demo_mail_count( 'charge_notice_damage' );
+	return creature_demo_mail_count( 'charge_notice_late_fee' ) + creature_demo_mail_count( 'charge_notice_damage' ) + creature_demo_mail_count( 'deduction_notice_deemed' );
 }
 
 // Return dispatch date (terms 3.3): the earlier of the proof of posting and the first scan.
@@ -3721,15 +3762,6 @@ add_action(
 	},
 	10,
 	3
-);
-add_filter(
-	'creature_demo_loan_copy_catalogue',
-	static function ( $catalogue ) {
-		foreach ( $GLOBALS['creature_demo_copy_override'] as $slot => $row ) {
-			$catalogue[ $slot ] = $row;
-		}
-		return $catalogue;
-	}
 );
 add_filter(
 	'creature_demo_loan_confirmation_files',
