@@ -4077,6 +4077,9 @@ $ex_admin_no = ob_get_clean();
 ob_start();
 Creature_Demo_Loan::render_meta_box( $ex_none );
 $ex_admin_none = ob_get_clean();
+foreach ( array( $ex_admin_yes, $ex_admin_no, $ex_admin_none ) as $ex_admin_html ) {
+	creature_demo_expect( false !== strpos( $ex_admin_html, 'Admin step for an 11.3 cancellation and for a 10.4 refund: tick &ldquo;Refunded under 10.4/11 (no £25 code)&rdquo;' ), 'item 6: the order screen tells the admin to tick Refunded under 10.4/11 for an 11.3 cancellation and a 10.4 refund' );
+}
 creature_demo_expect( false !== strpos( $ex_admin_yes, 'Send my kit now (terms 11.3, asked at checkout): Yes.' ) && false !== strpos( $ex_admin_no, 'asked at checkout): No.' ) && false !== strpos( $ex_admin_none, 'asked at checkout): not asked.' ), 'the admin order screen shows Yes, No or not asked' );
 creature_demo_expect( 'yes' !== $ex_yes->get_meta( '_creature_demo_refund_done' ) && '' === $ex_yes->get_meta( '_creature_demo_refund_pence' ), 'ticking it adds no refund logic: the pro-rata refund stays manual' );
 // Block checkout.
