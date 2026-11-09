@@ -3227,7 +3227,9 @@ WC_Stripe_API::$response = (object) array(
 	'id'     => 're_test_demo_192',
 	'status' => 'succeeded',
 );
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array( 'subject' => 'Test deduction for {order_id}', 'body' => 'Deduction {amount}.' );
 $refund192_done = Creature_Demo_Loan::refund_deemed( $refund192, '2026-04-09' );
+unset( $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] );
 creature_demo_expect( ! empty( $refund192_done['ok'] ) && 15300 === $refund192_done['amount'], 'the 8.5(b) refund on a £192 loan keeps the rest of the £24 and the damage out of £172' );
 $GLOBALS['creature_demo_refund_flag'] = null;
 
