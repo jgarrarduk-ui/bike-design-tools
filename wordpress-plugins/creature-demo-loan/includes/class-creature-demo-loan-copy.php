@@ -69,6 +69,13 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => '',
 				'body'    => $consent,
 			),
+			// Terms 11.3 and Appendix B: the "Send my kit now" checkbox. Cadence's v2 has
+			// no label for it, so this stays empty. While it is empty the checkbox is
+			// not shown and no answer is stored.
+			'express_request_checkbox'      => array(
+				'subject' => '',
+				'body'    => '',
+			),
 			'consent_error'                 => array(
 				'subject' => '',
 				'body'    => 'To book a demo, tick the box agreeing that we can charge your saved card later under clause 4 of the demo terms. It’s separate from accepting the terms.',

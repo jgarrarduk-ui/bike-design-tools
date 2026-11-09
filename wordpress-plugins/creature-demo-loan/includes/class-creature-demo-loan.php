@@ -916,6 +916,64 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		echo self::classic_checkbox_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		echo self::express_checkbox_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	/**
+	 * The label of the "Send my kit now" checkbox (terms 11.3, Appendix B). Empty
+	 * until Cadence supplies it.
+	 *
+	 * @return string
+	 */
+	public static function express_label() {
+		return trim( Creature_Demo_Loan_Copy::text( 'express_request_checkbox' ) );
+	}
+
+	/**
+	 * Terms 11.3 and Appendix B: not ticked in advance, and separate from the
+	 * consent box. Nothing is shown while the label is empty.
+	 *
+	 * @return string
+	 */
+	public static function express_checkbox_html() {
+		$label = self::express_label();
+		if ( '' === $label ) {
+			return '';
+		}
+		return '<p class="form-row creature-demo-loan-express"><label><input type="checkbox" name="creature_demo_express_request" id="creature_demo_express_request" value="1" /> <span>' . self::esc( $label ) . '</span></label></p>';
+	}
+
+	/**
+	 * @return bool
+	 */
+	public static function posted_express() {
+		if ( ! isset( $_POST['creature_demo_express_request'] ) ) {
+			return false;
+		}
+		return '1' === self::unslash_string( $_POST['creature_demo_express_request'] );
+	}
+
+	/**
+	 * Store the rider's answer to "Send my kit now" as
+	 * `_creature_demo_express_request`: yes when ticked, no when the checkbox was
+	 * shown and left unticked. Nothing is stored when the box was not shown (its
+	 * label is empty), so an unanswered question is never recorded as a no. There
+	 * is no refund logic here: the pro-rata refund under 11.3 stays manual.
+	 *
+	 * @param object $order
+	 * @param bool   $ticked
+	 */
+	public static function store_express_request( $order, $ticked ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'update_meta_data' ) ) {
+			return;
+		}
+		if ( ! $ticked && '' === self::express_label() ) {
+			return;
+		}
+		$order->update_meta_data( '_creature_demo_express_request', $ticked ? 'yes' : 'no' );
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
 	}
 
 	/**
@@ -951,6 +1009,7 @@ final class Creature_Demo_Loan {
 		if ( self::posted_consent() ) {
 			self::store_consent( $order, true, gmdate( 'c' ) );
 		}
+		self::store_express_request( $order, self::posted_express() );
 	}
 
 	/**
@@ -964,6 +1023,7 @@ final class Creature_Demo_Loan {
 		}
 		if ( self::cart_is_demo_only() || self::order_is_demo( $order ) ) {
 			self::capture_bundle_price( $order );
+			self::store_express_request( $order, self::value_is_yes( self::block_field_value( $order, $request, 'creature/demo-express-request' ) ) );
 			if ( method_exists( $order, 'save' ) ) {
 				$order->save();
 			}
@@ -1013,7 +1073,29 @@ final class Creature_Demo_Loan {
 		self::$block_field = $def;
 		if ( function_exists( 'woocommerce_register_additional_checkout_field' ) ) {
 			woocommerce_register_additional_checkout_field( $def );
+			// Terms 11.3: the "Send my kit now" checkbox. Not required, not ticked, and not registered while it has no label.
+			$express = self::express_block_field_definition();
+			if ( is_array( $express ) ) {
+				woocommerce_register_additional_checkout_field( $express );
+			}
 		}
+	}
+
+	/**
+	 * @return array<string, mixed>|null Null while the label is empty.
+	 */
+	public static function express_block_field_definition() {
+		$label = self::express_label();
+		if ( '' === $label ) {
+			return null;
+		}
+		return array(
+			'id'       => 'creature/demo-express-request',
+			'label'    => $label,
+			'location' => 'order',
+			'type'     => 'checkbox',
+			'required' => false,
+		);
 	}
 
 	/**
@@ -3682,6 +3764,8 @@ final class Creature_Demo_Loan {
 				echo '<details><summary>Wording agreed</summary><p>' . self::esc( $record['wording'] ) . '</p></details>';
 			}
 		}
+		$express = self::express_answer( $order );
+		echo '<p>Send my kit now (terms 11.3, asked at checkout): ' . self::esc( '' !== $express ? $express : 'not asked' ) . '. ' . ( 'Yes' === $express ? 'The rider asked for the kit within the 14-day cancellation period. If they cancel after dispatch, the pro-rata refund is worked out by hand.' : '' ) . '</p>';
 		self::date_input( 'creature_demo_dispatch_date', 'Dispatch date', self::meta_string( $order, '_creature_demo_dispatch_date' ) );
 		$estimated = 'yes' === self::meta_string( $order, '_creature_demo_delivery_estimated' );
 		$delivery_label = $estimated ? 'Tracked delivery date (current value is an estimate: dispatch + 2 working days)' : 'Tracked delivery date';
@@ -4005,7 +4089,7 @@ final class Creature_Demo_Loan {
 		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $ids ) : json_encode( $ids );
 		$flag = self::cart_is_demo_only() ? 'true' : 'false';
 		echo '<script>window.creatureDemoLoanIds=' . $json . ';window.creatureDemoLoanDemoCart=' . $flag . ';</script>';
-		echo '<script>(function(){var ids=window.creatureDemoLoanIds||[];function demoItem(item){var id=item.id||item.product_id||0;var parent=item.parent_id||item.parent||0;return ids.indexOf(id)!==-1||ids.indexOf(parent)!==-1;}function cartDemo(items){if(!items||!items.length)return false;for(var i=0;i<items.length;i++){if(!demoItem(items[i]))return false;}return true;}function toggle(on){var nodes=document.querySelectorAll("[id*=\'creature-demo-loan-consent\'],[for*=\'creature-demo-loan-consent\']");for(var i=0;i<nodes.length;i++){var row=nodes[i].closest? (nodes[i].closest(".wc-block-components-checkbox")||nodes[i].closest("p")||nodes[i].parentNode):nodes[i].parentNode;if(row&&row.style)row.style.display=on?"":"none";}}function read(){try{if(window.wp&&wp.data&&wp.data.select){var store=wp.data.select("wc/store/cart");if(store&&store.getCartData){var data=store.getCartData();if(data&&data.items)return data.items;}}}catch(e){}return null;}function tick(){var items=read();if(items)toggle(cartDemo(items));else toggle(!!window.creatureDemoLoanDemoCart);}tick();if(window.wp&&wp.data&&wp.data.subscribe)wp.data.subscribe(tick);})();</script>';
+		echo '<script>(function(){var ids=window.creatureDemoLoanIds||[];function demoItem(item){var id=item.id||item.product_id||0;var parent=item.parent_id||item.parent||0;return ids.indexOf(id)!==-1||ids.indexOf(parent)!==-1;}function cartDemo(items){if(!items||!items.length)return false;for(var i=0;i<items.length;i++){if(!demoItem(items[i]))return false;}return true;}function toggle(on){var nodes=document.querySelectorAll("[id*=\'creature-demo-loan-consent\'],[for*=\'creature-demo-loan-consent\'],[id*=\'creature-demo-express-request\'],[for*=\'creature-demo-express-request\']");for(var i=0;i<nodes.length;i++){var row=nodes[i].closest? (nodes[i].closest(".wc-block-components-checkbox")||nodes[i].closest("p")||nodes[i].parentNode):nodes[i].parentNode;if(row&&row.style)row.style.display=on?"":"none";}}function read(){try{if(window.wp&&wp.data&&wp.data.select){var store=wp.data.select("wc/store/cart");if(store&&store.getCartData){var data=store.getCartData();if(data&&data.items)return data.items;}}}catch(e){}return null;}function tick(){var items=read();if(items)toggle(cartDemo(items));else toggle(!!window.creatureDemoLoanDemoCart);}tick();if(window.wp&&wp.data&&wp.data.subscribe)wp.data.subscribe(tick);})();</script>';
 	}
 
 	/**
@@ -5548,9 +5632,21 @@ final class Creature_Demo_Loan {
 	 * @return mixed
 	 */
 	private static function block_consent_value( $order, $request ) {
+		return self::block_field_value( $order, $request, 'creature/demo-loan-consent' );
+	}
+
+	/**
+	 * A checkout block additional field, from the order meta or the request.
+	 *
+	 * @param object $order
+	 * @param mixed  $request
+	 * @param string $id Field id, for example creature/demo-loan-consent.
+	 * @return mixed
+	 */
+	private static function block_field_value( $order, $request, $id ) {
 		$keys = array(
-			'creature/demo-loan-consent',
-			'_wc_other/creature/demo-loan-consent',
+			$id,
+			'_wc_other/' . $id,
 		);
 		if ( is_object( $order ) && method_exists( $order, 'get_meta' ) ) {
 			foreach ( $keys as $key ) {
@@ -5561,11 +5657,11 @@ final class Creature_Demo_Loan {
 			}
 		}
 		if ( is_array( $request ) ) {
-			if ( isset( $request['additional_fields']['creature/demo-loan-consent'] ) ) {
-				return $request['additional_fields']['creature/demo-loan-consent'];
+			if ( isset( $request['additional_fields'][ $id ] ) ) {
+				return $request['additional_fields'][ $id ];
 			}
-			if ( isset( $request['creature/demo-loan-consent'] ) ) {
-				return $request['creature/demo-loan-consent'];
+			if ( isset( $request[ $id ] ) ) {
+				return $request[ $id ];
 			}
 		}
 		return null;

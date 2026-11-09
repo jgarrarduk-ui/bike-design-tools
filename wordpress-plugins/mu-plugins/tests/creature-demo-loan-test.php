@@ -1174,6 +1174,7 @@ $expected_slots = array(
 	'admin_return_booked',
 	'admin_bill_due',
 	'admin_received_date_missing',
+	'express_request_checkbox',
 );
 // The three emails Cadence has not written yet are slots with no wording.
 $expected_slots = array_merge( $expected_slots, array() );
@@ -1192,7 +1193,7 @@ foreach ( $slots as $slot ) {
 	}
 }
 sort( $empty_slots );
-creature_demo_expect( array() === $empty_slots, 'every slot has Cadence v2 wording, none is empty' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
+creature_demo_expect( array( 'express_request_checkbox' ) === $empty_slots, 'every slot has wording except the Appendix B checkbox label, which v2 does not give and stays empty' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
 $v2_cat = Creature_Demo_Loan_Copy::catalogue();
 $v2_has = static function ( $slot, $needle ) use ( $v2_cat ) {
 	return false !== strpos( $v2_cat[ $slot ]['body'], $needle );
@@ -2927,7 +2928,7 @@ add_filter(
  *
  * @param string|null $bundle_price get_price() string for product 8425, or null for no product.
  */
-function creature_demo_booked_loan( $bundle_price ) {
+function creature_demo_booked_loan( $bundle_price, $extra_post = array() ) {
 	if ( null === $bundle_price ) {
 		unset( $GLOBALS['creature_demo_product_prices'][8425] );
 	} else {
@@ -2943,7 +2944,7 @@ function creature_demo_booked_loan( $bundle_price ) {
 			'variation_id' => 0,
 		),
 	);
-	$_POST = array( 'creature_demo_loan_consent' => '1' );
+	$_POST = array_merge( array( 'creature_demo_loan_consent' => '1' ), $extra_post );
 	$order = wc_create_order(
 		array(
 			'customer_id' => 42,
@@ -3772,6 +3773,69 @@ foreach ( array(
 	Creature_Demo_Loan::render_booking_confirmation( $case[0], $case[1], false, $case[2] );
 	creature_demo_expect( '' === ob_get_clean(), "the booking confirmation content is not added for {$label}" );
 }
+$GLOBALS['creature_demo_copy_override'] = array();
+
+// Item B, terms 11.3 and Appendix B: the "Send my kit now" checkbox, stored as _creature_demo_express_request.
+creature_demo_expect( '' === Creature_Demo_Loan::express_label() && '' === Creature_Demo_Loan::express_checkbox_html() && null === Creature_Demo_Loan::express_block_field_definition(), 'v2 has no label for the checkbox, so none is shown and no block field is defined' );
+$ex_none = creature_demo_booked_loan( '249.00' );
+creature_demo_expect( '' === $ex_none->get_meta( '_creature_demo_express_request' ) && '' === Creature_Demo_Loan::express_answer( $ex_none ), 'with no label nothing is stored, so an unasked question is never recorded as a no' );
+$GLOBALS['creature_demo_copy_override']['express_request_checkbox'] = array(
+	'subject' => '',
+	'body'    => 'Test label for the express request.',
+);
+$ex_html = Creature_Demo_Loan::express_checkbox_html();
+creature_demo_expect( false !== strpos( $ex_html, 'name="creature_demo_express_request"' ) && false !== strpos( $ex_html, 'Test label for the express request.' ) && false === strpos( $ex_html, 'checked' ), 'with a label the checkbox is shown, not ticked in advance' );
+$GLOBALS['creature_demo_cart']        = array( array( 'product_id' => 9001, 'variation_id' => 0 ) );
+$GLOBALS['creature_demo_use_product'] = true;
+ob_start();
+Creature_Demo_Loan::on_before_submit();
+$ex_checkout = ob_get_clean();
+creature_demo_expect( false !== strpos( $ex_checkout, 'creature_demo_loan_consent' ) && false !== strpos( $ex_checkout, 'creature_demo_express_request' ), 'the demo checkout shows the consent box and the express box' );
+$GLOBALS['creature_demo_cart'] = array( array( 'product_id' => 50 ) );
+ob_start();
+Creature_Demo_Loan::on_before_submit();
+creature_demo_expect( '' === ob_get_clean(), 'a basket that is not a demo shows neither' );
+creature_demo_clear_cart();
+$GLOBALS['creature_demo_use_product'] = false;
+$ex_yes = creature_demo_booked_loan( '249.00', array( 'creature_demo_express_request' => '1' ) );
+$ex_no  = creature_demo_booked_loan( '249.00' );
+creature_demo_expect( 'yes' === $ex_yes->get_meta( '_creature_demo_express_request' ) && 'Yes' === Creature_Demo_Loan::express_answer( $ex_yes ), 'ticked: stored as yes' );
+creature_demo_expect( 'no' === $ex_no->get_meta( '_creature_demo_express_request' ) && 'No' === Creature_Demo_Loan::express_answer( $ex_no ), 'unticked: stored as no' );
+foreach ( array( 'ticked' => $ex_yes, 'unticked' => $ex_no ) as $ex_label => $ex_order ) {
+	foreach ( array( false, true ) as $ex_plain ) {
+		ob_start();
+		Creature_Demo_Loan::render_booking_confirmation( $ex_order, false, $ex_plain, $bc_email );
+		$ex_out = ob_get_clean();
+		creature_demo_expect( false !== strpos( $ex_out, 'Your answer to “Send my kit now”: ' . ( $ex_order === $ex_yes ? 'Yes' : 'No' ) . '.' ), "{$ex_label}: the booking confirmation shows the answer" . ( $ex_plain ? ' (plain text)' : '' ) );
+	}
+}
+ob_start();
+Creature_Demo_Loan::render_meta_box( $ex_yes );
+$ex_admin_yes = ob_get_clean();
+ob_start();
+Creature_Demo_Loan::render_meta_box( $ex_no );
+$ex_admin_no = ob_get_clean();
+ob_start();
+Creature_Demo_Loan::render_meta_box( $ex_none );
+$ex_admin_none = ob_get_clean();
+creature_demo_expect( false !== strpos( $ex_admin_yes, 'Send my kit now (terms 11.3, asked at checkout): Yes.' ) && false !== strpos( $ex_admin_no, 'asked at checkout): No.' ) && false !== strpos( $ex_admin_none, 'asked at checkout): not asked.' ), 'the admin order screen shows Yes, No or not asked' );
+creature_demo_expect( 'yes' !== $ex_yes->get_meta( '_creature_demo_refund_done' ) && '' === $ex_yes->get_meta( '_creature_demo_refund_pence' ), 'ticking it adds no refund logic: the pro-rata refund stays manual' );
+// Block checkout.
+$ex_def = Creature_Demo_Loan::express_block_field_definition();
+creature_demo_expect( is_array( $ex_def ) && 'creature/demo-express-request' === $ex_def['id'] && 'checkbox' === $ex_def['type'] && false === $ex_def['required'], 'the block checkout has an optional checkbox field' );
+$GLOBALS['creature_demo_cart']        = array( array( 'product_id' => 9001, 'variation_id' => 0 ) );
+$GLOBALS['creature_demo_use_product'] = true;
+$ex_b_yes = wc_create_order();
+Creature_Demo_Loan::on_store_api_order( $ex_b_yes, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '1', 'creature/demo-express-request' => '1' ) ) );
+$ex_b_no = wc_create_order();
+Creature_Demo_Loan::on_store_api_order( $ex_b_no, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '1' ) ) );
+creature_demo_expect( 'yes' === $ex_b_yes->get_meta( '_creature_demo_express_request' ) && 'no' === $ex_b_no->get_meta( '_creature_demo_express_request' ), 'block checkout: ticked is yes, unticked is no' );
+$GLOBALS['creature_demo_cart'] = array( array( 'product_id' => 50 ) );
+$ex_other = wc_create_order();
+Creature_Demo_Loan::on_store_api_order( $ex_other, array( 'additional_fields' => array( 'creature/demo-express-request' => '1' ) ) );
+creature_demo_expect( '' === $ex_other->get_meta( '_creature_demo_express_request' ), 'an order that is not a demo stores no answer' );
+creature_demo_clear_cart();
+$GLOBALS['creature_demo_use_product'] = false;
 $GLOBALS['creature_demo_copy_override'] = array();
 
 // The attachments: media ids or file paths, set through the filter (the config screen sets it).
