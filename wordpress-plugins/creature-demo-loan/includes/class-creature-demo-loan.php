@@ -33,6 +33,9 @@ final class Creature_Demo_Loan {
 	 */
 	const CHARGE_LOCK_STALE_SECONDS = 900;
 
+	/** A bundle price at or below this (the demo fee plus used stock) is treated as a price error. */
+	const BUNDLE_FLOOR_PENCE = Creature_Demo_Loan_Money::DEMO_FEE_PENCE + Creature_Demo_Loan_Money::USED_STOCK_PENCE;
+
 	/** @var bool */
 	private static $booted = false;
 
@@ -356,6 +359,10 @@ final class Creature_Demo_Loan {
 	 * the ceiling. get_price() already returns the sale price when there is
 	 * one, so this does not use get_regular_price().
 	 *
+	 * The formula assumes a single-price bundle (all variations the same
+	 * price). A mixed-price bundle reads the product's get_price() and is not
+	 * verified.
+	 *
 	 * @return int|null
 	 */
 	private static function bundle_price_pence_now() {
@@ -389,8 +396,18 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		$pence = self::bundle_price_pence_now();
+		if ( null === $pence ) {
+			$source = 'fallback';
+		} elseif ( $pence <= self::BUNDLE_FLOOR_PENCE ) {
+			// At or below the deductions the formula gives 0 or a few pence, which
+			// is a price error, not a real keep price. Record the real figure, but
+			// mark it so the read side uses the ceiling.
+			$source = 'fallback_below_floor';
+		} else {
+			$source = 'bundle';
+		}
 		$order->update_meta_data( '_creature_demo_bundle_price_pence', null === $pence ? 0 : $pence );
-		$order->update_meta_data( '_creature_demo_bundle_price_source', null === $pence ? 'fallback' : 'bundle' );
+		$order->update_meta_data( '_creature_demo_bundle_price_source', $source );
 	}
 
 	/**
@@ -406,7 +423,8 @@ final class Creature_Demo_Loan {
 			return $ceiling;
 		}
 		$bundle = self::meta_string( $order, '_creature_demo_bundle_price_pence' );
-		if ( '' === $bundle || 'fallback' === self::meta_string( $order, '_creature_demo_bundle_price_source' ) ) {
+		$source = self::meta_string( $order, '_creature_demo_bundle_price_source' );
+		if ( '' === $bundle || 0 === strpos( $source, 'fallback' ) ) {
 			return $ceiling;
 		}
 		return Creature_Demo_Loan_Money::keep_price_pence( (int) $bundle );

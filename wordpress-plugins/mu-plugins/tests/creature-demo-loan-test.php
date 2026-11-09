@@ -2659,7 +2659,41 @@ $no_id = creature_demo_booked_loan( '199.00' );
 creature_demo_expect( 'fallback' === $no_id->get_meta( '_creature_demo_bundle_price_source' ) && 21200 === Creature_Demo_Loan::loan_keep_price_pence( $no_id ), 'no bundle id records fallback and gives £212' );
 $GLOBALS['creature_demo_bundle_id_override'] = null;
 $bundle_only = creature_demo_booked_loan( '10.00' );
-creature_demo_expect( 'bundle' === $bundle_only->get_meta( '_creature_demo_bundle_price_source' ) && 0 === Creature_Demo_Loan::loan_keep_price_pence( $bundle_only ), 'a real bundle price below the deductions gives a keep price of 0, not the fallback' );
+creature_demo_expect( 'fallback_below_floor' === $bundle_only->get_meta( '_creature_demo_bundle_price_source' ) && 21200 === Creature_Demo_Loan::loan_keep_price_pence( $bundle_only ), 'a real bundle price below the deductions records fallback_below_floor and gives £212' );
+creature_demo_expect( 1000 === (int) $bundle_only->get_meta( '_creature_demo_bundle_price_pence' ), 'a below-floor price still stores the real pence' );
+
+// The floor: at or below £37.00 (demo fee plus used stock) is a price error.
+creature_demo_expect( 3700 === Creature_Demo_Loan::BUNDLE_FLOOR_PENCE, 'the bundle floor is the demo fee plus used stock, 3700' );
+foreach ( array(
+	array( '37.00', 3700, 'fallback_below_floor', 21200 ),
+	array( '36.99', 3699, 'fallback_below_floor', 21200 ),
+	array( '37.01', 3701, 'bundle', 1 ),
+	array( '249.00', 24900, 'bundle', 21200 ),
+	array( '229.00', 22900, 'bundle', 19200 ),
+) as $case ) {
+	$floor_loan = creature_demo_booked_loan( $case[0] );
+	creature_demo_expect( $case[2] === $floor_loan->get_meta( '_creature_demo_bundle_price_source' ), "a {$case[0]} bundle records source {$case[2]}" );
+	creature_demo_expect( $case[1] === (int) $floor_loan->get_meta( '_creature_demo_bundle_price_pence' ), "a {$case[0]} bundle stores the real pence {$case[1]}" );
+	creature_demo_expect( $case[3] === Creature_Demo_Loan::loan_keep_price_pence( $floor_loan ), "a {$case[0]} bundle gives a keep price of {$case[3]}" );
+	$floor_deemed = Creature_Demo_Loan::maybe_raise_deemed( $floor_loan, '2026-04-07' );
+	creature_demo_expect( ! empty( $floor_deemed['ok'] ) && $case[3] === $floor_deemed['amount'], "the deemed amount on a {$case[0]} bundle is {$case[3]}" );
+}
+
+// Read side only: the source decides, whatever the stored pence.
+foreach ( array( 3000, 0 ) as $stored ) {
+	$read_only = creature_demo_loan();
+	$read_only->update_meta_data( '_creature_demo_bundle_price_pence', $stored );
+	$read_only->update_meta_data( '_creature_demo_bundle_price_source', 'fallback_below_floor' );
+	creature_demo_expect( 21200 === Creature_Demo_Loan::loan_keep_price_pence( $read_only ), "meta pence {$stored} with source fallback_below_floor gives £212" );
+}
+
+// Write-once holds for a below-floor booking.
+$GLOBALS['creature_demo_product_prices'][8425] = '30.00';
+$floor_once = creature_demo_booked_loan( '30.00' );
+$GLOBALS['creature_demo_product_prices'][8425] = '249.00';
+Creature_Demo_Loan::on_store_api_order( $floor_once, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '1' ) ) );
+creature_demo_expect( 3000 === (int) $floor_once->get_meta( '_creature_demo_bundle_price_pence' ) && 'fallback_below_floor' === $floor_once->get_meta( '_creature_demo_bundle_price_source' ), 'a second capture does not change a fallback_below_floor order' );
+creature_demo_expect( 21200 === Creature_Demo_Loan::loan_keep_price_pence( $floor_once ), 'a second capture leaves the £212 keep price on a fallback_below_floor order' );
 
 // Keep, deemed purchase and the 8.5(b) refund use the computed figure.
 $keep192 = creature_demo_booked_loan( '229.00' );
@@ -2759,6 +2793,10 @@ $mail_fallback = creature_demo_loan();
 Creature_Demo_Loan::tick( $mail_fallback, '2026-04-03' );
 $warn_fallback = creature_demo_last_mail( 'reminder_deemed_warning' );
 creature_demo_expect( false !== strpos( $warn_fallback['body'], 'The price is £212.00 less any late fees' ), 'the deemed warning on a fallback loan quotes £212.00' );
+$mail_floor = creature_demo_booked_loan( '30.00' );
+Creature_Demo_Loan::tick( $mail_floor, '2026-04-03' );
+$warn_floor = creature_demo_last_mail( 'reminder_deemed_warning' );
+creature_demo_expect( is_array( $warn_floor ) && false !== strpos( $warn_floor['body'], 'The price is £212.00 less any late fees' ), 'the deemed warning on a fallback_below_floor loan quotes £212.00' );
 $template = Creature_Demo_Loan_Copy::catalogue();
 creature_demo_expect( false !== strpos( $template['reminder_deemed_warning']['body'], 'The price is {price} less' ) && false !== strpos( $template['charge_notice_deemed']['body'], 'This is {price} less' ), 'both deemed emails are templates with a price placeholder' );
 
