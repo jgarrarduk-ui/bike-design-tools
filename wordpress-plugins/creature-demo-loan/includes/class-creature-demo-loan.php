@@ -145,6 +145,10 @@ final class Creature_Demo_Loan {
 		add_action( 'woocommerce_before_pay_action', array( __CLASS__, 'on_before_pay_action' ) );
 		add_action( 'woocommerce_order_status_failed', array( __CLASS__, 'on_pay_link_failed' ), 10, 2 );
 		add_action( 'woocommerce_order_status_cancelled', array( __CLASS__, 'on_pay_link_failed' ), 10, 2 );
+		// Terms 3A.4: no £25 code once the £25 is refunded (10.4, 11) or the order cancelled.
+		add_action( 'woocommerce_order_status_cancelled', array( __CLASS__, 'on_fee_refunded_or_cancelled' ), 10, 1 );
+		add_action( 'woocommerce_order_status_refunded', array( __CLASS__, 'on_fee_refunded_or_cancelled' ), 10, 1 );
+		add_action( 'woocommerce_order_refunded', array( __CLASS__, 'on_fee_refunded_or_cancelled' ), 10, 2 );
 		add_action( 'wc_gateway_stripe_process_payment_error', array( __CLASS__, 'on_stripe_payment_error' ), 10, 2 );
 		add_action( 'woocommerce_before_delete_order', array( __CLASS__, 'on_charge_order_deleted' ) );
 		add_action( 'woocommerce_delete_order', array( __CLASS__, 'on_charge_order_deleted' ) );
@@ -1930,6 +1934,18 @@ final class Creature_Demo_Loan {
 				'reason' => 'no_coupon',
 			);
 		}
+		// Terms 3A.4: no code if any of the £25 was refunded under clause 10.4 or 11.
+		if ( self::fee_was_refunded( $order ) ) {
+			if ( 'yes' !== self::meta_string( $order, '_creature_demo_coupon_refused_noted' ) ) {
+				$order->update_meta_data( '_creature_demo_coupon_refused_noted', 'yes' );
+				$order->save();
+				self::note( $order, 'No £25 code: the £25 was refunded or the order was cancelled (terms 3A.4, clauses 10.4 and 11).' );
+			}
+			return array(
+				'ok'     => false,
+				'reason' => 'fee_refunded',
+			);
+		}
 		$spec = self::coupon_spec( $order, $as_of );
 		$code = 'demo-' . (int) $order->get_id() . '-' . self::coupon_suffix( $order );
 		if ( class_exists( 'WC_Coupon' ) ) {
@@ -1950,6 +1966,56 @@ final class Creature_Demo_Loan {
 			'code' => $code,
 			'spec' => $spec,
 		);
+	}
+
+	/**
+	 * Terms 3A.4: has any of the £25 been refunded under clause 10.4 (lost or
+	 * damaged on the way out: replacement or refund) or clause 11 (cancelling
+	 * the demo: full refund before dispatch, less a pro-rata part after)?
+	 *
+	 * The order state that marks it is a cancelled or refunded order, or a
+	 * refund recorded against it (a partial refund under 11.3 leaves the status
+	 * alone). The flag is written when WooCommerce reports the change, because
+	 * recording a return later overwrites the status.
+	 *
+	 * @param object $order
+	 * @return bool
+	 */
+	public static function fee_was_refunded( $order ) {
+		if ( ! is_object( $order ) ) {
+			return false;
+		}
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_fee_refunded' ) ) {
+			return true;
+		}
+		if ( method_exists( $order, 'get_status' ) && in_array( (string) $order->get_status(), array( 'cancelled', 'refunded' ), true ) ) {
+			return true;
+		}
+		return method_exists( $order, 'get_total_refunded' ) && (float) $order->get_total_refunded() > 0;
+	}
+
+	/**
+	 * WooCommerce says an order was cancelled, fully refunded, or partly
+	 * refunded. Remember it on a demo order so the £25 code stays blocked.
+	 *
+	 * @param mixed $order_id
+	 * @param mixed $refund_id
+	 */
+	public static function on_fee_refunded_or_cancelled( $order_id, $refund_id = 0 ) {
+		unset( $refund_id );
+		if ( ! function_exists( 'wc_get_order' ) ) {
+			return;
+		}
+		$order = wc_get_order( $order_id );
+		if ( ! is_object( $order ) || '' !== self::meta_string( $order, '_creature_demo_parent_loan_id' ) || ! ( self::order_is_demo( $order ) || 'yes' === self::meta_string( $order, '_creature_demo_loan' ) ) ) {
+			return;
+		}
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_fee_refunded' ) ) {
+			return;
+		}
+		$order->update_meta_data( '_creature_demo_fee_refunded', 'yes' );
+		$order->save();
+		self::note( $order, 'The £25 was refunded or the order was cancelled (terms 3A.4: no code will be issued).' );
 	}
 
 	/**

@@ -553,9 +553,13 @@ class Creature_Demo_Test_Order {
 	public $currency = 'GBP';
 	public $transaction_id = '';
 	public $payment_completed = array();
+	public $refunded = 0.0;
 
 	public function __construct( $id ) {
 		$this->id = (int) $id;
+	}
+	public function get_total_refunded() {
+		return (float) $this->refunded;
 	}
 	public function get_id() {
 		return $this->id;
@@ -1600,6 +1604,42 @@ Creature_Demo_Loan::record_return_scan( $deemed_back, '2026-04-09', '2026-04-09'
 $deemed_back_done = Creature_Demo_Loan::complete_inspection( $deemed_back, '2026-04-09' );
 creature_demo_expect( empty( $deemed_back_done['coupon'] ), 'no code after a deemed purchase, even when the kit comes back' );
 creature_demo_expect( $coupons_before === count( $GLOBALS['creature_demo_coupons'] ), 'a deemed purchase saves no coupon' );
+
+// Terms 3A.4: no code once any of the £25 was refunded under clause 10.4 (lost or damaged on the way out) or 11 (cancelling).
+$coupons_before = count( $GLOBALS['creature_demo_coupons'] );
+$r104 = creature_demo_loan();
+$r104->update_status( 'refunded' );
+$r104_c = Creature_Demo_Loan::issue_coupon( $r104, '2026-03-20' );
+creature_demo_expect( empty( $r104_c['ok'] ) && 'fee_refunded' === $r104_c['reason'], 'clause 10.4: an order refunded in full gets no £25 code' );
+$r11 = creature_demo_loan();
+$r11->update_status( 'cancelled' );
+$r11_c = Creature_Demo_Loan::issue_coupon( $r11, '2026-03-20' );
+creature_demo_expect( empty( $r11_c['ok'] ) && 'fee_refunded' === $r11_c['reason'], 'clause 11: a cancelled order gets no £25 code' );
+$r113 = creature_demo_loan();
+$r113->refunded = 5.0;
+$r113_c = Creature_Demo_Loan::issue_coupon( $r113, '2026-03-20' );
+creature_demo_expect( empty( $r113_c['ok'] ) && 'fee_refunded' === $r113_c['reason'], 'clause 11.3: a partial refund of the £25 (less the pro-rata days) gets no £25 code' );
+// Recording the return later overwrites the status, so WooCommerce's cancel/refund event sets a flag that stays.
+$r11b = creature_demo_loan();
+$r11b->update_status( 'cancelled' );
+Creature_Demo_Loan::on_fee_refunded_or_cancelled( $r11b->get_id() );
+creature_demo_expect( 'yes' === $r11b->get_meta( '_creature_demo_fee_refunded' ), 'the cancel event flags the demo order' );
+Creature_Demo_Loan::record_return_scan( $r11b, '2026-03-20', '2026-03-20' );
+$r11b_done = Creature_Demo_Loan::complete_inspection( $r11b, '2026-03-20' );
+creature_demo_expect( 'demo-closed' === $r11b->get_status() && empty( $r11b_done['coupon']['ok'] ) && 'fee_refunded' === $r11b_done['coupon']['reason'], 'a cancelled order that comes back and is inspected still gets no code' );
+$r11c = creature_demo_loan();
+Creature_Demo_Loan::on_fee_refunded_or_cancelled( $r11c->get_id(), 99 );
+creature_demo_expect( empty( Creature_Demo_Loan::issue_coupon( $r11c, '2026-03-20' )['ok'] ) && 1 === count( array_filter( $r11c->notes, static function ( $n ) { return false !== strpos( $n, 'No £25 code' ); } ) ), 'the refund event blocks the code and is noted once' );
+creature_demo_expect( $coupons_before === count( $GLOBALS['creature_demo_coupons'] ), 'none of those saved a coupon' );
+$r_ok = creature_demo_loan();
+creature_demo_expect( ! empty( Creature_Demo_Loan::issue_coupon( $r_ok, '2026-03-20' )['ok'] ), 'a loan with no refund still gets the code' );
+$hooks_flat_6 = array();
+foreach ( $GLOBALS['creature_demo_hooks'] as $hook_row ) {
+	$hooks_flat_6[] = $hook_row[0] . ':' . ( is_array( $hook_row[1] ) ? $hook_row[1][1] : '' );
+}
+foreach ( array( 'woocommerce_order_status_cancelled:on_fee_refunded_or_cancelled', 'woocommerce_order_status_refunded:on_fee_refunded_or_cancelled', 'woocommerce_order_refunded:on_fee_refunded_or_cancelled' ) as $hooked_6 ) {
+	creature_demo_expect( in_array( $hooked_6, $hooks_flat_6, true ), "{$hooked_6} is hooked in boot" );
+}
 
 $switch = creature_demo_loan();
 creature_demo_expect( 'return' === Creature_Demo_Loan::effective_choice( $switch ), 'no choice means return' );
@@ -3275,6 +3315,14 @@ ob_start();
 Creature_Demo_Loan::render_meta_box( $np );
 $np_html = ob_get_clean();
 creature_demo_expect( false !== strpos( $np_html, 'at least one photo' ), 'the order screen tells the admin a photo is required' );
+
+// Item 6, continued: cancelling a charge order (not the £25) does not block the code.
+$r_charge_loan = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $r_charge_loan, '2026-04-02', '2026-04-02' );
+$r_charge = creature_demo_bill_charge( $r_charge_loan, '2026-04-02' );
+$r_charge->update_status( 'cancelled' );
+Creature_Demo_Loan::on_fee_refunded_or_cancelled( $r_charge->get_id() );
+creature_demo_expect( 'yes' !== $r_charge_loan->get_meta( '_creature_demo_fee_refunded' ) && '' !== $r_charge_loan->get_meta( '_creature_demo_coupon_code' ), 'cancelling a charge order (not the £25) does not block the code' );
 $nf->update_meta_data( '_creature_demo_findings', 'Steerer cap cracked at the slot.' );
 $nf->update_meta_data( '_creature_demo_photos', array( '123', 'https://example.com/a.jpg', 'ftp://example.com/b.jpg', 'javascript:alert(1)', 'not a url', '0', '456 789' ) );
 $nf_r2 = Creature_Demo_Loan::complete_inspection( $nf, '2026-03-30' );
