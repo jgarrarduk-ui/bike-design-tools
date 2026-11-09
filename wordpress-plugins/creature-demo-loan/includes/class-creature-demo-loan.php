@@ -1395,10 +1395,11 @@ final class Creature_Demo_Loan {
 		}
 		$due = self::meta_string( $order, '_creature_demo_due_date' );
 		$order->update_meta_data( '_creature_demo_return_scan_date', $scan );
-		// The kit is with us. The 5 working day bill clock (terms 4.4) starts
-		// from the received date, or from today when none was entered.
-		self::stamp_kit_received( $order, Creature_Demo_Loan_Calendar::today( $as_of ) );
 		$order->save();
+		// A scan is not the kit arriving. The 5 working day bill clock (terms 4.4)
+		// starts only from a Kit received date that someone has entered, so the
+		// scan never starts it. Without a date the shop is told, once.
+		self::notify_no_received_date( $order );
 		// Terms 3.3: the return dispatch date is the earlier of the proof of
 		// posting and the first scan, using whichever is set.
 		$dispatch  = self::dispatch_date( $order );
@@ -1495,7 +1496,7 @@ final class Creature_Demo_Loan {
 
 	/**
 	 * Date the kit arrived back with us. Starts the 5 working day bill clock.
-	 * Written once by the stamp, or set by hand from the admin screen.
+	 * Only ever entered by hand on the admin screen: nothing stamps it.
 	 *
 	 * @param object $order
 	 * @param string $ymd
@@ -1527,16 +1528,24 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * Set the received date only when nothing is there yet.
+	 * A scanned return has no Kit received date, so the bill clock has not
+	 * started. Tell the shop once. Nothing is sent once a date is entered.
 	 *
 	 * @param object $order
-	 * @param string $ymd
+	 * @return bool True when the notice went out on this call.
 	 */
-	private static function stamp_kit_received( $order, $ymd ) {
+	private static function notify_no_received_date( $order ) {
 		if ( Creature_Demo_Loan_Calendar::is_real_ymd( self::meta_string( $order, '_creature_demo_received_date' ) ) ) {
-			return;
+			return false;
 		}
-		$order->update_meta_data( '_creature_demo_received_date', $ymd );
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_received_notice_sent' ) ) {
+			return false;
+		}
+		$order->update_meta_data( '_creature_demo_received_notice_sent', 'yes' );
+		$order->save();
+		Creature_Demo_Loan_Mail::send_admin( $order, 'admin_received_date_missing', array() );
+		self::note( $order, 'A return scan is recorded but there is no Kit received date, so the 5 working day bill clock has not started. Enter the date the kit arrived back.' );
+		return true;
 	}
 
 	/**
@@ -1558,7 +1567,6 @@ final class Creature_Demo_Loan {
 			// Terms 4.4 and Appendix C: one bill for late fees, damage and
 			// missing parts, raised now. A refusal (no findings) leaves the
 			// inspection open so the admin can fix it and try again.
-			self::stamp_kit_received( $order, $as_of );
 			$bill = self::bill_at_inspection( $order, $as_of );
 			if ( empty( $bill['ok'] ) ) {
 				return $bill;
@@ -1814,6 +1822,11 @@ final class Creature_Demo_Loan {
 		}
 		$received = self::meta_string( $order, '_creature_demo_received_date' );
 		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $received ) ) {
+			// No Kit received date: no clock, no day-4 alert, no fallback bill.
+			// A return scan that predates this check still gets the one notice.
+			if ( '' !== self::meta_string( $order, '_creature_demo_return_scan_date' ) ) {
+				self::notify_no_received_date( $order );
+			}
 			return;
 		}
 		$deadline = Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WORKING_DAYS, array() );
@@ -3322,6 +3335,8 @@ final class Creature_Demo_Loan {
 			$received = self::meta_string( $order, '_creature_demo_received_date' );
 			if ( Creature_Demo_Loan_Calendar::is_real_ymd( $received ) ) {
 				echo '<p>Bill due by: ' . self::esc( Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WORKING_DAYS, array() ) ) . ' (5 working days after the kit arrived)</p>';
+			} elseif ( '' !== self::meta_string( $order, '_creature_demo_return_scan_date' ) ) {
+				echo '<p>No Kit received date is entered, so the 5 working day bill clock has not started.</p>';
 			}
 		}
 		$due = self::meta_string( $order, '_creature_demo_due_date' );

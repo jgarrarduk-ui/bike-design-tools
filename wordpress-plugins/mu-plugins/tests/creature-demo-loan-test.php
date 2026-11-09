@@ -1144,6 +1144,7 @@ $expected_slots = array(
 	'admin_dispute_nearing',
 	'admin_return_booked',
 	'admin_bill_due',
+	'admin_received_date_missing',
 );
 // The three emails Cadence has not written yet are slots with no wording.
 $expected_slots = array_merge( $expected_slots, array() );
@@ -3050,7 +3051,8 @@ creature_demo_expect( 'demo-deemed' === $cp_cheap->get_status(), 'a scan after d
 // 2026-04-02 is a Thursday. Day 4 is Wed 04-08, day 5 is Thu 04-09 (Saturday and Sunday are skipped).
 $fb = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $fb, '2026-04-02', '2026-04-02' );
-creature_demo_expect( '2026-04-02' === $fb->get_meta( '_creature_demo_received_date' ), 'the scan starts the bill clock when no received date was entered' );
+creature_demo_expect( '' === $fb->get_meta( '_creature_demo_received_date' ), 'a scan never sets the Kit received date' );
+Creature_Demo_Loan::record_kit_received( $fb, '2026-04-02' );
 $fb->update_meta_data( '_creature_demo_damage_pence', 2000 );
 $warns = creature_demo_mail_count( 'admin_bill_due' );
 Creature_Demo_Loan::tick( $fb, '2026-04-07' );
@@ -3087,6 +3089,7 @@ creature_demo_expect( $fb_tick_after === creature_demo_charge_mail_count(), 'the
 // Received over a Friday: Fri 2026-03-27, day 4 is Thu 04-02, day 5 is Fri 04-03.
 $wk = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $wk, '2026-03-26', '2026-03-27' );
+Creature_Demo_Loan::record_kit_received( $wk, '2026-03-27' );
 Creature_Demo_Loan::tick( $wk, '2026-04-01' );
 creature_demo_expect( 0 === creature_demo_charge_orders_for( $wk ) && '' === $wk->get_meta( '_creature_demo_bill_state' ), 'three working days in, no fallback yet' );
 Creature_Demo_Loan::tick( $wk, '2026-04-03' );
@@ -3095,6 +3098,7 @@ creature_demo_expect( 'late_only' === $wk->get_meta( '_creature_demo_bill_state'
 // A weekend between day 4 and day 5: received Mon 2026-03-30, day 4 is Fri 04-03, day 5 is Mon 04-06.
 $we = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $we, '2026-03-30', '2026-03-30' );
+Creature_Demo_Loan::record_kit_received( $we, '2026-03-30' );
 $we_warns = creature_demo_mail_count( 'admin_bill_due' );
 Creature_Demo_Loan::tick( $we, '2026-04-03' );
 creature_demo_expect( $we_warns + 1 === creature_demo_mail_count( 'admin_bill_due' ) && '' === $we->get_meta( '_creature_demo_bill_state' ), 'Friday is working day 4: the alert goes, no bill yet' );
@@ -3134,6 +3138,7 @@ $GLOBALS['creature_demo_unscheduled'] = array();
 $fb0 = creature_demo_loan();
 Creature_Demo_Loan::record_return_posted( $fb0, '2026-03-28' );
 Creature_Demo_Loan::record_return_scan( $fb0, '2026-03-30', '2026-04-02' );
+Creature_Demo_Loan::record_kit_received( $fb0, '2026-04-02' );
 $fb0->update_meta_data( '_creature_demo_damage_pence', 2000 );
 Creature_Demo_Loan::tick( $fb0, '2026-04-10' );
 creature_demo_expect( 'late_only' === $fb0->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $fb0 ), 'a return posted in grace falls back to no bill and no later damage charge' );
@@ -3141,7 +3146,36 @@ creature_demo_expect( empty( Creature_Demo_Loan::raise_damage_charge( $fb0, 2000
 $fb0_post = Creature_Demo_Loan::record_return_posted( $fb0, '2026-03-20' );
 creature_demo_expect( empty( $fb0_post['ok'] ) && 'billed' === $fb0_post['reason'], 'the posting date is locked once the bill is final' );
 
-// A manual received date wins over the scan stamp.
+// Item 2: a scan with no Kit received date starts no clock. The shop is told once. Entering the date starts it.
+$nr = creature_demo_loan();
+$nr_notices = creature_demo_mail_count( 'admin_received_date_missing' );
+$nr_warns   = creature_demo_mail_count( 'admin_bill_due' );
+$nr_mails   = creature_demo_charge_mail_count();
+Creature_Demo_Loan::record_return_scan( $nr, '2026-04-02', '2026-04-02' );
+creature_demo_expect( '' === $nr->get_meta( '_creature_demo_received_date' ), 'a scan with no received date leaves the received date empty' );
+creature_demo_expect( $nr_notices + 1 === creature_demo_mail_count( 'admin_received_date_missing' ), 'the shop is told once that a scanned return has no Kit received date' );
+$nr_mail = creature_demo_last_mail( 'admin_received_date_missing' );
+creature_demo_expect( 'info@creaturecycles.co.uk' === $nr_mail['to'] && 0 !== strpos( $nr_mail['subject'], '[TEST]' ) && false !== strpos( $nr_mail['body'], 'no Kit received date' ), 'the notice goes to the shop and says what is missing' );
+foreach ( array( '2026-04-08', '2026-04-09', '2026-04-10', '2026-04-20', '2026-05-20' ) as $nr_day ) {
+	Creature_Demo_Loan::tick( $nr, $nr_day );
+}
+creature_demo_expect( $nr_notices + 1 === creature_demo_mail_count( 'admin_received_date_missing' ), 'the notice is not repeated by the daily check' );
+creature_demo_expect( $nr_warns === creature_demo_mail_count( 'admin_bill_due' ) && '' === $nr->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $nr ) && $nr_mails === creature_demo_charge_mail_count(), 'with no received date there is no day-4 alert and no fallback bill, however late' );
+Creature_Demo_Loan::record_return_scan( $nr, '2026-04-03', '2026-04-03' );
+creature_demo_expect( $nr_notices + 1 === creature_demo_mail_count( 'admin_received_date_missing' ), 'a repeated scan does not send the notice again' );
+creature_demo_expect( ! empty( Creature_Demo_Loan::record_kit_received( $nr, '2026-06-01' )['ok'] ), 'the received date is then entered by hand' );
+Creature_Demo_Loan::tick( $nr, '2026-06-04' );
+creature_demo_expect( $nr_warns === creature_demo_mail_count( 'admin_bill_due' ) && '' === $nr->get_meta( '_creature_demo_bill_state' ), 'the clock runs from the entered date: Thursday 4 June is working day 3, so nothing yet' );
+Creature_Demo_Loan::tick( $nr, '2026-06-05' );
+creature_demo_expect( $nr_warns + 1 === creature_demo_mail_count( 'admin_bill_due' ) && '' === $nr->get_meta( '_creature_demo_bill_state' ), 'working day 4 from the entered date sends the alert' );
+Creature_Demo_Loan::tick( $nr, '2026-06-08' );
+creature_demo_expect( 'late_only' === $nr->get_meta( '_creature_demo_bill_state' ), 'working day 5 from the entered date sends the fallback bill' );
+$nr_insp = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $nr_insp, '2026-03-30', '2026-03-30' );
+Creature_Demo_Loan::complete_inspection( $nr_insp, '2026-03-30' );
+creature_demo_expect( '' === $nr_insp->get_meta( '_creature_demo_received_date' ), 'recording the inspection does not set a received date either' );
+
+// A manual received date is kept when the scan is recorded.
 $rc = creature_demo_loan();
 Creature_Demo_Loan::record_kit_received( $rc, '2026-04-06' );
 Creature_Demo_Loan::record_return_scan( $rc, '2026-04-02', '2026-04-02' );

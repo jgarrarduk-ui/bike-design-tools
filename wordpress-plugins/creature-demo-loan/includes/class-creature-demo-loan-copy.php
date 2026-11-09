@@ -168,6 +168,11 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => 'De-Reacher demo: our final decision on your disputed charge',
 				'body'    => "Order {order_id}. We’ve looked again at the charge you disputed.\nDecision: charge {decision}.\nAmount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nIf the charge is waived, you have nothing to pay. If it’s upheld, you can pay using the link. If it isn’t paid, we’ll charge your saved card no sooner than 7 days after this email.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
 			),
+			// Shop alert, not rider copy. Plain wording, not Cadence's.
+			'admin_received_date_missing'   => array(
+				'subject' => 'Demo return scanned, no Kit received date (order {order_id})',
+				'body'    => 'A return scan is recorded on order {order_id}, but no Kit received date is entered. The 5 working day bill clock starts only from that date, so until it is entered there is no day-4 alert and no late-fee-only fallback bill. Enter the date the kit arrived back on the order and update it. This email goes to the shop, not the rider.',
+			),
 			'admin_dispute_nearing'          => array(
 				'subject' => 'Demo dispute: day {day} of 14 (order {order_id})',
 				'body'    => 'Order {order_id} has a dispute open since {opened}. This is day {day} of 14. Record a decision (uphold or waive) and send it before day 14 (terms 4.4(b)). Don’t charge the saved card any sooner than 7 days after the decision email.',
