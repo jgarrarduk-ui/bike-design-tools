@@ -97,6 +97,29 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => '',
 				'body'    => 'Demo loan',
 			),
+			// The Demo loan tab in My account (terms 3A.1 and 3.2). v3 has no wording for these labels, so they
+			// are empty. A row with an empty label is not shown, and with no wording for the "no loans" line
+			// nothing is shown in its place.
+			'my_account_label_due'          => array(
+				'subject' => '',
+				'body'    => '',
+			),
+			'my_account_label_grace_end'    => array(
+				'subject' => '',
+				'body'    => '',
+			),
+			'my_account_label_deemed_on'    => array(
+				'subject' => '',
+				'body'    => '',
+			),
+			'my_account_label_keep_price'   => array(
+				'subject' => '',
+				'body'    => '',
+			),
+			'my_account_no_loans'           => array(
+				'subject' => '',
+				'body'    => '',
+			),
 			'button_return'                 => array(
 				'subject' => '',
 				'body'    => 'Return it (£25 code once it’s back)',

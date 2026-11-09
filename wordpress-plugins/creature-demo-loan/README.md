@@ -61,6 +61,16 @@ A file is attached only if it exists, is a document (`pdf`, `doc`, `docx`, `odt`
 
 The confirmation can also carry extra content: the consent record (version, date, wording) and the rider's answer to the express request. That is the `booking_confirmation` copy slot, which is empty until Cadence writes it. The answer is read from the order meta `_creature_demo_express_request` (`yes` or `no`). Nothing in this plugin sets that meta yet.
 
+## My account: the Demo loan tab (terms 3A.1 and 3.2)
+
+The plugin adds a **Demo loan** item to the WooCommerce My account menu (above Log out), at the endpoint `/my-account/demo-loan/`. It lists the logged-in customer's active loans (on loan, overdue, return booked, with a due date). Each loan shows its due date, the last day of grace and the deemed purchase date (all as `30 November 2026`), the keep price (from the same `loan_keep_price_pence()` path as the emails: a fallback booking shows the £212 ceiling), the return and keep buttons, and a link to the order. The Demo loan block on the order's own page stays. When the crash flag is on, Keep is hidden and `crash_hold_notice` is shown in the tab, in the order's Demo loan section and on the pay page.
+
+The endpoint is registered with `add_rewrite_endpoint`, and the rewrite rules are flushed once on activation and once whenever the plugin version changes (option `creature_demo_loan_rewrite_version`). If the tab 404s after an upload that did not change the version, open Settings → Permalinks and save once.
+
+The date and price rows are only shown when their label slot has wording (`my_account_label_due`, `my_account_label_grace_end`, `my_account_label_deemed_on`, `my_account_label_keep_price`). All five new slots are empty until Cadence writes them, so until then the tab shows the heading, the choice buttons, the crash notice and the order link, but no dates or price.
+
+Re-offering Keep after a crash inspection is still manual: `choice_allowed()` is unchanged.
+
 ## Loan
 
 | Status | Slug |
@@ -132,4 +142,4 @@ wp eval-file wordpress-plugins/creature-demo-loan/bin/staging-walkthrough.php
 
 ## Copy
 
-Customer wording is Cadence's, per slot, in `includes/class-creature-demo-loan-copy.php`. A slot with no wording is an empty string and is never sent as a blank email. Cadence's v3 wording (`demo-loan-copy-v3`) is in, including `express_request_checkbox` (the "Send my kit now" label), `crash_hold_notice` and `deduction_notice_deemed` (the notice for a damage or missing-parts deduction from a deemed refund, with no pay link). One customer slot is empty today: `dispute_decision_deemed`, the final decision email when the disputed charge is a deemed-refund deduction. It has no pay link and no saved-card line. While it is empty, **Uphold** and **Waive** on a deduction do nothing except an order note and one shop email: the dispute stays open and no 7-day clock starts. Fill the slot, then record the decision again. `admin_bill_due` (the working day 4 alert to the shop) is Cadence's v3 wording, with `{deadline}` as a UK date. The other `admin_*` alerts are plain internal wording. The consent wording is checked byte for byte against `wordpress-plugins/mu-plugins/tests/fixtures/appendix-a-consent.txt`.
+Customer wording is Cadence's, per slot, in `includes/class-creature-demo-loan-copy.php`. A slot with no wording is an empty string and is never sent as a blank email. Cadence's v3 wording (`demo-loan-copy-v3`) is in, including `express_request_checkbox` (the "Send my kit now" label), `crash_hold_notice` and `deduction_notice_deemed` (the notice for a damage or missing-parts deduction from a deemed refund, with no pay link). Six customer slots are empty today. Five are labels for the Demo loan tab (below): `my_account_label_due`, `my_account_label_grace_end`, `my_account_label_deemed_on`, `my_account_label_keep_price` and `my_account_no_loans`. The sixth is `dispute_decision_deemed`, the final decision email when the disputed charge is a deemed-refund deduction. It has no pay link and no saved-card line. While it is empty, **Uphold** and **Waive** on a deduction do nothing except an order note and one shop email: the dispute stays open and no 7-day clock starts. Fill the slot, then record the decision again. `admin_bill_due` (the working day 4 alert to the shop) is Cadence's v3 wording, with `{deadline}` as a UK date. The other `admin_*` alerts are plain internal wording. The consent wording is checked byte for byte against `wordpress-plugins/mu-plugins/tests/fixtures/appendix-a-consent.txt`.

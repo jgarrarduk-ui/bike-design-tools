@@ -153,6 +153,11 @@ final class Creature_Demo_Loan {
 		add_action( 'woocommerce_process_shop_order_meta', array( __CLASS__, 'save_meta_box' ), 10, 2 );
 
 		add_action( 'woocommerce_order_details_after_order_table', array( __CLASS__, 'render_my_account_choices' ) );
+		// The Demo loan tab in My account (terms 3A.1 and 3.2).
+		add_filter( 'query_vars', array( __CLASS__, 'filter_query_vars' ) );
+		add_filter( 'woocommerce_account_menu_items', array( __CLASS__, 'filter_account_menu' ) );
+		add_filter( 'woocommerce_endpoint_' . self::ACCOUNT_ENDPOINT . '_title', array( __CLASS__, 'filter_account_title' ) );
+		add_action( 'woocommerce_account_' . self::ACCOUNT_ENDPOINT . '_endpoint', array( __CLASS__, 'render_account_tab' ) );
 		add_action( 'template_redirect', array( __CLASS__, 'maybe_handle_choice_request' ) );
 		add_action( 'woocommerce_payment_complete', array( __CLASS__, 'on_payment_complete' ) );
 		add_action( 'woocommerce_before_pay_action', array( __CLASS__, 'on_before_pay_action' ) );
@@ -225,6 +230,7 @@ final class Creature_Demo_Loan {
 	public static function on_init() {
 		self::register_statuses();
 		self::register_block_field();
+		self::register_account_endpoint();
 		self::schedule_daily();
 	}
 
@@ -596,7 +602,7 @@ final class Creature_Demo_Loan {
 		);
 		$msg = isset( $map[ $code ] ) ? $map[ $code ] : 'Charge refused.';
 		if ( 'crash_hold' === $code ) {
-			// Shown to the rider. Cadence's v2 has no wording for it, so the slot is empty.
+			// Shown to the rider on the pay page (and, as the same slot, on the order page and the Demo loan tab). Cadence v3.
 			$slot = trim( Creature_Demo_Loan_Copy::text( 'crash_hold_notice' ) );
 			$msg  = '' !== $slot ? $slot : 'Charge refused.';
 		}
@@ -3341,10 +3347,26 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		echo '<section class="creature-demo-loan-choices"><h2>' . self::esc( Creature_Demo_Loan_Copy::text( 'my_account_heading' ) ) . '</h2>';
+		self::render_choice_actions( $order );
+		echo '</section>';
+	}
+
+	/**
+	 * The crash notice (terms 3A.3) and the choice buttons for one loan. Used by the
+	 * order's own page and by the Demo loan tab. Keep is not offered while the crash
+	 * flag is on, and then crash_hold_notice says why (empty wording shows nothing).
+	 *
+	 * @param object $order
+	 */
+	private static function render_choice_actions( $order ) {
 		$as_of = Creature_Demo_Loan_Calendar::today( null );
 		foreach ( array( 'return', 'keep' ) as $choice ) {
 			$current = self::normalize_choice( self::meta_string( $order, '_creature_demo_choice' ) );
 			if ( 'keep' === $choice && self::crash_hold( $order ) ) {
+				$notice = trim( Creature_Demo_Loan_Copy::text( 'crash_hold_notice' ) );
+				if ( '' !== $notice ) {
+					echo '<p class="creature-demo-loan-crash-notice">' . self::esc( $notice ) . '</p>';
+				}
 				continue;
 			}
 			if ( ! self::choice_allowed( $order, $choice, $as_of ) && $current !== $choice ) {
@@ -3362,6 +3384,150 @@ final class Creature_Demo_Loan {
 				continue;
 			}
 			echo '<p><a class="button" href="' . self::esc_url( $url ) . '">' . self::esc( Creature_Demo_Loan_Copy::text( 'button_' . $choice ) ) . '</a></p>';
+		}
+	}
+
+	/** The My account endpoint for the Demo loan tab. */
+	const ACCOUNT_ENDPOINT = 'demo-loan';
+
+	/** Option: the plugin version the rewrite rules were last flushed for. */
+	const REWRITE_OPTION = 'creature_demo_loan_rewrite_version';
+
+	/**
+	 * Register the Demo loan endpoint, and flush the rewrite rules once per plugin
+	 * version (a flush on every request is slow).
+	 */
+	public static function register_account_endpoint() {
+		if ( function_exists( 'add_rewrite_endpoint' ) ) {
+			$mask = ( defined( 'EP_ROOT' ) ? EP_ROOT : 1 ) | ( defined( 'EP_PAGES' ) ? EP_PAGES : 4096 );
+			add_rewrite_endpoint( self::ACCOUNT_ENDPOINT, $mask );
+		}
+		$version = defined( 'CREATURE_DEMO_LOAN_VERSION' ) ? CREATURE_DEMO_LOAN_VERSION : '';
+		if ( function_exists( 'get_option' ) && function_exists( 'update_option' ) && function_exists( 'flush_rewrite_rules' ) && get_option( self::REWRITE_OPTION, '' ) !== $version ) {
+			flush_rewrite_rules( false );
+			update_option( self::REWRITE_OPTION, $version, false );
+		}
+	}
+
+	/**
+	 * @param array<string, string> $vars
+	 * @return array<string, string>
+	 */
+	public static function filter_query_vars( $vars ) {
+		if ( is_array( $vars ) ) {
+			$vars[] = self::ACCOUNT_ENDPOINT;
+		}
+		return $vars;
+	}
+
+	/**
+	 * Add the Demo loan item to the My account menu, above Log out.
+	 *
+	 * @param array<string, string> $items
+	 * @return array<string, string>
+	 */
+	public static function filter_account_menu( $items ) {
+		$label = trim( Creature_Demo_Loan_Copy::text( 'my_account_heading' ) );
+		if ( ! is_array( $items ) || '' === $label ) {
+			return $items;
+		}
+		$out   = array();
+		$added = false;
+		foreach ( $items as $key => $text ) {
+			if ( 'customer-logout' === $key && ! $added ) {
+				$out[ self::ACCOUNT_ENDPOINT ] = $label;
+				$added                         = true;
+			}
+			$out[ $key ] = $text;
+		}
+		if ( ! $added ) {
+			$out[ self::ACCOUNT_ENDPOINT ] = $label;
+		}
+		return $out;
+	}
+
+	/**
+	 * @param string $title
+	 * @return string
+	 */
+	public static function filter_account_title( $title ) {
+		$label = trim( Creature_Demo_Loan_Copy::text( 'my_account_heading' ) );
+		return '' !== $label ? $label : $title;
+	}
+
+	/**
+	 * The logged-in customer's active loans: on loan, overdue or return booked, with a due date.
+	 *
+	 * @param int $user_id
+	 * @return object[]
+	 */
+	public static function account_loans( $user_id ) {
+		$user_id = (int) $user_id;
+		if ( $user_id < 1 || ! function_exists( 'wc_get_orders' ) ) {
+			return array();
+		}
+		$active = array( self::STATUS_LOAN, self::STATUS_OVERDUE, self::STATUS_BOOKED );
+		$found  = wc_get_orders(
+			array(
+				'customer' => $user_id,
+				'limit'    => -1,
+				'status'   => $active,
+				'return'   => 'objects',
+				'type'     => 'shop_order',
+			)
+		);
+		$loans = array();
+		foreach ( is_array( $found ) ? $found : array() as $order ) {
+			// The query is not trusted to filter: owner, loan flag, status and due date are checked here.
+			if ( ! is_object( $order ) || (int) $order->get_user_id() !== $user_id || 'yes' !== self::meta_string( $order, '_creature_demo_loan' ) ) {
+				continue;
+			}
+			if ( ! in_array( (string) $order->get_status(), $active, true ) || ! Creature_Demo_Loan_Calendar::is_real_ymd( self::meta_string( $order, '_creature_demo_due_date' ) ) ) {
+				continue;
+			}
+			$loans[] = $order;
+		}
+		return $loans;
+	}
+
+	/**
+	 * The Demo loan tab in My account (terms 3A.1 and 3.2): each active loan with its due date,
+	 * the last day of grace, the deemed purchase date and the keep price, the choice buttons, and
+	 * a link to the order. A row whose label slot has no wording yet is left out rather than
+	 * shown with a made-up label.
+	 */
+	public static function render_account_tab() {
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		echo '<section class="creature-demo-loan-account"><h2>' . self::esc( Creature_Demo_Loan_Copy::text( 'my_account_heading' ) ) . '</h2>';
+		$loans = self::account_loans( $user_id );
+		if ( ! $loans ) {
+			$none = trim( Creature_Demo_Loan_Copy::text( 'my_account_no_loans' ) );
+			if ( '' !== $none ) {
+				echo '<p>' . self::esc( $none ) . '</p>';
+			}
+			echo '</section>';
+			return;
+		}
+		foreach ( $loans as $order ) {
+			$due  = self::meta_string( $order, '_creature_demo_due_date' );
+			$rows = array(
+				'my_account_label_due'        => Creature_Demo_Loan_Calendar::format_uk( $due ),
+				'my_account_label_grace_end'  => Creature_Demo_Loan_Calendar::format_uk( Creature_Demo_Loan_Calendar::grace_end( $due, self::grace_days() ) ),
+				'my_account_label_deemed_on'  => Creature_Demo_Loan_Calendar::format_uk( self::deemed_on_for( $order ) ),
+				'my_account_label_keep_price' => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $order ) ),
+			);
+			echo '<div class="creature-demo-loan-account-loan">';
+			$number = method_exists( $order, 'get_order_number' ) ? $order->get_order_number() : $order->get_id();
+			$base   = function_exists( 'wc_get_endpoint_url' ) && function_exists( 'wc_get_page_permalink' ) ? wc_get_endpoint_url( 'view-order', $order->get_id(), wc_get_page_permalink( 'myaccount' ) ) : '';
+			echo '<p><a href="' . self::esc_url( $base ) . '">#' . self::esc( $number ) . '</a></p>';
+			foreach ( $rows as $slot => $value ) {
+				$label = trim( Creature_Demo_Loan_Copy::text( $slot ) );
+				if ( '' !== $label ) {
+					echo '<p><strong>' . self::esc( $label ) . '</strong> ' . self::esc( $value ) . '</p>';
+				}
+			}
+			self::render_choice_actions( $order );
+			echo '</div>';
 		}
 		echo '</section>';
 	}

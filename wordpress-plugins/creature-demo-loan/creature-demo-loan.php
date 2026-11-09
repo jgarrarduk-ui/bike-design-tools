@@ -66,6 +66,20 @@ require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan.php';
 add_action( 'plugins_loaded', array( 'Creature_Demo_Loan', 'boot' ), 20 );
 
 /**
+ * Register the My account "Demo loan" endpoint and flush the rewrite rules once.
+ * (A version bump flushes once more, from Creature_Demo_Loan::register_account_endpoint.)
+ */
+function creature_demo_loan_activate() {
+	if ( class_exists( 'Creature_Demo_Loan' ) ) {
+		Creature_Demo_Loan::register_account_endpoint();
+	}
+}
+
+if ( function_exists( 'register_activation_hook' ) ) {
+	register_activation_hook( CREATURE_DEMO_LOAN_FILE, 'creature_demo_loan_activate' );
+}
+
+/**
  * Drop the daily Action Scheduler job when the plugin is deactivated.
  * Orders and their meta stay in place.
  */
