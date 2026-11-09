@@ -193,6 +193,8 @@ $_POST  = array(
 	'product_ids'                    => '9001, abc, 9002, -3, 0',
 	'coupon_product_ids'             => '6688, no',
 	'bundle_product_id'              => ' 9100 ',
+	'terms_pdf'                      => ' 77 ',
+	'cancellation_form'              => "/var/www/uploads/2026/11/model-cancellation-form.pdf\0\n",
 	'redirect_email'                 => 'staging-redirect@creaturecycles.co.uk',
 	'allow_live_charges'             => '1',
 	'allow_customer_email'           => '1',
@@ -210,9 +212,21 @@ $_POST['_wpnonce'] = 'creature_demo_loan_config';
 do_action( 'admin_init' );
 $stored = get_option( $option );
 creature_demo_config_expect(
-	array( 'product_ids', 'coupon_product_ids', 'bundle_product_id', 'redirect_email' ) === array_keys( $stored ),
-	'the option keeps only the four settings'
+	array( 'product_ids', 'coupon_product_ids', 'bundle_product_id', 'redirect_email', 'terms_pdf', 'cancellation_form' ) === array_keys( $stored ),
+	'the option keeps only the six settings'
 );
+creature_demo_config_expect( '77' === $stored['terms_pdf'], 'a terms PDF media id is stored as a plain integer' );
+creature_demo_config_expect( '/var/www/uploads/2026/11/model-cancellation-form.pdf' === $stored['cancellation_form'], 'a cancellation form path is stored without control characters' );
+foreach ( array( 'terms_pdf', 'cancellation_form' ) as $file_key ) {
+	creature_demo_config_expect( '' === Creature_Demo_Loan_Config::sanitize_settings( array( $file_key => '0' ) )[ $file_key ], "a zero {$file_key} media id is discarded" );
+	creature_demo_config_expect( '' === Creature_Demo_Loan_Config::sanitize_settings( array( $file_key => array( '77' ) ) )[ $file_key ], "an array is not a {$file_key} value" );
+	creature_demo_config_expect( '' === Creature_Demo_Loan_Config::sanitize_settings( array( $file_key => "  \n " ) )[ $file_key ], "a blank {$file_key} stays blank" );
+	creature_demo_config_expect( 500 === strlen( Creature_Demo_Loan_Config::sanitize_settings( array( $file_key => str_repeat( 'a', 900 ) ) )[ $file_key ] ), "a very long {$file_key} is cut to 500 characters" );
+}
+creature_demo_config_expect( array( 'terms_pdf' => '77', 'cancellation_form' => '/var/www/uploads/2026/11/model-cancellation-form.pdf' ) === Creature_Demo_Loan_Config::filter_confirmation_files( array() ), 'the config screen supplies both booking confirmation files through the filter' );
+creature_demo_config_expect( array( 'terms_pdf' => '77', 'cancellation_form' => '/var/www/uploads/2026/11/model-cancellation-form.pdf' ) === apply_filters( 'creature_demo_loan_confirmation_files', array() ), 'the demo loan plugin sees them on its confirmation files filter' );
+creature_demo_config_expect( array( 'other' => 'x', 'terms_pdf' => '77', 'cancellation_form' => '/var/www/uploads/2026/11/model-cancellation-form.pdf' ) === Creature_Demo_Loan_Config::filter_confirmation_files( array( 'other' => 'x' ) ), 'files already on the filter are kept' );
+creature_demo_config_expect( array() === Creature_Demo_Loan_Config::filter_confirmation_files( 'not an array' ) || is_array( Creature_Demo_Loan_Config::filter_confirmation_files( 'not an array' ) ), 'a non-array value is handled' );
 creature_demo_config_expect( '9100' === $stored['bundle_product_id'], 'the bundle product id is stored as one positive integer' );
 creature_demo_config_expect( '' === Creature_Demo_Loan_Config::sanitize_settings( array( 'bundle_product_id' => '12,13' ) )['bundle_product_id'], 'a list is not a bundle product id' );
 creature_demo_config_expect( '' === Creature_Demo_Loan_Config::sanitize_settings( array( 'bundle_product_id' => '0' ) )['bundle_product_id'], 'a zero bundle product id is discarded' );
@@ -258,6 +272,11 @@ creature_demo_config_expect( false !== strpos( $html, 'name="product_ids"' ), 't
 creature_demo_config_expect( false !== strpos( $html, 'name="coupon_product_ids"' ), 'the page edits coupon ids' );
 creature_demo_config_expect( false !== strpos( $html, 'name="bundle_product_id"' ), 'the page edits the bundle product id' );
 creature_demo_config_expect( false !== strpos( $html, 'name="redirect_email"' ), 'the page edits the redirect address' );
+creature_demo_config_expect( false !== strpos( $html, 'name="terms_pdf"' ) && false !== strpos( $html, 'name="cancellation_form"' ), 'the page edits the terms PDF and the model cancellation form' );
+creature_demo_config_expect( false !== strpos( $html, 'media ID or file path' ), 'the file fields say they take a media ID or a file path' );
+creature_demo_config_expect( false !== strpos( $html, '>Product IDs (blank: 8946)<' ), 'the product IDs label says blank means 8946' );
+creature_demo_config_expect( false === strpos( $html, '>Product IDs<' ), 'the old product IDs label is gone' );
+creature_demo_config_expect( false !== strpos( $html, 'Bundle product ID (blank: 8425)' ), 'the bundle label is unchanged' );
 creature_demo_config_expect( false !== strpos( $html, 'value="creature_demo_loan_config"' ), 'the page includes the nonce' );
 creature_demo_config_expect( false === strpos( $html, 'allow_live' ), 'the page has no live-charge control' );
 creature_demo_config_expect( false === strpos( $html, 'customer_email' ), 'the page has no real-email control' );
@@ -444,8 +463,11 @@ $config_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan-co
 $host_pos    = strpos( $config_src, 'walkthrough_home_is_live' );
 $require_pos = strpos( $config_src, 'require $creature_demo_walkthrough_script' );
 creature_demo_config_expect( false !== $host_pos && false !== $require_pos && $host_pos < $require_pos, 'the live-host check is before the walkthrough is included' );
-creature_demo_config_expect( '1.2.2' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.2.2' );
-creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.2.2' ), 'the plugin header version is 1.2.2' );
+creature_demo_config_expect( '1.3.0' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.3.0' );
+creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.3.0' ), 'the plugin header version is 1.3.0' );
+creature_demo_config_expect( '1.3.0' === CREATURE_DEMO_LOAN_VERSION, 'the demo loan plugin version constant is 1.3.0' );
+$loan_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/creature-demo-loan.php' );
+creature_demo_config_expect( false !== strpos( $loan_src, 'Version: 1.3.0' ), 'the demo loan plugin header version is 1.3.0' );
 creature_demo_config_expect( false !== strpos( $config_src, 'WP_PLUGIN_DIR' ), 'the walkthrough path is resolved from the demo loan plugin directory' );
 $guard_pos = strpos( $config_src, 'walkthrough_guard_errors()' );
 creature_demo_config_expect( false !== $guard_pos && $guard_pos < $require_pos, 'an inactive demo loan plugin is refused before the script is included' );

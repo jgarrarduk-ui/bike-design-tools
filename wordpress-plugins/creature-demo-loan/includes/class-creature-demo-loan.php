@@ -2,8 +2,8 @@
 /**
  * De-Reacher postal demo loan.
  *
- * Checkout consent and Stripe-only baskets, loan statuses, the three end-of-loan
- * choices, charge notices, and the off-session charge gate. Staging and Stripe
+ * Checkout consent and Stripe-only baskets, loan statuses, the two end-of-loan
+ * choices (return or keep), charge notices, and the off-session charge gate. Staging and Stripe
  * test mode only, unless CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES is exactly true.
  *
  * @package Creature_Demo_Loan
@@ -32,6 +32,21 @@ final class Creature_Demo_Loan {
 	 * The creature_demo_loan_charge_lock_stale_seconds filter can change it.
 	 */
 	const CHARGE_LOCK_STALE_SECONDS = 900;
+
+	/** Terms 4.4 and 6.4(b): the one bill goes out within this many working days of the kit arriving. */
+	const BILL_WORKING_DAYS = 5;
+
+	/** The shop is emailed on this working day if the bill is not raised yet. */
+	const BILL_WARN_WORKING_DAY = 4;
+
+	/** Photo slots on the damage entry (terms 6.4(b)). */
+	const PHOTO_SLOTS = 6;
+
+	/** The demo product when the constant, the filter and the config screen are all empty. */
+	const DEFAULT_DEMO_PRODUCT_ID = 8946;
+
+	/** Woo emails that carry the booking confirmation content and attachments (terms 11.1). */
+	const BOOKING_EMAIL_IDS = array( 'customer_processing_order', 'customer_on_hold_order' );
 
 	/** A bundle price at or below this (the demo fee plus used stock) is treated as a price error. */
 	const BUNDLE_FLOOR_PENCE = Creature_Demo_Loan_Money::DEMO_FEE_PENCE + Creature_Demo_Loan_Money::USED_STOCK_PENCE;
@@ -135,6 +150,12 @@ final class Creature_Demo_Loan {
 		add_action( 'woocommerce_order_status_processing', array( __CLASS__, 'on_payment_complete' ) );
 		add_action( 'woocommerce_order_status_completed', array( __CLASS__, 'on_payment_complete' ) );
 		add_action( 'wp_footer', array( __CLASS__, 'print_checkout_script' ) );
+
+		// Booking confirmation (terms 11.1): consent record, express request, files.
+		add_action( 'woocommerce_email_after_order_table', array( __CLASS__, 'render_booking_confirmation' ), 20, 4 );
+		add_filter( 'woocommerce_email_attachments', array( __CLASS__, 'filter_booking_attachments' ), 10, 4 );
+		add_filter( 'woocommerce_email_headers', array( __CLASS__, 'filter_email_headers' ), 10, 4 );
+		add_action( 'admin_notices', array( __CLASS__, 'render_attachment_notice' ) );
 
 		foreach ( array(
 			'customer_processing_order',
@@ -299,17 +320,21 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * Demo product ids. A constant with ids wins, then the filter (the config
+	 * screen sets the filter). When the constant, the filter and the config
+	 * setting are all empty the default is 8946.
+	 *
 	 * @return int[]
 	 */
 	public static function demo_product_ids() {
-		if ( defined( 'CREATURE_DEMO_LOAN_PRODUCT_IDS' ) ) {
-			return self::normalize_ids( self::constant_id_list( CREATURE_DEMO_LOAN_PRODUCT_IDS ) );
-		}
 		$ids = array();
-		if ( function_exists( 'apply_filters' ) ) {
-			$ids = apply_filters( 'creature_demo_loan_product_ids', $ids );
+		if ( defined( 'CREATURE_DEMO_LOAN_PRODUCT_IDS' ) ) {
+			$ids = self::normalize_ids( self::constant_id_list( CREATURE_DEMO_LOAN_PRODUCT_IDS ) );
 		}
-		return self::normalize_ids( $ids );
+		if ( ! $ids && function_exists( 'apply_filters' ) ) {
+			$ids = self::normalize_ids( apply_filters( 'creature_demo_loan_product_ids', array() ) );
+		}
+		return $ids ? $ids : array( self::DEFAULT_DEMO_PRODUCT_ID );
 	}
 
 	/**
@@ -539,7 +564,7 @@ final class Creature_Demo_Loan {
 		$need = self::notice_days();
 		$map  = array(
 			'no_notice'          => 'Charge refused: no charge notice is logged on the order.',
-			'notice_too_recent'  => 'Charge refused: fewer than ' . $need . ' days have passed since the notice.',
+			'notice_too_recent'  => 'Charge refused: fewer than ' . $need . ' days have passed since the notice (or since the final-decision email, once a dispute is decided).',
 			'disputed'           => 'Charge refused: a dispute is open.',
 			'dispute_waived'     => 'Charge refused: the dispute decision did not uphold the charge.',
 			'already_paid'         => 'Charge refused: this charge is already paid.',
@@ -1003,17 +1028,45 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * The consent version stored on a new order. `version-5` reads as the
+	 * terms' "version 5". The filter can name an older version, and a string
+	 * the plugin does not know falls back to `version-5`, so a stored version
+	 * always matches the wording that was shown.
+	 *
 	 * @return string
 	 */
 	public static function consent_version() {
-		$version = 'v5b';
+		$version = Creature_Demo_Loan_Copy::CONSENT_CURRENT;
 		if ( function_exists( 'apply_filters' ) ) {
-			$filtered = apply_filters( 'creature_demo_loan_consent_version', 'v5b' );
-			if ( is_string( $filtered ) && '' !== $filtered ) {
+			$filtered = apply_filters( 'creature_demo_loan_consent_version', $version );
+			if ( is_string( $filtered ) && in_array( $filtered, Creature_Demo_Loan_Copy::consent_versions(), true ) ) {
 				$version = $filtered;
 			}
 		}
 		return $version;
+	}
+
+	/**
+	 * The consent on an order as read back: version, its label, the wording the
+	 * rider agreed to, and when. The stored wording wins over the catalogue.
+	 *
+	 * @param object $order
+	 * @return array{version: string, label: string, wording: string, at: string, date: string}
+	 */
+	public static function consent_record( $order ) {
+		$version = self::meta_string( $order, '_creature_demo_consent_version' );
+		$wording = self::meta_string( $order, '_creature_demo_consent_wording' );
+		$at      = self::meta_string( $order, '_creature_demo_consent_at' );
+		if ( '' === $wording && 'yes' === self::meta_string( $order, '_creature_demo_consent' ) ) {
+			$wording = Creature_Demo_Loan_Copy::consent_wording( $version );
+		}
+		return array(
+			'version' => $version,
+			'label'   => Creature_Demo_Loan_Copy::consent_version_label( $version ),
+			'wording' => $wording,
+			'at'      => $at,
+			'date'    => Creature_Demo_Loan_Calendar::format_uk( substr( $at, 0, 10 ) ),
+		);
 	}
 
 	/**
@@ -1056,6 +1109,11 @@ final class Creature_Demo_Loan {
 		if ( method_exists( $order, 'save' ) ) {
 			$order->save();
 		}
+		// A tracked delivery date is the delivery. An estimate is not, and the
+		// dates email waits for the tracked date.
+		if ( ! $estimated ) {
+			self::send_dates_on_delivery( $order );
+		}
 		return array(
 			'ok'        => true,
 			'due'       => $due,
@@ -1063,6 +1121,39 @@ final class Creature_Demo_Loan {
 			'dispatch'  => $dispatch,
 			'estimated' => $estimated,
 		);
+	}
+
+	/**
+	 * Terms 3.2: when the kit is delivered, email the due date, the last day of
+	 * grace and the deemed purchase date. Once per loan.
+	 *
+	 * @param object $order
+	 * @return bool True when the email went out on this call.
+	 */
+	public static function send_dates_on_delivery( $order ) {
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_dates_sent' ) ) {
+			return false;
+		}
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_delivery_estimated' ) ) {
+			return false;
+		}
+		$due = self::meta_string( $order, '_creature_demo_due_date' );
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $due ) ) {
+			return false;
+		}
+		$order->update_meta_data( '_creature_demo_dates_sent', 'yes' );
+		$order->save();
+		Creature_Demo_Loan_Mail::send_customer(
+			$order,
+			'dates_on_delivery',
+			array(
+				'due'       => $due,
+				'grace_end' => Creature_Demo_Loan_Calendar::grace_end( $due, self::grace_days() ),
+				'deemed_on' => self::deemed_on_for( $order ),
+				'price'     => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $order ) ),
+			)
+		);
+		return true;
 	}
 
 	/**
@@ -1114,6 +1205,7 @@ final class Creature_Demo_Loan {
 		$order->update_meta_data( '_creature_demo_due_date', $due );
 		$order->save();
 		self::note( $order, 'Tracked delivery date set to ' . $delivery . '. Due date is now ' . $due . '.' );
+		self::send_dates_on_delivery( $order );
 		return array(
 			'ok'       => true,
 			'due'      => $due,
@@ -1136,7 +1228,8 @@ final class Creature_Demo_Loan {
 				'reason' => 'unknown',
 			);
 		}
-		$current = self::meta_string( $order, '_creature_demo_choice' );
+		// A stored `buy` (the old third choice) reads as return.
+		$current = self::normalize_choice( self::meta_string( $order, '_creature_demo_choice' ) );
 		$lapsed  = 'yes' === self::meta_string( $order, '_creature_demo_keep_lapsed' );
 		if ( $current === $choice && ! ( 'keep' === $choice && $lapsed ) ) {
 			return array(
@@ -1154,10 +1247,7 @@ final class Creature_Demo_Loan {
 		if ( 'keep' === $choice ) {
 			return self::choose_keep( $order, $current, $as_of );
 		}
-		if ( 'return' === $choice ) {
-			return self::choose_return( $order, $as_of );
-		}
-		return self::choose_buy( $order, $as_of );
+		return self::choose_return( $order, $as_of );
 	}
 
 	/**
@@ -1183,7 +1273,7 @@ final class Creature_Demo_Loan {
 			return false;
 		}
 		$scan    = self::meta_string( $order, '_creature_demo_return_scan_date' );
-		$current = self::meta_string( $order, '_creature_demo_choice' );
+		$current = self::normalize_choice( self::meta_string( $order, '_creature_demo_choice' ) );
 		$lapsed  = 'yes' === self::meta_string( $order, '_creature_demo_keep_lapsed' );
 		$due     = self::meta_string( $order, '_creature_demo_due_date' );
 		$reached = self::deemed_reached( $order, $as_of );
@@ -1227,7 +1317,8 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * Empty means return (terms 3A.4). A lapsed keep is not an active choice.
+	 * Empty means return (terms 3A.5). A stored `buy` is the old third choice
+	 * and reads as return. A lapsed keep is not an active choice.
 	 *
 	 * @param object $order
 	 * @return string
@@ -1237,10 +1328,8 @@ final class Creature_Demo_Loan {
 		if ( 'keep' === $choice && 'yes' === self::meta_string( $order, '_creature_demo_keep_lapsed' ) ) {
 			$choice = '';
 		}
-		if ( ! in_array( $choice, array( 'buy', 'return', 'keep' ), true ) ) {
-			return 'return';
-		}
-		return $choice;
+		$choice = self::normalize_choice( $choice );
+		return '' === $choice ? 'return' : $choice;
 	}
 
 	/**
@@ -1271,10 +1360,10 @@ final class Creature_Demo_Loan {
 				'days'   => $days,
 			);
 		}
-		$previous = self::meta_string( $order, '_creature_demo_choice_before_keep' );
+		$previous = self::normalize_choice( self::meta_string( $order, '_creature_demo_choice_before_keep' ) );
 		$order->update_meta_data( '_creature_demo_keep_lapsed', 'yes' );
-		if ( 'buy' === $previous || 'return' === $previous ) {
-			$order->update_meta_data( '_creature_demo_choice', $previous );
+		if ( 'return' === $previous ) {
+			$order->update_meta_data( '_creature_demo_choice', 'return' );
 		} else {
 			$order->update_meta_data( '_creature_demo_choice', '' );
 		}
@@ -1303,9 +1392,15 @@ final class Creature_Demo_Loan {
 		}
 		$due = self::meta_string( $order, '_creature_demo_due_date' );
 		$order->update_meta_data( '_creature_demo_return_scan_date', $scan );
+		// The kit is with us. The 5 working day bill clock (terms 4.4) starts
+		// from the received date, or from today when none was entered.
+		self::stamp_kit_received( $order, Creature_Demo_Loan_Calendar::today( $as_of ) );
 		$order->save();
+		// Terms 3.3: the return dispatch date is the earlier of the proof of
+		// posting and the first scan, using whichever is set.
+		$dispatch  = self::dispatch_date( $order );
 		$deemed_on = '' !== $due ? self::deemed_on_for( $order ) : '';
-		$after     = ( '' !== $deemed_on && $scan >= $deemed_on ) || 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' );
+		$after     = ( '' !== $deemed_on && $dispatch >= $deemed_on ) || 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' );
 		if ( $after ) {
 			$order->update_meta_data( '_creature_demo_arrived_after_deemed', 'yes' );
 			$order->save();
@@ -1318,18 +1413,127 @@ final class Creature_Demo_Loan {
 				'after_deemed' => true,
 			);
 		}
-		$fee    = Creature_Demo_Loan_Money::late_fee_pence_for_dates( $due, $scan );
-		$notice = $as_of ? Creature_Demo_Loan_Calendar::today( $as_of ) : $scan;
-		$order->update_status( self::STATUS_INSPECT, 'Return scan ' . $scan . ' recorded. Kit is being inspected.' );
-		if ( $fee > 0 ) {
-			self::ensure_charge_order( $order, 'late_fee', $fee, 'Late fees for the demo loan', $notice );
-		}
+		// The late fee is worked out here for the order note only. It is not
+		// charged at the scan. It goes on the one bill raised when inspection is
+		// recorded (terms 4.4 and Appendix C).
+		$fee = Creature_Demo_Loan_Money::late_fee_pence_for_dates( $due, $dispatch );
+		$order->update_status( self::STATUS_INSPECT, 'Return scan ' . $scan . ' recorded. Kit is being inspected. Return dispatch date ' . $dispatch . '.' );
 		$order->save();
 		return array(
 			'ok'           => true,
 			'late_fee'     => $fee,
+			'dispatch'     => $dispatch,
 			'after_deemed' => false,
 		);
+	}
+
+	/**
+	 * Return dispatch date (terms 3.3): the earlier of the proof of posting
+	 * date and the first scan, using whichever is set. Empty when neither is.
+	 *
+	 * @param object $order
+	 * @return string Y-m-d or ''.
+	 */
+	public static function dispatch_date( $order ) {
+		$dates = array();
+		foreach ( array( '_creature_demo_return_posted_date', '_creature_demo_return_scan_date' ) as $key ) {
+			$value = self::meta_string( $order, $key );
+			if ( Creature_Demo_Loan_Calendar::is_real_ymd( $value ) ) {
+				$dates[] = $value;
+			}
+		}
+		return $dates ? min( $dates ) : '';
+	}
+
+	/**
+	 * Proof of posting date from the admin screen. It can be entered before or
+	 * after the scan, and corrected until the bill is final.
+	 *
+	 * @param object $order
+	 * @param string $ymd
+	 * @return array<string, mixed>
+	 */
+	public static function record_return_posted( $order, $ymd ) {
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $ymd ) ) {
+			return array(
+				'ok'     => false,
+				'reason' => 'bad_date',
+			);
+		}
+		if ( 'yes' !== self::meta_string( $order, '_creature_demo_loan' ) ) {
+			return array(
+				'ok'     => false,
+				'reason' => 'not_loan',
+			);
+		}
+		if ( '' !== self::meta_string( $order, '_creature_demo_bill_state' ) ) {
+			self::note( $order, 'Proof of posting date ' . $ymd . ' ignored: the bill for this loan is already final.' );
+			return array(
+				'ok'     => false,
+				'reason' => 'billed',
+			);
+		}
+		if ( self::meta_string( $order, '_creature_demo_return_posted_date' ) === $ymd ) {
+			return array(
+				'ok'         => true,
+				'idempotent' => true,
+				'dispatch'   => self::dispatch_date( $order ),
+			);
+		}
+		$order->update_meta_data( '_creature_demo_return_posted_date', $ymd );
+		$order->save();
+		$dispatch = self::dispatch_date( $order );
+		self::note( $order, 'Proof of posting date ' . $ymd . ' recorded. Return dispatch date is ' . $dispatch . ' (the earlier of the posting date and the first scan).' );
+		return array(
+			'ok'       => true,
+			'dispatch' => $dispatch,
+		);
+	}
+
+	/**
+	 * Date the kit arrived back with us. Starts the 5 working day bill clock.
+	 * Written once by the stamp, or set by hand from the admin screen.
+	 *
+	 * @param object $order
+	 * @param string $ymd
+	 * @return array<string, mixed>
+	 */
+	public static function record_kit_received( $order, $ymd ) {
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $ymd ) ) {
+			return array(
+				'ok'     => false,
+				'reason' => 'bad_date',
+			);
+		}
+		if ( '' !== self::meta_string( $order, '_creature_demo_bill_state' ) ) {
+			return array(
+				'ok'     => false,
+				'reason' => 'billed',
+			);
+		}
+		if ( self::meta_string( $order, '_creature_demo_received_date' ) === $ymd ) {
+			return array(
+				'ok'         => true,
+				'idempotent' => true,
+			);
+		}
+		$order->update_meta_data( '_creature_demo_received_date', $ymd );
+		$order->save();
+		self::note( $order, 'Kit received date ' . $ymd . ' recorded. The bill is due within 5 working days of it.' );
+		return array( 'ok' => true );
+	}
+
+	/**
+	 * Set the received date only when nothing is there yet.
+	 *
+	 * @param object $order
+	 * @param string $ymd
+	 */
+	private static function stamp_kit_received( $order, $ymd ) {
+		if ( Creature_Demo_Loan_Calendar::is_real_ymd( self::meta_string( $order, '_creature_demo_received_date' ) ) ) {
+			return;
+		}
+		$order->update_meta_data( '_creature_demo_received_date', $ymd );
 	}
 
 	/**
@@ -1345,9 +1549,21 @@ final class Creature_Demo_Loan {
 				'idempotent' => true,
 			);
 		}
+		$after_deemed = 'yes' === self::meta_string( $order, '_creature_demo_arrived_after_deemed' ) || 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' );
+		$bill         = array();
+		if ( ! $after_deemed ) {
+			// Terms 4.4 and Appendix C: one bill for late fees, damage and
+			// missing parts, raised now. A refusal (no findings) leaves the
+			// inspection open so the admin can fix it and try again.
+			self::stamp_kit_received( $order, $as_of );
+			$bill = self::bill_at_inspection( $order, $as_of );
+			if ( empty( $bill['ok'] ) ) {
+				return $bill;
+			}
+		}
 		$order->update_meta_data( '_creature_demo_inspection_done', 'yes' );
 		$order->save();
-		if ( 'yes' === self::meta_string( $order, '_creature_demo_arrived_after_deemed' ) || 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' ) ) {
+		if ( $after_deemed ) {
 			self::note( $order, 'Inspection recorded after a deemed purchase. Refund is a separate admin action.' );
 			return array(
 				'ok'               => true,
@@ -1355,10 +1571,10 @@ final class Creature_Demo_Loan {
 			);
 		}
 		$order->update_status( self::STATUS_RETURNED, 'Inspection complete.' );
-		$coupon = null;
-		if ( 'buy' === self::meta_string( $order, '_creature_demo_choice' ) ) {
-			$coupon = self::issue_coupon( $order, $as_of );
-		}
+		// Terms 3A.1(a) and 3A.5: every inspected return gets the £25 code,
+		// including when no choice was made. issue_coupon() still refuses a
+		// keep payment and a deemed purchase.
+		$coupon = self::issue_coupon( $order, $as_of );
 		if ( ! self::has_unpaid_open_charge( $order ) ) {
 			$order->update_status( self::STATUS_CLOSED, 'Demo loan closed after the kit was returned.' );
 		}
@@ -1366,7 +1582,280 @@ final class Creature_Demo_Loan {
 		return array(
 			'ok'     => true,
 			'coupon' => $coupon,
+			'bill'   => $bill,
 		);
+	}
+
+	/**
+	 * The one bill (terms 4.4, Appendix C). Late fees, damage and missing
+	 * parts go on a single charge order with one line each.
+	 *
+	 * The return dispatch date sets the late-fee end date. Late fee first, then
+	 * damage, then missing parts, each held to what is left under the overall
+	 * cap (the keep price, never more than £212; the £24 late-fee cap is in the
+	 * money class). A damage or missing-parts line needs the inspection findings
+	 * (terms 6.4(b)); without them nothing is raised.
+	 *
+	 * Once a bill, a late-fee-only bill or a "nothing owed" decision is on the
+	 * loan, no second bill can be raised.
+	 *
+	 * @param object $order
+	 * @param mixed  $as_of
+	 * @param bool   $late_only     Raise the late-fee line only (the day-5 fallback).
+	 * @param string $damage_label  Name for the damage line. Default "Damage".
+	 * @return array<string, mixed>
+	 */
+	public static function raise_bill( $order, $as_of = null, $late_only = false, $damage_label = '' ) {
+		if ( 'yes' !== self::meta_string( $order, '_creature_demo_loan' ) ) {
+			return array(
+				'ok'     => false,
+				'reason' => 'not_loan',
+			);
+		}
+		$state = self::meta_string( $order, '_creature_demo_bill_state' );
+		if ( 'raised' === $state || ( '' !== $state && $late_only ) ) {
+			$id = (int) self::meta_string( $order, '_creature_demo_bill_order_id' );
+			$ch = $id && function_exists( 'wc_get_order' ) ? wc_get_order( $id ) : null;
+			return array(
+				'ok'         => true,
+				'idempotent' => true,
+				'order_id'   => $id,
+				'amount'     => $ch ? (int) self::meta_string( $ch, '_creature_demo_charge_amount_pence' ) : 0,
+				'state'      => $state,
+			);
+		}
+		if ( '' !== $state ) {
+			return array(
+				'ok'     => false,
+				'reason' => 'bill_closed',
+				'state'  => $state,
+			);
+		}
+		$as_of = Creature_Demo_Loan_Calendar::today( $as_of );
+		$keep  = self::loan_keep_price_pence( $order );
+		$cap   = $keep;
+		if ( function_exists( 'apply_filters' ) ) {
+			$cap = (int) apply_filters( 'creature_demo_loan_damage_cap_pence', $cap, $order );
+		}
+		if ( $cap < 0 ) {
+			$cap = $keep;
+		}
+		$cap = min( $cap, $keep );
+
+		// A late-fee order raised at the scan by an earlier version still counts
+		// against the cap, and the late fee is not billed a second time.
+		$already  = self::billed_late_fee_pence( $order );
+		$due      = self::meta_string( $order, '_creature_demo_due_date' );
+		$dispatch = self::dispatch_date( $order );
+		$late_ask = 0;
+		if ( $already < 1 && '' !== $due && '' !== $dispatch ) {
+			$late_ask = Creature_Demo_Loan_Money::late_fee_pence_for_dates( $due, $dispatch );
+		}
+		$late_line = min( $late_ask, max( 0, $cap - $already ) );
+		$headroom  = max( 0, $cap - $already - $late_line );
+		$room_all  = $headroom;
+
+		$ask_damage  = $late_only ? 0 : max( 0, (int) self::meta_string( $order, '_creature_demo_damage_pence' ) );
+		$ask_missing = $late_only ? 0 : max( 0, (int) self::meta_string( $order, '_creature_demo_missing_pence' ) );
+		$damage_line = min( $ask_damage, $headroom );
+		$headroom   -= $damage_line;
+		$missing_line = min( $ask_missing, $headroom );
+		$reduced     = ( $ask_damage + $ask_missing ) - ( $damage_line + $missing_line );
+		$clamp       = array(
+			'clamped'         => $reduced > 0,
+			'reduced_pence'   => $reduced,
+			'late_fees_pence' => $already + $late_line,
+			'headroom_pence'  => $room_all,
+		);
+		if ( $reduced > 0 ) {
+			self::note(
+				$order,
+				'Damage and missing-parts request of ' . Creature_Demo_Loan_Money::format_gbp( $ask_damage + $ask_missing ) . ' was clamped by ' . Creature_Demo_Loan_Money::format_gbp( $reduced ) . '. Late fees of ' . Creature_Demo_Loan_Money::format_gbp( $already + $late_line ) . ' leave ' . Creature_Demo_Loan_Money::format_gbp( $room_all ) . ' under the overall cap.'
+			);
+		}
+		if ( '' === $dispatch && ! $late_only && $already < 1 ) {
+			self::note( $order, 'No return scan or proof of posting date is recorded, so the bill has no late-fee line.' );
+		}
+		$total = $late_line + $damage_line + $missing_line;
+		if ( $total < 1 ) {
+			return array_merge(
+				array(
+					'ok'     => false,
+					'reason' => 'no_amount',
+				),
+				$clamp
+			);
+		}
+		// Terms 6.4(b): no damage or missing-parts line without what we found.
+		if ( ( $damage_line + $missing_line ) > 0 && '' === self::findings_text( $order ) ) {
+			self::note( $order, 'Bill not sent: it has a damage or missing-parts line and the inspection findings are empty (terms 6.4(b)). Enter what you found and try again.' );
+			return array_merge(
+				array(
+					'ok'     => false,
+					'reason' => 'no_findings',
+				),
+				$clamp
+			);
+		}
+
+		$lines = array();
+		if ( $late_line > 0 ) {
+			$lines[] = array(
+				'kind'  => 'late_fee',
+				'name'  => 'Late fees for the demo loan',
+				'pence' => $late_line,
+			);
+		}
+		if ( $damage_line > 0 ) {
+			$label   = trim( (string) $damage_label );
+			$lines[] = array(
+				'kind'  => 'damage',
+				'name'  => '' !== $label ? $label : 'Damage',
+				'pence' => $damage_line,
+			);
+		}
+		if ( $missing_line > 0 ) {
+			$lines[] = array(
+				'kind'  => 'missing_parts',
+				'name'  => 'Missing parts',
+				'pence' => $missing_line,
+			);
+		}
+		$charge = self::ensure_charge_order( $order, 'bill', $total, self::bill_reason( $lines ), $as_of, $lines );
+		if ( ! $charge ) {
+			return array(
+				'ok'     => false,
+				'reason' => 'order_failed',
+			);
+		}
+		$order->update_meta_data( '_creature_demo_bill_state', $late_only ? 'late_only' : 'raised' );
+		$order->save();
+		return array_merge(
+			array(
+				'ok'       => true,
+				'amount'   => (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' ),
+				'order_id' => (int) $charge->get_id(),
+				'lines'    => $lines,
+				'state'    => $late_only ? 'late_only' : 'raised',
+			),
+			$clamp
+		);
+	}
+
+	/**
+	 * @param array<int, array<string, mixed>> $lines
+	 * @return string
+	 */
+	private static function bill_reason( $lines ) {
+		$parts = array();
+		foreach ( $lines as $line ) {
+			$parts[] = $line['name'] . ': ' . Creature_Demo_Loan_Money::format_gbp( $line['pence'] );
+		}
+		return implode( '; ', $parts );
+	}
+
+	/**
+	 * Inspection is being recorded: raise the bill, or decide there is none.
+	 *
+	 * @param object $order
+	 * @param string $as_of
+	 * @return array<string, mixed>
+	 */
+	private static function bill_at_inspection( $order, $as_of ) {
+		$state = self::meta_string( $order, '_creature_demo_bill_state' );
+		if ( '' !== $state ) {
+			$asked = (int) self::meta_string( $order, '_creature_demo_damage_pence' ) + (int) self::meta_string( $order, '_creature_demo_missing_pence' );
+			if ( $asked > 0 && 'raised' !== $state ) {
+				self::note( $order, 'Damage or missing parts were entered, but the single bill for this loan is already final (' . $state . '), so they are not charged (terms 4.4 and 6.4(b)).' );
+			}
+			return array(
+				'ok'     => true,
+				'state'  => $state,
+				'closed' => true,
+			);
+		}
+		$result = self::raise_bill( $order, $as_of );
+		if ( ! empty( $result['ok'] ) ) {
+			return $result;
+		}
+		if ( 'no_amount' === $result['reason'] ) {
+			$order->update_meta_data( '_creature_demo_bill_state', 'none' );
+			$order->save();
+			self::note( $order, 'Inspection recorded. Nothing is owed, so no bill was raised.' );
+			$result['ok']    = true;
+			$result['state'] = 'none';
+		}
+		return $result;
+	}
+
+	/**
+	 * Daily check on a kit that is back and not yet billed (terms 4.4). The
+	 * bill is due within 5 working days of the kit arriving. Monday to Friday
+	 * only: there is no bank-holiday table here, so the clock can only run
+	 * ahead of the real one.
+	 *
+	 * On working day 4 the shop is emailed. Once day 5 has passed with no
+	 * inspection, a late-fee-only bill goes out and no damage or missing-parts
+	 * charge can follow, because the terms allow one bill.
+	 *
+	 * @param object $order
+	 * @param string $as_of
+	 */
+	private static function check_bill_deadline( $order, $as_of ) {
+		if ( '' !== self::meta_string( $order, '_creature_demo_bill_state' ) ) {
+			return;
+		}
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_inspection_done' ) || 'yes' === self::meta_string( $order, '_creature_demo_arrived_after_deemed' ) || 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' ) ) {
+			return;
+		}
+		$received = self::meta_string( $order, '_creature_demo_received_date' );
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $received ) ) {
+			return;
+		}
+		$deadline = Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WORKING_DAYS, array() );
+		$warn_on  = Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WARN_WORKING_DAY, array() );
+		if ( $as_of > $deadline ) {
+			self::raise_late_only_bill( $order, $as_of, $received, $deadline );
+			return;
+		}
+		if ( $as_of >= $warn_on && 'yes' !== self::meta_string( $order, '_creature_demo_bill_warn_sent' ) ) {
+			Creature_Demo_Loan_Mail::send_admin(
+				$order,
+				'admin_bill_due',
+				array(
+					'received' => $received,
+					'deadline' => $deadline,
+				)
+			);
+			$order->update_meta_data( '_creature_demo_bill_warn_sent', 'yes' );
+			$order->save();
+		}
+	}
+
+	/**
+	 * Working day 5 has passed without an inspection. Bill the late fee alone
+	 * and close the bill for this loan.
+	 *
+	 * @param object $order
+	 * @param string $as_of
+	 * @param string $received
+	 * @param string $deadline
+	 * @return array<string, mixed>
+	 */
+	private static function raise_late_only_bill( $order, $as_of, $received, $deadline ) {
+		$result = self::raise_bill( $order, $as_of, true );
+		if ( empty( $result['ok'] ) && 'no_amount' !== $result['reason'] ) {
+			return $result;
+		}
+		if ( empty( $result['ok'] ) ) {
+			$order->update_meta_data( '_creature_demo_bill_state', 'late_only' );
+			$order->save();
+		}
+		self::note(
+			$order,
+			'The kit arrived on ' . $received . ' and 5 working days ended on ' . $deadline . ' with no inspection recorded. ' . ( ! empty( $result['ok'] ) ? 'A late-fee-only bill was raised.' : 'No late fee was due, so no bill was raised.' ) . ' No damage or missing-parts charge can be raised on this loan, because the terms allow one bill (terms 4.4 and 6.4(b)).'
+		);
+		return $result;
 	}
 
 	/**
@@ -1385,10 +1874,10 @@ final class Creature_Demo_Loan {
 				'spec'       => $order->get_meta( '_creature_demo_coupon_spec' ),
 			);
 		}
-		if ( 'buy' !== self::meta_string( $order, '_creature_demo_choice' ) ) {
+		if ( 'return' !== self::effective_choice( $order ) ) {
 			return array(
 				'ok'     => false,
-				'reason' => 'not_buy',
+				'reason' => 'not_return',
 			);
 		}
 		if ( 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' ) || 'yes' === self::meta_string( $order, '_creature_demo_keep_paid' ) ) {
@@ -1477,8 +1966,11 @@ final class Creature_Demo_Loan {
 		}
 		$deemed_on = self::deemed_on_for( $order );
 		$scan      = self::meta_string( $order, '_creature_demo_return_scan_date' );
-		if ( '' !== $scan && $scan < $deemed_on ) {
-			return array( 'ok' => false, 'reason' => 'scanned' );
+		// Terms 8.1: posted back by the end of day 13 is not a deemed purchase.
+		// The dispatch date is the earlier of the proof of posting and the scan.
+		$dispatch = self::dispatch_date( $order );
+		if ( '' !== $dispatch && $dispatch < $deemed_on ) {
+			return array( 'ok' => false, 'reason' => ( '' !== $scan && $scan < $deemed_on ) ? 'scanned' : 'posted' );
 		}
 		if ( $as_of < $deemed_on ) {
 			return array( 'ok' => false, 'reason' => 'too_soon' );
@@ -1523,6 +2015,11 @@ final class Creature_Demo_Loan {
 		if ( self::STATUS_LOAN === $status && $as_of > $due ) {
 			$order->update_status( self::STATUS_OVERDUE, 'Demo loan is past the due date.' );
 			$status = self::STATUS_OVERDUE;
+		}
+		if ( self::STATUS_INSPECT === $status ) {
+			// Kit is back and being inspected: watch the 5 working day bill clock.
+			self::check_bill_deadline( $order, $as_of );
+			return;
 		}
 		$open = array( self::STATUS_LOAN, self::STATUS_OVERDUE, self::STATUS_BOOKED );
 		if ( ! in_array( $status, $open, true ) ) {
@@ -1583,6 +2080,27 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * When the final-decision email went out on this charge, as Y-m-d. Empty
+	 * when the dispute has not been decided as upheld. A charge decided before
+	 * the sent time was stored falls back to the decision date.
+	 *
+	 * @param object $charge
+	 * @return string
+	 */
+	private static function decision_sent_at( $charge ) {
+		if ( 'upheld' !== self::meta_string( $charge, '_creature_demo_dispute_status' ) ) {
+			return '';
+		}
+		foreach ( array( '_creature_demo_decision_sent_at', '_creature_demo_dispute_decision_at' ) as $key ) {
+			$value = self::meta_string( $charge, $key );
+			if ( Creature_Demo_Loan_Calendar::is_real_ymd( $value ) ) {
+				return $value;
+			}
+		}
+		return '';
+	}
+
+	/**
 	 * @param object $loan
 	 * @param object $charge
 	 * @param mixed  $as_of
@@ -1592,6 +2110,12 @@ final class Creature_Demo_Loan {
 		$as_of   = Creature_Demo_Loan_Calendar::today( $as_of );
 		$logged  = $charge && 'yes' === self::meta_string( $charge, '_creature_demo_charge_notice_logged' );
 		$notice  = $charge ? self::meta_string( $charge, '_creature_demo_charge_notice_at' ) : '';
+		// Terms 4.4(b): once a dispute is decided, the card is charged no sooner
+		// than 7 days after the final-decision email, not after the first notice.
+		$decided = $charge ? self::decision_sent_at( $charge ) : '';
+		if ( '' !== $decided ) {
+			$notice = $decided;
+		}
 		$days    = '' !== $notice ? Creature_Demo_Loan_Calendar::days_between( $notice, $as_of ) : 0;
 		$mode    = self::stripe_mode_flags();
 		$state   = array(
@@ -1685,6 +2209,9 @@ final class Creature_Demo_Loan {
 		if ( empty( $result['ok'] ) ) {
 			self::release_charge_lock( $charge, 'saved_card' );
 			self::note( $loan, self::refusal_message( $result['code'] ) );
+			if ( ! empty( $result['declined'] ) ) {
+				self::send_charge_declined( $loan, $charge, $amount );
+			}
 			return array( 'ok' => false, 'code' => $result['code'] );
 		}
 		if ( '' !== $result['id'] ) {
@@ -1708,6 +2235,39 @@ final class Creature_Demo_Loan {
 			'code' => 'succeeded',
 			'id'   => $result['id'],
 		);
+	}
+
+	/**
+	 * Terms 4.5: a saved-card charge was declined. Email the payment link. The
+	 * amount is still owed. Once per charge order, so a second decline on a
+	 * retry does not email the rider again.
+	 *
+	 * @param object $loan
+	 * @param object $charge
+	 * @param int    $amount
+	 * @return bool True when the email went out on this call.
+	 */
+	public static function send_charge_declined( $loan, $charge, $amount ) {
+		if ( 'yes' === self::meta_string( $charge, '_creature_demo_decline_notified' ) ) {
+			return false;
+		}
+		$charge->update_meta_data( '_creature_demo_decline_notified', 'yes' );
+		$charge->save();
+		self::note( $loan, 'The saved card was declined. A payment link was emailed. The amount is still owed.' );
+		Creature_Demo_Loan_Mail::send_customer(
+			$loan,
+			'charge_declined',
+			array(
+				'amount'   => Creature_Demo_Loan_Money::format_gbp( $amount ),
+				'price'    => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $loan ) ),
+				'reason'   => self::meta_string( $charge, '_creature_demo_charge_notice_reason' ),
+				'link'     => self::payment_link( $charge ),
+				'due'      => self::meta_string( $loan, '_creature_demo_due_date' ),
+				'findings' => self::findings_text( $loan ),
+				'photos'   => self::photo_lines( $loan ),
+			)
+		);
+		return true;
 	}
 
 	/**
@@ -1780,7 +2340,7 @@ final class Creature_Demo_Loan {
 		$loan   = self::parent_loan( $charge );
 		$target = $loan ? $loan : $charge;
 		$amount = (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' );
-		Creature_Demo_Loan_Mail::send_customer(
+		$row    = Creature_Demo_Loan_Mail::send_customer(
 			$target,
 			'dispute_decision',
 			array(
@@ -1790,6 +2350,12 @@ final class Creature_Demo_Loan {
 				'link'     => self::payment_link( $charge ),
 			)
 		);
+		// The 7 days before an upheld charge can be taken run from this email.
+		$charge->update_meta_data( '_creature_demo_decision_sent_at', $as_of );
+		$charge->save();
+		if ( ! is_array( $row ) || '' === (string) $row['to'] ) {
+			self::note( $charge, 'The decision email had nowhere to go. The 7 days still count from ' . $as_of . '.' );
+		}
 		self::note( $charge, 'Dispute decision recorded: ' . $decision . ( $within ? ' (within 14 days).' : ' (after 14 days).' ) . ( $capped ? ' Amount capped at the original notice.' : '' ) );
 		return array(
 			'ok'       => true,
@@ -1824,6 +2390,16 @@ final class Creature_Demo_Loan {
 			$loan->save();
 			self::note( $loan, 'Late fees paid: ' . Creature_Demo_Loan_Money::format_gbp( $amount ) . '.' );
 			return array( 'ok' => true, 'kind' => 'late_fee' );
+		}
+		if ( 'bill' === $kind ) {
+			// The late-fee line of the bill counts as late fees paid.
+			$late = (int) self::meta_string( $charge, '_creature_demo_charge_late_pence' );
+			if ( $late > 0 ) {
+				$loan->update_meta_data( '_creature_demo_late_fees_paid_pence', (int) self::meta_string( $loan, '_creature_demo_late_fees_paid_pence' ) + $late );
+				$loan->save();
+			}
+			self::note( $loan, 'Bill paid: ' . Creature_Demo_Loan_Money::format_gbp( $amount ) . '.' );
+			return array( 'ok' => true, 'kind' => 'bill' );
 		}
 		if ( 'keep' === $kind ) {
 			return self::close_as_kept( $loan );
@@ -1928,7 +2504,7 @@ final class Creature_Demo_Loan {
 			self::loan_keep_price_pence( $loan ),
 			(int) self::meta_string( $loan, '_creature_demo_deemed_paid_pence' ),
 			(int) self::meta_string( $loan, '_creature_demo_late_fees_paid_pence' ),
-			(int) self::meta_string( $loan, '_creature_demo_damage_pence' )
+			(int) self::meta_string( $loan, '_creature_demo_damage_pence' ) + (int) self::meta_string( $loan, '_creature_demo_missing_pence' )
 		);
 		$pi = self::meta_string( $loan, '_creature_demo_deemed_payment_intent' );
 		if ( $refund > 0 ) {
@@ -2101,8 +2677,8 @@ final class Creature_Demo_Loan {
 		}
 		echo '<section class="creature-demo-loan-choices"><h2>' . self::esc( Creature_Demo_Loan_Copy::text( 'my_account_heading' ) ) . '</h2>';
 		$as_of = Creature_Demo_Loan_Calendar::today( null );
-		foreach ( array( 'buy', 'return', 'keep' ) as $choice ) {
-			$current = self::meta_string( $order, '_creature_demo_choice' );
+		foreach ( array( 'return', 'keep' ) as $choice ) {
+			$current = self::normalize_choice( self::meta_string( $order, '_creature_demo_choice' ) );
 			if ( ! self::choice_allowed( $order, $choice, $as_of ) && $current !== $choice ) {
 				continue;
 			}
@@ -2120,6 +2696,283 @@ final class Creature_Demo_Loan {
 			echo '<p><a class="button" href="' . self::esc_url( $url ) . '">' . self::esc( Creature_Demo_Loan_Copy::text( 'button_' . $choice ) ) . '</a></p>';
 		}
 		echo '</section>';
+	}
+
+	/**
+	 * Terms 11.1 and Appendix B: extra content on the order confirmation for a
+	 * demo order, with the record of the consent and the rider's answer to the
+	 * express request. The wording is the booking_confirmation copy slot. While
+	 * that slot is empty nothing is added.
+	 *
+	 * @param object $order
+	 * @param bool   $sent_to_admin
+	 * @param bool   $plain_text
+	 * @param mixed  $email
+	 */
+	public static function render_booking_confirmation( $order, $sent_to_admin = false, $plain_text = false, $email = null ) {
+		if ( $sent_to_admin || ! self::is_booking_email( $email ) || ! is_object( $order ) || ! self::order_is_demo( $order ) ) {
+			return;
+		}
+		$record = self::consent_record( $order );
+		$text   = Creature_Demo_Loan_Copy::text(
+			'booking_confirmation',
+			array(
+				'order_id'        => (string) $order->get_id(),
+				'consent'         => $record['wording'],
+				'consent_version' => $record['label'],
+				'consent_at'      => $record['date'],
+				'express_answer'  => self::express_answer( $order ),
+			)
+		);
+		if ( '' === trim( $text ) ) {
+			return;
+		}
+		if ( $plain_text ) {
+			echo "\n" . $text . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			return;
+		}
+		echo '<div class="creature-demo-loan-booking"><p>' . nl2br( self::esc( $text ) ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	/**
+	 * The rider's answer to the express request at checkout (Appendix B), as
+	 * stored in `_creature_demo_express_request`. Empty when it was not recorded.
+	 *
+	 * @param object $order
+	 * @return string
+	 */
+	public static function express_answer( $order ) {
+		$value = strtolower( self::meta_string( $order, '_creature_demo_express_request' ) );
+		if ( in_array( $value, array( 'yes', '1', 'true' ), true ) ) {
+			return 'Yes';
+		}
+		if ( in_array( $value, array( 'no', '0', 'false' ), true ) ) {
+			return 'No';
+		}
+		return '';
+	}
+
+	/**
+	 * @param mixed $email
+	 * @return bool
+	 */
+	private static function is_booking_email( $email ) {
+		return is_object( $email ) && isset( $email->id ) && in_array( (string) $email->id, self::BOOKING_EMAIL_IDS, true );
+	}
+
+	/**
+	 * Attach the terms PDF and the model cancellation form to the booking
+	 * confirmation of a demo order. Nothing is attached when no file is set.
+	 *
+	 * @param mixed       $attachments
+	 * @param string      $email_id
+	 * @param object|null $object
+	 * @param mixed       $email
+	 * @return mixed
+	 */
+	public static function filter_booking_attachments( $attachments, $email_id = '', $object = null, $email = null ) {
+		unset( $email );
+		if ( ! in_array( (string) $email_id, self::BOOKING_EMAIL_IDS, true ) || ! is_object( $object ) || ! self::order_is_demo( $object ) ) {
+			return $attachments;
+		}
+		$attachments = is_array( $attachments ) ? $attachments : array();
+		foreach ( self::confirmation_attachment_paths() as $path ) {
+			if ( ! in_array( $path, $attachments, true ) ) {
+				$attachments[] = $path;
+			}
+		}
+		return $attachments;
+	}
+
+	/**
+	 * Every customer email for a demo order carries the shop's Reply-To,
+	 * including WooCommerce's own order emails.
+	 *
+	 * @param mixed       $headers
+	 * @param string      $email_id
+	 * @param object|null $object
+	 * @param mixed       $email
+	 * @return mixed
+	 */
+	public static function filter_email_headers( $headers, $email_id = '', $object = null, $email = null ) {
+		unset( $email );
+		if ( 0 !== strpos( (string) $email_id, 'customer_' ) || ! self::demo_customer_mail_order( $object ) ) {
+			return $headers;
+		}
+		$headers = is_string( $headers ) ? $headers : '';
+		if ( false !== stripos( $headers, 'reply-to:' ) ) {
+			return $headers;
+		}
+		if ( '' !== $headers && "\n" !== substr( $headers, -1 ) ) {
+			$headers .= "\r\n";
+		}
+		return $headers . 'Reply-To: ' . Creature_Demo_Loan_Mail::REPLY_TO . "\r\n";
+	}
+
+	/**
+	 * What is set for the booking confirmation attachments, and whether each
+	 * file can be attached. The files come from the creature_demo_loan_confirmation_files
+	 * filter (the config screen fills it): an array keyed terms_pdf and
+	 * cancellation_form, each a media id or a file path.
+	 *
+	 * @return array<string, array{label: string, set: bool, path: string}>
+	 */
+	public static function confirmation_file_report() {
+		$raw = array();
+		if ( function_exists( 'apply_filters' ) ) {
+			$raw = apply_filters( 'creature_demo_loan_confirmation_files', array() );
+		}
+		if ( ! is_array( $raw ) ) {
+			$raw = array();
+		}
+		$labels = array(
+			'terms_pdf'         => 'Terms PDF (version 5)',
+			'cancellation_form' => 'Model cancellation form',
+		);
+		$report = array();
+		foreach ( $labels as $key => $label ) {
+			$value          = isset( $raw[ $key ] ) ? $raw[ $key ] : '';
+			$report[ $key ] = array(
+				'label' => $label,
+				'set'   => is_scalar( $value ) && '' !== trim( (string) $value ),
+				'path'  => self::resolve_attachment_path( $value ),
+			);
+		}
+		foreach ( $raw as $key => $value ) {
+			if ( isset( $labels[ $key ] ) ) {
+				continue;
+			}
+			$report[ 'extra_' . $key ] = array(
+				'label' => 'Extra file',
+				'set'   => is_scalar( $value ) && '' !== trim( (string) $value ),
+				'path'  => self::resolve_attachment_path( $value ),
+			);
+		}
+		return $report;
+	}
+
+	/**
+	 * @return string[] Absolute paths that can be attached.
+	 */
+	public static function confirmation_attachment_paths() {
+		$paths = array();
+		foreach ( self::confirmation_file_report() as $row ) {
+			if ( '' !== $row['path'] && ! in_array( $row['path'], $paths, true ) ) {
+				$paths[] = $row['path'];
+			}
+		}
+		return $paths;
+	}
+
+	/**
+	 * A media id or a file path, turned into a path that is safe to attach. The
+	 * file must exist, be a document type, and sit inside the uploads folder (or
+	 * a folder added with creature_demo_loan_attachment_roots). Anything else is
+	 * refused, so a path typed into the settings screen cannot attach a server
+	 * file such as wp-config.php to a customer email.
+	 *
+	 * @param mixed $value
+	 * @return string Real path, or '' when it cannot be attached.
+	 */
+	private static function resolve_attachment_path( $value ) {
+		if ( is_int( $value ) || ( is_string( $value ) && preg_match( '/^[0-9]+$/', trim( $value ) ) ) ) {
+			$id = (int) $value;
+			if ( $id < 1 || ! function_exists( 'get_attached_file' ) ) {
+				return '';
+			}
+			$path = get_attached_file( $id );
+		} elseif ( is_string( $value ) ) {
+			$path = trim( $value );
+		} else {
+			return '';
+		}
+		if ( ! is_string( $path ) || '' === $path || false !== strpos( $path, "\0" ) ) {
+			return '';
+		}
+		$real = realpath( $path );
+		if ( false === $real || ! is_file( $real ) || ! is_readable( $real ) ) {
+			return '';
+		}
+		if ( ! in_array( strtolower( pathinfo( $real, PATHINFO_EXTENSION ) ), array( 'pdf', 'doc', 'docx', 'odt', 'rtf' ), true ) ) {
+			return '';
+		}
+		foreach ( self::attachment_roots() as $root ) {
+			$root_real = is_string( $root ) ? realpath( $root ) : false;
+			if ( false !== $root_real && 0 === strpos( $real, rtrim( $root_real, '/\\' ) . DIRECTORY_SEPARATOR ) ) {
+				return $real;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * @return string[]
+	 */
+	private static function attachment_roots() {
+		$roots = array();
+		if ( function_exists( 'wp_upload_dir' ) ) {
+			$upload = wp_upload_dir( null, false );
+			if ( is_array( $upload ) && ! empty( $upload['basedir'] ) && empty( $upload['error'] ) ) {
+				$roots[] = $upload['basedir'];
+			}
+		}
+		if ( function_exists( 'apply_filters' ) ) {
+			$roots = apply_filters( 'creature_demo_loan_attachment_roots', $roots );
+		}
+		return is_array( $roots ) ? $roots : array();
+	}
+
+	/**
+	 * Admin notice when a booking confirmation file is not set, or is set and
+	 * cannot be attached. The confirmation still goes out, with no attachment.
+	 */
+	public static function render_attachment_notice() {
+		if ( ! function_exists( 'current_user_can' ) || ! current_user_can( 'manage_woocommerce' ) || ! self::notice_screen_ok() ) {
+			return;
+		}
+		$missing    = array();
+		$unreadable = array();
+		foreach ( self::confirmation_file_report() as $key => $row ) {
+			if ( 0 === strpos( $key, 'extra_' ) ) {
+				continue;
+			}
+			if ( ! $row['set'] ) {
+				$missing[] = $row['label'];
+			} elseif ( '' === $row['path'] ) {
+				$unreadable[] = $row['label'];
+			}
+		}
+		if ( ! $missing && ! $unreadable ) {
+			return;
+		}
+		$message = 'De-Reacher demo loan: the booking confirmation goes out without these attachments.';
+		if ( $missing ) {
+			$message .= ' No file is set for: ' . implode( ', ', $missing ) . '.';
+		}
+		if ( $unreadable ) {
+			$message .= ' Set but cannot be attached (missing, not a document, or outside the uploads folder): ' . implode( ', ', $unreadable ) . '.';
+		}
+		$message .= ' Set them under WooCommerce → Demo loan, as a media library ID or a file path inside the uploads folder.';
+		echo '<div class="notice notice-warning"><p>' . self::esc( $message ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	/**
+	 * @return bool
+	 */
+	private static function notice_screen_ok() {
+		if ( ! function_exists( 'get_current_screen' ) ) {
+			return true;
+		}
+		$screen = get_current_screen();
+		if ( ! is_object( $screen ) || empty( $screen->id ) ) {
+			return true;
+		}
+		foreach ( array( 'woocommerce', 'wc-', 'shop_order' ) as $needle ) {
+			if ( false !== strpos( (string) $screen->id, $needle ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -2211,13 +3064,33 @@ final class Creature_Demo_Loan {
 		if ( '' === $scan ) {
 			$scan = Creature_Demo_Loan_Calendar::today( null );
 		}
+		// The posting date and the received date go in first so the dispatch
+		// date and the bill clock are right when the scan is recorded.
+		self::save_return_dates_from_post( $order );
 		self::record_return_scan( $order, $scan, null );
+	}
+
+	/**
+	 * Proof of posting date and kit received date from the order screen.
+	 *
+	 * @param object $order
+	 */
+	private static function save_return_dates_from_post( $order ) {
+		$posted = self::posted_date( 'creature_demo_return_posted_date' );
+		if ( '' !== $posted ) {
+			self::record_return_posted( $order, $posted );
+		}
+		$received = self::posted_date( 'creature_demo_received_date' );
+		if ( '' !== $received ) {
+			self::record_kit_received( $order, $received );
+		}
 	}
 
 	/**
 	 * @param object $order
 	 */
 	public static function action_inspect( $order ) {
+		self::save_return_dates_from_post( $order );
 		self::save_damage_from_post( $order );
 		self::complete_inspection( $order, null );
 	}
@@ -2231,26 +3104,31 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * Notice and payment link only. The saved card is not charged here.
+	 * Raise the one bill now: late fees, damage and missing parts. Notice and
+	 * payment link only. The saved card is not charged here. A second bill is
+	 * refused (terms 4.4).
 	 *
 	 * @param object $order
 	 */
 	public static function action_damage( $order ) {
+		self::save_return_dates_from_post( $order );
 		self::save_damage_from_post( $order );
-		$amount = (int) self::meta_string( $order, '_creature_demo_damage_pence' );
-		self::raise_damage_charge( $order, $amount, 'Damage or missing parts', null );
+		$result = self::raise_bill( $order, null );
+		if ( empty( $result['ok'] ) && 'bill_closed' === $result['reason'] ) {
+			self::note( $order, 'Bill refused: the single bill for this loan is already final (' . $result['state'] . ').' );
+		}
 	}
 
 	/**
-	 * Damage or missing parts. The overall cap is £212 or this loan's keep
-	 * price, whichever is less. The filter can lower the cap but never raise it
-	 * past the keep price (terms 4.2). Late fees already billed on this loan
-	 * come off that cap. Creates the charge notice. Does not charge the saved
-	 * card.
+	 * Raise the one bill with a single damage amount. The bill's caps and
+	 * findings rule apply (see raise_bill()). The amount replaces the damage
+	 * amount saved on the order. A loan whose bill is already a late-fee-only
+	 * bill, or was decided as "nothing owed", is refused: the terms allow one
+	 * bill (4.4).
 	 *
 	 * @param object $order
 	 * @param int    $amount_pence
-	 * @param string $reason
+	 * @param string $reason Name for the damage line.
 	 * @param mixed  $as_of
 	 * @return array<string, mixed>
 	 */
@@ -2261,61 +3139,19 @@ final class Creature_Demo_Loan {
 				'reason' => 'not_loan',
 			);
 		}
-		$requested = max( 0, (int) $amount_pence );
-		$keep      = self::loan_keep_price_pence( $order );
-		$cap       = $keep;
-		if ( function_exists( 'apply_filters' ) ) {
-			$cap = (int) apply_filters( 'creature_demo_loan_damage_cap_pence', $cap, $order );
-		}
-		if ( $cap < 0 ) {
-			$cap = $keep;
-		}
-		$cap = min( $cap, $keep );
-		$late_fees = self::billed_late_fee_pence( $order );
-		$headroom  = max( 0, $cap - $late_fees );
-		$amount    = min( $requested, $headroom );
-		$reduced   = $requested - $amount;
-		$clamp     = array(
-			'clamped'          => $reduced > 0,
-			'reduced_pence'    => $reduced,
-			'late_fees_pence'  => $late_fees,
-			'headroom_pence'   => $headroom,
-		);
-		if ( $reduced > 0 ) {
-			self::note(
-				$order,
-				'Damage request of ' . Creature_Demo_Loan_Money::format_gbp( $requested ) . ' was clamped by ' . Creature_Demo_Loan_Money::format_gbp( $reduced ) . '. Late fees of ' . Creature_Demo_Loan_Money::format_gbp( $late_fees ) . ' leave ' . Creature_Demo_Loan_Money::format_gbp( $headroom ) . ' under the overall cap.'
-			);
-		}
-		if ( $amount < 1 ) {
-			return array_merge(
-				array(
-					'ok'     => false,
-					'reason' => 'no_amount',
-				),
-				$clamp
-			);
-		}
-		$as_of  = Creature_Demo_Loan_Calendar::today( $as_of );
-		$reason = trim( (string) $reason );
-		if ( '' === $reason ) {
-			$reason = 'Damage or missing parts';
-		}
-		$charge = self::ensure_charge_order( $order, 'damage', $amount, $reason, $as_of );
-		if ( ! $charge ) {
+		$state = self::meta_string( $order, '_creature_demo_bill_state' );
+		if ( '' !== $state && 'raised' !== $state ) {
 			return array(
 				'ok'     => false,
-				'reason' => 'order_failed',
+				'reason' => 'bill_closed',
+				'state'  => $state,
 			);
 		}
-		return array_merge(
-			array(
-				'ok'       => true,
-				'amount'   => (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' ),
-				'order_id' => (int) $charge->get_id(),
-			),
-			$clamp
-		);
+		if ( '' === $state ) {
+			$order->update_meta_data( '_creature_demo_damage_pence', max( 0, (int) $amount_pence ) );
+			$order->save();
+		}
+		return self::raise_bill( $order, $as_of, false, $reason );
 	}
 
 	/**
@@ -2340,6 +3176,86 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * What the inspection found (terms 6.4(b)). Goes into the bill as {findings}.
+	 *
+	 * @param object $order
+	 * @return string
+	 */
+	public static function findings_text( $order ) {
+		return trim( self::meta_string( $order, '_creature_demo_findings' ) );
+	}
+
+	/**
+	 * Photo slots as saved: up to 6 entries, each a media id or an http(s) URL.
+	 *
+	 * @param object $order
+	 * @return string[]
+	 */
+	public static function photo_slots( $order ) {
+		$raw = is_object( $order ) && method_exists( $order, 'get_meta' ) ? $order->get_meta( '_creature_demo_photos', true ) : array();
+		if ( ! is_array( $raw ) ) {
+			return array();
+		}
+		$out = array();
+		foreach ( $raw as $slot ) {
+			$clean = self::sanitize_photo_slot( $slot );
+			if ( '' !== $clean ) {
+				$out[] = $clean;
+			}
+			if ( count( $out ) >= self::PHOTO_SLOTS ) {
+				break;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * One photo slot: a media id (digits) or an http(s) URL. Anything else is
+	 * dropped.
+	 *
+	 * @param mixed $raw
+	 * @return string
+	 */
+	public static function sanitize_photo_slot( $raw ) {
+		if ( ! is_scalar( $raw ) ) {
+			return '';
+		}
+		$raw = trim( (string) $raw );
+		if ( '' === $raw ) {
+			return '';
+		}
+		if ( preg_match( '/^[0-9]+$/', $raw ) ) {
+			return (int) $raw > 0 ? (string) (int) $raw : '';
+		}
+		if ( ! preg_match( '#^https?://#i', $raw ) || preg_match( '/[\s<>"\']/', $raw ) || false === filter_var( $raw, FILTER_VALIDATE_URL ) ) {
+			return '';
+		}
+		return $raw;
+	}
+
+	/**
+	 * Photo links for the bill, one per line. A media id becomes its URL. An id
+	 * that does not resolve is left out.
+	 *
+	 * @param object $order
+	 * @return string
+	 */
+	public static function photo_lines( $order ) {
+		$lines = array();
+		foreach ( self::photo_slots( $order ) as $slot ) {
+			if ( preg_match( '/^[0-9]+$/', $slot ) ) {
+				$url = function_exists( 'wp_get_attachment_url' ) ? wp_get_attachment_url( (int) $slot ) : '';
+				if ( is_string( $url ) && '' !== $url ) {
+					$lines[] = $url;
+				}
+				continue;
+			}
+			$lines[] = $slot;
+		}
+		return implode( "\n", $lines );
+	}
+
+	/**
 	 * @param object $order
 	 */
 	public static function render_meta_box( $order ) {
@@ -2351,6 +3267,13 @@ final class Creature_Demo_Loan {
 		if ( function_exists( 'wp_nonce_field' ) ) {
 			wp_nonce_field( 'creature_demo_loan_admin', 'creature_demo_loan_admin_nonce' );
 		}
+		$record = self::consent_record( $order );
+		if ( '' !== $record['version'] ) {
+			echo '<p>Consent: ' . self::esc( $record['label'] ) . ( '' !== $record['at'] ? ' (agreed ' . self::esc( $record['at'] ) . ')' : '' ) . '</p>';
+			if ( '' !== $record['wording'] ) {
+				echo '<details><summary>Wording agreed</summary><p>' . self::esc( $record['wording'] ) . '</p></details>';
+			}
+		}
 		self::date_input( 'creature_demo_dispatch_date', 'Dispatch date', self::meta_string( $order, '_creature_demo_dispatch_date' ) );
 		$estimated = 'yes' === self::meta_string( $order, '_creature_demo_delivery_estimated' );
 		$delivery_label = $estimated ? 'Tracked delivery date (current value is an estimate: dispatch + 2 working days)' : 'Tracked delivery date';
@@ -2359,9 +3282,39 @@ final class Creature_Demo_Loan {
 			echo '<p>This delivery date is an estimate, not a tracked scan. Enter the tracked date and update the order to recompute the due date.</p>';
 		}
 		self::date_input( 'creature_demo_return_scan_date', 'Return scan date', self::meta_string( $order, '_creature_demo_return_scan_date' ) );
+		self::date_input( 'creature_demo_return_posted_date', 'Proof of posting date', self::meta_string( $order, '_creature_demo_return_posted_date' ) );
+		self::date_input( 'creature_demo_received_date', 'Kit received date (starts the 5 working day bill clock)', self::meta_string( $order, '_creature_demo_received_date' ) );
+		$dispatch = self::dispatch_date( $order );
+		if ( '' !== $dispatch ) {
+			echo '<p>Return dispatch date (earlier of posting and first scan): ' . self::esc( $dispatch ) . '</p>';
+		}
 		$damage = self::meta_string( $order, '_creature_demo_damage_pence' );
 		$pounds = '' === $damage ? '' : Creature_Demo_Loan_Money::pence_to_decimal( (int) $damage );
 		echo '<p><label>Damage amount (GBP) <input type="text" name="creature_demo_damage" value="' . self::esc( $pounds ) . '" /></label></p>';
+		$missing = self::meta_string( $order, '_creature_demo_missing_pence' );
+		$m_pound = '' === $missing ? '' : Creature_Demo_Loan_Money::pence_to_decimal( (int) $missing );
+		echo '<p><label>Missing parts amount (GBP) <input type="text" name="creature_demo_missing" value="' . self::esc( $m_pound ) . '" /></label></p>';
+		echo '<p><label>What the inspection found (required for a damage or missing-parts line)<br /><textarea name="creature_demo_findings" rows="4" cols="60">' . self::esc( self::findings_text( $order ) ) . '</textarea></label></p>';
+		$photos = self::photo_slots( $order );
+		echo '<p>Photos (up to ' . (int) self::PHOTO_SLOTS . '): a media library ID or a full https:// link in each slot.</p>';
+		for ( $i = 1; $i <= self::PHOTO_SLOTS; $i++ ) {
+			$value = isset( $photos[ $i - 1 ] ) ? $photos[ $i - 1 ] : '';
+			echo '<p><label>Photo ' . (int) $i . ' <input type="text" name="creature_demo_photo_' . (int) $i . '" value="' . self::esc( $value ) . '" /></label></p>';
+		}
+		$state = self::meta_string( $order, '_creature_demo_bill_state' );
+		if ( '' !== $state ) {
+			$names = array(
+				'raised'    => 'bill raised',
+				'late_only' => 'late-fee-only bill (5 working days passed), no damage can be charged',
+				'none'      => 'nothing owed, no bill',
+			);
+			echo '<p>Bill: ' . self::esc( isset( $names[ $state ] ) ? $names[ $state ] : $state ) . '</p>';
+		} else {
+			$received = self::meta_string( $order, '_creature_demo_received_date' );
+			if ( Creature_Demo_Loan_Calendar::is_real_ymd( $received ) ) {
+				echo '<p>Bill due by: ' . self::esc( Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WORKING_DAYS, array() ) ) . ' (5 working days after the kit arrived)</p>';
+			}
+		}
 		$due = self::meta_string( $order, '_creature_demo_due_date' );
 		if ( '' !== $due ) {
 			echo '<p>Due date: ' . self::esc( $due ) . '</p>';
@@ -2384,6 +3337,7 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		self::save_damage_from_post( $order );
+		self::save_return_dates_from_post( $order );
 		$delivery = self::posted_date( 'creature_demo_delivery_date' );
 		if ( '' !== $delivery ) {
 			self::correct_delivery_date( $order, $delivery );
@@ -2579,16 +3533,17 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * @param object $loan
-	 * @param string $kind
-	 * @param int    $amount_pence
-	 * @param string $reason
-	 * @param string $as_of
+	 * @param object                                  $loan
+	 * @param string                                  $kind
+	 * @param int                                     $amount_pence
+	 * @param string                                  $reason
+	 * @param string                                  $as_of
+	 * @param array<int, array<string, mixed>>|null   $lines One entry per fee line (name, pence, kind). The bill has one line per item.
 	 * @return object|null
 	 */
-	public static function ensure_charge_order( $loan, $kind, $amount_pence, $reason, $as_of ) {
+	public static function ensure_charge_order( $loan, $kind, $amount_pence, $reason, $as_of, $lines = null ) {
 		$kind = preg_replace( '/[^a-z_]/', '', (string) $kind );
-		if ( ! in_array( $kind, array( 'keep', 'late_fee', 'deemed', 'damage' ), true ) ) {
+		if ( ! in_array( $kind, array( 'keep', 'late_fee', 'deemed', 'damage', 'bill' ), true ) ) {
 			return null;
 		}
 		$as_of       = Creature_Demo_Loan_Calendar::today( $as_of );
@@ -2623,18 +3578,27 @@ final class Creature_Demo_Loan {
 			$created->set_billing_email( $loan->get_billing_email() );
 		}
 		$decimal = Creature_Demo_Loan_Money::pence_to_decimal( (int) $amount_pence );
+		$fees    = ( is_array( $lines ) && $lines ) ? $lines : array(
+			array(
+				'kind'  => $kind,
+				'name'  => $reason,
+				'pence' => (int) $amount_pence,
+			),
+		);
 		if ( class_exists( 'WC_Order_Item_Fee' ) && method_exists( $created, 'add_item' ) ) {
-			$fee = new WC_Order_Item_Fee();
-			if ( method_exists( $fee, 'set_name' ) ) {
-				$fee->set_name( $reason );
+			foreach ( $fees as $line ) {
+				$fee = new WC_Order_Item_Fee();
+				if ( method_exists( $fee, 'set_name' ) ) {
+					$fee->set_name( (string) $line['name'] );
+				}
+				if ( method_exists( $fee, 'set_total' ) ) {
+					$fee->set_total( Creature_Demo_Loan_Money::pence_to_decimal( (int) $line['pence'] ) );
+				}
+				if ( method_exists( $fee, 'set_tax_status' ) ) {
+					$fee->set_tax_status( 'none' );
+				}
+				$created->add_item( $fee );
 			}
-			if ( method_exists( $fee, 'set_total' ) ) {
-				$fee->set_total( $decimal );
-			}
-			if ( method_exists( $fee, 'set_tax_status' ) ) {
-				$fee->set_tax_status( 'none' );
-			}
-			$created->add_item( $fee );
 			if ( method_exists( $created, 'calculate_totals' ) ) {
 				$created->calculate_totals( false );
 			}
@@ -2650,6 +3614,14 @@ final class Creature_Demo_Loan {
 		$created->update_meta_data( '_creature_demo_charge_kind', $kind );
 		$created->update_meta_data( '_creature_demo_charge_amount_pence', (int) $amount_pence );
 		$created->update_meta_data( '_creature_demo_charge_paid', 'no' );
+		$created->update_meta_data( '_creature_demo_charge_lines', $fees );
+		$late_pence = 0;
+		foreach ( $fees as $line ) {
+			if ( 'late_fee' === $line['kind'] ) {
+				$late_pence += (int) $line['pence'];
+			}
+		}
+		$created->update_meta_data( '_creature_demo_charge_late_pence', $late_pence );
 		$refs = self::saved_card_refs( $loan );
 		if ( '' !== $refs['customer'] ) {
 			$created->update_meta_data( '_stripe_customer_id', $refs['customer'] );
@@ -2684,17 +3656,29 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * @param string $kind
+	 * The one bill uses the late-fee wording when it is late fees alone, and the
+	 * damage wording when it carries a damage or missing-parts line.
+	 *
+	 * @param string                                $kind
+	 * @param array<int, array<string, mixed>>|null $lines Lines on a bill.
 	 * @return string
 	 */
-	public static function notice_slot( $kind ) {
+	public static function notice_slot( $kind, $lines = null ) {
 		$map  = array(
 			'keep'     => 'charge_notice_keep',
 			'late_fee' => 'charge_notice_late_fee',
 			'deemed'   => 'charge_notice_deemed',
 			'damage'   => 'charge_notice_damage',
+			'bill'     => 'charge_notice_late_fee',
 		);
 		$slot = isset( $map[ $kind ] ) ? $map[ $kind ] : 'charge_notice_late_fee';
+		if ( 'bill' === $kind && is_array( $lines ) ) {
+			foreach ( $lines as $line ) {
+				if ( isset( $line['kind'] ) && in_array( $line['kind'], array( 'damage', 'missing_parts' ), true ) ) {
+					$slot = 'charge_notice_damage';
+				}
+			}
+		}
 		if ( function_exists( 'apply_filters' ) ) {
 			$slot = (string) apply_filters( 'creature_demo_loan_notice_slot', $slot, $kind );
 		}
@@ -2751,36 +3735,14 @@ final class Creature_Demo_Loan {
 			Creature_Demo_Loan_Mail::send_admin( $order, 'admin_return_booked', array() );
 			$order->update_meta_data( '_creature_demo_return_admin_sent', 'yes' );
 		}
-		if ( 'yes' !== self::meta_string( $order, '_creature_demo_return_rider_sent' ) ) {
+		// `_creature_demo_buy_ack_sent` is the old buy acknowledgement. An
+		// order that already got it is not emailed a second time.
+		if ( 'yes' !== self::meta_string( $order, '_creature_demo_return_rider_sent' ) && 'yes' !== self::meta_string( $order, '_creature_demo_buy_ack_sent' ) ) {
 			Creature_Demo_Loan_Mail::send_customer( $order, 'choice_return_recorded', array() );
 			$order->update_meta_data( '_creature_demo_return_rider_sent', 'yes' );
 		}
 		$order->save();
 		return array( 'ok' => true, 'choice' => 'return' );
-	}
-
-	/**
-	 * @param object $order
-	 * @param string $as_of
-	 * @return array<string, mixed>
-	 */
-	private static function choose_buy( $order, $as_of ) {
-		$order->update_meta_data( '_creature_demo_choice', 'buy' );
-		$order->update_meta_data( '_creature_demo_choice_at', $as_of );
-		$status = (string) $order->get_status();
-		if ( in_array( $status, array( self::STATUS_LOAN, self::STATUS_OVERDUE ), true ) ) {
-			$order->update_status( self::STATUS_BOOKED, 'Return booked so the kit can come back before the £25 code is issued.' );
-		}
-		if ( 'yes' !== self::meta_string( $order, '_creature_demo_return_admin_sent' ) ) {
-			Creature_Demo_Loan_Mail::send_admin( $order, 'admin_return_booked', array() );
-			$order->update_meta_data( '_creature_demo_return_admin_sent', 'yes' );
-		}
-		if ( 'yes' !== self::meta_string( $order, '_creature_demo_buy_ack_sent' ) ) {
-			Creature_Demo_Loan_Mail::send_customer( $order, 'choice_buy_recorded', array() );
-			$order->update_meta_data( '_creature_demo_buy_ack_sent', 'yes' );
-		}
-		$order->save();
-		return array( 'ok' => true, 'choice' => 'buy' );
 	}
 
 	/**
@@ -2838,13 +3800,13 @@ final class Creature_Demo_Loan {
 	 */
 	private static function choice_links_plain( $order, $as_of ) {
 		$lines = array();
-		$names = array(
-			'buy'    => 'Buy a new one',
-			'return' => 'Return it',
-			'keep'   => 'Keep the demo kit',
+		$names  = array(
+			'return' => 'Return it (£25 code once it’s back)',
+			'keep'   => 'Keep it for your keep price',
 		);
+		$stored = self::normalize_choice( self::meta_string( $order, '_creature_demo_choice' ) );
 		foreach ( $names as $choice => $label ) {
-			if ( ! self::choice_allowed( $order, $choice, $as_of ) && self::meta_string( $order, '_creature_demo_choice' ) !== $choice ) {
+			if ( ! self::choice_allowed( $order, $choice, $as_of ) && $stored !== $choice ) {
 				continue;
 			}
 			$lines[] = $label . ': ' . self::choice_url( $order, $choice );
@@ -2866,15 +3828,18 @@ final class Creature_Demo_Loan {
 		$charge->update_meta_data( '_creature_demo_charge_notice_amount', (int) $amount_pence );
 		$charge->update_meta_data( '_creature_demo_charge_notice_reason', $reason );
 		$charge->save();
+		$lines = $charge->get_meta( '_creature_demo_charge_lines', true );
 		Creature_Demo_Loan_Mail::send_customer(
 			$loan,
-			self::notice_slot( $kind ),
+			self::notice_slot( $kind, is_array( $lines ) ? $lines : null ),
 			array(
-				'amount' => Creature_Demo_Loan_Money::format_gbp( $amount_pence ),
-				'price'  => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $loan ) ),
-				'reason' => $reason,
-				'link'   => self::payment_link( $charge ),
-				'due'    => self::meta_string( $loan, '_creature_demo_due_date' ),
+				'amount'   => Creature_Demo_Loan_Money::format_gbp( $amount_pence ),
+				'price'    => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $loan ) ),
+				'reason'   => $reason,
+				'link'     => self::payment_link( $charge ),
+				'due'      => self::meta_string( $loan, '_creature_demo_due_date' ),
+				'findings' => self::findings_text( $loan ),
+				'photos'   => self::photo_lines( $loan ),
 			)
 		);
 		self::note( $loan, 'Charge notice logged for ' . Creature_Demo_Loan_Money::format_gbp( $amount_pence ) . ' (' . $reason . '). Payment link emailed. Saved card not charged.' );
@@ -2979,18 +3944,6 @@ final class Creature_Demo_Loan {
 	 */
 	private static function deemed_on_for( $order ) {
 		return Creature_Demo_Loan_Calendar::deemed_on( self::meta_string( $order, '_creature_demo_due_date' ), self::deemed_after_days() );
-	}
-
-	/**
-	 * @param object $order
-	 * @param string $as_of
-	 * @return int
-	 */
-	private static function late_fees_due_pence( $order, $as_of ) {
-		$due  = self::meta_string( $order, '_creature_demo_due_date' );
-		$scan = self::meta_string( $order, '_creature_demo_return_scan_date' );
-		$end  = '' !== $scan ? $scan : $as_of;
-		return Creature_Demo_Loan_Money::late_fee_pence_for_dates( $due, $end );
 	}
 
 	/**
@@ -3927,7 +4880,7 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		$ids = array();
-		foreach ( array( 'keep', 'late_fee', 'deemed', 'damage' ) as $kind ) {
+		foreach ( array( 'keep', 'late_fee', 'deemed', 'damage', 'bill' ) as $kind ) {
 			$id = (int) self::meta_string( $order, '_creature_demo_' . $kind . '_order_id' );
 			if ( $id > 0 ) {
 				$ids[] = $id;
@@ -4026,11 +4979,13 @@ final class Creature_Demo_Loan {
 	 */
 	private static function normalize_choice( $choice ) {
 		$choice = strtolower( trim( (string) $choice ) );
-		if ( 'buy_new' === $choice ) {
-			return 'buy';
+		// `buy` and `buy_new` were the old third choice. Terms 3A.1 have two
+		// choices, so both mean return. Old email links still work.
+		if ( in_array( $choice, array( 'buy', 'buy_new', 'return' ), true ) ) {
+			return 'return';
 		}
-		if ( in_array( $choice, array( 'buy', 'return', 'keep' ), true ) ) {
-			return $choice;
+		if ( 'keep' === $choice ) {
+			return 'keep';
 		}
 		return '';
 	}
@@ -4217,29 +5172,83 @@ final class Creature_Demo_Loan {
 		if ( ! isset( $_POST[ $field ] ) ) {
 			return '';
 		}
-		$value = self::unslash_string( $_POST[ $field ] );
-		return Creature_Demo_Loan_Calendar::is_ymd( $value ) ? $value : '';
+		$value = trim( self::unslash_string( $_POST[ $field ] ) );
+		return Creature_Demo_Loan_Calendar::is_real_ymd( $value ) ? $value : '';
 	}
 
 	/**
 	 * @param object $order
 	 */
 	private static function save_damage_from_post( $order ) {
-		if ( ! isset( $_POST['creature_demo_damage'] ) ) {
+		// Once the bill is final, changing the amounts or the findings would
+		// not change what was billed, so the screen does not overwrite them.
+		if ( '' !== self::meta_string( $order, '_creature_demo_bill_state' ) ) {
 			return;
 		}
-		$raw = self::unslash_string( $_POST['creature_demo_damage'] );
-		$raw = str_replace( ',', '.', $raw );
+		$dirty = false;
+		foreach ( array(
+			'creature_demo_damage'  => '_creature_demo_damage_pence',
+			'creature_demo_missing' => '_creature_demo_missing_pence',
+		) as $field => $meta ) {
+			if ( ! isset( $_POST[ $field ] ) ) {
+				continue;
+			}
+			$pence = self::parse_pounds( self::unslash_string( $_POST[ $field ] ) );
+			if ( null === $pence ) {
+				continue;
+			}
+			$order->update_meta_data( $meta, $pence );
+			$dirty = true;
+		}
+		if ( isset( $_POST['creature_demo_findings'] ) ) {
+			$text = self::unslash_string( $_POST['creature_demo_findings'] );
+			if ( function_exists( 'sanitize_textarea_field' ) ) {
+				$text = sanitize_textarea_field( $text );
+			} else {
+				$text = trim( strip_tags( $text ) );
+			}
+			$order->update_meta_data( '_creature_demo_findings', substr( $text, 0, 5000 ) );
+			$dirty = true;
+		}
+		$photos = array();
+		$posted = false;
+		for ( $i = 1; $i <= self::PHOTO_SLOTS; $i++ ) {
+			$field = 'creature_demo_photo_' . $i;
+			if ( ! isset( $_POST[ $field ] ) ) {
+				continue;
+			}
+			$posted = true;
+			$clean  = self::sanitize_photo_slot( self::unslash_string( $_POST[ $field ] ) );
+			if ( '' !== $clean ) {
+				$photos[] = $clean;
+			}
+		}
+		if ( $posted ) {
+			$order->update_meta_data( '_creature_demo_photos', $photos );
+			$dirty = true;
+		}
+		if ( $dirty ) {
+			$order->save();
+		}
+	}
+
+	/**
+	 * "12", "12.5", "12,50" to pence. Null when it is not an amount.
+	 *
+	 * @param string $raw
+	 * @return int|null
+	 */
+	private static function parse_pounds( $raw ) {
+		$raw = str_replace( ',', '.', trim( (string) $raw ) );
 		if ( ! preg_match( '/^\d+(\.\d{1,2})?$/', $raw ) ) {
-			return;
+			return null;
 		}
 		$parts = explode( '.', $raw );
 		$pence = ( (int) $parts[0] ) * 100;
 		if ( isset( $parts[1] ) ) {
 			$pence += (int) str_pad( substr( $parts[1], 0, 2 ), 2, '0' );
 		}
-		$order->update_meta_data( '_creature_demo_damage_pence', $pence );
-		$order->save();
+		return $pence;
 	}
 
 	/**

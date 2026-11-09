@@ -44,6 +44,13 @@ $GLOBALS['creature_demo_daily_orders']  = array();
 $GLOBALS['creature_demo_fleet']         = array();
 $GLOBALS['creature_demo_is_checkout']   = false;
 $GLOBALS['creature_demo_mail_calls']    = 0;
+$GLOBALS['creature_demo_wp_mail']       = array();
+$GLOBALS['creature_demo_can']           = false;
+$GLOBALS['creature_demo_attached']      = array();
+$GLOBALS['creature_demo_uploads']       = '';
+$GLOBALS['creature_demo_conf_files']    = array();
+$GLOBALS['creature_demo_hook_args']     = array();
+$GLOBALS['creature_demo_copy_override'] = array();
 
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
@@ -170,7 +177,23 @@ if ( ! function_exists( 'get_current_user_id' ) ) {
 if ( ! function_exists( 'current_user_can' ) ) {
 	function current_user_can( $cap ) {
 		unset( $cap );
-		return false;
+		return ! empty( $GLOBALS['creature_demo_can'] );
+	}
+}
+
+if ( ! function_exists( 'get_attached_file' ) ) {
+	function get_attached_file( $id ) {
+		return isset( $GLOBALS['creature_demo_attached'][ (int) $id ] ) ? $GLOBALS['creature_demo_attached'][ (int) $id ] : false;
+	}
+}
+
+if ( ! function_exists( 'wp_upload_dir' ) ) {
+	function wp_upload_dir( $time = null, $create = true ) {
+		unset( $time, $create );
+		return array(
+			'basedir' => isset( $GLOBALS['creature_demo_uploads'] ) ? $GLOBALS['creature_demo_uploads'] : '',
+			'error'   => false,
+		);
 	}
 }
 
@@ -336,10 +359,16 @@ if ( ! function_exists( 'delete_post_meta' ) ) {
 }
 
 if ( ! function_exists( 'wp_mail' ) ) {
-	function wp_mail( $to, $subject, $message ) {
-		unset( $to, $subject, $message );
+	function wp_mail( $to, $subject, $message, $headers = '' ) {
 		$GLOBALS['creature_demo_mail_calls']++;
+		$GLOBALS['creature_demo_wp_mail'][] = array( $to, $subject, $message, $headers );
 		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_get_attachment_url' ) ) {
+	function wp_get_attachment_url( $id ) {
+		return (int) $id > 0 ? 'https://example.com/wp-content/uploads/' . (int) $id . '.jpg' : false;
 	}
 }
 
@@ -938,7 +967,20 @@ function creature_demo_loan( $dispatch = '2026-03-02', $delivery = '2026-03-04' 
 	$order->update_meta_data( '_stripe_source_id', 'pm_test_walker' );
 	Creature_Demo_Loan::store_consent( $order, true, '2026-03-02T12:00:00+00:00' );
 	Creature_Demo_Loan::start_loan( $order, $dispatch, $delivery );
+	// A damage or missing-parts line needs findings (terms 6.4(b)). Tests of the
+	// refusal clear this on purpose.
+	$order->update_meta_data( '_creature_demo_findings', 'Test findings: dented clamp face.' );
 	return $order;
+}
+
+/**
+ * The late fee is no longer charged at the scan. It goes on the one bill when
+ * inspection is recorded. Complete the inspection (once) and return the bill's
+ * charge order.
+ */
+function creature_demo_bill_charge( $loan, $as_of = '2026-03-30' ) {
+	Creature_Demo_Loan::complete_inspection( $loan, $as_of );
+	return wc_get_order( (int) $loan->get_meta( '_creature_demo_bill_order_id' ) );
 }
 
 function creature_demo_stripe_test() {
@@ -1076,7 +1118,6 @@ $expected_slots = array(
 	'mixed_basket_error',
 	'service_area_error',
 	'my_account_heading',
-	'button_buy',
 	'button_return',
 	'button_keep',
 	'reminder_choices_due_minus_5',
@@ -1088,7 +1129,6 @@ $expected_slots = array(
 	'charge_notice_deemed',
 	'charge_notice_damage',
 	'charge_authentication_required',
-	'choice_buy_recorded',
 	'choice_return_recorded',
 	'coupon_issued',
 	'keep_confirm',
@@ -1097,14 +1137,41 @@ $expected_slots = array(
 	'dispute_decision',
 	'admin_dispute_nearing',
 	'admin_return_booked',
+	'admin_bill_due',
 );
-creature_demo_expect( $expected_slots === $slots, 'copy slots match the catalogue' );
+// The three emails Cadence has not written yet are slots with no wording.
+$expected_slots = array_merge( $expected_slots, array() );
+$new_slots      = array( 'charge_declined', 'dates_on_delivery', 'booking_confirmation' );
+creature_demo_expect( array() === array_diff( $new_slots, $slots ), 'the three missing emails are slots' );
+creature_demo_expect( array() === array_diff( $slots, array_merge( $expected_slots, $new_slots ) ) && array() === array_diff( $expected_slots, $slots ), 'copy slots match the catalogue' );
+$empty_slots = array();
 foreach ( $slots as $slot ) {
 	$subject = Creature_Demo_Loan_Copy::subject( $slot );
 	$body    = Creature_Demo_Loan_Copy::text( $slot );
 	$joined  = $subject . $body;
-	creature_demo_expect( false !== strpos( $joined, '[COPY: Cadence]' ), 'slot ' . $slot . ' is marked for Cadence' );
+	creature_demo_absent( $joined, '[COPY: Cadence]', 'slot ' . $slot . ' has no Cadence marker' );
+	creature_demo_absent( $joined, '[NEEDS', 'slot ' . $slot . ' has no needs-input marker' );
+	if ( '' === trim( $joined ) ) {
+		$empty_slots[] = $slot;
+	}
 }
+sort( $empty_slots );
+creature_demo_expect( array( 'booking_confirmation', 'charge_declined', 'dates_on_delivery' ) === $empty_slots, 'exactly the three slots with no Cadence wording are empty' );
+creature_demo_expect( '' === Creature_Demo_Loan_Copy::text( 'no_such_slot' ) && '' === Creature_Demo_Loan_Copy::subject( 'no_such_slot' ), 'an unknown slot returns an empty string, never a marker' );
+$marker_hits = array();
+$tree        = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( dirname( __DIR__, 2 ) . '/creature-demo-loan', FilesystemIterator::SKIP_DOTS ) );
+foreach ( $tree as $file ) {
+	if ( $file->isFile() && false !== strpos( (string) file_get_contents( $file->getPathname() ), '[COPY: Cadence]' ) ) {
+		$marker_hits[] = $file->getFilename();
+	}
+}
+creature_demo_expect( array() === $marker_hits, 'no [COPY: Cadence] marker is left anywhere in the plugin folder' . ( $marker_hits ? ': ' . implode( ', ', $marker_hits ) : '' ) );
+$fixture = file_get_contents( __DIR__ . '/fixtures/appendix-a-consent.txt' );
+creature_demo_expect( is_string( $fixture ) && '' !== $fixture, 'the Appendix A fixture is there' );
+creature_demo_expect( $fixture === Creature_Demo_Loan_Copy::consent_wording( 'version-5' ), 'the version-5 consent wording is the Appendix A fixture, byte for byte' );
+creature_demo_expect( $fixture === Creature_Demo_Loan_Copy::text( 'consent_checkbox' ), 'the checkout checkbox shows the Appendix A wording, byte for byte' );
+creature_demo_expect( 3 === substr_count( $fixture, '’' ), 'the Appendix A wording has its three curly apostrophes' );
+creature_demo_absent( $fixture, "'", 'the Appendix A wording has no straight apostrophe' );
 $consent = Creature_Demo_Loan_Copy::text( 'consent_checkbox' );
 creature_demo_expect( false !== strpos( $consent, '£24' ), 'consent names the £24 late-fee maximum' );
 creature_demo_expect( false !== strpos( $consent, '£212' ), 'consent names the £212 deemed-purchase maximum' );
@@ -1114,7 +1181,7 @@ creature_demo_expect( false !== strpos( $consent, '7 days to pay by link or disp
 creature_demo_expect( false !== strpos( $consent, 'damage or missing parts' ), 'consent covers damage as well as missing parts' );
 creature_demo_expect( false !== strpos( $consent, 'damage or missing parts at published spare-parts prices' ), 'consent prices damage and missing parts from the spare-parts list' );
 
-creature_demo_expect( array() === Creature_Demo_Loan::demo_product_ids(), 'demo product ids stay empty until configured' );
+creature_demo_expect( array( 8946 ) === Creature_Demo_Loan::demo_product_ids(), 'with no constant, filter or setting the demo product is 8946' );
 creature_demo_expect( array( 6687 ) === Creature_Demo_Loan::coupon_product_ids(), 'coupon defaults to De-Reacher product 6687' );
 $GLOBALS['creature_demo_use_product'] = true;
 creature_demo_expect( array( 9001 ) === Creature_Demo_Loan::demo_product_ids(), 'product id filter supplies the demo id' );
@@ -1275,8 +1342,8 @@ creature_demo_expect( false === Creature_Demo_Loan::store_consent( $consent_orde
 creature_demo_expect( true === Creature_Demo_Loan::store_consent( $consent_order, true, '2026-03-02T12:00:00+00:00' ), 'a ticked box is stored' );
 creature_demo_expect( 'yes' === $consent_order->get_meta( '_creature_demo_consent' ), 'consent is recorded as yes' );
 creature_demo_expect( $consent === $consent_order->get_meta( '_creature_demo_consent_wording' ), 'the agreed wording is stored' );
-creature_demo_expect( 'v5b' === $consent_order->get_meta( '_creature_demo_consent_version' ), 'the consent version is v5b' );
-creature_demo_expect( false !== strpos( (string) $consent_order->get_meta( '_creature_demo_consent_wording' ), 'never be more than £212' ), 'the stored v5b wording includes the overall cap' );
+creature_demo_expect( 'version-5' === $consent_order->get_meta( '_creature_demo_consent_version' ), 'the consent version stored for a new order is version-5' );
+creature_demo_expect( false !== strpos( (string) $consent_order->get_meta( '_creature_demo_consent_wording' ), 'never be more than £212' ), 'the stored version-5 wording includes the overall cap' );
 $v4_order = wc_create_order();
 $GLOBALS['creature_demo_consent_version'] = 'v4';
 creature_demo_expect( true === Creature_Demo_Loan::store_consent( $v4_order, true, '2026-03-02T12:00:00+00:00' ), 'a v4 consent can still be stored' );
@@ -1289,7 +1356,7 @@ creature_demo_expect( '2026-03-02T12:00:00+00:00' === $consent_order->get_meta( 
 $_POST['creature_demo_loan_consent'] = '1';
 $checkout_order = wc_create_order();
 Creature_Demo_Loan::on_checkout_create_order( $checkout_order );
-creature_demo_expect( 'v5b' === $checkout_order->get_meta( '_creature_demo_consent_version' ), 'classic checkout stores the consent version' );
+creature_demo_expect( 'version-5' === $checkout_order->get_meta( '_creature_demo_consent_version' ), 'classic checkout stores version-5' );
 $block_order = wc_create_order();
 Creature_Demo_Loan::on_store_api_order(
 	$block_order,
@@ -1392,8 +1459,11 @@ creature_demo_expect( 1 === creature_demo_mail_count( 'reminder_choices_due_minu
 $five = creature_demo_last_mail( 'reminder_choices_due_minus_5' );
 creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === $five['to'], 'the reminder goes to the test inbox' );
 creature_demo_expect( 0 === strpos( $five['subject'], '[TEST] ' ), 'the reminder subject is prefixed [TEST]' );
-creature_demo_expect( false !== strpos( $five['body'], 'creature_demo_choice=buy' ), 'the reminder links to buy' );
+creature_demo_expect( false === strpos( $five['body'], 'creature_demo_choice=buy' ), 'the reminder no longer links to a third buy choice' );
 creature_demo_expect( false !== strpos( $five['body'], 'creature_demo_choice=return' ), 'the reminder links to return' );
+creature_demo_expect( false !== strpos( $five['body'], 'Return it (£25 code once it’s back)' ), 'the return link carries the v5 label' );
+creature_demo_expect( false !== strpos( $five['body'], 'Keep it for your keep price' ), 'the keep link carries the v5 label' );
+creature_demo_expect( 2 === substr_count( $five['body'], 'creature_demo_choice=' ), 'the reminder offers exactly two choices' );
 creature_demo_expect( false !== strpos( $five['body'], 'creature_demo_choice=keep' ), 'the reminder links to keep' );
 creature_demo_expect( 'demo-loan' === $reminded->get_status(), 'the loan is not overdue before the due date' );
 Creature_Demo_Loan::tick( $reminded, '2026-03-24' );
@@ -1417,22 +1487,28 @@ creature_demo_expect( creature_demo_mail_count( 'reminder_choices_due_minus_5' )
 $GLOBALS['creature_demo_daily_orders'] = array();
 
 $buy = creature_demo_loan();
-$buy_mails = creature_demo_mail_count( 'choice_buy_recorded' );
+$buy_mails = creature_demo_mail_count( 'choice_return_recorded' );
 $admin_mails = creature_demo_mail_count( 'admin_return_booked' );
+// `buy` is the retired third choice. A link or form that still sends it is a return.
 $first_buy = Creature_Demo_Loan::choose( $buy, 'buy', '2026-03-10' );
 $second_buy = Creature_Demo_Loan::choose( $buy, 'buy', '2026-03-11' );
-creature_demo_expect( ! empty( $first_buy['ok'] ) && 'buy' === $first_buy['choice'], 'buy new is recorded' );
+$third_buy = Creature_Demo_Loan::choose( $buy, 'return', '2026-03-12' );
+creature_demo_expect( ! empty( $first_buy['ok'] ) && 'return' === $first_buy['choice'], 'the old buy choice is recorded as return' );
 creature_demo_expect( ! empty( $second_buy['idempotent'] ), 'choosing buy twice is idempotent' );
-creature_demo_expect( $buy_mails + 1 === creature_demo_mail_count( 'choice_buy_recorded' ), 'the buy acknowledgement is sent once' );
-creature_demo_expect( $admin_mails + 1 === creature_demo_mail_count( 'admin_return_booked' ), 'buying new still alerts the shop to send the QR' );
-creature_demo_expect( 'demo-booked' === $buy->get_status(), 'buying new books the return' );
-creature_demo_expect( 'buy' === $buy->get_meta( '_creature_demo_choice' ), 'the stored choice stays buy' );
+creature_demo_expect( ! empty( $third_buy['idempotent'] ), 'buy then return is the same choice' );
+creature_demo_expect( $buy_mails + 1 === creature_demo_mail_count( 'choice_return_recorded' ), 'the return acknowledgement is sent once' );
+creature_demo_expect( 0 === creature_demo_mail_count( 'choice_buy_recorded' ), 'the retired buy acknowledgement is never sent' );
+creature_demo_expect( ! in_array( 'choice_buy_recorded', Creature_Demo_Loan_Copy::slots(), true ), 'the choice_buy_recorded slot is retired' );
+creature_demo_expect( ! in_array( 'button_buy', Creature_Demo_Loan_Copy::slots(), true ), 'the button_buy slot is retired' );
+creature_demo_expect( $admin_mails + 1 === creature_demo_mail_count( 'admin_return_booked' ), 'a return still alerts the shop to send the QR' );
+creature_demo_expect( 'demo-booked' === $buy->get_status(), 'a return books the return' );
+creature_demo_expect( 'return' === $buy->get_meta( '_creature_demo_choice' ), 'the stored choice is return' );
 $admin = creature_demo_last_mail( 'admin_return_booked' );
 creature_demo_expect( 'info@creaturecycles.co.uk' === $admin['to'], 'the shop alert goes to the shop' );
 creature_demo_expect( 0 !== strpos( $admin['subject'], '[TEST]' ), 'the shop alert is not prefixed [TEST]' );
-$buy_mail = creature_demo_last_mail( 'choice_buy_recorded' );
-creature_demo_expect( 0 === strpos( $buy_mail['subject'], '[TEST] ' ), 'the buy acknowledgement is prefixed [TEST]' );
-creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === $buy_mail['to'], 'the buy acknowledgement is redirected' );
+$buy_mail = creature_demo_last_mail( 'choice_return_recorded' );
+creature_demo_expect( 0 === strpos( $buy_mail['subject'], '[TEST] ' ), 'the return acknowledgement is prefixed [TEST]' );
+creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === $buy_mail['to'], 'the return acknowledgement is redirected' );
 $rider_filter = Creature_Demo_Loan::filter_customer_recipient( 'rider@example.com', $buy );
 creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === $rider_filter, 'Woo customer mail for a demo order is redirected' );
 $subject_filter = Creature_Demo_Loan::filter_customer_subject( 'Your order', $buy );
@@ -1461,25 +1537,70 @@ $coupon_again = Creature_Demo_Loan::issue_coupon( $buy, '2026-03-24' );
 creature_demo_expect( ! empty( $coupon_again['idempotent'] ) && $inspected['coupon']['code'] === $coupon_again['code'], 'issuing the code twice returns the same code' );
 creature_demo_expect( 1 === count( $GLOBALS['creature_demo_coupons'] ), 'a second issue does not create another coupon' );
 
+// Terms 3A.1 and 3A.5: two choices, and the £25 code on every inspected return.
+$legacy = creature_demo_loan();
+$legacy->update_meta_data( '_creature_demo_choice', 'buy' );
+creature_demo_expect( 'return' === Creature_Demo_Loan::effective_choice( $legacy ), 'an order with a stored buy reads as return' );
+$legacy_mails = creature_demo_mail_count( 'choice_return_recorded' );
+$legacy_again = Creature_Demo_Loan::choose( $legacy, 'return', '2026-03-10' );
+creature_demo_expect( ! empty( $legacy_again['idempotent'] ), 'choosing return on a stored buy changes nothing' );
+creature_demo_expect( $legacy_mails === creature_demo_mail_count( 'choice_return_recorded' ), 'a stored buy gets no second acknowledgement' );
+ob_start();
+Creature_Demo_Loan::render_my_account_choices( $legacy );
+$legacy_html = ob_get_clean();
+creature_demo_expect( false !== strpos( $legacy_html, 'creature_demo_choice=return' ), 'My account shows the return choice for a stored buy' );
+creature_demo_expect( false === strpos( $legacy_html, 'creature_demo_choice=buy' ), 'My account has no buy choice' );
+creature_demo_expect( false !== strpos( $legacy_html, Creature_Demo_Loan_Copy::text( 'button_return' ) ), 'My account labels the return button from the copy slot' );
+Creature_Demo_Loan::record_return_scan( $legacy, '2026-03-20', '2026-03-20' );
+$legacy_done = Creature_Demo_Loan::complete_inspection( $legacy, '2026-03-20' );
+creature_demo_expect( ! empty( $legacy_done['coupon']['code'] ), 'a stored buy still gets the £25 code at inspection' );
+
+$nochoice = creature_demo_loan();
+creature_demo_expect( '' === $nochoice->get_meta( '_creature_demo_choice' ), 'this loan has no stored choice' );
+$coupons_before = count( $GLOBALS['creature_demo_coupons'] );
+Creature_Demo_Loan::record_return_scan( $nochoice, '2026-03-20', '2026-03-20' );
+$nochoice_done = Creature_Demo_Loan::complete_inspection( $nochoice, '2026-03-20' );
+creature_demo_expect( ! empty( $nochoice_done['coupon']['code'] ), 'an inspected return with no choice gets the £25 code' );
+creature_demo_expect( $coupons_before + 1 === count( $GLOBALS['creature_demo_coupons'] ), 'the no-choice return saves one coupon' );
+creature_demo_expect( 'demo-closed' === $nochoice->get_status(), 'a no-choice on-time return closes the loan' );
+
+$return_chosen = creature_demo_loan();
+Creature_Demo_Loan::choose( $return_chosen, 'return', '2026-03-10' );
+Creature_Demo_Loan::record_return_scan( $return_chosen, '2026-03-20', '2026-03-20' );
+$return_done = Creature_Demo_Loan::complete_inspection( $return_chosen, '2026-03-20' );
+creature_demo_expect( ! empty( $return_done['coupon']['code'] ), 'a chosen return gets the £25 code at inspection' );
+
+$paid_keep = creature_demo_loan();
+Creature_Demo_Loan::choose( $paid_keep, 'return', '2026-03-10' );
+$paid_keep->update_meta_data( '_creature_demo_keep_paid', 'yes' );
+$paid_keep_coupon = Creature_Demo_Loan::issue_coupon( $paid_keep, '2026-03-10' );
+creature_demo_expect( empty( $paid_keep_coupon['ok'] ) && 'no_coupon' === $paid_keep_coupon['reason'], 'no code after a keep payment' );
+
+$deemed_back = creature_demo_loan();
+Creature_Demo_Loan::maybe_raise_deemed( $deemed_back, '2026-04-07' );
+$coupons_before = count( $GLOBALS['creature_demo_coupons'] );
+Creature_Demo_Loan::record_return_scan( $deemed_back, '2026-04-09', '2026-04-09' );
+$deemed_back_done = Creature_Demo_Loan::complete_inspection( $deemed_back, '2026-04-09' );
+creature_demo_expect( empty( $deemed_back_done['coupon'] ), 'no code after a deemed purchase, even when the kit comes back' );
+creature_demo_expect( $coupons_before === count( $GLOBALS['creature_demo_coupons'] ), 'a deemed purchase saves no coupon' );
+
 $switch = creature_demo_loan();
 creature_demo_expect( 'return' === Creature_Demo_Loan::effective_choice( $switch ), 'no choice means return' );
-$after_due = Creature_Demo_Loan::choose( $switch, 'buy', '2026-03-25' );
-creature_demo_expect( ! empty( $after_due['ok'] ), 'buy and return can still switch after the due date before a scan' );
-$to_return = Creature_Demo_Loan::choose( $switch, 'return', '2026-03-26' );
-creature_demo_expect( ! empty( $to_return['ok'] ) && 'return' === $switch->get_meta( '_creature_demo_choice' ), 'the rider can switch from buy to return' );
+$after_due = Creature_Demo_Loan::choose( $switch, 'return', '2026-03-25' );
+creature_demo_expect( ! empty( $after_due['ok'] ), 'return can still be chosen after the due date before a scan' );
 $return_mail_count = creature_demo_mail_count( 'choice_return_recorded' );
 $admin_before = creature_demo_mail_count( 'admin_return_booked' );
-$back_to_buy = Creature_Demo_Loan::choose( $switch, 'buy', '2026-03-27' );
-creature_demo_expect( ! empty( $back_to_buy['ok'] ) && 'buy' === $switch->get_meta( '_creature_demo_choice' ), 'the rider can switch from return back to buy' );
-creature_demo_expect( $return_mail_count === creature_demo_mail_count( 'choice_return_recorded' ), 'switching away does not send the return email again' );
+$back_to_return = Creature_Demo_Loan::choose( $switch, 'buy', '2026-03-27' );
+creature_demo_expect( ! empty( $back_to_return['idempotent'] ) && 'return' === $switch->get_meta( '_creature_demo_choice' ), 'the old buy link on a return order changes nothing' );
+creature_demo_expect( $return_mail_count === creature_demo_mail_count( 'choice_return_recorded' ), 'a repeat does not send the return email again' );
 creature_demo_expect( $admin_before === creature_demo_mail_count( 'admin_return_booked' ), 'the shop QR alert is not repeated' );
 Creature_Demo_Loan::record_return_scan( $switch, '2026-03-28', '2026-03-28' );
-$after_scan = Creature_Demo_Loan::choose( $switch, 'return', '2026-03-28' );
-creature_demo_expect( empty( $after_scan['ok'] ) && 'window' === $after_scan['reason'], 'a scan closes buy and return switching' );
+$after_scan = Creature_Demo_Loan::choose( $switch, 'keep', '2026-03-28' );
+creature_demo_expect( empty( $after_scan['ok'] ) && 'window' === $after_scan['reason'], 'a scan closes the keep choice' );
 
 $tight = creature_demo_loan();
 $GLOBALS['creature_demo_switch_until'] = 'due_date';
-$late_switch = Creature_Demo_Loan::choose( $tight, 'buy', '2026-03-25' );
+$late_switch = Creature_Demo_Loan::choose( $tight, 'return', '2026-03-25' );
 creature_demo_expect( empty( $late_switch['ok'] ), 'the due-date window refuses a switch after the due date' );
 $on_due = Creature_Demo_Loan::choose( $tight, 'return', '2026-03-24' );
 creature_demo_expect( ! empty( $on_due['ok'] ), 'the due-date window still allows a choice on the due date' );
@@ -1500,7 +1621,7 @@ $too_soon = Creature_Demo_Loan::maybe_lapse_keep( $lapse, '2026-05-07' );
 creature_demo_expect( empty( $too_soon['ok'] ) && 'too_soon' === $too_soon['reason'], 'six calendar days is too soon to lapse a keep link' );
 $lapsed = Creature_Demo_Loan::maybe_lapse_keep( $lapse, '2026-05-08' );
 creature_demo_expect( ! empty( $lapsed['lapsed'] ), 'seven calendar days lapses an unpaid keep link' );
-creature_demo_expect( 'buy' === $lapse->get_meta( '_creature_demo_choice' ), 'a lapsed keep restores the earlier buy choice' );
+creature_demo_expect( 'return' === $lapse->get_meta( '_creature_demo_choice' ), 'a lapsed keep restores the earlier return choice' );
 creature_demo_expect( 1 === creature_demo_mail_count( 'keep_choice_lapsed' ), 'the lapse email is sent' );
 $lapsed_again = Creature_Demo_Loan::maybe_lapse_keep( $lapse, '2026-05-08' );
 creature_demo_expect( ! empty( $lapsed_again['idempotent'] ), 'lapsing twice is idempotent' );
@@ -1532,8 +1653,8 @@ creature_demo_expect( 'yes' === $keep->get_meta( '_creature_demo_unit_sold' ), '
 creature_demo_expect( '' === $keep->get_meta( '_creature_demo_coupon_code' ), 'keeping the kit does not issue a coupon' );
 creature_demo_expect( $fleet_before + 1 === count( $GLOBALS['creature_demo_fleet'] ), 'the fleet hook runs once' );
 creature_demo_expect( 'keep' === $GLOBALS['creature_demo_fleet'][ count( $GLOBALS['creature_demo_fleet'] ) - 1 ][1], 'the fleet hook records a keep sale' );
-$not_buy = Creature_Demo_Loan::issue_coupon( $keep, '2026-03-10' );
-creature_demo_expect( empty( $not_buy['ok'] ) && 'not_buy' === $not_buy['reason'], 'a kept loan does not get the £25 code' );
+$not_return = Creature_Demo_Loan::issue_coupon( $keep, '2026-03-10' );
+creature_demo_expect( empty( $not_return['ok'] ) && 'not_return' === $not_return['reason'], 'a kept loan does not get the £25 code' );
 
 $inside = creature_demo_loan();
 $inside->update_meta_data( '_creature_demo_late_fees_paid_pence', 2000 );
@@ -1556,11 +1677,14 @@ creature_demo_expect( 1 === $return_sent, 'this return booking emails the rider 
 creature_demo_stripe_test();
 $late = creature_demo_loan();
 $scanned = Creature_Demo_Loan::record_return_scan( $late, '2026-03-30', '2026-03-30' );
-creature_demo_expect( 300 === $scanned['late_fee'], 'the day-6 scan raises a £3 late fee' );
+creature_demo_expect( 300 === $scanned['late_fee'], 'the day-6 scan works out a £3 late fee' );
+creature_demo_expect( '' === $late->get_meta( '_creature_demo_bill_order_id' ) && '' === $late->get_meta( '_creature_demo_late_fee_order_id' ), 'the scan does not charge the late fee on its own (terms 4.4: one bill)' );
+creature_demo_expect( 0 === creature_demo_mail_count( 'charge_notice_late_fee' ), 'no late-fee email goes out at the scan' );
 $repeat_scan = Creature_Demo_Loan::record_return_scan( $late, '2026-04-06', '2026-04-06' );
 creature_demo_expect( ! empty( $repeat_scan['idempotent'] ) && '2026-03-30' === $repeat_scan['scan'], 'a second scan keeps the first date' );
-$late_id = (int) $late->get_meta( '_creature_demo_late_fee_order_id' );
-$late_charge = wc_get_order( $late_id );
+$late_charge = creature_demo_bill_charge( $late );
+$late_id = (int) $late_charge->get_id();
+creature_demo_expect( 300 === (int) $late_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 'bill' === $late_charge->get_meta( '_creature_demo_charge_kind' ), 'inspection raises the bill with the £3 late fee' );
 creature_demo_expect( 'yes' === $late_charge->get_meta( '_creature_demo_charge_notice_logged' ), 'the late-fee notice is logged before any charge' );
 $late_mail = creature_demo_last_mail( 'charge_notice_late_fee' );
 creature_demo_expect( false !== strpos( $late_mail['body'], '£3.00' ), 'the late-fee email names £3' );
@@ -1617,6 +1741,7 @@ $unconsented->update_meta_data( '_stripe_customer_id', 'cus_test_walker' );
 $unconsented->update_meta_data( '_stripe_source_id', 'pm_test_walker' );
 Creature_Demo_Loan::start_loan( $unconsented, '2026-03-02', '2026-03-04' );
 Creature_Demo_Loan::record_return_scan( $unconsented, '2026-03-30', '2026-03-30' );
+Creature_Demo_Loan::complete_inspection( $unconsented, '2026-03-30' );
 $consent_calls = count( WC_Stripe_API::$requests );
 $refused_consent = Creature_Demo_Loan::charge_saved_card( $unconsented, '2026-04-06' );
 creature_demo_expect( 'no_consent' === $refused_consent['code'], 'a charge without recorded consent is refused' );
@@ -1670,7 +1795,7 @@ creature_demo_expect( false !== strpos( $joined_notes, 'pi_test_demo_1' ), 'the 
 
 $retry = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $retry, '2026-03-30', '2026-03-30' );
-$retry_charge = wc_get_order( (int) $retry->get_meta( '_creature_demo_late_fee_order_id' ) );
+$retry_charge = creature_demo_bill_charge( $retry );
 WC_Stripe_API::$response = (object) array(
 	'error' => (object) array(
 		'code'         => 'card_declined',
@@ -1690,7 +1815,7 @@ creature_demo_expect( $retry_charge->get_meta( '_creature_demo_idempotency_key' 
 
 $disputed = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $disputed, '2026-03-30', '2026-03-30' );
-$dispute_charge = wc_get_order( (int) $disputed->get_meta( '_creature_demo_late_fee_order_id' ) );
+$dispute_charge = creature_demo_bill_charge( $disputed );
 Creature_Demo_Loan::mark_disputed( $dispute_charge, '2026-03-30' );
 Creature_Demo_Loan::mark_disputed( $dispute_charge, '2026-03-31' );
 $while_open = Creature_Demo_Loan::charge_saved_card( $disputed, '2026-04-06' );
@@ -1702,8 +1827,12 @@ WC_Stripe_API::$response = (object) array(
 	'id'     => 'pi_test_demo_3',
 	'status' => 'succeeded',
 );
-$after_uphold = Creature_Demo_Loan::charge_saved_card( $disputed, '2026-04-06' );
-creature_demo_expect( ! empty( $after_uphold['ok'] ), 'upholding the dispute lets the charge through' );
+$too_soon_after_uphold = Creature_Demo_Loan::charge_saved_card( $disputed, '2026-04-06' );
+creature_demo_expect( 'notice_too_recent' === $too_soon_after_uphold['code'], 'an upheld charge waits 7 days from the decision email, not from the first notice' );
+creature_demo_expect( $calls_before_uphold === count( WC_Stripe_API::$requests ), 'the early upheld charge does not call Stripe' );
+creature_demo_expect( '2026-04-02' === $dispute_charge->get_meta( '_creature_demo_decision_sent_at' ), 'the decision-sent time is stored on the charge' );
+$after_uphold = Creature_Demo_Loan::charge_saved_card( $disputed, '2026-04-09' );
+creature_demo_expect( ! empty( $after_uphold['ok'] ), 'upholding the dispute lets the charge through 7 days after the decision email' );
 creature_demo_expect( count( WC_Stripe_API::$requests ) === $calls_before_uphold + 1, 'the upheld charge calls Stripe once' );
 $decision_mail = creature_demo_last_mail( 'dispute_decision' );
 creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === $decision_mail['to'], 'the dispute decision is redirected' );
@@ -1711,7 +1840,7 @@ creature_demo_expect( false !== strpos( $decision_mail['body'], 'upheld' ), 'the
 
 $cap_loan = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $cap_loan, '2026-03-30', '2026-03-30' );
-$cap_charge = wc_get_order( (int) $cap_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+$cap_charge = creature_demo_bill_charge( $cap_loan );
 Creature_Demo_Loan::mark_disputed( $cap_charge, '2026-03-30' );
 $cap_key = Creature_Demo_Loan::idempotency_key( $cap_charge );
 $over_cap = Creature_Demo_Loan::record_dispute_decision( $cap_charge, 'upheld', '2026-04-02', 9000 );
@@ -1727,7 +1856,7 @@ creature_demo_expect( $rebuilt_key !== $cap_key && false !== strpos( $rebuilt_ke
 
 $alert_loan = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $alert_loan, '2026-03-30', '2026-03-30' );
-$alert_charge = wc_get_order( (int) $alert_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+$alert_charge = creature_demo_bill_charge( $alert_loan );
 Creature_Demo_Loan::mark_disputed( $alert_charge, '2026-03-30' );
 $alerts = creature_demo_mail_count( 'admin_dispute_nearing' );
 Creature_Demo_Loan::tick( $alert_loan, '2026-04-08' );
@@ -1753,7 +1882,7 @@ creature_demo_expect( isset( $charge_actions['creature_demo_charge_saved_card'] 
 
 $waived = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $waived, '2026-03-30', '2026-03-30' );
-$waive_charge = wc_get_order( (int) $waived->get_meta( '_creature_demo_late_fee_order_id' ) );
+$waive_charge = creature_demo_bill_charge( $waived );
 Creature_Demo_Loan::mark_disputed( $waive_charge, '2026-03-30' );
 Creature_Demo_Loan::record_dispute_decision( $waive_charge, 'waived', '2026-04-20', null );
 $late_decision = Creature_Demo_Loan_Calendar::days_between( '2026-03-30', '2026-04-20' );
@@ -1773,7 +1902,7 @@ $_GET = array(
 	'_wpnonce'             => 'creature_demo_choice_' . $future->get_id(),
 );
 Creature_Demo_Loan::maybe_handle_choice_request();
-creature_demo_expect( 'buy' === $future->get_meta( '_creature_demo_choice' ), 'a nonce from the account holder records the choice' );
+creature_demo_expect( 'return' === $future->get_meta( '_creature_demo_choice' ), 'a nonce from the account holder records the choice, and an old buy link is a return' );
 $stranger = creature_demo_loan( $handler_day, $handler_day );
 $GLOBALS['creature_demo_user'] = 7;
 $_GET = array(
@@ -1951,8 +2080,12 @@ $with9_over->save();
 $room9_over = Creature_Demo_Loan::raise_damage_charge( $with9_over, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 20300 === $room9_over['amount'] && ! empty( $room9_over['clamped'] ), '£9 of late fees leaves £203 of damage' );
 creature_demo_expect( '900' === (string) $fee9->get_meta( '_creature_demo_charge_amount_pence' ), 'the £9 late fee stays as billed' );
-$zero = Creature_Demo_Loan::raise_damage_charge( $capped, 0, 'Damage', '2026-03-20' );
+$zero_loan = creature_demo_loan();
+$zero = Creature_Demo_Loan::raise_damage_charge( $zero_loan, 0, 'Damage', '2026-03-20' );
 creature_demo_expect( empty( $zero['ok'] ) && 'no_amount' === $zero['reason'], 'a zero damage amount does not create a charge' );
+creature_demo_expect( '' === $zero_loan->get_meta( '_creature_demo_bill_state' ), 'a zero amount does not close the bill' );
+$capped_again = Creature_Demo_Loan::raise_damage_charge( $capped, 100, 'Damage', '2026-03-21' );
+creature_demo_expect( ! empty( $capped_again['idempotent'] ) && $cap['order_id'] === $capped_again['order_id'], 'a second damage call returns the same bill and does not raise another' );
 
 $pan = '4242424242424242';
 $secret_body = 'sk_test_' . 'placeholder';
@@ -2029,7 +2162,7 @@ creature_demo_expect( ! empty( $mail_hooks['woocommerce_email_subject_customer_n
 
 $cancel_loan = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $cancel_loan, '2026-03-30', '2026-03-30' );
-$cancel_charge = wc_get_order( (int) $cancel_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+$cancel_charge = creature_demo_bill_charge( $cancel_loan );
 $cancel_charge->update_status( 'cancelled', 'Unpaid demo charge cancelled so it is not taken as well as a later charge.' );
 creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === Creature_Demo_Loan::filter_customer_recipient( 'rider@example.com', $cancel_charge ), 'a cancelled charge order email is redirected' );
 creature_demo_expect( 0 === strpos( Creature_Demo_Loan::filter_customer_subject( 'Cancelled order', $cancel_charge ), '[TEST] ' ), 'a cancelled charge order subject is prefixed' );
@@ -2070,7 +2203,7 @@ $GLOBALS['creature_demo_cart'] = $saved_cart;
 
 $race = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $race, '2026-03-30', '2026-03-30' );
-$race_charge = wc_get_order( (int) $race->get_meta( '_creature_demo_late_fee_order_id' ) );
+$race_charge = creature_demo_bill_charge( $race );
 $pay_first   = Creature_Demo_Loan::begin_pay_link( $race_charge );
 creature_demo_expect( ! empty( $pay_first['ok'] ) && 'pay_link' === creature_demo_lock_owner( $race_charge ), 'the pay link takes the charge lock' );
 $race_calls   = count( WC_Stripe_API::$requests );
@@ -2081,7 +2214,7 @@ creature_demo_expect( 'pay_link' === creature_demo_lock_owner( $race_charge ), '
 
 $upe = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $upe, '2026-03-30', '2026-03-30' );
-$upe_charge = wc_get_order( (int) $upe->get_meta( '_creature_demo_late_fee_order_id' ) );
+$upe_charge = creature_demo_bill_charge( $upe );
 $upe_charge->update_meta_data( '_stripe_intent_id', 'pi_test_upe' );
 $upe_charge->update_meta_data( '_stripe_intent_status', 'requires_payment_method' );
 $upe_charge->save();
@@ -2112,7 +2245,7 @@ creature_demo_expect( 'pending' === $upe_charge->get_status(), 'the in-progress 
 
 $done_link = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $done_link, '2026-03-30', '2026-03-30' );
-$done_charge = wc_get_order( (int) $done_link->get_meta( '_creature_demo_late_fee_order_id' ) );
+$done_charge = creature_demo_bill_charge( $done_link );
 $done_charge->payment_complete( 'pi_test_paylink' );
 $done_calls   = count( WC_Stripe_API::$requests );
 $done_refused = Creature_Demo_Loan::charge_saved_card( $done_link, '2026-04-06' );
@@ -2122,7 +2255,7 @@ creature_demo_expect( '300' === (string) $done_link->get_meta( '_creature_demo_l
 
 $held = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $held, '2026-03-30', '2026-03-30' );
-$held_charge = wc_get_order( (int) $held->get_meta( '_creature_demo_late_fee_order_id' ) );
+$held_charge = creature_demo_bill_charge( $held );
 $held_charge->update_meta_data( '_creature_demo_charge_lock', 'saved_card' );
 $held_charge->update_meta_data( '_creature_demo_charge_lock_at', (string) time() );
 $held_charge->save();
@@ -2139,7 +2272,7 @@ creature_demo_expect( ! empty( $GLOBALS['creature_demo_notices'] ), 'the pay act
 
 $flip = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $flip, '2026-03-30', '2026-03-30' );
-$flip_charge = wc_get_order( (int) $flip->get_meta( '_creature_demo_late_fee_order_id' ) );
+$flip_charge = creature_demo_bill_charge( $flip );
 $flip_second = true;
 $flip_hook   = static function ( $order ) use ( $flip_charge, &$flip_second ) {
 	if ( is_object( $order ) && (int) $order->get_id() === (int) $flip_charge->get_id() ) {
@@ -2158,7 +2291,7 @@ creature_demo_expect( $flip_calls < count( WC_Stripe_API::$requests ), 'the save
 
 $paid_mid = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $paid_mid, '2026-03-30', '2026-03-30' );
-$paid_mid_charge = wc_get_order( (int) $paid_mid->get_meta( '_creature_demo_late_fee_order_id' ) );
+$paid_mid_charge = creature_demo_bill_charge( $paid_mid );
 $paid_hook       = static function ( $order ) {
 	$order->update_meta_data( '_creature_demo_charge_paid', 'yes' );
 	$order->save();
@@ -2173,7 +2306,7 @@ creature_demo_expect( false === creature_demo_lock_row( $paid_mid_charge ), 'the
 
 $abandoned = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $abandoned, '2026-03-30', '2026-03-30' );
-$abandoned_charge = wc_get_order( (int) $abandoned->get_meta( '_creature_demo_late_fee_order_id' ) );
+$abandoned_charge = creature_demo_bill_charge( $abandoned );
 $abandoned_charge->update_meta_data( '_stripe_intent_id', 'pi_test_abandoned' );
 $abandoned_charge->update_meta_data( '_stripe_intent_status', 'requires_payment_method' );
 $abandoned_charge->save();
@@ -2197,7 +2330,7 @@ creature_demo_expect( 900 === Creature_Demo_Loan::charge_lock_stale_seconds(), '
 $GLOBALS['creature_demo_lock_now'] = 1700000000;
 $declined_link = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $declined_link, '2026-03-30', '2026-03-30' );
-$declined_charge = wc_get_order( (int) $declined_link->get_meta( '_creature_demo_late_fee_order_id' ) );
+$declined_charge = creature_demo_bill_charge( $declined_link );
 creature_demo_expect( ! empty( Creature_Demo_Loan::begin_pay_link( $declined_charge )['ok'] ), 'a declined-link test can open the pay link' );
 $declined_lock = creature_demo_lock_row( $declined_charge );
 creature_demo_expect( is_array( $declined_lock ) && 1700000000 === (int) $declined_lock['at'] && 'pay_link' === $declined_lock['owner'], 'the pay-link lock stores the owner and the time it was taken' );
@@ -2210,21 +2343,21 @@ creature_demo_expect( $declined_posts < count( WC_Stripe_API::$requests ), 'a de
 
 $cancelled_link = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $cancelled_link, '2026-03-30', '2026-03-30' );
-$cancelled_charge = wc_get_order( (int) $cancelled_link->get_meta( '_creature_demo_late_fee_order_id' ) );
+$cancelled_charge = creature_demo_bill_charge( $cancelled_link );
 Creature_Demo_Loan::begin_pay_link( $cancelled_charge );
 do_action( 'woocommerce_order_status_cancelled', $cancelled_charge->get_id(), $cancelled_charge );
 creature_demo_expect( false === creature_demo_lock_row( $cancelled_charge ), 'a cancelled pay-link payment releases the lock' );
 
 $stripe_fail = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $stripe_fail, '2026-03-30', '2026-03-30' );
-$stripe_fail_charge = wc_get_order( (int) $stripe_fail->get_meta( '_creature_demo_late_fee_order_id' ) );
+$stripe_fail_charge = creature_demo_bill_charge( $stripe_fail );
 Creature_Demo_Loan::begin_pay_link( $stripe_fail_charge );
 do_action( 'wc_gateway_stripe_process_payment_error', new WP_Error( 'card_declined', 'declined' ), $stripe_fail_charge );
 creature_demo_expect( false === creature_demo_lock_row( $stripe_fail_charge ), 'a Stripe pay-link failure releases the lock' );
 
 $left_link = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $left_link, '2026-03-30', '2026-03-30' );
-$left_charge = wc_get_order( (int) $left_link->get_meta( '_creature_demo_late_fee_order_id' ) );
+$left_charge = creature_demo_bill_charge( $left_link );
 Creature_Demo_Loan::begin_pay_link( $left_charge );
 $left_fresh = count( WC_Stripe_API::$requests );
 $left_now = Creature_Demo_Loan::charge_saved_card( $left_link, '2026-04-06' );
@@ -2243,7 +2376,7 @@ foreach ( $intent_statuses as $intent_status ) {
 		$GLOBALS['creature_demo_lock_now'] = 1700000000;
 		$intent_loan = creature_demo_loan();
 		Creature_Demo_Loan::record_return_scan( $intent_loan, '2026-03-30', '2026-03-30' );
-		$intent_charge = wc_get_order( (int) $intent_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+		$intent_charge = creature_demo_bill_charge( $intent_loan );
 		$intent_charge->update_meta_data( '_stripe_intent_id', 'pi_test_lookup' );
 		$intent_charge->save();
 		creature_demo_plant_lock( $intent_charge, 'pay_link', 1700000000 - $intent_age, 'intent-' . $intent_status . '-' . $intent_age );
@@ -2277,7 +2410,7 @@ foreach ( array( 0, 900 ) as $fail_age ) {
 	$GLOBALS['creature_demo_lock_now'] = 1700000000;
 	$fail_loan = creature_demo_loan();
 	Creature_Demo_Loan::record_return_scan( $fail_loan, '2026-03-30', '2026-03-30' );
-	$fail_charge = wc_get_order( (int) $fail_loan->get_meta( '_creature_demo_late_fee_order_id' ) );
+	$fail_charge = creature_demo_bill_charge( $fail_loan );
 	$fail_charge->update_meta_data( '_stripe_intent_id', 'pi_test_lookup_fail' );
 	$fail_charge->update_meta_data( '_stripe_intent_status', 'processing' );
 	$fail_charge->save();
@@ -2315,7 +2448,7 @@ WC_Stripe_API::$response = (object) array(
 
 $meta_ignored = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $meta_ignored, '2026-03-30', '2026-03-30' );
-$meta_ignored_charge = wc_get_order( (int) $meta_ignored->get_meta( '_creature_demo_late_fee_order_id' ) );
+$meta_ignored_charge = creature_demo_bill_charge( $meta_ignored );
 $meta_ignored_charge->update_meta_data( '_stripe_intent_id', 'pi_test_meta_ignored' );
 $meta_ignored_charge->update_meta_data( '_stripe_intent_status', 'processing' );
 $meta_ignored_charge->save();
@@ -2568,6 +2701,7 @@ function creature_demo_booked_loan( $bundle_price ) {
 	$order->update_meta_data( '_stripe_source_id', 'pm_test_walker' );
 	Creature_Demo_Loan::on_checkout_create_order( $order );
 	Creature_Demo_Loan::start_loan( $order, '2026-03-02', '2026-03-04' );
+	$order->update_meta_data( '_creature_demo_findings', 'Test findings: dented clamp face.' );
 	$GLOBALS['creature_demo_cart']        = $saved_cart;
 	$GLOBALS['creature_demo_use_product'] = $saved_use;
 	$_POST                                = $saved_post;
@@ -2748,19 +2882,332 @@ $wide_loan->update_meta_data( '_creature_demo_late_fee_order_id', $tight_fee->ge
 $wide_r = Creature_Demo_Loan::raise_damage_charge( $wide_loan, 3500, 'Inverted mount kit', '2026-03-20' );
 creature_demo_expect( ! empty( $wide_r['ok'] ) && 3500 === $wide_r['amount'] && empty( $wide_r['clamped'] ), 'a £35 mount kit still charges in full on a £212 loan with £24 of late fees' );
 
+/**
+ * Charge orders raised against one loan.
+ */
+function creature_demo_charge_orders_for( $loan ) {
+	$n = 0;
+	foreach ( $GLOBALS['creature_demo_orders'] as $candidate ) {
+		if ( (int) $candidate->get_meta( '_creature_demo_parent_loan_id' ) === (int) $loan->get_id() ) {
+			$n++;
+		}
+	}
+	return $n;
+}
+
+function creature_demo_charge_mail_count() {
+	return creature_demo_mail_count( 'charge_notice_late_fee' ) + creature_demo_mail_count( 'charge_notice_damage' );
+}
+
+// Return dispatch date (terms 3.3): the earlier of the proof of posting and the first scan.
+$dd_none = creature_demo_loan();
+creature_demo_expect( '' === Creature_Demo_Loan::dispatch_date( $dd_none ), 'with no posting date and no scan there is no dispatch date' );
+$dd_post   = creature_demo_loan();
+$dd_post_r = Creature_Demo_Loan::record_return_posted( $dd_post, '2026-04-02' );
+creature_demo_expect( ! empty( $dd_post_r['ok'] ) && '2026-04-02' === Creature_Demo_Loan::dispatch_date( $dd_post ), 'a posting date on its own is the dispatch date' );
+$dd_post_again = Creature_Demo_Loan::record_return_posted( $dd_post, '2026-04-02' );
+creature_demo_expect( ! empty( $dd_post_again['idempotent'] ), 'the same posting date twice is idempotent' );
+$dd_scan   = creature_demo_loan();
+$dd_scan_r = Creature_Demo_Loan::record_return_scan( $dd_scan, '2026-04-02', '2026-04-02' );
+creature_demo_expect( '2026-04-02' === $dd_scan_r['dispatch'] && 1200 === $dd_scan_r['late_fee'], 'a scan on its own is the dispatch date, and 4 late days are £12' );
+$dd_both = creature_demo_loan();
+Creature_Demo_Loan::record_return_posted( $dd_both, '2026-03-28' );
+$dd_both_r = Creature_Demo_Loan::record_return_scan( $dd_both, '2026-04-02', '2026-04-02' );
+creature_demo_expect( '2026-03-28' === $dd_both_r['dispatch'] && 0 === $dd_both_r['late_fee'], 'a posting date inside the grace period beats a later scan: no late fee' );
+creature_demo_expect( '2026-04-02' === $dd_both->get_meta( '_creature_demo_return_scan_date' ), 'the scan date is still stored as scanned' );
+$dd_later = creature_demo_loan();
+Creature_Demo_Loan::record_return_posted( $dd_later, '2026-04-05' );
+$dd_later_r = Creature_Demo_Loan::record_return_scan( $dd_later, '2026-04-02', '2026-04-02' );
+creature_demo_expect( '2026-04-02' === $dd_later_r['dispatch'] && 1200 === $dd_later_r['late_fee'], 'when the scan is the earlier date it sets the late-fee end date' );
+$dd_after_scan = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $dd_after_scan, '2026-04-08', '2026-04-08' );
+$dd_after_scan_r = Creature_Demo_Loan::record_return_posted( $dd_after_scan, '2026-04-05' );
+creature_demo_expect( ! empty( $dd_after_scan_r['ok'] ) && '2026-04-05' === $dd_after_scan_r['dispatch'], 'a posting date entered after the scan still counts' );
+foreach ( array( '2026-02-30', '2026-13-01', '31/03/2026', 'garbage', '', '2026-4-2' ) as $bad ) {
+	$bad_r = Creature_Demo_Loan::record_return_posted( $dd_none, $bad );
+	creature_demo_expect( empty( $bad_r['ok'] ) && 'bad_date' === $bad_r['reason'], 'posting date "' . $bad . '" is refused' );
+}
+creature_demo_expect( '' === $dd_none->get_meta( '_creature_demo_return_posted_date' ), 'a refused posting date is not stored' );
+$_POST = array(
+	'creature_demo_loan_admin_nonce'   => 'creature_demo_loan_admin',
+	'creature_demo_return_posted_date' => '2026-02-30',
+);
+Creature_Demo_Loan::save_meta_box( $dd_none->get_id(), $dd_none );
+creature_demo_expect( '' === $dd_none->get_meta( '_creature_demo_return_posted_date' ), 'the order screen ignores an impossible date' );
+$_POST['creature_demo_return_posted_date'] = '2026-03-27';
+Creature_Demo_Loan::save_meta_box( $dd_none->get_id(), $dd_none );
+creature_demo_expect( '2026-03-27' === $dd_none->get_meta( '_creature_demo_return_posted_date' ), 'the order screen saves a Y-m-d proof of posting date' );
+ob_start();
+Creature_Demo_Loan::render_meta_box( $dd_none );
+$meta_html = ob_get_clean();
+creature_demo_expect( false !== strpos( $meta_html, 'name="creature_demo_return_posted_date"' ) && false !== strpos( $meta_html, 'Proof of posting date' ), 'the order screen has a proof of posting date field' );
+creature_demo_expect( strpos( $meta_html, 'name="creature_demo_return_scan_date"' ) < strpos( $meta_html, 'name="creature_demo_return_posted_date"' ), 'the posting date field sits beside the return scan date' );
+$_POST = array();
+
+// The deemed-purchase trigger uses the dispatch date.
+$dp_ok = creature_demo_loan();
+Creature_Demo_Loan::record_return_posted( $dp_ok, '2026-04-06' );
+$dp_ok_r = Creature_Demo_Loan::record_return_scan( $dp_ok, '2026-04-09', '2026-04-09' );
+creature_demo_expect( empty( $dp_ok_r['after_deemed'] ), 'posted on day 13 and scanned on day 16 is not a deemed purchase' );
+creature_demo_expect( '' === $dp_ok->get_meta( '_creature_demo_deemed_order_id' ) && 'demo-inspect' === $dp_ok->get_status(), 'no deemed charge is raised and the kit goes to inspection' );
+creature_demo_expect( 2400 === $dp_ok_r['late_fee'], 'the late fee runs to the posting date, capped at £24' );
+$dp_late = creature_demo_loan();
+Creature_Demo_Loan::record_return_posted( $dp_late, '2026-04-07' );
+$dp_late_r = Creature_Demo_Loan::record_return_scan( $dp_late, '2026-04-07', '2026-04-07' );
+creature_demo_expect( ! empty( $dp_late_r['after_deemed'] ) && 'demo-deemed' === $dp_late->get_status(), 'a dispatch date on day 14 is a deemed purchase' );
+$dp_wait = creature_demo_loan();
+Creature_Demo_Loan::record_return_posted( $dp_wait, '2026-04-05' );
+$dp_wait_r = Creature_Demo_Loan::maybe_raise_deemed( $dp_wait, '2026-04-08' );
+creature_demo_expect( empty( $dp_wait_r['ok'] ) && 'posted' === $dp_wait_r['reason'], 'posted before day 14 and not yet scanned is not deemed' );
+Creature_Demo_Loan::tick( $dp_wait, '2026-04-08' );
+creature_demo_expect( 'demo-deemed' !== $dp_wait->get_status(), 'the daily check leaves a posted kit alone' );
+$dp_after = creature_demo_loan();
+Creature_Demo_Loan::record_return_posted( $dp_after, '2026-04-07' );
+$dp_after_r = Creature_Demo_Loan::maybe_raise_deemed( $dp_after, '2026-04-08' );
+creature_demo_expect( ! empty( $dp_after_r['ok'] ), 'a posting date on day 14 does not stop the deemed purchase' );
+$dp_none = creature_demo_loan();
+$dp_none_r = Creature_Demo_Loan::maybe_raise_deemed( $dp_none, '2026-04-07' );
+creature_demo_expect( ! empty( $dp_none_r['ok'] ) && 21200 === $dp_none_r['amount'], 'with neither date set the deemed purchase behaves as before' );
+
+// One bill for late fees, damage and missing parts (terms 4.4, Appendix C).
+$ob = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $ob, '2026-04-02', '2026-04-02' );
+creature_demo_expect( 0 === creature_demo_charge_orders_for( $ob ), 'nothing is charged at the scan' );
+$ob->update_meta_data( '_creature_demo_damage_pence', 2000 );
+$ob->update_meta_data( '_creature_demo_missing_pence', 3500 );
+$ob_mails = creature_demo_charge_mail_count();
+$ob_done  = Creature_Demo_Loan::complete_inspection( $ob, '2026-04-02' );
+$ob_order = wc_get_order( (int) $ob->get_meta( '_creature_demo_bill_order_id' ) );
+creature_demo_expect( ! empty( $ob_done['ok'] ) && 'raised' === $ob->get_meta( '_creature_demo_bill_state' ), 'inspection raises the bill' );
+creature_demo_expect( 1 === creature_demo_charge_orders_for( $ob ), 'late fee, damage and missing parts are one charge order' );
+creature_demo_expect( 6700 === (int) $ob_order->get_meta( '_creature_demo_charge_amount_pence' ) && '67.00' === $ob_order->get_total(), 'the bill totals £12 + £20 + £35' );
+$ob_lines = $ob_order->get_meta( '_creature_demo_charge_lines' );
+creature_demo_expect( 3 === count( $ob_lines ) && array( 'late_fee', 'damage', 'missing_parts' ) === array_column( $ob_lines, 'kind' ) && array( 1200, 2000, 3500 ) === array_column( $ob_lines, 'pence' ), 'the bill has one line per item' );
+creature_demo_expect( $ob_mails + 1 === creature_demo_charge_mail_count(), 'one bill email goes out' );
+$ob_mail = creature_demo_last_mail( 'charge_notice_damage' );
+creature_demo_expect( false !== strpos( $ob_mail['body'], '£67.00' ), 'the bill email names the total' );
+creature_demo_expect( false !== strpos( $ob_mail['body'], 'Late fees for the demo loan: £12.00' ) && false !== strpos( $ob_mail['body'], 'Damage: £20.00' ) && false !== strpos( $ob_mail['body'], 'Missing parts: £35.00' ), 'the bill email lists every line' );
+$ob_again = Creature_Demo_Loan::raise_damage_charge( $ob, 100, 'Damage', '2026-04-03' );
+creature_demo_expect( ! empty( $ob_again['idempotent'] ) && 1 === creature_demo_charge_orders_for( $ob ), 'a second damage entry does not raise a second bill' );
+creature_demo_expect( ! empty( Creature_Demo_Loan::complete_inspection( $ob, '2026-04-04' )['idempotent'] ) && $ob_mails + 1 === creature_demo_charge_mail_count(), 'inspecting twice does not send a second bill' );
+creature_demo_expect( ! empty( $ob_done['coupon']['code'] ), 'a billed return still gets the £25 code' );
+
+// A late fee on its own uses the late-fee wording.
+$lo = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $lo, '2026-04-02', '2026-04-02' );
+$lo_mails = creature_demo_mail_count( 'charge_notice_late_fee' );
+Creature_Demo_Loan::complete_inspection( $lo, '2026-04-02' );
+creature_demo_expect( $lo_mails + 1 === creature_demo_mail_count( 'charge_notice_late_fee' ), 'a late-fee-only bill uses the late-fee email' );
+creature_demo_expect( 1200 === (int) wc_get_order( (int) $lo->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_amount_pence' ), 'the late-fee-only bill is £12' );
+
+// A clean return has no bill. No scan or posting date means no late-fee line.
+$clean = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $clean, '2026-03-20', '2026-03-20' );
+$clean_done = Creature_Demo_Loan::complete_inspection( $clean, '2026-03-20' );
+creature_demo_expect( ! empty( $clean_done['ok'] ) && 'none' === $clean->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $clean ), 'an on-time clean return has no bill' );
+creature_demo_expect( 'demo-closed' === $clean->get_status(), 'an on-time clean return closes the loan' );
+$undated = creature_demo_loan();
+$undated->update_meta_data( '_creature_demo_damage_pence', 2000 );
+Creature_Demo_Loan::complete_inspection( $undated, '2026-04-02' );
+creature_demo_expect( 2000 === (int) wc_get_order( (int) $undated->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_amount_pence' ), 'with neither date set the bill has no late-fee line' );
+
+// Caps across the whole bill: £24 on late fees, and the overall cap on the total.
+$cp = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $cp, '2026-04-06', '2026-04-06' );
+$cp->update_meta_data( '_creature_demo_damage_pence', 18000 );
+$cp->update_meta_data( '_creature_demo_missing_pence', 3500 );
+$cp_done = Creature_Demo_Loan::complete_inspection( $cp, '2026-04-06' );
+$cp_lines = wc_get_order( (int) $cp->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_lines' );
+creature_demo_expect( 21200 === $cp_done['bill']['amount'], 'late fee, damage and missing parts together stop at £212' );
+creature_demo_expect( array( 2400, 18000, 800 ) === array_column( $cp_lines, 'pence' ), 'the late fee stays £24 and missing parts take what is left' );
+creature_demo_expect( ! empty( $cp_done['bill']['clamped'] ) && 2700 === $cp_done['bill']['reduced_pence'], 'the bill records how much was clamped' );
+$cp_small = creature_demo_booked_loan( '50.00' );
+creature_demo_expect( 1300 === Creature_Demo_Loan::loan_keep_price_pence( $cp_small ), 'a £50 bundle gives a £13 keep price' );
+Creature_Demo_Loan::record_return_scan( $cp_small, '2026-04-06', '2026-04-06' );
+$cp_small->update_meta_data( '_creature_demo_damage_pence', 5000 );
+$cp_small_done = Creature_Demo_Loan::complete_inspection( $cp_small, '2026-04-06' );
+creature_demo_expect( 1300 === $cp_small_done['bill']['amount'] && array( 1300 ) === array_column( wc_get_order( (int) $cp_small->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_lines' ), 'pence' ), 'the late fee is held to the overall cap on a small keep price, and damage gets nothing' );
+$cp_cheap = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $cp_cheap, '2026-04-20', '2026-04-20' );
+creature_demo_expect( 'demo-deemed' === $cp_cheap->get_status(), 'a scan after day 14 is still a deemed purchase, not a bill' );
+
+// Day 5 working days: the shop is warned on day 4 and a late-fee-only bill goes out after day 5.
+// 2026-04-02 is a Thursday. Day 4 is Wed 04-08, day 5 is Thu 04-09 (Saturday and Sunday are skipped).
+$fb = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $fb, '2026-04-02', '2026-04-02' );
+creature_demo_expect( '2026-04-02' === $fb->get_meta( '_creature_demo_received_date' ), 'the scan starts the bill clock when no received date was entered' );
+$fb->update_meta_data( '_creature_demo_damage_pence', 2000 );
+$warns = creature_demo_mail_count( 'admin_bill_due' );
+Creature_Demo_Loan::tick( $fb, '2026-04-07' );
+creature_demo_expect( $warns === creature_demo_mail_count( 'admin_bill_due' ), 'no warning before working day 4' );
+Creature_Demo_Loan::tick( $fb, '2026-04-08' );
+Creature_Demo_Loan::tick( $fb, '2026-04-08' );
+creature_demo_expect( $warns + 1 === creature_demo_mail_count( 'admin_bill_due' ), 'the shop is emailed once on working day 4' );
+$warn_mail = creature_demo_last_mail( 'admin_bill_due' );
+creature_demo_expect( 'info@creaturecycles.co.uk' === $warn_mail['to'] && 0 !== strpos( $warn_mail['subject'], '[TEST]' ), 'the working day 4 warning goes to info@' );
+Creature_Demo_Loan::tick( $fb, '2026-04-09' );
+creature_demo_expect( '' === $fb->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $fb ), 'working day 5 itself is still inside the window' );
+creature_demo_expect( $warns + 1 === creature_demo_mail_count( 'admin_bill_due' ), 'the warning is not repeated on day 5' );
+$fb_mails = creature_demo_charge_mail_count();
+Creature_Demo_Loan::tick( $fb, '2026-04-10' );
+Creature_Demo_Loan::tick( $fb, '2026-04-11' );
+creature_demo_expect( 'late_only' === $fb->get_meta( '_creature_demo_bill_state' ), 'once day 5 has passed uninspected the bill window closes' );
+creature_demo_expect( 1 === creature_demo_charge_orders_for( $fb ) && $fb_mails + 1 === creature_demo_charge_mail_count(), 'one late-fee-only bill goes out, once' );
+creature_demo_expect( 1200 === (int) wc_get_order( (int) $fb->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_amount_pence' ), 'the late-fee-only bill leaves out the damage that was entered' );
+$fb_damage = Creature_Demo_Loan::raise_damage_charge( $fb, 2000, 'Damage', '2026-04-13' );
+creature_demo_expect( empty( $fb_damage['ok'] ) && 'bill_closed' === $fb_damage['reason'], 'a later damage charge on that loan is refused' );
+$fb_bill = Creature_Demo_Loan::raise_bill( $fb, '2026-04-13' );
+creature_demo_expect( ! empty( $fb_bill['idempotent'] ) || empty( $fb_bill['ok'] ), 'a later bill on that loan is not raised' );
+$fb_coupons = count( $GLOBALS['creature_demo_coupons'] );
+$fb_done = Creature_Demo_Loan::complete_inspection( $fb, '2026-04-13' );
+creature_demo_expect( ! empty( $fb_done['ok'] ) && 1 === creature_demo_charge_orders_for( $fb ), 'inspecting after the window raises no second bill' );
+creature_demo_expect( $fb_coupons + 1 === count( $GLOBALS['creature_demo_coupons'] ), 'the £25 code is still issued on the late inspected return' );
+creature_demo_expect( false !== strpos( implode( "\n", $fb->notes ), 'not charged' ), 'the order notes say the damage is not charged' );
+$fb_tick_after = creature_demo_charge_mail_count();
+Creature_Demo_Loan::tick( $fb, '2026-04-20' );
+creature_demo_expect( $fb_tick_after === creature_demo_charge_mail_count(), 'the daily check does nothing more once the bill is final' );
+
+// Received over a Friday: Fri 2026-03-27, day 4 is Thu 04-02, day 5 is Fri 04-03.
+$wk = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $wk, '2026-03-26', '2026-03-27' );
+Creature_Demo_Loan::tick( $wk, '2026-04-01' );
+creature_demo_expect( 0 === creature_demo_charge_orders_for( $wk ) && '' === $wk->get_meta( '_creature_demo_bill_state' ), 'three working days in, no fallback yet' );
+Creature_Demo_Loan::tick( $wk, '2026-04-04' );
+creature_demo_expect( 'late_only' === $wk->get_meta( '_creature_demo_bill_state' ), 'the Saturday after day 5 falls back to a late-fee-only bill' );
+
+// No late fee to bill: the window still closes, with no order.
+$fb0 = creature_demo_loan();
+Creature_Demo_Loan::record_return_posted( $fb0, '2026-03-28' );
+Creature_Demo_Loan::record_return_scan( $fb0, '2026-03-30', '2026-04-02' );
+$fb0->update_meta_data( '_creature_demo_damage_pence', 2000 );
+Creature_Demo_Loan::tick( $fb0, '2026-04-10' );
+creature_demo_expect( 'late_only' === $fb0->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $fb0 ), 'a return posted in grace falls back to no bill and no later damage charge' );
+creature_demo_expect( empty( Creature_Demo_Loan::raise_damage_charge( $fb0, 2000, 'Damage', '2026-04-11' )['ok'] ), 'no damage charge after the window closes with nothing billed' );
+$fb0_post = Creature_Demo_Loan::record_return_posted( $fb0, '2026-03-20' );
+creature_demo_expect( empty( $fb0_post['ok'] ) && 'billed' === $fb0_post['reason'], 'the posting date is locked once the bill is final' );
+
+// A manual received date wins over the scan stamp.
+$rc = creature_demo_loan();
+Creature_Demo_Loan::record_kit_received( $rc, '2026-04-06' );
+Creature_Demo_Loan::record_return_scan( $rc, '2026-04-02', '2026-04-02' );
+creature_demo_expect( '2026-04-06' === $rc->get_meta( '_creature_demo_received_date' ), 'a received date entered by hand is kept when the scan is recorded' );
+$rc_bad = Creature_Demo_Loan::record_kit_received( $rc, '2026-02-30' );
+creature_demo_expect( empty( $rc_bad['ok'] ), 'an impossible received date is refused' );
+
+// Damage evidence (terms 6.4(b)): findings are required and the photo slots feed the bill.
+$nf = creature_demo_loan();
+$nf->update_meta_data( '_creature_demo_findings', '' );
+Creature_Demo_Loan::record_return_scan( $nf, '2026-03-30', '2026-03-30' );
+$nf->update_meta_data( '_creature_demo_damage_pence', 2000 );
+$nf_mails = creature_demo_charge_mail_count();
+$nf_r = Creature_Demo_Loan::complete_inspection( $nf, '2026-03-30' );
+creature_demo_expect( empty( $nf_r['ok'] ) && 'no_findings' === $nf_r['reason'], 'a bill with a damage line and empty findings is refused' );
+creature_demo_expect( 0 === creature_demo_charge_orders_for( $nf ) && $nf_mails === creature_demo_charge_mail_count(), 'a refused bill creates no order and sends no email' );
+creature_demo_expect( '' === $nf->get_meta( '_creature_demo_inspection_done' ) && '' === $nf->get_meta( '_creature_demo_bill_state' ), 'a refused bill leaves the inspection open to try again' );
+$nf->update_meta_data( '_creature_demo_findings', "  \n  " );
+creature_demo_expect( 'no_findings' === Creature_Demo_Loan::raise_bill( $nf, '2026-03-30' )['reason'], 'findings of only spaces count as empty' );
+creature_demo_expect( false !== strpos( implode( "\n", $nf->notes ), 'findings' ), 'the refusal is noted on the order' );
+$nm = creature_demo_loan();
+$nm->update_meta_data( '_creature_demo_findings', '' );
+$nm->update_meta_data( '_creature_demo_missing_pence', 3500 );
+creature_demo_expect( 'no_findings' === Creature_Demo_Loan::raise_bill( $nm, '2026-03-30' )['reason'], 'a missing-parts line needs findings too' );
+$nl = creature_demo_loan();
+$nl->update_meta_data( '_creature_demo_findings', '' );
+Creature_Demo_Loan::record_return_scan( $nl, '2026-04-02', '2026-04-02' );
+$nl_r = Creature_Demo_Loan::raise_bill( $nl, '2026-04-02' );
+creature_demo_expect( ! empty( $nl_r['ok'] ) && 1200 === $nl_r['amount'], 'a late-fee-only bill needs no findings' );
+$nf->update_meta_data( '_creature_demo_findings', 'Steerer cap cracked at the slot.' );
+$nf->update_meta_data( '_creature_demo_photos', array( '123', 'https://example.com/a.jpg', 'ftp://example.com/b.jpg', 'javascript:alert(1)', 'not a url', '0', '456 789' ) );
+$nf_r2 = Creature_Demo_Loan::complete_inspection( $nf, '2026-03-30' );
+creature_demo_expect( ! empty( $nf_r2['ok'] ) && 2300 === $nf_r2['bill']['amount'], 'with findings the bill goes out: £3 late fee and £20 damage' );
+$nf_mail = creature_demo_last_mail( 'charge_notice_damage' );
+creature_demo_expect( false !== strpos( $nf_mail['body'], 'Steerer cap cracked at the slot.' ), 'the findings go into the bill as {findings}' );
+creature_demo_expect( false !== strpos( $nf_mail['body'], 'https://example.com/wp-content/uploads/123.jpg' ) && false !== strpos( $nf_mail['body'], 'https://example.com/a.jpg' ), 'photos go into the bill as {photos}: a media id becomes its URL and a URL stays' );
+creature_demo_absent( $nf_mail['body'], 'javascript:', 'a script link is not a photo' );
+creature_demo_absent( $nf_mail['body'], 'ftp://', 'only http and https links are photos' );
+creature_demo_absent( $nf_mail['body'], '{findings}', 'the findings tag is filled' );
+creature_demo_absent( $nf_mail['body'], '{photos}', 'the photos tag is filled' );
+creature_demo_expect( array( '123', 'https://example.com/a.jpg' ) === Creature_Demo_Loan::photo_slots( $nf ), 'invalid photo slots are dropped' );
+$six = creature_demo_loan();
+$six->update_meta_data( '_creature_demo_photos', array( '1', '2', '3', '4', '5', '6', '7', '8' ) );
+creature_demo_expect( 6 === count( Creature_Demo_Loan::photo_slots( $six ) ), 'there are at most 6 photo slots' );
+$_POST = array(
+	'creature_demo_loan_admin_nonce' => 'creature_demo_loan_admin',
+	'creature_demo_damage'           => '20.00',
+	'creature_demo_missing'          => '35,00',
+	'creature_demo_findings'         => 'Bar clamp thread stripped.',
+	'creature_demo_photo_1'          => '321',
+	'creature_demo_photo_2'          => 'https://example.com/c.jpg',
+	'creature_demo_photo_3'          => 'javascript:alert(1)',
+	'creature_demo_photo_7'          => '999',
+);
+$form = creature_demo_loan();
+Creature_Demo_Loan::save_meta_box( $form->get_id(), $form );
+creature_demo_expect( 2000 === (int) $form->get_meta( '_creature_demo_damage_pence' ) && 3500 === (int) $form->get_meta( '_creature_demo_missing_pence' ), 'the order screen saves the damage and missing-parts amounts' );
+creature_demo_expect( 'Bar clamp thread stripped.' === $form->get_meta( '_creature_demo_findings' ), 'the order screen saves the findings' );
+creature_demo_expect( array( '321', 'https://example.com/c.jpg' ) === $form->get_meta( '_creature_demo_photos' ), 'the order screen saves up to 6 valid photo slots' );
+ob_start();
+Creature_Demo_Loan::render_meta_box( $form );
+$form_html = ob_get_clean();
+foreach ( array( 'creature_demo_damage', 'creature_demo_missing', 'creature_demo_findings', 'creature_demo_photo_1', 'creature_demo_photo_6' ) as $field ) {
+	creature_demo_expect( false !== strpos( $form_html, 'name="' . $field . '"' ), 'the order screen has the ' . $field . ' field' );
+}
+creature_demo_expect( false === strpos( $form_html, 'creature_demo_photo_7' ), 'the order screen has 6 photo slots, not 7' );
+$_POST = array();
+
+// Charge after an upheld dispute counts from the final-decision email (terms 4.4(b)).
+$ud = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $ud, '2026-03-30', '2026-03-30' );
+$ud_charge = creature_demo_bill_charge( $ud );
+Creature_Demo_Loan::mark_disputed( $ud_charge, '2026-03-31' );
+$ud_mails = creature_demo_mail_count( 'dispute_decision' );
+Creature_Demo_Loan::record_dispute_decision( $ud_charge, 'upheld', '2026-04-12', null );
+creature_demo_expect( $ud_mails + 1 === creature_demo_mail_count( 'dispute_decision' ), 'the final-decision email is sent once' );
+creature_demo_expect( '2026-04-12' === $ud_charge->get_meta( '_creature_demo_decision_sent_at' ), 'the decision-sent time is stored on the charge' );
+creature_demo_expect( 'notice_too_recent' === Creature_Demo_Loan::evaluate_charge( $ud, $ud_charge, '2026-04-13' )['code'], 'the day after an upheld decision is too soon, though the first notice was 14 days ago' );
+creature_demo_expect( 'notice_too_recent' === Creature_Demo_Loan::evaluate_charge( $ud, $ud_charge, '2026-04-18' )['code'], 'six days after the decision email is too soon' );
+creature_demo_expect( '' === Creature_Demo_Loan::evaluate_charge( $ud, $ud_charge, '2026-04-19' )['code'], 'seven days after the decision email clears the gate' );
+creature_demo_expect( 6 === Creature_Demo_Loan::evaluate_charge( $ud, $ud_charge, '2026-04-18' )['state']['days_since_notice'], 'the day count runs from the decision email' );
+$ud_wv = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $ud_wv, '2026-03-30', '2026-03-30' );
+$ud_wv_charge = creature_demo_bill_charge( $ud_wv );
+Creature_Demo_Loan::mark_disputed( $ud_wv_charge, '2026-03-31' );
+Creature_Demo_Loan::record_dispute_decision( $ud_wv_charge, 'waived', '2026-04-12', null );
+creature_demo_expect( 'dispute_waived' === Creature_Demo_Loan::evaluate_charge( $ud_wv, $ud_wv_charge, '2026-04-30' )['code'], 'a waived dispute still refuses the charge' );
+$ud_nd = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $ud_nd, '2026-03-30', '2026-03-30' );
+$ud_nd_charge = creature_demo_bill_charge( $ud_nd );
+creature_demo_expect( '' === $ud_nd_charge->get_meta( '_creature_demo_decision_sent_at' ) && '' === Creature_Demo_Loan::evaluate_charge( $ud_nd, $ud_nd_charge, '2026-04-06' )['code'], 'a charge with no dispute still counts 7 days from the notice' );
+
 // Consent versions read back as the text they stored.
-$v4_text  = '[COPY: Cadence] I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to £40.00, a deemed purchase up to £212.00, and damage or missing parts, never more than the cost of repair or replacement (inverted mount kit £35.00). This box is separate from the general terms and is not ticked for me.';
-$v5_text  = '[COPY: Cadence] I agree that Creature Cycles Ltd can charge this card later, without asking me again at the time, for: late fees (up to £24), the deemed purchase price if I don\'t send the kit back (£212), and damage or missing parts at published spare-parts prices, including £35 for a missing inverted mount kit. All of these together will never be more than £212. You\'ll email me the amount and the reason first, and I\'ll have 7 days to pay by link or dispute it. (Demo terms, clause 4.)';
-$v5b_text = '[COPY: Cadence] I agree that Creature Cycles Ltd can charge this card later, without asking me again at the time, for: late fees (up to £24), the deemed purchase price if I don\'t send the kit back (my keep price, capped at £212), and damage or missing parts at published spare-parts prices, including £35 for a missing inverted mount kit. All of these together will never be more than £212. You\'ll email me the amount and the reason first, and I\'ll have 7 days to pay by link or dispute it. (Demo terms, clause 4.)';
+$v4_text  = 'I agree that Creature Cycles Ltd may charge this saved card later, without asking me again at the time, for late fees up to £40.00, a deemed purchase up to £212.00, and damage or missing parts, never more than the cost of repair or replacement (inverted mount kit £35.00). This box is separate from the general terms and is not ticked for me.';
+$v5_text  = 'I agree that Creature Cycles Ltd can charge this card later, without asking me again at the time, for: late fees (up to £24), the deemed purchase price if I don\'t send the kit back (£212), and damage or missing parts at published spare-parts prices, including £35 for a missing inverted mount kit. All of these together will never be more than £212. You\'ll email me the amount and the reason first, and I\'ll have 7 days to pay by link or dispute it. (Demo terms, clause 4.)';
+$v5b_text = 'I agree that Creature Cycles Ltd can charge this card later, without asking me again at the time, for: late fees (up to £24), the deemed purchase price if I don\'t send the kit back (my keep price, capped at £212), and damage or missing parts at published spare-parts prices, including £35 for a missing inverted mount kit. All of these together will never be more than £212. You\'ll email me the amount and the reason first, and I\'ll have 7 days to pay by link or dispute it. (Demo terms, clause 4.)';
 creature_demo_expect( $v4_text === Creature_Demo_Loan_Copy::consent_wording( 'v4' ), 'v4 wording is byte-for-byte what it was' );
 creature_demo_expect( $v5_text === Creature_Demo_Loan_Copy::consent_wording( 'v5' ), 'v5 wording is byte-for-byte what it was' );
 creature_demo_expect( $v5b_text === Creature_Demo_Loan_Copy::consent_wording( 'v5b' ), 'v5b wording is exactly the agreed text' );
-creature_demo_expect( $v5b_text === Creature_Demo_Loan_Copy::consent_wording(), 'v5b is the default wording' );
+creature_demo_expect( $fixture === Creature_Demo_Loan_Copy::consent_wording(), 'version-5 is the default wording' );
 creature_demo_expect( $v5_text === str_replace( '(my keep price, capped at £212)', '(£212)', $v5b_text ) && $v5b_text !== $v5_text, 'v5b differs from v5 only in the one phrase' );
 creature_demo_expect( 1 === substr_count( $v5b_text, 'my keep price, capped at £212' ), 'v5b names the keep price once' );
-creature_demo_expect( $v5_text === Creature_Demo_Loan_Copy::consent_wording( 'v9-unknown' ), 'a version that matches nothing behaves as it did before v5b (the v5 text)' );
-creature_demo_expect( $v5_text === Creature_Demo_Loan_Copy::consent_wording( '' ), 'an empty version behaves as it did before v5b (the v5 text)' );
-creature_demo_expect( $v4_text !== Creature_Demo_Loan_Copy::consent_wording( 'v5b' ) && $v4_text !== $v5_text, 'the three versions are three different texts' );
+creature_demo_expect( $v5b_text === str_replace( array( '’' ), array( "'" ), $fixture ) && $v5b_text !== $fixture, 'version-5 is v5b with the three published curly apostrophes' );
+creature_demo_expect( $fixture === Creature_Demo_Loan_Copy::consent_wording( 'v9-unknown' ), 'a version that matches nothing falls back to version-5' );
+creature_demo_expect( $fixture === Creature_Demo_Loan_Copy::consent_wording( '' ), 'an empty version falls back to version-5' );
+creature_demo_expect( $v4_text !== Creature_Demo_Loan_Copy::consent_wording( 'v5b' ) && $v4_text !== $v5_text && $v4_text !== $fixture && $v5_text !== $fixture, 'the four versions are four different texts' );
+creature_demo_expect( array( 'version-5', 'v5b', 'v5', 'v4' ) === Creature_Demo_Loan_Copy::consent_versions(), 'the plugin knows version-5, v5b, v5 and v4' );
+foreach ( array( 'version-5', 'v5b' ) as $v5_key ) {
+	creature_demo_expect( 'Terms version 5' === Creature_Demo_Loan_Copy::consent_version_label( $v5_key ), "{$v5_key} reads back as Terms version 5" );
+}
+creature_demo_expect( 'Terms version 4' === Creature_Demo_Loan_Copy::consent_version_label( 'v4' ), 'v4 reads back as Terms version 4' );
+creature_demo_expect( 'Terms version 5' !== Creature_Demo_Loan_Copy::consent_version_label( 'v5' ) && false !== strpos( Creature_Demo_Loan_Copy::consent_version_label( 'v5' ), 'earlier draft' ), 'the old v5 draft is not passed off as Terms version 5' );
+// A filter naming a version the plugin does not know stores version-5, so the stored version matches the wording.
+$GLOBALS['creature_demo_consent_version'] = 'v9-unknown';
+creature_demo_expect( 'version-5' === Creature_Demo_Loan::consent_version(), 'an unknown version string from the filter falls back to version-5' );
+$odd_order = wc_create_order();
+Creature_Demo_Loan::store_consent( $odd_order, true, '2026-03-02T12:00:00+00:00' );
+creature_demo_expect( 'version-5' === $odd_order->get_meta( '_creature_demo_consent_version' ) && $fixture === $odd_order->get_meta( '_creature_demo_consent_wording' ), 'an unknown version stores version-5 and its wording' );
+$GLOBALS['creature_demo_consent_version'] = 'v5b';
+creature_demo_expect( 'v5b' === Creature_Demo_Loan::consent_version(), 'the filter can still name v5b' );
+$GLOBALS['creature_demo_consent_version'] = null;
 foreach ( array( 'v4' => $v4_text, 'v5' => $v5_text ) as $ver => $text ) {
 	$GLOBALS['creature_demo_consent_version'] = $ver;
 	$old_order = wc_create_order();
@@ -2770,15 +3217,37 @@ foreach ( array( 'v4' => $v4_text, 'v5' => $v5_text ) as $ver => $text ) {
 }
 $GLOBALS['creature_demo_consent_version'] = null;
 $new_order = creature_demo_booked_loan( '249.00' );
-creature_demo_expect( 'v5b' === $new_order->get_meta( '_creature_demo_consent_version' ), 'a new order reads back v5b' );
+creature_demo_expect( 'version-5' === $new_order->get_meta( '_creature_demo_consent_version' ), 'a new order reads back version-5' );
+// Orders that stored v5b, v5 or v4 read back exactly as they stored them. The admin record says Terms version 5 for version-5 and v5b.
+foreach ( array(
+	'version-5' => array( 'Terms version 5', $fixture ),
+	'v5b'       => array( 'Terms version 5', $v5b_text ),
+	'v5'        => array( 'Terms version 5 (earlier draft, stored as v5)', $v5_text ),
+	'v4'        => array( 'Terms version 4', $v4_text ),
+) as $stored => $expect ) {
+	$GLOBALS['creature_demo_consent_version'] = $stored;
+	$rb = wc_create_order();
+	Creature_Demo_Loan::store_consent( $rb, true, '2026-03-02T12:00:00+00:00' );
+	$GLOBALS['creature_demo_consent_version'] = null;
+	$rec = Creature_Demo_Loan::consent_record( $rb );
+	creature_demo_expect( $stored === $rec['version'] && $expect[0] === $rec['label'] && $expect[1] === $rec['wording'], "an order stored as {$stored} reads back as {$expect[0]} with its own wording" );
+	creature_demo_expect( '2 March 2026' === $rec['date'], "the {$stored} record shows the date as 2 March 2026" );
+	$rb->update_meta_data( '_creature_demo_loan', 'yes' );
+	ob_start();
+	Creature_Demo_Loan::render_meta_box( $rb );
+	$rb_html = ob_get_clean();
+	creature_demo_expect( false !== strpos( $rb_html, 'Consent: ' . $expect[0] ), "the order screen shows {$expect[0]} for {$stored}" );
+}
+$rb_empty = wc_create_order();
+creature_demo_expect( '' === Creature_Demo_Loan::consent_record( $rb_empty )['label'], 'an order with no consent has no consent label' );
 
 // The two deemed emails quote the computed price.
 $mail192 = creature_demo_booked_loan( '229.00' );
 Creature_Demo_Loan::tick( $mail192, '2026-04-03' );
 $warn192 = creature_demo_last_mail( 'reminder_deemed_warning' );
-creature_demo_expect( is_array( $warn192 ) && false !== strpos( $warn192['body'], 'The price is £192.00 less any late fees' ), 'the deemed warning on a £192 loan quotes £192.00' );
-creature_demo_expect( false === strpos( $warn192['body'], 'price is £212' ), 'the deemed warning does not quote £212 as the price' );
-creature_demo_expect( false !== strpos( $warn192['body'], 'does not exceed £212' ), 'the deemed warning still says the total does not exceed £212' );
+creature_demo_expect( is_array( $warn192 ) && false !== strpos( $warn192['body'], 'at your keep price of £192.00.' ), 'the deemed warning on a £192 loan quotes £192.00' );
+creature_demo_expect( false === strpos( $warn192['body'], 'keep price of £212' ), 'the deemed warning does not quote £212 as the price' );
+creature_demo_expect( false === strpos( $warn192['body'], '£212' ), 'the deemed warning on a £192 loan names no £212' );
 creature_demo_expect( false === strpos( $warn192['body'], '{price}' ), 'the deemed warning leaves no placeholder behind' );
 $notice192 = creature_demo_booked_loan( '229.00' );
 $notice192->update_meta_data( '_creature_demo_late_fees_paid_pence', 2000 );
@@ -2786,21 +3255,329 @@ $notice192_r = Creature_Demo_Loan::maybe_raise_deemed( $notice192, '2026-04-07' 
 $deemed_mail = creature_demo_last_mail( 'charge_notice_deemed' );
 creature_demo_expect( ! empty( $notice192_r['ok'] ) && is_array( $deemed_mail ), 'the deemed charge notice is sent' );
 creature_demo_expect( false !== strpos( $deemed_mail['body'], 'Amount: £172.00' ), 'the deemed notice quotes the amount in the payment link' );
-creature_demo_expect( false !== strpos( $deemed_mail['body'], 'This is £192.00 less late fees already paid' ), 'the deemed notice quotes the £192.00 keep price' );
+creature_demo_expect( false !== strpos( $deemed_mail['body'], 'for your keep price of £192.00 less any late fees you’ve already paid' ), 'the deemed notice quotes the £192.00 keep price' );
 creature_demo_expect( false === strpos( $deemed_mail['body'], '£212' ), 'the deemed notice on a £192 loan does not quote £212' );
 creature_demo_expect( false === strpos( $deemed_mail['body'], '{price}' ), 'the deemed notice leaves no placeholder behind' );
 $mail_fallback = creature_demo_loan();
 Creature_Demo_Loan::tick( $mail_fallback, '2026-04-03' );
 $warn_fallback = creature_demo_last_mail( 'reminder_deemed_warning' );
-creature_demo_expect( false !== strpos( $warn_fallback['body'], 'The price is £212.00 less any late fees' ), 'the deemed warning on a fallback loan quotes £212.00' );
+creature_demo_expect( false !== strpos( $warn_fallback['body'], 'at your keep price of £212.00.' ), 'the deemed warning on a fallback loan quotes £212.00' );
 $mail_floor = creature_demo_booked_loan( '30.00' );
 Creature_Demo_Loan::tick( $mail_floor, '2026-04-03' );
 $warn_floor = creature_demo_last_mail( 'reminder_deemed_warning' );
-creature_demo_expect( is_array( $warn_floor ) && false !== strpos( $warn_floor['body'], 'The price is £212.00 less any late fees' ), 'the deemed warning on a fallback_below_floor loan quotes £212.00' );
+creature_demo_expect( is_array( $warn_floor ) && false !== strpos( $warn_floor['body'], 'at your keep price of £212.00.' ), 'the deemed warning on a fallback_below_floor loan quotes £212.00' );
 $template = Creature_Demo_Loan_Copy::catalogue();
-creature_demo_expect( false !== strpos( $template['reminder_deemed_warning']['body'], 'The price is {price} less' ) && false !== strpos( $template['charge_notice_deemed']['body'], 'This is {price} less' ), 'both deemed emails are templates with a price placeholder' );
+creature_demo_expect( false !== strpos( $template['reminder_deemed_warning']['body'], 'keep price of {price}.' ) && false !== strpos( $template['charge_notice_deemed']['body'], 'keep price of {price} less' ), 'both deemed emails are templates with a price placeholder' );
 
 $GLOBALS['creature_demo_product_prices'] = array();
+
+// ---- Three emails Cadence has not written: dates_on_delivery, charge_declined, booking_confirmation ----
+add_action(
+	'creature_demo_loan_mail_dates_on_delivery',
+	static function ( $row, $order, $args ) {
+		$GLOBALS['creature_demo_hook_args']['dates_on_delivery'][] = array( $row, $order, $args );
+	},
+	10,
+	3
+);
+add_action(
+	'creature_demo_loan_mail_charge_declined',
+	static function ( $row, $order, $args ) {
+		$GLOBALS['creature_demo_hook_args']['charge_declined'][] = array( $row, $order, $args );
+	},
+	10,
+	3
+);
+add_filter(
+	'creature_demo_loan_copy_catalogue',
+	static function ( $catalogue ) {
+		foreach ( $GLOBALS['creature_demo_copy_override'] as $slot => $row ) {
+			$catalogue[ $slot ] = $row;
+		}
+		return $catalogue;
+	}
+);
+add_filter(
+	'creature_demo_loan_confirmation_files',
+	static function ( $files ) {
+		return array_merge( (array) $files, $GLOBALS['creature_demo_conf_files'] );
+	}
+);
+
+// dates_on_delivery (terms 3.2): once, when the loan is marked delivered.
+$dod_before = creature_demo_mail_count( 'dates_on_delivery' );
+$calls      = $GLOBALS['creature_demo_mail_calls'];
+$dod        = creature_demo_loan();
+creature_demo_expect( $dod_before + 1 === creature_demo_mail_count( 'dates_on_delivery' ), 'dates_on_delivery goes out when a loan starts with a tracked delivery date' );
+creature_demo_expect( ! Creature_Demo_Loan::send_dates_on_delivery( $dod ) && $dod_before + 1 === creature_demo_mail_count( 'dates_on_delivery' ), 'dates_on_delivery fires once per loan' );
+$dod_hook = end( $GLOBALS['creature_demo_hook_args']['dates_on_delivery'] );
+creature_demo_expect( '2026-03-24' === $dod_hook[2]['due'] && '2026-03-29' === $dod_hook[2]['grace_end'] && '2026-04-07' === $dod_hook[2]['deemed_on'], 'it carries the due date, the last day of grace and the deemed purchase date' );
+creature_demo_expect( true === $dod_hook[0]['empty'] && $calls === $GLOBALS['creature_demo_mail_calls'], 'with no wording yet the slot is recorded but no blank email is sent' );
+creature_demo_expect( 'Rider@Example.com' === $dod_hook[1]->get_billing_email() && 'demo-loan-test@creaturecycles.co.uk' === $dod_hook[0]['to'], 'the dates email is a customer email, redirected like the others' );
+creature_demo_expect( '24 March 2026 29 March 2026 7 April 2026' === Creature_Demo_Loan_Copy::fill( '{due} {grace_end} {deemed_on}', $dod_hook[2] ), 'the three dates read in the UK format' );
+$dod_est = wc_create_order();
+Creature_Demo_Loan::start_loan( $dod_est, '2026-03-02', '' );
+creature_demo_expect( $dod_before + 1 === creature_demo_mail_count( 'dates_on_delivery' ), 'an estimated delivery date is not a delivery, so no dates email yet' );
+Creature_Demo_Loan::correct_delivery_date( $dod_est, '2026-03-06' );
+creature_demo_expect( $dod_before + 2 === creature_demo_mail_count( 'dates_on_delivery' ), 'the tracked delivery date sends the dates email' );
+Creature_Demo_Loan::correct_delivery_date( $dod_est, '2026-03-09' );
+creature_demo_expect( $dod_before + 2 === creature_demo_mail_count( 'dates_on_delivery' ), 'a later correction does not send it again' );
+$dod_copy = $GLOBALS['creature_demo_hook_args']['dates_on_delivery'];
+creature_demo_expect( '2026-03-26' === $dod_copy[ count( $dod_copy ) - 1 ][2]['due'], 'the email used the due date from the tracked delivery' );
+// With wording supplied, it is a real email with Reply-To.
+$GLOBALS['creature_demo_copy_override']['dates_on_delivery'] = array(
+	'subject' => 'Your dates',
+	'body'    => 'Due {due}. Grace ends {grace_end}. Deemed {deemed_on}.',
+);
+$dod_wired = creature_demo_loan();
+$dod_wired_mail = creature_demo_last_mail( 'dates_on_delivery' );
+creature_demo_expect( false === $dod_wired_mail['empty'] && 'Due 24 March 2026. Grace ends 29 March 2026. Deemed 7 April 2026.' === $dod_wired_mail['body'], 'once wording is set the dates email carries the UK dates' );
+$GLOBALS['creature_demo_copy_override'] = array();
+
+// charge_declined (terms 4.5): a declined saved card gets a payment link, once.
+creature_demo_stripe_test();
+$decl         = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $decl, '2026-03-30', '2026-03-30' );
+$decl_charge  = creature_demo_bill_charge( $decl );
+$decl_before  = creature_demo_mail_count( 'charge_declined' );
+$auth_before  = creature_demo_mail_count( 'charge_authentication_required' );
+WC_Stripe_API::$response = (object) array(
+	'error' => (object) array(
+		'code'         => 'card_declined',
+		'decline_code' => 'generic_decline',
+	),
+);
+$decl_r = Creature_Demo_Loan::charge_saved_card( $decl, '2026-04-06' );
+creature_demo_expect( 'stripe_error' === $decl_r['code'] && $decl_before + 1 === creature_demo_mail_count( 'charge_declined' ), 'a declined card sends the charge_declined email' );
+$decl_hook = end( $GLOBALS['creature_demo_hook_args']['charge_declined'] );
+creature_demo_expect( false !== strpos( $decl_hook[2]['link'], 'https://staging.example/checkout/order-pay/' . $decl_charge->get_id() ) && '£3.00' === $decl_hook[2]['amount'], 'it carries the payment link and the amount owed' );
+creature_demo_expect( 'yes' !== $decl_charge->get_meta( '_creature_demo_charge_paid' ) && false !== strpos( implode( "\n", $decl->notes ), 'still owed' ), 'the amount is still owed and the order says so' );
+Creature_Demo_Loan::charge_saved_card( $decl, '2026-04-07' );
+creature_demo_expect( $decl_before + 1 === creature_demo_mail_count( 'charge_declined' ), 'a second decline on the same charge does not email again' );
+creature_demo_expect( $auth_before === creature_demo_mail_count( 'charge_authentication_required' ), 'a decline is not the authentication email' );
+$decl_api = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $decl_api, '2026-03-30', '2026-03-30' );
+creature_demo_bill_charge( $decl_api );
+WC_Stripe_API::$response = (object) array( 'error' => (object) array( 'code' => 'api_error' ) );
+Creature_Demo_Loan::charge_saved_card( $decl_api, '2026-04-06' );
+creature_demo_expect( $decl_before + 1 === creature_demo_mail_count( 'charge_declined' ), 'an API fault is not a decline and sends no declined email' );
+$decl_auth = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $decl_auth, '2026-03-30', '2026-03-30' );
+creature_demo_bill_charge( $decl_auth );
+WC_Stripe_API::$response = new WP_Error( 'stripe_error', 'authentication_required' );
+Creature_Demo_Loan::charge_saved_card( $decl_auth, '2026-04-06' );
+creature_demo_expect( $decl_before + 1 === creature_demo_mail_count( 'charge_declined' ) && $auth_before + 1 === creature_demo_mail_count( 'charge_authentication_required' ), 'authentication required keeps its own email and sends no declined email' );
+WC_Stripe_API::$response = (object) array( 'id' => 'pi_test_demo_9', 'status' => 'succeeded' );
+
+// booking_confirmation (terms 11.1, Appendix B): content on the order confirmation, and the two files.
+$bc_email = (object) array( 'id' => 'customer_processing_order' );
+$bc_order = creature_demo_booked_loan( '249.00' );
+$bc_order->update_meta_data( '_creature_demo_express_request', 'yes' );
+$bc_plain = wc_create_order();
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, false, $bc_email );
+creature_demo_expect( '' === ob_get_clean(), 'with no wording yet the confirmation gets no extra content' );
+$GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array(
+	'subject' => '',
+	'body'    => "Consent: {consent_version} on {consent_at}.\n{consent}\nExpress request: {express_answer}.",
+);
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, false, $bc_email );
+$bc_html = ob_get_clean();
+creature_demo_expect( false !== strpos( $bc_html, 'Consent: Terms version 5 on ' . Creature_Demo_Loan::consent_record( $bc_order )['date'] . '.' ) && '' !== Creature_Demo_Loan::consent_record( $bc_order )['date'], 'the confirmation names the consent version and the date' );
+creature_demo_expect( false !== strpos( $bc_html, str_replace( '&#039;', '’', htmlspecialchars( $fixture, ENT_QUOTES, 'UTF-8' ) ) ) || false !== strpos( $bc_html, $fixture ), 'the confirmation carries the consent wording the rider agreed to' );
+creature_demo_expect( false !== strpos( $bc_html, 'Express request: Yes.' ), 'the confirmation gives the rider’s answer to the express request' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, true, $bc_email );
+$bc_text = ob_get_clean();
+creature_demo_expect( false !== strpos( $bc_text, 'Express request: Yes.' ) && false === strpos( $bc_text, '<p>' ), 'the plain text email gets the same content without markup' );
+$bc_order->update_meta_data( '_creature_demo_express_request', 'no' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, true, $bc_email );
+creature_demo_expect( false !== strpos( ob_get_clean(), 'Express request: No.' ), 'a "no" to the express request reads No' );
+foreach ( array(
+	'a non-demo order'        => array( $bc_plain, false, $bc_email ),
+	'the admin copy'          => array( $bc_order, true, $bc_email ),
+	'another email'           => array( $bc_order, false, (object) array( 'id' => 'customer_completed_order' ) ),
+	'no email object'         => array( $bc_order, false, null ),
+) as $label => $case ) {
+	ob_start();
+	Creature_Demo_Loan::render_booking_confirmation( $case[0], $case[1], false, $case[2] );
+	creature_demo_expect( '' === ob_get_clean(), "the booking confirmation content is not added for {$label}" );
+}
+$GLOBALS['creature_demo_copy_override'] = array();
+
+// The attachments: media ids or file paths, set through the filter (the config screen sets it).
+$up = sys_get_temp_dir() . '/creature-demo-uploads-' . getmypid();
+@mkdir( $up, 0777, true );
+$GLOBALS['creature_demo_uploads'] = $up;
+file_put_contents( $up . '/terms-v5.pdf', '%PDF-1.4 terms' );
+file_put_contents( $up . '/model-cancellation-form.pdf', '%PDF-1.4 form' );
+file_put_contents( $up . '/script.php', '<?php // not a document' );
+$outside = sys_get_temp_dir() . '/creature-demo-outside-' . getmypid() . '.pdf';
+file_put_contents( $outside, '%PDF-1.4 outside' );
+$terms_path = realpath( $up . '/terms-v5.pdf' );
+$form_path  = realpath( $up . '/model-cancellation-form.pdf' );
+$GLOBALS['creature_demo_attached'] = array(
+	77 => $up . '/terms-v5.pdf',
+	78 => $up . '/model-cancellation-form.pdf',
+	79 => $outside,
+);
+$bc_files = static function ( $order = null, $email_id = 'customer_processing_order', $existing = array() ) use ( $bc_order ) {
+	return Creature_Demo_Loan::filter_booking_attachments( $existing, $email_id, null === $order ? $bc_order : $order );
+};
+$GLOBALS['creature_demo_conf_files'] = array();
+creature_demo_expect( array() === $bc_files(), 'with no file set nothing is attached' );
+$GLOBALS['creature_demo_conf_files'] = array( 'terms_pdf' => $up . '/terms-v5.pdf', 'cancellation_form' => $up . '/model-cancellation-form.pdf' );
+creature_demo_expect( array( $terms_path, $form_path ) === $bc_files(), 'two file paths in the uploads folder are attached' );
+$GLOBALS['creature_demo_conf_files'] = array( 'terms_pdf' => '77', 'cancellation_form' => 78 );
+creature_demo_expect( array( $terms_path, $form_path ) === $bc_files(), 'media ids are attached by their file' );
+creature_demo_expect( array( 'existing.pdf', $terms_path, $form_path ) === $bc_files( null, 'customer_processing_order', array( 'existing.pdf' ) ), 'files are added after any attachment already on the email' );
+creature_demo_expect( array( $terms_path, $form_path ) === $bc_files( null, 'customer_on_hold_order' ), 'the on-hold confirmation carries them too' );
+creature_demo_expect( array() === $bc_files( null, 'customer_completed_order' ), 'other emails get no attachment' );
+creature_demo_expect( array() === $bc_files( $bc_plain ), 'a normal order gets no attachment' );
+creature_demo_expect( array() === $bc_files( creature_demo_booked_loan( '249.00' ), 'new_order' ), 'the shop email gets no attachment' );
+foreach ( array(
+	'a path outside the uploads folder' => $outside,
+	'a path that climbs out with ..'   => $up . '/../' . basename( $outside ),
+	'a server file'                     => '/etc/passwd',
+	'a script in the uploads folder'    => $up . '/script.php',
+	'a missing file'                    => $up . '/nope.pdf',
+	'a path with a null byte'           => $up . "/terms-v5.pdf\0.php",
+	'a stream wrapper'                  => 'php://filter/resource=' . $up . '/terms-v5.pdf',
+	'a media id outside the uploads'    => '79',
+	'a media id with no file'           => '9999',
+	'a directory'                       => $up,
+) as $label => $bad_value ) {
+	$GLOBALS['creature_demo_conf_files'] = array( 'terms_pdf' => $bad_value );
+	creature_demo_expect( array() === $bc_files(), "{$label} is not attached" );
+}
+$GLOBALS['creature_demo_conf_files'] = array( 'terms_pdf' => $up . '/terms-v5.pdf', 'extra' => '77' );
+creature_demo_expect( array( $terms_path ) === $bc_files(), 'a duplicate file is attached once' );
+// The admin notice when a file is not set.
+$GLOBALS['creature_demo_conf_files'] = array();
+$GLOBALS['creature_demo_can']        = true;
+ob_start();
+Creature_Demo_Loan::render_attachment_notice();
+$notice_none = ob_get_clean();
+creature_demo_expect( false !== strpos( $notice_none, 'notice-warning' ) && false !== strpos( $notice_none, 'No file is set for: Terms PDF (version 5), Model cancellation form' ), 'with no file set there is an admin notice naming both' );
+$GLOBALS['creature_demo_conf_files'] = array( 'terms_pdf' => '77' );
+ob_start();
+Creature_Demo_Loan::render_attachment_notice();
+$notice_one = ob_get_clean();
+creature_demo_expect( false !== strpos( $notice_one, 'No file is set for: Model cancellation form' ) && false === strpos( $notice_one, 'No file is set for: Terms PDF' ), 'with one file set the notice names only the other' );
+$GLOBALS['creature_demo_conf_files'] = array( 'terms_pdf' => '77', 'cancellation_form' => $outside );
+ob_start();
+Creature_Demo_Loan::render_attachment_notice();
+$notice_bad = ob_get_clean();
+creature_demo_expect( false !== strpos( $notice_bad, 'cannot be attached' ) && false !== strpos( $notice_bad, 'Model cancellation form' ), 'a file that is set but cannot be attached is in the notice' );
+$GLOBALS['creature_demo_conf_files'] = array( 'terms_pdf' => '77', 'cancellation_form' => '78' );
+ob_start();
+Creature_Demo_Loan::render_attachment_notice();
+creature_demo_expect( '' === ob_get_clean(), 'with both files set there is no notice' );
+$GLOBALS['creature_demo_conf_files'] = array();
+$GLOBALS['creature_demo_can']        = false;
+ob_start();
+Creature_Demo_Loan::render_attachment_notice();
+creature_demo_expect( '' === ob_get_clean(), 'the notice is only for shop managers' );
+$hooks_flat = array();
+foreach ( $GLOBALS['creature_demo_hooks'] as $hook_row ) {
+	$hooks_flat[] = $hook_row[0] . ':' . ( is_array( $hook_row[1] ) ? $hook_row[1][1] : '' );
+}
+foreach ( array( 'woocommerce_email_after_order_table:render_booking_confirmation', 'woocommerce_email_attachments:filter_booking_attachments', 'woocommerce_email_headers:filter_email_headers', 'admin_notices:render_attachment_notice' ) as $hooked ) {
+	creature_demo_expect( in_array( $hooked, $hooks_flat, true ), "{$hooked} is hooked in boot" );
+}
+@unlink( $up . '/terms-v5.pdf' );
+@unlink( $up . '/model-cancellation-form.pdf' );
+@unlink( $up . '/script.php' );
+@unlink( $outside );
+@rmdir( $up );
+$GLOBALS['creature_demo_uploads'] = '';
+
+// Customer-facing dates read "30 November 2026". Stored dates stay Y-m-d.
+creature_demo_expect( '30 November 2026' === Creature_Demo_Loan_Calendar::format_uk( '2026-11-30' ), 'a date reads 30 November 2026' );
+creature_demo_expect( '1 March 2026' === Creature_Demo_Loan_Calendar::format_uk( '2026-03-01' ), 'the day has no leading zero' );
+creature_demo_expect( '29 February 2028' === Creature_Demo_Loan_Calendar::format_uk( '2028-02-29' ), 'a leap day reads right' );
+creature_demo_expect( 'soon' === Creature_Demo_Loan_Calendar::format_uk( 'soon' ) && '2026-02-30' === Creature_Demo_Loan_Calendar::format_uk( '2026-02-30' ) && '' === Creature_Demo_Loan_Calendar::format_uk( '' ), 'something that is not a date is left alone' );
+creature_demo_expect( '30 November 2026 / 5 December 2026' === Creature_Demo_Loan_Copy::fill( '{due} / {grace_end}', array( 'due' => '2026-11-30', 'grace_end' => '2026-12-05' ) ), '{due} and the other date tags are formatted' );
+$ukd = creature_demo_loan();
+Creature_Demo_Loan::tick( $ukd, '2026-03-19' );
+$ukd_mail = creature_demo_last_mail( 'reminder_choices_due_minus_5' );
+creature_demo_expect( '2026-03-24' === $ukd->get_meta( '_creature_demo_due_date' ), 'the stored due date stays Y-m-d' );
+creature_demo_expect( 'Your De-Reacher demo is due back on 24 March 2026: your choices' === preg_replace( '/^\[TEST\] /', '', $ukd_mail['subject'] ), 'the reminder subject shows the due date as 24 March 2026' );
+creature_demo_expect( false !== strpos( $ukd_mail['body'], 'is due back on 24 March 2026. You have two choices.' ) && false !== strpos( $ukd_mail['body'], 'please post the kit back by 24 March 2026.' ), 'the reminder body shows {due} as 24 March 2026' );
+creature_demo_absent( $ukd_mail['subject'] . $ukd_mail['body'], '2026-03-24', 'no raw Y-m-d date reaches the rider in the reminder' );
+Creature_Demo_Loan::tick( $ukd, '2026-03-29' );
+$ukd_grace = creature_demo_last_mail( 'reminder_grace_end' );
+creature_demo_expect( false !== strpos( $ukd_grace['body'], 'was due back on 24 March 2026.' ) && false !== strpos( $ukd_grace['subject'], '(due date 24 March 2026)' ), 'the grace-end reminder shows the due date as 24 March 2026' );
+$ukd_scan = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $ukd_scan, '2026-04-02', '2026-04-02' );
+Creature_Demo_Loan::complete_inspection( $ukd_scan, '2026-04-02' );
+$ukd_bill = creature_demo_last_mail( 'charge_notice_late_fee' );
+creature_demo_expect( false !== strpos( $ukd_bill['body'], 'Your due date was 24 March 2026.' ), 'the bill shows the due date as 24 March 2026' );
+$ukd_all = '';
+foreach ( Creature_Demo_Loan_Mail::$sent as $ukd_row ) {
+	if ( 'customer' === $ukd_row['kind'] ) {
+		$ukd_all .= $ukd_row['subject'] . "\n" . $ukd_row['body'] . "\n";
+	}
+}
+creature_demo_expect( 0 === preg_match( '/\b20\d\d-\d\d-\d\d\b/', $ukd_all ), 'no customer email shows a raw Y-m-d date' );
+
+// Every customer email carries Reply-To: info@creaturecycles.co.uk.
+$reply = 'Reply-To: info@creaturecycles.co.uk';
+$sent_customer = 0;
+foreach ( Creature_Demo_Loan_Mail::$sent as $reply_row ) {
+	if ( 'customer' === $reply_row['kind'] ) {
+		$sent_customer++;
+		creature_demo_expect( array( $reply ) === $reply_row['headers'], 'customer email "' . $reply_row['slot'] . '" carries Reply-To' );
+	} else {
+		creature_demo_expect( array() === $reply_row['headers'], 'shop email "' . $reply_row['slot'] . '" has no Reply-To' );
+	}
+}
+creature_demo_expect( $sent_customer > 20, 'the Reply-To check saw many customer emails' );
+$wp_mail_seen = 0;
+foreach ( $GLOBALS['creature_demo_wp_mail'] as $wp_row ) {
+	$wp_mail_seen++;
+	if ( 'info@creaturecycles.co.uk' === $wp_row[0] ) {
+		creature_demo_expect( array() === $wp_row[3], 'wp_mail to the shop has no Reply-To' );
+	} else {
+		creature_demo_expect( array( $reply ) === $wp_row[3], 'wp_mail to the rider is called with the Reply-To header' );
+	}
+}
+creature_demo_expect( $wp_mail_seen > 20, 'wp_mail was called with headers many times' );
+creature_demo_expect( 'info@creaturecycles.co.uk' === Creature_Demo_Loan_Mail::REPLY_TO, 'the Reply-To address is info@creaturecycles.co.uk' );
+$woo_headers = "Content-Type: text/html; charset=UTF-8\r\n";
+creature_demo_expect( $woo_headers . $reply . "\r\n" === Creature_Demo_Loan::filter_email_headers( $woo_headers, 'customer_processing_order', $bc_order ), 'a Woo customer email for a demo order gets the Reply-To header' );
+creature_demo_expect( 'Content-Type: text/plain' . "\r\n" . $reply . "\r\n" === Creature_Demo_Loan::filter_email_headers( 'Content-Type: text/plain', 'customer_invoice', $bc_order ), 'a header string with no trailing newline is handled' );
+creature_demo_expect( $reply . "\r\n" === Creature_Demo_Loan::filter_email_headers( '', 'customer_completed_order', $bc_order ), 'an empty header string gets the Reply-To header' );
+creature_demo_expect( $woo_headers === Creature_Demo_Loan::filter_email_headers( $woo_headers, 'customer_processing_order', $bc_plain ), 'a normal order is left alone' );
+creature_demo_expect( $woo_headers === Creature_Demo_Loan::filter_email_headers( $woo_headers, 'new_order', $bc_order ), 'the shop email is left alone' );
+$with_reply = "Reply-To: other@example.com\r\n";
+creature_demo_expect( $with_reply === Creature_Demo_Loan::filter_email_headers( $with_reply, 'customer_processing_order', $bc_order ), 'an existing Reply-To is not duplicated' );
+
+// The default demo product (item 9): 8946 when the constant, the filter and the setting are all empty.
+$GLOBALS['creature_demo_use_product'] = false;
+creature_demo_expect( array( 8946 ) === Creature_Demo_Loan::demo_product_ids(), 'the demo product defaults to 8946' );
+creature_demo_expect( 8946 === Creature_Demo_Loan::DEFAULT_DEMO_PRODUCT_ID, 'the default is the 8946 constant' );
+$GLOBALS['creature_demo_cart'] = array( array( 'product_id' => 8946, 'variation_id' => 0 ) );
+creature_demo_expect( true === Creature_Demo_Loan::cart_is_demo_only(), 'a basket with product 8946 is a demo basket with nothing configured' );
+$GLOBALS['creature_demo_cart'] = array( array( 'product_id' => 8946 ), array( 'product_id' => 50 ) );
+creature_demo_expect( false === Creature_Demo_Loan::cart_is_demo_only() && true === Creature_Demo_Loan::cart_contains_demo(), 'product 8946 mixed with another item is a mixed basket' );
+$GLOBALS['creature_demo_cart'] = array( array( 'product_id' => 50 ) );
+creature_demo_expect( false === Creature_Demo_Loan::cart_contains_demo(), 'any other product is not a demo' );
+creature_demo_clear_cart();
+$GLOBALS['creature_demo_use_product'] = true;
+creature_demo_expect( array( 9001 ) === Creature_Demo_Loan::demo_product_ids(), 'a filter (the config screen) overrides the default' );
+$GLOBALS['creature_demo_use_product'] = false;
+$const_run = static function ( $constant_value ) {
+	$dir  = dirname( __DIR__, 2 ) . '/creature-demo-loan/includes/';
+	$code = 'define("ABSPATH","/"); define("CREATURE_DEMO_LOAN_PRODUCT_IDS",' . var_export( $constant_value, true ) . ');'
+		. 'foreach(array("calendar","money","copy","mail","stripe") as $f){require "' . $dir . 'class-creature-demo-loan-".$f.".php";}'
+		. 'require "' . $dir . 'class-creature-demo-loan.php"; echo json_encode(Creature_Demo_Loan::demo_product_ids());';
+	return trim( (string) shell_exec( escapeshellarg( PHP_BINARY ) . ' -r ' . escapeshellarg( $code ) . ' 2>&1' ) );
+};
+creature_demo_expect( '[111,222]' === $const_run( '111, 222' ), 'a constant with ids wins over the default' );
+creature_demo_expect( '[8946]' === $const_run( '' ), 'an empty constant falls back to 8946' );
 
 $blob = creature_demo_sensitive_blob();
 creature_demo_absent( $blob, 'sk_live_', 'notes, mail, and Stripe bodies do not contain a live secret key' );
