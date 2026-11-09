@@ -1987,7 +1987,7 @@ Creature_Demo_Loan::tick( $alert_loan, '2026-04-09' );
 creature_demo_expect( $alerts + 1 === creature_demo_mail_count( 'admin_dispute_nearing' ), 'an open dispute alerts the shop on day 10' );
 $day_ten = creature_demo_last_mail( 'admin_dispute_nearing' );
 creature_demo_expect( 'info@creaturecycles.co.uk' === $day_ten['to'] && 0 !== strpos( $day_ten['subject'], '[TEST]' ), 'the dispute alert goes to the shop without a test prefix' );
-creature_demo_expect( false !== strpos( $day_ten['body'], '2026-03-30' ), 'the dispute alert names the day it opened' );
+creature_demo_expect( false !== strpos( $day_ten['body'], '30 March 2026' ) && false === strpos( $day_ten['body'], '2026-03-30' ), 'the dispute alert names the day it opened as 30 March 2026' );
 Creature_Demo_Loan::tick( $alert_loan, '2026-04-10' );
 creature_demo_expect( $alerts + 1 === creature_demo_mail_count( 'admin_dispute_nearing' ), 'the day-10 alert is sent once' );
 Creature_Demo_Loan::tick( $alert_loan, '2026-04-13' );
@@ -3304,7 +3304,8 @@ creature_demo_expect( $warns + 1 === creature_demo_mail_count( 'admin_bill_due' 
 $warn_mail = creature_demo_last_mail( 'admin_bill_due' );
 creature_demo_expect( 'info@creaturecycles.co.uk' === $warn_mail['to'] && 0 !== strpos( $warn_mail['subject'], '[TEST]' ), 'the working day 4 warning goes to info@' );
 creature_demo_expect( '' === $fb->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $fb ), 'the 22:00 run on working day 4 sends the warning and no bill' );
-creature_demo_expect( false !== strpos( $warn_mail['body'], 'The bill must go out by the end of the next working day (' ), 'the day-4 alert says the bill must go out by the end of the next working day' );
+creature_demo_expect( false !== strpos( $warn_mail['body'], 'The bill must go out by the end of the next working day (9 April 2026).' ), 'the day-4 alert says the bill must go out by the end of the next working day' );
+creature_demo_expect( false !== strpos( $warn_mail['subject'], 'by 9 April 2026' ) && false !== strpos( $warn_mail['body'], 'received back on 2 April 2026' ) && 0 === preg_match( '/\b20\d\d-\d\d-\d\d\b/', $warn_mail['subject'] . $warn_mail['body'] ), 'item E: the shop alert shows UK dates (j F Y), no Y-m-d' );
 $fb_mails = creature_demo_charge_mail_count();
 Creature_Demo_Loan::tick( $fb, '2026-04-09' );
 creature_demo_expect( 'late_only' === $fb->get_meta( '_creature_demo_bill_state' ), 'the 22:00 run on working day 5 sends the late-fee-only bill (>=, not day 6)' );
