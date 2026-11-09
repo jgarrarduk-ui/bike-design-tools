@@ -3225,6 +3225,18 @@ final class Creature_Demo_Loan {
 		if ( '' === trim( $text ) ) {
 			return;
 		}
+		// The wording says the terms PDF and the cancellation form are attached.
+		// Leave it out unless both are really there, and tell the shop.
+		$missing = self::missing_confirmation_files();
+		if ( $missing ) {
+			$text = str_replace(
+				array( 'Your demo terms (version 5) and our model cancellation form are attached to this email. ', ' or use the attached model cancellation form' ),
+				'',
+				$text
+			);
+			Creature_Demo_Loan_Mail::send_admin( $order, 'admin_attachments_missing', array( 'missing' => implode( ', ', $missing ) ) );
+			self::note( $order, 'The booking confirmation went out without the attachment wording because no file can be attached for: ' . implode( ', ', $missing ) . '.' );
+		}
 		$order->update_meta_data( '_creature_demo_booking_block_sent', 'yes' );
 		if ( method_exists( $order, 'save' ) ) {
 			$order->save();
@@ -3234,6 +3246,23 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		echo '<div class="creature-demo-loan-booking"><p>' . nl2br( self::esc( $text ) ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	/**
+	 * Labels of the confirmation files (terms PDF, cancellation form) that are
+	 * not set or cannot be attached. Empty when both can be.
+	 *
+	 * @return string[]
+	 */
+	private static function missing_confirmation_files() {
+		$report  = self::confirmation_file_report();
+		$missing = array();
+		foreach ( array( 'terms_pdf', 'cancellation_form' ) as $key ) {
+			if ( empty( $report[ $key ]['path'] ) ) {
+				$missing[] = $report[ $key ]['label'];
+			}
+		}
+		return $missing;
 	}
 
 	/**

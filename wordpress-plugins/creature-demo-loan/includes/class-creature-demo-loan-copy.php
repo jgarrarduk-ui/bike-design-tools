@@ -176,6 +176,11 @@ final class Creature_Demo_Loan_Copy {
 				'body'    => "Order {order_id}. We’ve looked again at the charge you disputed.\nDecision: charge {decision}.\nAmount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nIf the charge is waived, you have nothing to pay. If it’s upheld, you can pay using the link. If it isn’t paid, we’ll charge your saved card no sooner than 7 days after this email.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
+			'admin_attachments_missing'     => array(
+				'subject' => 'Demo booking confirmation sent without attachments (order {order_id})',
+				'body'    => 'The booking confirmation for order {order_id} went out without the attachment wording because no file can be attached for: {missing}. Set the files under WooCommerce → Demo loan. This email goes to the shop, not the rider.',
+			),
+			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_received_date_missing'   => array(
 				'subject' => 'Demo return scanned, no Kit received date (order {order_id})',
 				'body'    => 'A return scan is recorded on order {order_id}, but no Kit received date is entered. The 5 working day bill clock starts only from that date, so until it is entered there is no day-4 alert and no late-fee-only fallback bill. Enter the date the kit arrived back on the order and update it. This email goes to the shop, not the rider.',
@@ -318,6 +323,7 @@ final class Creature_Demo_Loan_Copy {
 			'{photos}'          => isset( $args['photos'] ) ? (string) $args['photos'] : '',
 			'{received}'        => isset( $args['received'] ) ? (string) $args['received'] : '',
 			'{deadline}'        => isset( $args['deadline'] ) ? (string) $args['deadline'] : '',
+			'{missing}'         => isset( $args['missing'] ) ? (string) $args['missing'] : '',
 			'{deadline_day}'    => isset( $args['deadline_day'] ) ? (string) $args['deadline_day'] : '',
 			'{consent}'         => isset( $args['consent'] ) ? (string) $args['consent'] : '',
 			'{consent_version}' => isset( $args['consent_version'] ) ? (string) $args['consent_version'] : '',

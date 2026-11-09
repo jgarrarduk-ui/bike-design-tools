@@ -1175,6 +1175,7 @@ $expected_slots = array(
 	'admin_bill_due',
 	'admin_received_date_missing',
 	'express_request_checkbox',
+	'admin_attachments_missing',
 );
 // The three emails Cadence has not written yet are slots with no wording.
 $expected_slots = array_merge( $expected_slots, array() );
@@ -3941,6 +3942,27 @@ foreach ( array(
 }
 $GLOBALS['creature_demo_conf_files'] = array( 'terms_pdf' => $up . '/terms-v5.pdf', 'extra' => '77' );
 creature_demo_expect( array( $terms_path ) === $bc_files(), 'a duplicate file is attached once' );
+// Item F: no attachment wording unless both files can be attached, and the shop is told.
+$f_render = static function ( $files ) use ( $bc_email ) {
+	$GLOBALS['creature_demo_conf_files'] = $files;
+	$order = creature_demo_booked_loan( '249.00' );
+	$before = creature_demo_mail_count( 'admin_attachments_missing' );
+	ob_start();
+	Creature_Demo_Loan::render_booking_confirmation( $order, false, true, $bc_email );
+	return array( ob_get_clean(), creature_demo_mail_count( 'admin_attachments_missing' ) - $before, $order );
+};
+$f_both = $f_render( array( 'terms_pdf' => '77', 'cancellation_form' => '78' ) );
+creature_demo_expect( false !== strpos( $f_both[0], 'are attached to this email' ) && false !== strpos( $f_both[0], 'or use the attached model cancellation form' ) && 0 === $f_both[1], 'both files set: the wording says they are attached and the shop gets no notice' );
+foreach ( array( 'one set (terms only)' => array( 'terms_pdf' => '77' ), 'one set (form only)' => array( 'cancellation_form' => '78' ), 'none set' => array() ) as $f_label => $f_files ) {
+	$f_r = $f_render( $f_files );
+	creature_demo_expect( false === stripos( $f_r[0], 'attached' ) && false !== strpos( $f_r[0], 'We’ll email your due date' ) && false !== strpos( $f_r[0], 'Email info@creaturecycles.co.uk.' ), "{$f_label}: no wording about attachments, the rest of the block stays" );
+	creature_demo_expect( 1 === $f_r[1] && false !== strpos( implode( "\n", $f_r[2]->notes ), 'without the attachment wording' ), "{$f_label}: the shop gets one notice and the order a note" );
+}
+$f_mail = creature_demo_last_mail( 'admin_attachments_missing' );
+creature_demo_expect( 'info@creaturecycles.co.uk' === $f_mail['to'] && false !== strpos( $f_mail['body'], 'Terms PDF (version 5), Model cancellation form' ), 'the notice goes to the shop and names what is missing' );
+$f_set_bad = $f_render( array( 'terms_pdf' => '77', 'cancellation_form' => $outside ) );
+creature_demo_expect( false === stripos( $f_set_bad[0], 'attached' ) && 1 === $f_set_bad[1], 'a file that is set but cannot be attached counts as missing' );
+$GLOBALS['creature_demo_conf_files'] = array();
 // The admin notice when a file is not set.
 $GLOBALS['creature_demo_conf_files'] = array();
 $GLOBALS['creature_demo_can']        = true;
