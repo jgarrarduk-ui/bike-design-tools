@@ -55,7 +55,7 @@ final class Creature_Demo_Loan_Copy {
 		$mount_kit  = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::MOUNT_KIT_PENCE );
 		$consent    = self::consent_wording( class_exists( 'Creature_Demo_Loan' ) ? Creature_Demo_Loan::consent_version() : self::CONSENT_CURRENT );
 		$grace      = sprintf(
-			'Your De-Reacher demo (order {order_id}) was due back on {due}. Your 5 days’ grace end at midnight (UK time) on the 5th day after that date. If the kit is posted after that, a late fee of %s a day applies from the 6th day after the due date up to and including the day you post it, up to %s in total. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. Late fees are billed once, after the kit is back. Book your return in My account → Demo loan.',
+			'Your De-Reacher demo (order {order_id}) was due back on {due}. Your 5 days’ grace end at midnight (UK time) on the 5th day after that date. If the kit is posted after that, a late fee of %s a day applies from the 6th day after the due date up to and including the day you post it, up to %s in total. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. Late fees are billed once, after the kit is back. Book your return on this order’s page in My account, under Demo loan.',
 			$late_daily,
 			$late_cap
 		);
@@ -69,17 +69,17 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => '',
 				'body'    => $consent,
 			),
-			// Terms 11.3 and Appendix B: the "Send my kit now" checkbox. Cadence's v2 has
-			// no label for it, so this stays empty. While it is empty the checkbox is
-			// not shown and no answer is stored.
+			// Terms 11.3 and Appendix B: the "Send my kit now" checkbox. Cadence v3, character for
+			// character with the live Appendix B (curly apostrophes). While the slot is empty the
+			// checkbox is not shown and no answer is stored.
 			'express_request_checkbox'      => array(
 				'subject' => '',
-				'body'    => '',
+				'body'    => 'Send my kit now. I understand that if I cancel within the 14-day cancellation period after the kit has been sent, I’ll need to send it back, and you’ll keep part of the £25 for the days I’ve had it.',
 			),
-			// Terms 3A.3: shown when the keep payment is refused after a reported crash. No wording in v2, so empty.
+			// Terms 3A.3: shown when Keep is hidden or refused after a reported crash. Cadence v3.
 			'crash_hold_notice'             => array(
 				'subject' => '',
-				'body'    => '',
+				'body'    => 'You’ve told us about a crash, impact or failure, so you can’t choose to keep this kit until we’ve inspected it (demo terms, clause 3A.3). Please book your return on this order’s page in My account, under Demo loan, and send the kit back as normal. If it passes inspection, we’ll offer it to you at your keep price.',
 			),
 			'consent_error'                 => array(
 				'subject' => '',
@@ -119,7 +119,7 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'reminder_deemed_warning'       => array(
 				'subject' => 'De-Reacher demo: it will be treated as bought unless it’s posted by day 13 (due date {due})',
-				'body'    => 'Your De-Reacher demo (order {order_id}) was due back on {due}. If it hasn’t been posted back by the end of the 13th day after that date, it will be treated as bought on the 14th day, at your keep price of {price}. No late fees are added to that price. We’ll email you the amount and a payment link first. If it isn’t paid or disputed within 7 days, we’ll charge your saved card. To avoid this, book your return in My account → Demo loan and post the kit with the QR code we email you. If you’d rather keep it, you can choose that now for the same price.',
+				'body'    => 'Your De-Reacher demo (order {order_id}) was due back on {due}. If it hasn’t been posted back by the end of the 13th day after that date, it will be treated as bought on the 14th day, at your keep price of {price}. No late fees are added to that price. We’ll email you the amount and a payment link first. If it isn’t paid or disputed within 7 days, we’ll charge your saved card. To avoid this, book your return on this order’s page in My account, under Demo loan, and post the kit with the QR code we email you. If you’d rather keep it, you can choose that now for the same price.',
 			),
 			'charge_notice_keep'            => array(
 				'subject' => 'Payment link to keep your De-Reacher demo kit ({amount})',
@@ -138,11 +138,11 @@ final class Creature_Demo_Loan_Copy {
 				'body'    => $damage,
 			),
 			// Terms 6.4(b) and 8.5(b): the notice for a damage or missing-parts deduction taken from a deemed
-			// purchase refund. It must not carry a pay link or say we will charge the saved card. Cadence's v2
-			// has no wording for it, so the slot is empty. While it is empty the notice is not sent.
+			// purchase refund. No pay link and no saved-card line (the plugin also passes a blank {link}).
+			// Cadence v3, as written. While the slot is empty the notice is not sent.
 			'deduction_notice_deemed'       => array(
-				'subject' => '',
-				'body'    => '',
+				'subject' => 'De-Reacher demo: {amount} to come off your refund (order {order_id})',
+				'body'    => "Your demo kit (order {order_id}) is back with us and has been inspected. You’d paid the deemed purchase price and posted the kit back within 30 days, so under clause 8.5(b) we’re refunding your keep price of {price}, less late fees of £24 and any charge for damage or missing parts. The late fees are the £24 maximum because the kit was posted after the deemed purchase date.\n\nWhat we found:\n{findings}\nOur photos:\n{photos}\n\nDamage or missing parts: {reason}.\nAmount we’ll keep from your refund for this: {amount}.\nWe charge the lower of the reasonable cost of repair and the price on our spare-parts list (creaturecycles.co.uk/spare-parts/). A missing inverted mount kit is £35 rather than the price of its separate parts. We don’t charge for fair wear and tear, or for anything shown in our photos from before we sent the kit.\n\nWe’re refunding the rest to the card you paid with now. There’s nothing to pay, and we won’t charge your saved card.\n\nIf you think it’s wrong, reply to this email or email info@creaturecycles.co.uk within 7 days and tell us why. We’ll hold the {amount} while we look again, email you our decision and refund any part we don’t uphold. If you don’t reply within 7 days, we’ll keep it from your refund.",
 			),
 			'charge_authentication_required' => array(
 				'subject' => 'Action needed: pay your De-Reacher demo charge ({amount})',
@@ -156,12 +156,12 @@ final class Creature_Demo_Loan_Copy {
 			// Terms 3.2. Cadence v2.
 			'dates_on_delivery'             => array(
 				'subject' => 'Your De-Reacher demo dates: due back {due}',
-				'body'    => "Your De-Reacher demo kit (order {order_id}) has been delivered. The loan lasts 21 days, and the delivery day is day 1.\n\nDue date: {due}. Post the kit back by then, or choose to keep it.\nLast day of grace: {grace_end}. No fee if the kit is posted by the end of this day.\nLate fee: £3 a day from the day after {grace_end}, up to £24 in total.\nDeemed purchase date: {deemed_on}. If the kit hasn’t been posted back by the end of the day before, it’s treated as bought at your keep price of {price}.\n\nEach day ends at midnight, UK time. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. These dates are also in My account → Demo loan. If you need longer, ask us before the due date.\n\nBefore you ride: fit it following our user guide (creaturecycles.co.uk/de-reacher-user-guide/), the inverted mount kit instructions and the torque card, using a calibrated torque wrench. Please don’t cut your steerer. Check the bolts before every ride. If you crash or have an impact, stop using it and tell us at info@creaturecycles.co.uk. Keep the original box, because the whole kit goes back in it.",
+				'body'    => "Your De-Reacher demo kit (order {order_id}) has been delivered. The loan lasts 21 days, and the delivery day is day 1.\n\nDue date: {due}. Post the kit back by then, or choose to keep it.\nLast day of grace: {grace_end}. No fee if the kit is posted by the end of this day.\nLate fee: £3 a day from the day after {grace_end}, up to £24 in total.\nDeemed purchase date: {deemed_on}. If the kit hasn’t been posted back by the end of the day before, it’s treated as bought at your keep price of {price}.\n\nEach day ends at midnight, UK time. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. If you need longer, ask us before the due date.\n\nBefore you ride: fit it following our user guide (creaturecycles.co.uk/de-reacher-user-guide/), the inverted mount kit instructions and the torque card, using a calibrated torque wrench. Please don’t cut your steerer. Check the bolts before every ride. If you crash or have an impact, stop using it and tell us at info@creaturecycles.co.uk. Keep the original box, because the whole kit goes back in it.",
 			),
 			// Terms 11.1 and Appendix B: body only, added to the end of the Woo order email. Cadence v2. The subject is not used.
 			'booking_confirmation'          => array(
 				'subject' => '',
-				'body'    => "De-Reacher demo booking (order {order_id})\n\nYour demo terms (version 5) and our model cancellation form are attached to this email. We’ll email your due date, the last day of your grace period and your deemed purchase date once the kit is delivered.\n\nYour keep price: {price}\n\nYour consent to later charges ({consent_version}, agreed on {consent_at}):\n“{consent}”\n\nYour answer to “Send my kit now”: {express_answer}. If you answered Yes, we’ll send the kit within your 14-day cancellation period. If you answered No, we’ll hold it until that period ends.\n\nCancelling: you can cancel this demo booking within 14 days of the day we confirm it, without giving a reason. Email info@creaturecycles.co.uk or use the attached model cancellation form. If you cancel before we’ve dispatched the kit, we’ll refund the full £25 within 14 days. If the kit has already been sent, book your return in My account → Demo loan and send it back. We’ll refund the £25 within 14 days of your cancellation, less £25 ÷ 21 for each day of the loan up to and including the day you post it.",
+				'body'    => "De-Reacher demo booking (order {order_id})\n\nYour demo terms (version 5) and our model cancellation form are attached to this email. We’ll email your due date, the last day of your grace period and your deemed purchase date once the kit is delivered.\n\nYour keep price: {price}\n\nYour consent to later charges ({consent_version}, agreed on {consent_at}):\n“{consent}”\n\nYour answer to “Send my kit now”: {express_answer}. If you answered Yes, we’ll send the kit within your 14-day cancellation period. If you answered No, we’ll hold it until that period ends.\n\nCancelling: you can cancel this demo booking within 14 days of the day we confirm it, without giving a reason. Email info@creaturecycles.co.uk or use the attached model cancellation form. If you cancel before we’ve dispatched the kit, we’ll refund the full £25 within 14 days. If the kit has already been sent, book your return on this order’s page in My account, under Demo loan, and send it back. We’ll refund the £25 within 14 days of your cancellation, less £25 ÷ 21 for each day of the loan up to and including the day you post it.",
 			),
 			'choice_return_recorded'        => array(
 				'subject' => 'Return booked for your De-Reacher demo: £25 code once it’s back',
@@ -181,7 +181,7 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'keep_choice_lapsed'            => array(
 				'subject' => 'Your De-Reacher demo keep link has lapsed',
-				'body'    => 'The payment link to keep your demo kit (order {order_id}) wasn’t paid within 7 days, so that choice has lapsed. The kit is on loan again, and the usual dates and fees apply as if you hadn’t chosen to keep it. You can still choose to keep it up to the end of the 13th day after your due date. If you don’t choose, we treat it as a return. Book it in My account → Demo loan.',
+				'body'    => 'The payment link to keep your demo kit (order {order_id}) wasn’t paid within 7 days, so that choice has lapsed. The kit is on loan again, and the usual dates and fees apply as if you hadn’t chosen to keep it. You can still choose to keep it up to the end of the 13th day after your due date. If you don’t choose, we treat it as a return. Book it on this order’s page in My account, under Demo loan.',
 			),
 			'dispute_decision'              => array(
 				'subject' => 'De-Reacher demo: our final decision on your disputed charge',
@@ -205,7 +205,7 @@ final class Creature_Demo_Loan_Copy {
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_received_date_missing'   => array(
 				'subject' => 'Demo return scanned, no Kit received date (order {order_id})',
-				'body'    => 'A return scan is recorded on order {order_id}, but no Kit received date is entered. The 5 working day bill clock starts only from that date, so until it is entered there is no day-4 alert and no late-fee-only fallback bill. Enter the date the kit arrived back on the order and update it. This email goes to the shop, not the rider.',
+				'body'    => 'A return scan is recorded on order {order_id}, but no Kit received date is entered. The 5 working day bill clock starts only from that date, so until it is entered there is no day-4 alert and no late-fee-only fallback bill. Enter the date the kit arrived back on the order and update it. Use the day the parcel arrived, not the scan date. If it hasn’t arrived yet, enter the date on the day it does. The terms’ 5 working days run from the day the kit arrives whether or not the date is entered here. The 5 working days in 6.4(b) also apply to any deduction from a deemed purchase refund. This email goes to the shop, not the rider.',
 			),
 			'admin_dispute_nearing'          => array(
 				'subject' => 'Demo dispute: day {day} of 14 (order {order_id})',
@@ -215,11 +215,10 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => 'Demo return booked: send the Royal Mail QR within 1 working day (order {order_id})',
 				'body'    => 'The rider on order {order_id} has booked a return. Email them a Royal Mail Tracked 48 QR code within 1 working day, with a post-by date (terms 10.1 and 10.3). Each extra working day moves their grace period, late fees and deemed purchase date back by a day. This email goes to the shop, not the rider.',
 			),
-			// Shop alert. Cadence v2, as written. {deadline} is a UK date (j F Y). v2 has no extra sentence for the
-			// day-4 warning, so there is none: that wording is Cadence's to add.
+			// Shop alert. Cadence v3, as written. {deadline} is a UK date (j F Y).
 			'admin_bill_due'                => array(
 				'subject' => 'Demo kit back: inspect and bill by {deadline} (order {order_id})',
-				'body'    => "The demo kit on order {order_id} was received back on {received}. Under terms 4.4 and 6.4(b), the one bill for late fees, damage and missing parts must go out within 5 working days of that, so by {deadline}. Bank holidays aren’t counted, so the real deadline may be later. Work to this date.\n\nRecord the inspection on the order now, even if nothing is owed. The rider’s £25 code is only issued once it’s recorded. If you’re charging for damage or missing parts, enter what you found and add the photos before saving. Without the findings the bill won’t send, and the terms require the photos in it. Recording the inspection raises the bill.\n\nIf the deadline passes with no inspection recorded, the plugin sends a late-fee-only bill (if a late fee is due), and no damage or missing-parts charge can be made on this loan. This email goes to the shop, not the rider.",
+				'body'    => "The demo kit on order {order_id} was received back on {received}. Under terms 4.4 and 6.4(b), the one bill for late fees, damage and missing parts must go out within 5 working days of that, so by {deadline}. Bank holidays aren’t counted, so the real deadline may be later. Work to this date.\n\nRecord the inspection on the order before 10pm on {deadline}, even if nothing is owed. The rider’s £25 code is only issued once it’s recorded, and recording it raises the bill. If you’re charging for damage or missing parts, enter what you found and add at least one photo before saving. Without both, the bill won’t send.\n\nAt 10pm that day the plugin sends the late-fee-only bill on its own (if a late fee is due), and no damage or missing-parts charge can follow.\n\nIf this kit came back after a paid deemed purchase, there’s no late-fee bill, because the £24 comes off the refund. Any damage or missing-parts deduction must be raised by the same time, or none can be made.\n\nThis email goes to the shop, not the rider.",
 			),
 		);
 	}

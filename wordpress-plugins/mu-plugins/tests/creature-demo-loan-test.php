@@ -50,7 +50,23 @@ $GLOBALS['creature_demo_attached']      = array();
 $GLOBALS['creature_demo_uploads']       = '';
 $GLOBALS['creature_demo_conf_files']    = array();
 $GLOBALS['creature_demo_hook_args']     = array();
-$GLOBALS['creature_demo_copy_override'] = array();
+
+/**
+ * Older tests were written while three slots were empty. Cadence v3 fills them, so the baseline
+ * override puts them back to empty; the v3 wording has its own tests (search "v3 copy").
+ */
+function creature_demo_empty_copy_baseline() {
+	$empty = array(
+		'subject' => '',
+		'body'    => '',
+	);
+	return array(
+		'express_request_checkbox' => $empty,
+		'crash_hold_notice'        => $empty,
+		'deduction_notice_deemed'  => $empty,
+	);
+}
+$GLOBALS['creature_demo_copy_override'] = creature_demo_empty_copy_baseline();
 
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
@@ -1222,7 +1238,10 @@ $expected_slots = array_merge( $expected_slots, array() );
 $new_slots      = array( 'charge_declined', 'dates_on_delivery', 'booking_confirmation' );
 creature_demo_expect( array() === array_diff( $new_slots, $slots ), 'the three missing emails are slots' );
 creature_demo_expect( array() === array_diff( $slots, array_merge( $expected_slots, $new_slots ) ) && array() === array_diff( $expected_slots, $slots ), 'copy slots match the catalogue' );
-$empty_slots = array();
+// v3 copy: look at the real catalogue, without the test baseline that empties three slots.
+$baseline_override                      = $GLOBALS['creature_demo_copy_override'];
+$GLOBALS['creature_demo_copy_override'] = array();
+$empty_slots                            = array();
 foreach ( $slots as $slot ) {
 	$subject = Creature_Demo_Loan_Copy::subject( $slot );
 	$body    = Creature_Demo_Loan_Copy::text( $slot );
@@ -1234,7 +1253,26 @@ foreach ( $slots as $slot ) {
 	}
 }
 sort( $empty_slots );
-creature_demo_expect( array( 'crash_hold_notice', 'deduction_notice_deemed', 'express_request_checkbox' ) === $empty_slots, 'every slot has wording except the three v2 does not give (the Appendix B checkbox label, the crash-hold refusal and the deemed deduction notice), which stay empty' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
+creature_demo_expect( array() === $empty_slots, 'v3 copy: every slot has wording (v3 fills the checkbox label, the crash notice and the deemed deduction notice)' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
+$v3_express = Creature_Demo_Loan_Copy::text( 'express_request_checkbox' );
+creature_demo_expect( 'Send my kit now. I understand that if I cancel within the 14-day cancellation period after the kit has been sent, I’ll need to send it back, and you’ll keep part of the £25 for the days I’ve had it.' === $v3_express, 'v3 copy: the express checkbox label is the Appendix B text, curly apostrophes' );
+creature_demo_absent( $v3_express, "'", 'v3 copy: no straight apostrophe in the checkbox label' );
+$v3_crash = Creature_Demo_Loan_Copy::text( 'crash_hold_notice' );
+creature_demo_expect( 0 === strpos( $v3_crash, 'You’ve told us about a crash, impact or failure' ) && false !== strpos( $v3_crash, 'under Demo loan' ) && false === strpos( $v3_crash, '→' ), 'v3 copy: crash notice, no arrow path' );
+$v3_ded = Creature_Demo_Loan_Copy::text( 'deduction_notice_deemed' );
+$v3_cat = Creature_Demo_Loan_Copy::catalogue();
+$v3_ded = $v3_cat['deduction_notice_deemed']['body'];
+creature_demo_expect( 'De-Reacher demo: {amount} to come off your refund (order {order_id})' === $v3_cat['deduction_notice_deemed']['subject'], 'v3 copy: deduction notice subject' );
+creature_demo_expect( false === strpos( $v3_ded, '{link}' ) && false === stripos( $v3_ded, 'payment link' ) && false !== strpos( $v3_ded, 'we won’t charge your saved card' ) && false !== strpos( $v3_ded, "\n\nWhat we found:\n{findings}\nOur photos:\n{photos}\n\n" ), 'v3 copy: deduction notice has no {link}, keeps its line breaks, and says nothing is charged to the saved card' );
+creature_demo_expect( false !== strpos( Creature_Demo_Loan_Copy::text( 'admin_received_date_missing' ), 'Use the day the parcel arrived, not the scan date.' ) && false !== strpos( Creature_Demo_Loan_Copy::text( 'admin_received_date_missing' ), 'The 5 working days in 6.4(b) also apply to any deduction from a deemed purchase refund.' ), 'v3 copy: admin_received_date_missing has the v3 sentences' );
+$v3_bill = $v3_cat['admin_bill_due']['body'];
+creature_demo_expect( false !== strpos( $v3_bill, 'before 10pm on {deadline}' ) && false !== strpos( $v3_bill, 'At 10pm that day the plugin sends the late-fee-only bill on its own (if a late fee is due)' ) && false !== strpos( $v3_bill, 'paid deemed purchase' ), 'v3 copy: admin_bill_due is the v3 body with {deadline}' );
+foreach ( array( 'reminder_grace_end', 'reminder_deemed_warning', 'keep_choice_lapsed', 'booking_confirmation' ) as $v3_slot ) {
+	$v3_text = Creature_Demo_Loan_Copy::text( $v3_slot );
+	creature_demo_expect( false !== strpos( $v3_text, 'on this order’s page in My account, under Demo loan' ) && false === strpos( $v3_text, 'My account →' ), 'v3 copy: ' . $v3_slot . ' uses the order-page wording' );
+}
+creature_demo_absent( Creature_Demo_Loan_Copy::text( 'dates_on_delivery' ), 'My account', 'v3 copy: dates_on_delivery no longer says the dates are in My account' );
+$GLOBALS['creature_demo_copy_override'] = $baseline_override;
 $v2_cat = Creature_Demo_Loan_Copy::catalogue();
 $v2_has = static function ( $slot, $needle ) use ( $v2_cat ) {
 	return false !== strpos( $v2_cat[ $slot ]['body'], $needle );
@@ -2442,14 +2480,20 @@ creature_demo_expect( $s2_set + 1 === creature_demo_mail_count( 'admin_deduction
 Creature_Demo_Loan::refund_deemed( $s2, '2026-04-27' );
 Creature_Demo_Loan::tick( $s2, '2026-05-30' );
 creature_demo_expect( $s2_set + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'D2: nothing more once the deduction is settled' );
-unset( $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] );
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array(
+	'subject' => '',
+	'body'    => '',
+);
 // 8.5(c): posted more than 30 days after the payment, the kit is the rider's.
 $d7 = creature_demo_paid_deemed_returned( '2026-04-08' );
 $d7->update_meta_data( '_creature_demo_deemed_paid_at', '2026-03-01' );
 $d7_r = Creature_Demo_Loan::refund_deemed( $d7, '2026-04-09' );
 creature_demo_expect( empty( $d7_r['ok'] ) && 'after_30_days' === $d7_r['reason'] && 'yes' !== $d7->get_meta( '_creature_demo_refund_done' ), '8.5(c): a kit posted more than 30 days after payment is not refunded' );
 // D3: while deduction_notice_deemed is empty the deduction notice is blocked, and the shop is told.
-unset( $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] );
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array(
+	'subject' => '',
+	'body'    => '',
+);
 $e1 = creature_demo_paid_deemed_returned();
 $e1->update_meta_data( '_creature_demo_damage_pence', 1500 );
 $e1_req    = count( WC_Stripe_API::$requests );
@@ -2467,7 +2511,10 @@ $e1_ok  = Creature_Demo_Loan::refund_deemed( $e1, '2026-04-11' );
 creature_demo_expect( ! empty( $e1_ok['pending'] ) && 1500 === $e1_ok['held'] && 'deduction_notice_deemed' === creature_demo_last_charge_slot(), 'D3: once the wording is filled the notice sends and the refund goes ahead' );
 $e1_mail = creature_demo_last_mail( 'deduction_notice_deemed' );
 creature_demo_expect( $e1_dmg === creature_demo_mail_count( 'charge_notice_damage' ) && 'Deduction £15.00. Link: []' === $e1_mail['body'], 'D3: the deduction does not reuse charge_notice_damage, and its notice has no pay link' );
-unset( $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] );
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array(
+	'subject' => '',
+	'body'    => '',
+);
 $GLOBALS['creature_demo_refund_flag'] = null;
 
 $damage = creature_demo_loan();
@@ -3335,7 +3382,10 @@ WC_Stripe_API::$response = (object) array(
 );
 $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array( 'subject' => 'Test deduction for {order_id}', 'body' => 'Deduction {amount}.' );
 $refund192_done = Creature_Demo_Loan::refund_deemed( $refund192, '2026-04-09' );
-unset( $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] );
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array(
+	'subject' => '',
+	'body'    => '',
+);
 creature_demo_expect( ! empty( $refund192_done['ok'] ) && 15300 === $refund192_done['amount'], 'the 8.5(b) refund on a £192 loan keeps the rest of the £24 and the damage out of £172' );
 $GLOBALS['creature_demo_refund_flag'] = null;
 
@@ -3530,7 +3580,7 @@ creature_demo_expect( '' === $fb->get_meta( '_creature_demo_bill_state' ) && 0 =
 creature_demo_absent( $warn_mail['body'], 'The bill must go out by the end of', 'the {deadline_day} sentence is gone from the day-4 alert' );
 creature_demo_absent( $warn_mail['body'], '{deadline_day}', 'no {deadline_day} tag is left in the alert' );
 creature_demo_expect( false !== strpos( $warn_mail['body'], 'so by 9 April 2026. Bank holidays aren’t counted' ) && false !== strpos( $warn_mail['subject'], 'inspect and bill by 9 April 2026 (order ' ), 'the {deadline} tag fills as a UK date (j F Y) in the body and the subject' );
-creature_demo_expect( 'Work to this date.' . "\n\n" . 'Record the inspection on the order now' === substr( $warn_mail['body'], strpos( $warn_mail['body'], 'Work to this date.' ), strlen( 'Work to this date.' . "\n\n" . 'Record the inspection on the order now' ) ), 'the rest of the body is Cadence v2, with nothing added in its place' );
+creature_demo_expect( 'Work to this date.' . "\n\n" . 'Record the inspection on the order before 10pm on ' === substr( $warn_mail['body'], strpos( $warn_mail['body'], 'Work to this date.' ), strlen( 'Work to this date.' . "\n\n" . 'Record the inspection on the order before 10pm on ' ) ), 'the rest of the body is Cadence v3, with nothing added in its place' );
 creature_demo_expect( '9 April 2026' === Creature_Demo_Loan_Copy::fill( '{deadline}', array( 'deadline' => '2026-04-09' ) ), 'fill() formats {deadline} as j F Y' );
 creature_demo_expect( false !== strpos( $warn_mail['subject'], 'by 9 April 2026' ) && false !== strpos( $warn_mail['body'], 'received back on 2 April 2026' ) && 0 === preg_match( '/\b20\d\d-\d\d-\d\d\b/', $warn_mail['subject'] . $warn_mail['body'] ), 'item E: the shop alert shows UK dates (j F Y), no Y-m-d' );
 $fb_mails = creature_demo_charge_mail_count();
@@ -3936,7 +3986,7 @@ $GLOBALS['creature_demo_copy_override']['dates_on_delivery'] = array(
 $dod_wired = creature_demo_loan();
 $dod_wired_mail = creature_demo_last_mail( 'dates_on_delivery' );
 creature_demo_expect( false === $dod_wired_mail['empty'] && 'Due 24 March 2026. Grace ends 29 March 2026. Deemed 7 April 2026.' === $dod_wired_mail['body'], 'once wording is set the dates email carries the UK dates' );
-$GLOBALS['creature_demo_copy_override'] = array();
+$GLOBALS['creature_demo_copy_override'] = creature_demo_empty_copy_baseline();
 
 // charge_declined (terms 4.5): a declined saved card gets a payment link, once.
 creature_demo_stripe_test();
@@ -4002,7 +4052,10 @@ $bc_answered->update_meta_data( '_creature_demo_express_request', 'yes' );
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $bc_answered, false, false, $bc_email );
 creature_demo_expect( false !== strpos( ob_get_clean(), 'Your answer to “Send my kit now”: Yes.' ), 'D1: with a label and an answer the sentence is shown' );
-unset( $GLOBALS['creature_demo_copy_override']['express_request_checkbox'] );
+$GLOBALS['creature_demo_copy_override']['express_request_checkbox'] = array(
+	'subject' => '',
+	'body'    => '',
+);
 $GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array(
 	'subject' => '',
 	'body'    => "Consent: {consent_version} on {consent_at}.\n{consent}\nExpress request: {express_answer}.",
@@ -4035,7 +4088,7 @@ foreach ( array(
 	Creature_Demo_Loan::render_booking_confirmation( $case[0], $case[1], false, $case[2] );
 	creature_demo_expect( '' === ob_get_clean(), "the booking confirmation content is not added for {$label}" );
 }
-$GLOBALS['creature_demo_copy_override'] = array();
+$GLOBALS['creature_demo_copy_override'] = creature_demo_empty_copy_baseline();
 
 // Item B, terms 11.3 and Appendix B: the "Send my kit now" checkbox, stored as _creature_demo_express_request.
 creature_demo_expect( '' === Creature_Demo_Loan::express_label() && '' === Creature_Demo_Loan::express_checkbox_html() && null === Creature_Demo_Loan::express_block_field_definition(), 'v2 has no label for the checkbox, so none is shown and no block field is defined' );
@@ -4102,7 +4155,7 @@ Creature_Demo_Loan::on_store_api_order( $ex_other, array( 'additional_fields' =>
 creature_demo_expect( '' === $ex_other->get_meta( '_creature_demo_express_request' ), 'an order that is not a demo stores no answer' );
 creature_demo_clear_cart();
 $GLOBALS['creature_demo_use_product'] = false;
-$GLOBALS['creature_demo_copy_override'] = array();
+$GLOBALS['creature_demo_copy_override'] = creature_demo_empty_copy_baseline();
 
 // Item C: the keep price is on the booking confirmation, formatted like the other emails.
 $kp_212 = creature_demo_booked_loan( '249.00' );
@@ -4153,7 +4206,7 @@ ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $gb_empty, false, false, $gb_proc );
 ob_end_clean();
 creature_demo_expect( '' === $gb_empty->get_meta( '_creature_demo_booking_block_sent' ), 'no marker is stored when there was nothing to add' );
-$GLOBALS['creature_demo_copy_override'] = array();
+$GLOBALS['creature_demo_copy_override'] = creature_demo_empty_copy_baseline();
 
 // The attachments: media ids or file paths, set through the filter (the config screen sets it).
 $up = sys_get_temp_dir() . '/creature-demo-uploads-' . getmypid();
