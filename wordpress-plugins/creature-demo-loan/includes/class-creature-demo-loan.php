@@ -104,6 +104,7 @@ final class Creature_Demo_Loan {
 		self::$booted = true;
 
 		add_action( 'init', array( __CLASS__, 'on_init' ) );
+		add_action( 'wp_loaded', array( __CLASS__, 'maybe_flush_rewrite_rules' ) );
 		add_action( 'woocommerce_init', array( __CLASS__, 'register_block_field' ) );
 		add_action( 'creature_demo_loan_daily', array( __CLASS__, 'run_scheduled' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'render_late_run_notice' ) );
@@ -232,6 +233,7 @@ final class Creature_Demo_Loan {
 		self::register_block_field();
 		self::register_account_endpoint();
 		self::schedule_daily();
+		// The rewrite flush is not here: it runs on wp_loaded (maybe_flush_rewrite_rules).
 	}
 
 	/**
@@ -2153,7 +2155,8 @@ final class Creature_Demo_Loan {
 		} else {
 			$from = self::meta_string( $charge, '_creature_demo_charge_notice_at' );
 		}
-		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $from ) || $as_of < Creature_Demo_Loan_Calendar::add_days( $from, self::notice_days() ) ) {
+		// A waived deduction has no 7 days to wait: the shop is told straight away.
+		if ( 'waived' !== $dispute && ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $from ) || $as_of < Creature_Demo_Loan_Calendar::add_days( $from, self::notice_days() ) ) ) {
 			return;
 		}
 		$loan->update_meta_data( '_creature_demo_deduction_settle_alert_sent', 'yes' );
@@ -2733,6 +2736,11 @@ final class Creature_Demo_Loan {
 		$capped  = false;
 		$changed = false;
 		$amount  = (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' );
+		// What the rider was told at the notice: a waiver or a cut releases the difference.
+		$noticed = (int) self::meta_string( $charge, '_creature_demo_charge_notice_amount' );
+		if ( $noticed < 1 ) {
+			$noticed = $amount;
+		}
 		if ( null !== $amount_pence && 'upheld' === $decision ) {
 			$notice = (int) self::meta_string( $charge, '_creature_demo_charge_notice_amount' );
 			if ( $notice < 1 ) {
@@ -2763,7 +2771,14 @@ final class Creature_Demo_Loan {
 		$charge->save();
 		if ( $changed ) {
 			$loan = self::parent_loan( $charge );
-			if ( $loan ) {
+			if ( $loan && $deduction ) {
+				// A deemed-refund deduction is not re-noticed as a damage charge (that email has a pay link and
+				// says the saved card will be charged). dispute_decision_deemed below carries the amount.
+				// Keep the notice record in step without sending anything.
+				$charge->update_meta_data( '_creature_demo_charge_notice_at', $as_of );
+				$charge->update_meta_data( '_creature_demo_charge_notice_amount', (int) $amount );
+				$charge->save();
+			} elseif ( $loan ) {
 				$kind   = self::meta_string( $charge, '_creature_demo_charge_kind' );
 				$reason = self::meta_string( $charge, '_creature_demo_charge_notice_reason' );
 				self::log_charge_notice( $loan, $charge, $amount, $reason, $as_of, $kind );
@@ -2778,6 +2793,8 @@ final class Creature_Demo_Loan {
 			array(
 				'decision' => $decision,
 				'amount'   => Creature_Demo_Loan_Money::format_gbp( $amount ),
+				// Refunded back on a waiver (all of it) or a partial uphold (the part cut).
+				'released' => Creature_Demo_Loan_Money::format_gbp( 'waived' === $decision ? $noticed : max( 0, $noticed - $amount ) ),
 				'reason'   => self::meta_string( $charge, '_creature_demo_charge_notice_reason' ),
 				// A deduction comes out of the refund, so its decision email never has a pay link.
 				'link'     => $deduction ? '' : self::payment_link( $charge ),
@@ -3394,14 +3411,21 @@ final class Creature_Demo_Loan {
 	const REWRITE_OPTION = 'creature_demo_loan_rewrite_version';
 
 	/**
-	 * Register the Demo loan endpoint, and flush the rewrite rules once per plugin
-	 * version (a flush on every request is slow).
+	 * Register the Demo loan endpoint (on init). The flush is separate and runs later, on wp_loaded,
+	 * once every plugin has registered its own rules.
 	 */
 	public static function register_account_endpoint() {
 		if ( function_exists( 'add_rewrite_endpoint' ) ) {
 			$mask = ( defined( 'EP_ROOT' ) ? EP_ROOT : 1 ) | ( defined( 'EP_PAGES' ) ? EP_PAGES : 4096 );
 			add_rewrite_endpoint( self::ACCOUNT_ENDPOINT, $mask );
 		}
+	}
+
+	/**
+	 * Flush the rewrite rules once per plugin version (a flush on every request is slow). Hooked to
+	 * wp_loaded, after the endpoint is registered on init.
+	 */
+	public static function maybe_flush_rewrite_rules() {
 		$version = defined( 'CREATURE_DEMO_LOAN_VERSION' ) ? CREATURE_DEMO_LOAN_VERSION : '';
 		if ( function_exists( 'get_option' ) && function_exists( 'update_option' ) && function_exists( 'flush_rewrite_rules' ) && get_option( self::REWRITE_OPTION, '' ) !== $version ) {
 			flush_rewrite_rules( false );
@@ -3429,6 +3453,11 @@ final class Creature_Demo_Loan {
 	public static function filter_account_menu( $items ) {
 		$label = trim( Creature_Demo_Loan_Copy::text( 'my_account_heading' ) );
 		if ( ! is_array( $items ) || '' === $label ) {
+			return $items;
+		}
+		// Only a customer with at least one demo order sees the item.
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		if ( ! self::account_has_demo_order( $user_id ) ) {
 			return $items;
 		}
 		$out   = array();
@@ -3491,16 +3520,91 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * Every demo order of this customer, owner-checked (the query is not trusted to filter).
+	 *
+	 * @param int $user_id
+	 * @return object[]
+	 */
+	private static function account_demo_orders( $user_id ) {
+		$user_id = (int) $user_id;
+		if ( $user_id < 1 || ! function_exists( 'wc_get_orders' ) ) {
+			return array();
+		}
+		$found = wc_get_orders(
+			array(
+				'customer' => $user_id,
+				'limit'    => -1,
+				'return'   => 'objects',
+				'type'     => 'shop_order',
+			)
+		);
+		$out = array();
+		foreach ( is_array( $found ) ? $found : array() as $order ) {
+			if ( is_object( $order ) && (int) $order->get_user_id() === $user_id && self::order_is_demo( $order ) ) {
+				$out[] = $order;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Whether the Demo loan menu item is shown: the customer has at least one demo order, in any state.
+	 *
+	 * @param int $user_id
+	 * @return bool
+	 */
+	public static function account_has_demo_order( $user_id ) {
+		return (bool) self::account_demo_orders( $user_id );
+	}
+
+	/**
+	 * What the Demo loan tab lists, each with how much to show:
+	 * - active: on loan, overdue or return booked, with a due date. Dates, keep price and choices.
+	 * - deemed: demo-deemed with a due date. Dates and keep price, no choices.
+	 * - inspect: demo-inspect. Listed, no choices.
+	 * - booked: a paid booking the kit has not reached yet (no due date). Keep price only.
+	 *
+	 * @param int $user_id
+	 * @return array<int, array{order: object, mode: string}>
+	 */
+	public static function account_entries( $user_id ) {
+		$entries = array();
+		foreach ( self::account_demo_orders( $user_id ) as $order ) {
+			$status   = (string) $order->get_status();
+			$has_due  = Creature_Demo_Loan_Calendar::is_real_ymd( self::meta_string( $order, '_creature_demo_due_date' ) );
+			$is_loan  = 'yes' === self::meta_string( $order, '_creature_demo_loan' );
+			$mode     = '';
+			if ( self::STATUS_INSPECT === $status ) {
+				$mode = 'inspect';
+			} elseif ( self::STATUS_DEEMED === $status && $has_due ) {
+				$mode = 'deemed';
+			} elseif ( $is_loan && $has_due && in_array( $status, array( self::STATUS_LOAN, self::STATUS_OVERDUE, self::STATUS_BOOKED ), true ) ) {
+				$mode = 'active';
+			} elseif ( $is_loan && ! $has_due && in_array( $status, array( 'processing', 'on-hold' ), true ) ) {
+				$mode = 'booked';
+			}
+			if ( '' !== $mode ) {
+				$entries[] = array(
+					'order' => $order,
+					'mode'  => $mode,
+				);
+			}
+		}
+		return $entries;
+	}
+
+	/**
 	 * The Demo loan tab in My account (terms 3A.1 and 3.2): each active loan with its due date,
 	 * the last day of grace, the deemed purchase date and the keep price, the choice buttons, and
-	 * a link to the order. A row whose label slot has no wording yet is left out rather than
-	 * shown with a made-up label.
+	 * a link to the order. Booked kits not yet delivered show the keep price only; deemed kits show
+	 * the dates and keep price with no choices; kits being inspected are listed with no choices.
+	 * A row whose label slot has no wording yet is left out rather than shown with a made-up label.
 	 */
 	public static function render_account_tab() {
 		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
 		echo '<section class="creature-demo-loan-account"><h2>' . self::esc( Creature_Demo_Loan_Copy::text( 'my_account_heading' ) ) . '</h2>';
-		$loans = self::account_loans( $user_id );
-		if ( ! $loans ) {
+		$entries = self::account_entries( $user_id );
+		if ( ! $entries ) {
 			$none = trim( Creature_Demo_Loan_Copy::text( 'my_account_no_loans' ) );
 			if ( '' !== $none ) {
 				echo '<p>' . self::esc( $none ) . '</p>';
@@ -3508,14 +3612,21 @@ final class Creature_Demo_Loan {
 			echo '</section>';
 			return;
 		}
-		foreach ( $loans as $order ) {
-			$due  = self::meta_string( $order, '_creature_demo_due_date' );
-			$rows = array(
+		foreach ( $entries as $entry ) {
+			$order = $entry['order'];
+			$mode  = $entry['mode'];
+			$due   = self::meta_string( $order, '_creature_demo_due_date' );
+			$rows  = array(
 				'my_account_label_due'        => Creature_Demo_Loan_Calendar::format_uk( $due ),
 				'my_account_label_grace_end'  => Creature_Demo_Loan_Calendar::format_uk( Creature_Demo_Loan_Calendar::grace_end( $due, self::grace_days() ) ),
 				'my_account_label_deemed_on'  => Creature_Demo_Loan_Calendar::format_uk( self::deemed_on_for( $order ) ),
 				'my_account_label_keep_price' => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $order ) ),
 			);
+			if ( 'booked' === $mode ) {
+				$rows = array( 'my_account_label_keep_price' => $rows['my_account_label_keep_price'] );
+			} elseif ( 'inspect' === $mode ) {
+				$rows = array();
+			}
 			echo '<div class="creature-demo-loan-account-loan">';
 			$number = method_exists( $order, 'get_order_number' ) ? $order->get_order_number() : $order->get_id();
 			$base   = function_exists( 'wc_get_endpoint_url' ) && function_exists( 'wc_get_page_permalink' ) ? wc_get_endpoint_url( 'view-order', $order->get_id(), wc_get_page_permalink( 'myaccount' ) ) : '';
@@ -3526,7 +3637,10 @@ final class Creature_Demo_Loan {
 					echo '<p><strong>' . self::esc( $label ) . '</strong> ' . self::esc( $value ) . '</p>';
 				}
 			}
-			self::render_choice_actions( $order );
+			// Only a loan that is out gets choices. Booked, deemed and inspecting kits do not.
+			if ( 'active' === $mode ) {
+				self::render_choice_actions( $order );
+			}
 			echo '</div>';
 		}
 		echo '</section>';

@@ -67,11 +67,12 @@ add_action( 'plugins_loaded', array( 'Creature_Demo_Loan', 'boot' ), 20 );
 
 /**
  * Register the My account "Demo loan" endpoint and flush the rewrite rules once.
- * (A version bump flushes once more, from Creature_Demo_Loan::register_account_endpoint.)
+ * (A version bump flushes once more, on wp_loaded, from Creature_Demo_Loan::maybe_flush_rewrite_rules.)
  */
 function creature_demo_loan_activate() {
 	if ( class_exists( 'Creature_Demo_Loan' ) ) {
 		Creature_Demo_Loan::register_account_endpoint();
+		Creature_Demo_Loan::maybe_flush_rewrite_rules();
 	}
 }
 

@@ -8,7 +8,7 @@
  * constants (£24, £212, £35) in the sprintf slots so those figures cannot drift
  * from the charge maths.
  *
- * Placeholders: {amount} {price} {reason} {link} {due} {coupon} {order_id}
+ * Placeholders: {amount} {price} {released} {reason} {link} {due} {coupon} {order_id}
  * {choice_links} {decision} {findings} {photos} {grace_end} {deemed_on}
  * {consent} {consent_version} {consent_at} {express_answer} {late_runs}. {price} is the
  * loan's keep price. Dates that reach a customer ({due}, {grace_end},
@@ -170,7 +170,8 @@ final class Creature_Demo_Loan_Copy {
 			// Terms 4.4(b) and 8.5(b): the final decision email when the disputed charge is a deduction from a
 			// deemed purchase refund. No pay link and no saved-card line. v3 has no wording for it, so the slot is
 			// empty. While it is empty the decision cannot be recorded or sent. Tags: {decision} {amount} {reason}
-			// {price} {findings} {photos} {order_id}.
+			// {price} {findings} {photos} {released} {order_id}. {released} is the amount refunded back to the rider on
+			// a waiver or a partial uphold (£0.00 when the full amount is upheld).
 			'dispute_decision_deemed'       => array(
 				'subject' => '',
 				'body'    => '',
@@ -231,17 +232,17 @@ final class Creature_Demo_Loan_Copy {
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_dispute_decision_missing' => array(
 				'subject' => 'Demo dispute decision held: no deduction decision wording (order {order_id})',
-				'body'    => 'A dispute decision was recorded on a deemed-refund deduction on order {order_id}, but the dispute_decision_deemed wording is empty, so the decision email cannot be sent and the decision was not recorded. Add the wording, then record the decision again. This email goes to the shop, not the rider.',
+				'body'    => 'A dispute decision was recorded on a deemed-refund deduction on order {order_id}, but the dispute_decision_deemed wording is empty, so the decision email cannot be sent and the decision was not recorded. Add the wording, then record the decision again. The 14 days for a final decision (4.4(b)) are still running. This email goes to the shop, not the rider.',
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's. The daily job is meant to run at 22:00 London.
 			'admin_daily_job_late'          => array(
 				'subject' => 'Demo loan daily job ran late or missed a day',
-				'body'    => "The daily 22:00 demo loan job did not run on time:\n{late_runs}\n\nThe bills and alerts for each missed day were caught up as of that day, not the day the job actually ran. If a day was missed, a bill may have gone out after the 5 working days in the demo terms (clause 4.4), so check any bill sent in this period. Fix: run a real server cron that calls wp-cron.php every 5 to 15 minutes (with DISABLE_WP_CRON set), or run the Action Scheduler runner; see the plugin README. This email goes to the shop, not the rider.",
+				'body'    => "The daily 22:00 demo loan job did not run on time:\n{late_runs}\n\nThe bills and alerts for each missed day were caught up as of that day, not the day the job actually ran. If a day was missed, a bill may have gone out after the 5 working days in the demo terms (clause 4.4), so check any bill sent in this period. Fix: run a real server cron that calls wp-cron.php every 5 to 15 minutes (with DISABLE_WP_CRON set), or run the Action Scheduler runner, or confirm the host already runs cron; see the plugin README. This email goes to the shop, not the rider.",
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_deduction_settle_due'  => array(
 				'subject' => 'Demo deduction ready to settle (order {order_id})',
-				'body'    => 'The 7 days since the decision on the deduction for order {order_id} have passed: re-run Refund deemed purchase to settle the deduction. This email goes to the shop, not the rider.',
+				'body'    => 'The 7 days after the deduction notice, or after the dispute decision, have passed for order {order_id}. Re-run Refund deemed purchase to settle the deduction. This email goes to the shop, not the rider.',
 			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
 			'admin_received_date_missing'   => array(
@@ -371,7 +372,8 @@ final class Creature_Demo_Loan_Copy {
 		$map  = array(
 			'{amount}'          => isset( $args['amount'] ) ? (string) $args['amount'] : '',
 			'{price}'           => isset( $args['price'] ) ? (string) $args['price'] : '',
-			'{reason}'          => isset( $args['reason'] ) ? (string) $args['reason'] : '',
+			'{released}'        => isset( $args['released'] ) ? (string) $args['released'] : '',
+			'{reason}'         => isset( $args['reason'] ) ? (string) $args['reason'] : '',
 			'{link}'            => isset( $args['link'] ) ? (string) $args['link'] : '',
 			'{due}'             => $date( 'due' ),
 			'{grace_end}'       => $date( 'grace_end' ),

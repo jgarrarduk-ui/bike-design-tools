@@ -2483,7 +2483,7 @@ creature_demo_expect( $s1_set === creature_demo_mail_count( 'admin_deduction_set
 Creature_Demo_Loan::tick( $s1, '2026-04-16' );
 Creature_Demo_Loan::tick( $s1, '2026-04-17' );
 $s1_mail = creature_demo_last_mail( 'admin_deduction_settle_due' );
-creature_demo_expect( $s1_set + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ) && 'info@creaturecycles.co.uk' === $s1_mail['to'] && false !== strpos( $s1_mail['body'], 're-run Refund deemed purchase to settle the deduction' ), 'D2: one shop alert 7 days after the notice says to re-run Refund deemed purchase' );
+creature_demo_expect( $s1_set + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ) && 'info@creaturecycles.co.uk' === $s1_mail['to'] && 'The 7 days after the deduction notice, or after the dispute decision, have passed for order ' . $s1->get_id() . '. Re-run Refund deemed purchase to settle the deduction. This email goes to the shop, not the rider.' === $s1_mail['body'], 'D2: one shop alert 7 days after the notice says to re-run Refund deemed purchase (round 4 wording)' );
 $s2 = creature_demo_paid_deemed_returned( '2026-04-08' );
 $s2->update_meta_data( '_creature_demo_damage_pence', 1500 );
 Creature_Demo_Loan::refund_deemed( $s2, '2026-04-09' );
@@ -2564,6 +2564,63 @@ $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array(
 	'body'    => '',
 );
 $GLOBALS['creature_demo_refund_flag'] = null;
+
+// Round 4. D4: a partial uphold of a deemed-refund deduction is not re-noticed as a damage charge.
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array( 'subject' => 'Test deduction for {order_id}', 'body' => 'Deduction {amount}.' );
+$GLOBALS['creature_demo_copy_override']['dispute_decision_deemed'] = array(
+	'subject' => 'Test decision for {order_id}',
+	'body'    => 'Decision {decision}. Amount {amount}. Released {released}. Link: [{link}]',
+);
+$r4_make = static function () {
+	$loan = creature_demo_paid_deemed_returned( '2026-04-08' );
+	$loan->update_meta_data( '_creature_demo_damage_pence', 1500 );
+	Creature_Demo_Loan::refund_deemed( $loan, '2026-04-09' );
+	$charge = wc_get_order( (int) $loan->get_meta( '_creature_demo_damage_order_id' ) );
+	Creature_Demo_Loan::mark_disputed( $charge, '2026-04-11' );
+	return array( $loan, $charge );
+};
+list( $d4_loan, $d4_charge ) = $r4_make();
+creature_demo_expect( 'yes' === $d4_charge->get_meta( '_creature_demo_charge_netted' ), 'D4 setup: the disputed charge is a deemed-refund deduction' );
+$d4_damage  = creature_demo_mail_count( 'charge_notice_damage' );
+$d4_deemed  = creature_demo_mail_count( 'dispute_decision_deemed' );
+$d4_plain   = creature_demo_mail_count( 'dispute_decision' );
+$d4_notices = creature_demo_charge_mail_count();
+Creature_Demo_Loan::record_dispute_decision( $d4_charge, 'upheld', '2026-04-20', 1000 );
+$d4_mail = creature_demo_last_mail( 'dispute_decision_deemed' );
+creature_demo_expect( $d4_damage === creature_demo_mail_count( 'charge_notice_damage' ) && $d4_notices === creature_demo_charge_mail_count(), 'D4: a partial uphold sends no charge_notice_damage and no other charge notice' );
+creature_demo_expect( $d4_deemed + 1 === creature_demo_mail_count( 'dispute_decision_deemed' ) && $d4_plain === creature_demo_mail_count( 'dispute_decision' ), 'D4: dispute_decision_deemed is sent once, and not dispute_decision' );
+creature_demo_expect( false === stripos( $d4_mail['body'], 'http' ) && false !== strpos( $d4_mail['body'], 'Link: []' ), 'D4: no pay link in the decision email' );
+creature_demo_expect( 'Decision upheld. Amount £10.00. Released £5.00. Link: []' === $d4_mail['body'], '{released}: a partial uphold of £15.00 down to £10.00 releases £5.00 (the decision email carries the amount and the released part)' );
+creature_demo_expect( 1000 === (int) $d4_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 1000 === (int) $d4_charge->get_meta( '_creature_demo_charge_notice_amount' ), 'D4: the cut amount is recorded on the charge and the notice record' );
+// A full uphold releases nothing.
+list( $r4_full_loan, $r4_full ) = $r4_make();
+Creature_Demo_Loan::record_dispute_decision( $r4_full, 'upheld', '2026-04-20', null );
+creature_demo_expect( 'Decision upheld. Amount £15.00. Released £0.00. Link: []' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], '{released}: a full uphold releases £0.00' );
+// A waiver releases the whole deduction.
+list( $r4_waive_loan, $r4_waive ) = $r4_make();
+$r4_alerts = creature_demo_mail_count( 'admin_deduction_settle_due' );
+Creature_Demo_Loan::record_dispute_decision( $r4_waive, 'waived', '2026-04-20', null );
+creature_demo_expect( 'Decision waived. Amount £15.00. Released £15.00. Link: []' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], '{released}: a waiver releases the whole £15.00' );
+creature_demo_expect( creature_demo_mail_count( 'charge_notice_damage' ) === $d4_damage, 'D4: a waiver sends no damage notice either' );
+// Settle alert on waiver: straight away, not 7 days later, once.
+creature_demo_expect( $r4_alerts === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'settle alert: nothing is sent by the decision itself' );
+Creature_Demo_Loan::tick( $r4_waive_loan, '2026-04-20' );
+Creature_Demo_Loan::tick( $r4_waive_loan, '2026-04-21' );
+creature_demo_expect( $r4_alerts + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'settle alert: a waived deduction alerts the shop on the day of the decision, once' );
+// An upheld deduction still waits the 7 days.
+Creature_Demo_Loan::tick( $r4_full_loan, '2026-04-20' );
+creature_demo_expect( $r4_alerts + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'settle alert: an upheld deduction does not alert early' );
+// The Copy tag itself.
+creature_demo_expect( 'Back: £5.00.' === Creature_Demo_Loan_Copy::fill( 'Back: {released}.', array( 'released' => '£5.00' ) ) && 'Back: .' === Creature_Demo_Loan_Copy::fill( 'Back: {released}.', array() ), '{released}: the merge tag is filled from the released argument and is empty without one' );
+$GLOBALS['creature_demo_copy_override']['dispute_decision_deemed'] = creature_demo_empty_copy_baseline()['dispute_decision_deemed'];
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array(
+	'subject' => '',
+	'body'    => '',
+);
+// The three admin wordings given in round 4.
+creature_demo_expect( false !== strpos( Creature_Demo_Loan_Copy::text( 'admin_dispute_decision_missing' ), 'The 14 days for a final decision (4.4(b)) are still running.' ), 'round 4: admin_dispute_decision_missing has the 14-day sentence' );
+creature_demo_expect( false !== strpos( Creature_Demo_Loan_Copy::text( 'admin_daily_job_late' ), 'or confirm the host already runs cron' ), 'round 4: admin_daily_job_late says to confirm the host already runs cron' );
+creature_demo_expect( 'Demo deduction ready to settle (order 7)' === Creature_Demo_Loan_Copy::subject( 'admin_deduction_settle_due', array( 'order_id' => '7' ) ), 'round 4: the settle subject is unchanged' );
 
 $damage = creature_demo_loan();
 $mount = creature_demo_damage( $damage, 3500, 'Inverted mount kit', '2026-03-20' );
@@ -4464,8 +4521,6 @@ foreach ( $GLOBALS['creature_demo_hooks'] as $e1_row ) {
 foreach ( array( 'woocommerce_account_menu_items', 'woocommerce_account_demo-loan_endpoint', 'query_vars' ) as $e1_hook ) {
 	creature_demo_expect( in_array( $e1_hook, $e1_hooks, true ), 'E1: ' . $e1_hook . ' is hooked' );
 }
-$e1_menu = Creature_Demo_Loan::filter_account_menu( array( 'dashboard' => 'Dashboard', 'orders' => 'Orders', 'customer-logout' => 'Log out' ) );
-creature_demo_expect( array( 'dashboard', 'orders', 'demo-loan', 'customer-logout' ) === array_keys( $e1_menu ) && 'Demo loan' === $e1_menu['demo-loan'], 'E1: the menu item "Demo loan" (my_account_heading) goes in above Log out' );
 creature_demo_expect( in_array( 'demo-loan', Creature_Demo_Loan::filter_query_vars( array( 'p' ) ), true ), 'E1: the endpoint is a query var' );
 // The endpoint and one rewrite flush per plugin version.
 $GLOBALS['creature_demo_rewrite'] = array( 'endpoints' => array(), 'flushes' => 0 );
@@ -4481,13 +4536,30 @@ if ( ! function_exists( 'flush_rewrite_rules' ) ) {
 	}
 }
 unset( $GLOBALS['creature_demo_options']['creature_demo_loan_rewrite_version'] );
+// Round 4: the endpoint is added on init; the flush moved to wp_loaded.
+$r4_flush_hook = null;
+$r4_init_hooks = array();
+foreach ( $GLOBALS['creature_demo_hooks'] as $r4_row ) {
+	if ( 'wp_loaded' === $r4_row[0] ) {
+		$r4_flush_hook = $r4_row[1];
+	}
+	if ( 'init' === $r4_row[0] ) {
+		$r4_init_hooks[] = $r4_row[1];
+	}
+}
+creature_demo_expect( array( 'Creature_Demo_Loan', 'maybe_flush_rewrite_rules' ) === $r4_flush_hook, 'round 4: the rewrite flush is hooked to wp_loaded' );
+creature_demo_expect( array( array( 'Creature_Demo_Loan', 'on_init' ) ) === $r4_init_hooks, 'round 4: init has only on_init, which does not flush' );
 Creature_Demo_Loan::register_account_endpoint();
-creature_demo_expect( 'demo-loan' === $GLOBALS['creature_demo_rewrite']['endpoints'][0][0] && 1 === $GLOBALS['creature_demo_rewrite']['flushes'] && CREATURE_DEMO_LOAN_VERSION === get_option( 'creature_demo_loan_rewrite_version' ), 'E1: the endpoint is added and the rewrite rules are flushed once' );
+creature_demo_expect( 'demo-loan' === $GLOBALS['creature_demo_rewrite']['endpoints'][0][0] && 0 === $GLOBALS['creature_demo_rewrite']['flushes'] && '' === get_option( 'creature_demo_loan_rewrite_version', '' ), 'round 4: registering the endpoint on init flushes nothing and sets no option' );
+Creature_Demo_Loan::maybe_flush_rewrite_rules();
+creature_demo_expect( 1 === $GLOBALS['creature_demo_rewrite']['flushes'] && CREATURE_DEMO_LOAN_VERSION === get_option( 'creature_demo_loan_rewrite_version' ), 'E1: the rewrite rules are flushed once, and the version recorded' );
 Creature_Demo_Loan::register_account_endpoint();
+Creature_Demo_Loan::maybe_flush_rewrite_rules();
 Creature_Demo_Loan::register_account_endpoint();
+Creature_Demo_Loan::maybe_flush_rewrite_rules();
 creature_demo_expect( 3 === count( $GLOBALS['creature_demo_rewrite']['endpoints'] ) && 1 === $GLOBALS['creature_demo_rewrite']['flushes'], 'E1: later requests add the endpoint again but do not flush again' );
 $GLOBALS['creature_demo_options']['creature_demo_loan_rewrite_version'] = '0.0.1';
-Creature_Demo_Loan::register_account_endpoint();
+Creature_Demo_Loan::maybe_flush_rewrite_rules();
 creature_demo_expect( 2 === $GLOBALS['creature_demo_rewrite']['flushes'], 'E1: a version bump flushes once more' );
 // Render. Users 5500 (no loans), 5501 (one loan) and 5502 (someone else's).
 $GLOBALS['creature_demo_copy_override'] = array_merge( creature_demo_empty_copy_baseline(), $e1_labels );
@@ -4504,6 +4576,24 @@ $e1_closed = creature_demo_loan( '2026-10-26', '2026-10-27' );
 $e1_closed->user_id = 5501;
 $e1_closed->status = 'demo-closed';
 creature_demo_expect( 'demo-loan' === $e1_loan->get_status() && '2026-11-16' === $e1_loan->get_meta( '_creature_demo_due_date' ), 'E1 setup: an active loan with due date 16 November 2026 (got ' . $e1_loan->get_status() . ' ' . $e1_loan->get_meta( '_creature_demo_due_date' ) . ')' );
+// Round 4 (R1): the menu item shows only for a customer with at least one demo order, in any state.
+$e1_items = array( 'dashboard' => 'Dashboard', 'orders' => 'Orders', 'customer-logout' => 'Log out' );
+$GLOBALS['creature_demo_user'] = 5501;
+$e1_menu = Creature_Demo_Loan::filter_account_menu( $e1_items );
+creature_demo_expect( array( 'dashboard', 'orders', 'demo-loan', 'customer-logout' ) === array_keys( $e1_menu ) && 'Demo loan' === $e1_menu['demo-loan'], 'E1: the menu item "Demo loan" (my_account_heading) goes in above Log out for a customer with a demo order' );
+$GLOBALS['creature_demo_user'] = 5500;
+creature_demo_expect( $e1_items === Creature_Demo_Loan::filter_account_menu( $e1_items ), 'R1 menu: a customer with no demo order does not see the item' );
+$GLOBALS['creature_demo_user'] = 0;
+creature_demo_expect( $e1_items === Creature_Demo_Loan::filter_account_menu( $e1_items ), 'R1 menu: a logged-out visitor does not see the item' );
+$r1_plain = wc_create_order( array( 'customer_id' => 5503, 'status' => 'completed' ) );
+$r1_plain->user_id = 5503;
+$GLOBALS['creature_demo_user'] = 5503;
+creature_demo_expect( $e1_items === Creature_Demo_Loan::filter_account_menu( $e1_items ), 'R1 menu: a customer with only an ordinary order does not see the item' );
+$r1_closed_only = creature_demo_loan( '2026-10-26', '2026-10-27' );
+$r1_closed_only->user_id = 5504;
+$r1_closed_only->status  = 'demo-closed';
+$GLOBALS['creature_demo_user'] = 5504;
+creature_demo_expect( isset( Creature_Demo_Loan::filter_account_menu( $e1_items )['demo-loan'] ), 'R1 menu: a customer whose only demo order is closed still sees the item' );
 $GLOBALS['creature_demo_user'] = 5501;
 ob_start();
 Creature_Demo_Loan::render_account_tab();
@@ -4539,6 +4629,42 @@ $GLOBALS['creature_demo_copy_override'] = array_merge( creature_demo_empty_copy_
 ob_start();
 Creature_Demo_Loan::render_my_account_choices( $e1_loan );
 creature_demo_expect( false !== strpos( ob_get_clean(), 'creature-demo-loan-choices' ), 'E1: the order view page block is unchanged' );
+
+// R1: the other states in the tab. One customer each: booked (not yet delivered), deemed, inspecting.
+$r1_render = static function ( $user ) {
+	$GLOBALS['creature_demo_user'] = $user;
+	ob_start();
+	Creature_Demo_Loan::render_account_tab();
+	return ob_get_clean();
+};
+$r1_booked = wc_create_order( array( 'customer_id' => 5510, 'status' => 'processing' ) );
+$r1_booked->user_id = 5510;
+Creature_Demo_Loan::store_consent( $r1_booked, true, '2026-03-02T12:00:00+00:00' );
+creature_demo_expect( '' === (string) $r1_booked->get_meta( '_creature_demo_due_date' ) && 'processing' === $r1_booked->get_status(), 'R1 setup: a booking the kit has not reached has no due date' );
+$r1_out = $r1_render( 5510 );
+creature_demo_expect( false !== strpos( $r1_out, '#' . $r1_booked->get_id() . '</a>' ) && false !== strpos( $r1_out, 'Test label price:</strong> £212.00' ), 'R1 booked: the order is listed with its keep price' );
+creature_demo_expect( false === strpos( $r1_out, 'Test label due:' ) && false === strpos( $r1_out, 'Test label grace:' ) && false === strpos( $r1_out, 'Test label deemed:' ) && false === strpos( $r1_out, 'Test no loans line.' ), 'R1 booked: no dates, and not the no-loans line' );
+creature_demo_expect( false === strpos( $r1_out, 'creature_demo_choice' ) && false === strpos( $r1_out, 'class="button"' ), 'R1 booked: no choices' );
+$r1_deemed = creature_demo_loan( '2026-10-26', '2026-10-27' );
+$r1_deemed->user_id = 5511;
+$r1_deemed->status  = 'demo-deemed';
+$r1_out = $r1_render( 5511 );
+creature_demo_expect( false !== strpos( $r1_out, '#' . $r1_deemed->get_id() . '</a>' ) && false !== strpos( $r1_out, 'Test label due:</strong> 16 November 2026' ) && false !== strpos( $r1_out, 'Test label grace:</strong> 21 November 2026' ) && false !== strpos( $r1_out, 'Test label deemed:</strong> 30 November 2026' ) && false !== strpos( $r1_out, 'Test label price:</strong> £212.00' ), 'R1 deemed: listed with the dates and the keep price' );
+creature_demo_expect( false === strpos( $r1_out, 'creature_demo_choice' ) && false === strpos( $r1_out, 'class="button"' ), 'R1 deemed: no choices' );
+$r1_inspect = creature_demo_loan( '2026-10-26', '2026-10-27' );
+$r1_inspect->user_id = 5512;
+$r1_inspect->status  = 'demo-inspect';
+$r1_out = $r1_render( 5512 );
+creature_demo_expect( false !== strpos( $r1_out, '#' . $r1_inspect->get_id() . '</a>' ) && false === strpos( $r1_out, 'Test no loans line.' ), 'R1 inspect: the order is listed' );
+creature_demo_expect( false === strpos( $r1_out, 'creature_demo_choice' ) && false === strpos( $r1_out, 'class="button"' ), 'R1 inspect: no choices' );
+$r1_active = creature_demo_loan( '2026-10-26', '2026-10-27' );
+$r1_active->user_id = 5513;
+creature_demo_expect( false !== strpos( $r1_render( 5513 ), 'creature_demo_choice=return' ), 'R1: an active loan still has its choices' );
+$r1_done = creature_demo_loan( '2026-10-26', '2026-10-27' );
+$r1_done->user_id = 5514;
+$r1_done->status  = 'demo-closed';
+creature_demo_expect( false !== strpos( $r1_render( 5514 ), 'Test no loans line.' ), 'R1: a closed order is not listed, so the no-loans line shows' );
+$GLOBALS['creature_demo_user'] = 5501;
 
 // E2: the crash notice when the crash flag hides Keep: in the tab, in the order's Demo loan section, and on the pay page.
 $e2_text = 'Test crash notice (3A.3).';
