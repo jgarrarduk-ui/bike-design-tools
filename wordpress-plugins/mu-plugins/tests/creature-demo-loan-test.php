@@ -980,6 +980,8 @@ function creature_demo_paid_deemed_returned( $scan = '2026-04-08' ) {
 	Creature_Demo_Loan::on_payment_complete( $raised['order_id'] );
 	$loan->update_meta_data( '_creature_demo_deemed_paid_at', '2026-04-07' );
 	Creature_Demo_Loan::record_return_scan( $loan, $scan, $scan );
+	// The shop enters the Kit received date (terms 6.4(b)): the scan never starts the clock.
+	Creature_Demo_Loan::record_kit_received( $loan, $scan );
 	Creature_Demo_Loan::complete_inspection( $loan, $scan );
 	return $loan;
 }
@@ -2194,6 +2196,7 @@ $back_charge = wc_get_order( $back_raised['order_id'] );
 $back_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_refund' );
 Creature_Demo_Loan::on_payment_complete( $back_raised['order_id'] );
 Creature_Demo_Loan::record_return_scan( $back_after, '2026-04-08', '2026-04-08' );
+Creature_Demo_Loan::record_kit_received( $back_after, '2026-04-08' );
 $awaiting = Creature_Demo_Loan::complete_inspection( $back_after, '2026-04-08' );
 creature_demo_expect( ! empty( $awaiting['awaiting_refund'] ), 'inspection after a deemed purchase waits for the refund action' );
 creature_demo_expect( 'demo-deemed' === $back_after->get_status(), 'inspection does not close a deemed purchase on its own' );
@@ -2327,17 +2330,94 @@ $d4_charge = wc_get_order( (int) $d4->get_meta( '_creature_demo_damage_order_id'
 Creature_Demo_Loan::on_charge_paid( $d4, $d4_charge );
 $d4_done = Creature_Demo_Loan::refund_deemed( $d4, '2026-04-10' );
 creature_demo_expect( ! empty( $d4_done['ok'] ) && 0 === $d4_done['deducted'] && 18800 === $d4_done['amount'], 'a rider who pays the deduction notice is not deducted twice: the held £15 is released' );
-// 30 days from the kit's return: after that nothing can be deducted.
+// D2, terms 6.4(b): the deduction has to be raised within 5 working days of the entered Kit received date.
+// Received Wed 2026-04-08: day 4 is Tue 04-14, day 5 is Wed 04-15.
 $d5 = creature_demo_paid_deemed_returned( '2026-04-08' );
 $d5->update_meta_data( '_creature_demo_damage_pence', 1500 );
 $d5_mails = creature_demo_charge_mail_count();
-$d5_done  = Creature_Demo_Loan::refund_deemed( $d5, '2026-05-09' );
-creature_demo_expect( ! empty( $d5_done['ok'] ) && ! empty( $d5_done['deduction_blocked'] ) && 18800 === $d5_done['amount'], 'a deduction first billed 31 days after the return is blocked: the refund goes ahead without it' );
-creature_demo_expect( '' === $d5->get_meta( '_creature_demo_damage_order_id' ) && $d5_mails === creature_demo_charge_mail_count() && false !== strpos( implode( "\n", $d5->notes ), 'blocked' ), 'no bill is sent for a blocked deduction, and the order says why' );
+$d5_done  = Creature_Demo_Loan::refund_deemed( $d5, '2026-04-16' );
+creature_demo_expect( ! empty( $d5_done['ok'] ) && ! empty( $d5_done['deduction_blocked'] ) && 18800 === $d5_done['amount'], 'D2: a deduction raised on working day 6 after the Kit received date is refused: the refund goes ahead without it' );
+creature_demo_expect( '' === $d5->get_meta( '_creature_demo_damage_order_id' ) && $d5_mails === creature_demo_charge_mail_count() && false !== strpos( implode( "\n", $d5->notes ), 'refused' ), 'D2: no bill is sent for a refused deduction, and the order says why' );
 $d6 = creature_demo_paid_deemed_returned( '2026-04-08' );
 $d6->update_meta_data( '_creature_demo_damage_pence', 1500 );
-$d6_r = Creature_Demo_Loan::refund_deemed( $d6, '2026-05-08' );
-creature_demo_expect( ! empty( $d6_r['pending'] ) && empty( $d6_r['deduction_blocked'] ), 'the 30th day after the return is still inside the window' );
+$d6_r = Creature_Demo_Loan::refund_deemed( $d6, '2026-04-15' );
+creature_demo_expect( ! empty( $d6_r['pending'] ) && empty( $d6_r['deduction_blocked'] ), 'D2: working day 5 itself is still in time' );
+// The old 30-days-from-posting window is gone: a kit posted weeks ago but received on 04-08 is judged on the received date.
+$d6b = creature_demo_paid_deemed_returned( '2026-04-08' );
+$d6b->update_meta_data( '_creature_demo_damage_pence', 1500 );
+$d6b->update_meta_data( '_creature_demo_received_date', '2026-05-04' );
+$d6b_r = Creature_Demo_Loan::refund_deemed( $d6b, '2026-05-08' );
+creature_demo_expect( ! empty( $d6b_r['pending'] ) && empty( $d6b_r['deduction_blocked'] ), 'D2: the window runs from the received date, not from the posting date (no 30-day window)' );
+// No Kit received date: no deduction at all.
+$d8 = creature_demo_paid_deemed_returned( '2026-04-08' );
+$d8->update_meta_data( '_creature_demo_received_date', '' );
+$d8->update_meta_data( '_creature_demo_damage_pence', 1500 );
+$d8_req   = count( WC_Stripe_API::$requests );
+$d8_mails = creature_demo_charge_mail_count();
+$d8_r     = Creature_Demo_Loan::refund_deemed( $d8, '2026-04-09' );
+creature_demo_expect( empty( $d8_r['ok'] ) && 'no_received_date' === $d8_r['reason'], 'D2: a deduction with no entered Kit received date is refused' );
+creature_demo_expect( $d8_req === count( WC_Stripe_API::$requests ) && $d8_mails === creature_demo_charge_mail_count() && '' === $d8->get_meta( '_creature_demo_deduction_state' ) && 'yes' !== $d8->get_meta( '_creature_demo_refund_done' ), 'D2: nothing is refunded, billed or held without the received date' );
+$d8->update_meta_data( '_creature_demo_damage_pence', 0 );
+creature_demo_expect( ! empty( Creature_Demo_Loan::refund_deemed( $d8, '2026-04-09' )['ok'] ), 'D2: with no deduction the refund needs no received date' );
+$d8b = creature_demo_paid_deemed_returned( '2026-04-08' );
+$d8b->update_meta_data( '_creature_demo_received_date', '' );
+$d8b->update_meta_data( '_creature_demo_damage_pence', 1500 );
+Creature_Demo_Loan::refund_deemed( $d8b, '2026-04-09' );
+Creature_Demo_Loan::record_kit_received( $d8b, '2026-04-08' );
+creature_demo_expect( ! empty( Creature_Demo_Loan::refund_deemed( $d8b, '2026-04-09' )['pending'] ), 'D2: once the date is entered the deduction goes ahead' );
+// Day-4 alert, now sent for a paid deemed kit too (it used to be skipped).
+$d9 = creature_demo_paid_deemed_returned( '2026-04-08' );
+$d9_warns = creature_demo_mail_count( 'admin_bill_due' );
+$d9_mails = creature_demo_charge_mail_count();
+Creature_Demo_Loan::tick( $d9, '2026-04-13' );
+creature_demo_expect( $d9_warns === creature_demo_mail_count( 'admin_bill_due' ), 'D2: no alert before working day 4 on a paid deemed kit' );
+Creature_Demo_Loan::tick( $d9, '2026-04-14' );
+Creature_Demo_Loan::tick( $d9, '2026-04-14' );
+creature_demo_expect( $d9_warns + 1 === creature_demo_mail_count( 'admin_bill_due' ), 'D2: a paid deemed kit gets the day-4 deadline alert, once' );
+Creature_Demo_Loan::tick( $d9, '2026-04-15' );
+Creature_Demo_Loan::tick( $d9, '2026-04-20' );
+creature_demo_expect( $d9_warns + 1 === creature_demo_mail_count( 'admin_bill_due' ) && $d9_mails === creature_demo_charge_mail_count() && '' === $d9->get_meta( '_creature_demo_bill_state' ), 'D2: the alert is not repeated and no fallback bill is sent for a deemed kit' );
+// An unpaid deemed purchase that was cancelled when the kit came back (8.5(a)) is warned too.
+$d10 = creature_demo_loan();
+Creature_Demo_Loan::maybe_raise_deemed( $d10, '2026-04-07' );
+Creature_Demo_Loan::record_return_scan( $d10, '2026-04-08', '2026-04-08' );
+Creature_Demo_Loan::record_kit_received( $d10, '2026-04-08' );
+creature_demo_expect( 'demo-inspect' === $d10->get_status(), 'setup: an unpaid deemed kit that came back is awaiting inspection' );
+$d10_warns = creature_demo_mail_count( 'admin_bill_due' );
+Creature_Demo_Loan::tick( $d10, '2026-04-14' );
+creature_demo_expect( $d10_warns + 1 === creature_demo_mail_count( 'admin_bill_due' ), 'D2: an unpaid deemed kit that came back is in the day-4 alert too' );
+Creature_Demo_Loan::tick( $d10, '2026-04-16' );
+creature_demo_expect( 'late_only' === $d10->get_meta( '_creature_demo_bill_state' ), 'D2: its late-return bill fallback on day 5 is unchanged' );
+// The settle alert: decision time plus 7 days, once.
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array( 'subject' => 'Test deduction for {order_id}', 'body' => 'Deduction {amount}.' );
+$s1 = creature_demo_paid_deemed_returned( '2026-04-08' );
+$s1->update_meta_data( '_creature_demo_damage_pence', 1500 );
+Creature_Demo_Loan::refund_deemed( $s1, '2026-04-09' );
+$s1_set = creature_demo_mail_count( 'admin_deduction_settle_due' );
+Creature_Demo_Loan::tick( $s1, '2026-04-15' );
+creature_demo_expect( $s1_set === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'D2: no settle alert before 7 days after the notice' );
+Creature_Demo_Loan::tick( $s1, '2026-04-16' );
+Creature_Demo_Loan::tick( $s1, '2026-04-17' );
+$s1_mail = creature_demo_last_mail( 'admin_deduction_settle_due' );
+creature_demo_expect( $s1_set + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ) && 'info@creaturecycles.co.uk' === $s1_mail['to'] && false !== strpos( $s1_mail['body'], 're-run Refund deemed purchase to settle the deduction' ), 'D2: one shop alert 7 days after the notice says to re-run Refund deemed purchase' );
+$s2 = creature_demo_paid_deemed_returned( '2026-04-08' );
+$s2->update_meta_data( '_creature_demo_damage_pence', 1500 );
+Creature_Demo_Loan::refund_deemed( $s2, '2026-04-09' );
+$s2_charge = wc_get_order( (int) $s2->get_meta( '_creature_demo_damage_order_id' ) );
+Creature_Demo_Loan::mark_disputed( $s2_charge, '2026-04-11' );
+$s2_set = creature_demo_mail_count( 'admin_deduction_settle_due' );
+Creature_Demo_Loan::tick( $s2, '2026-04-30' );
+creature_demo_expect( $s2_set === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'D2: no settle alert while the dispute is open' );
+Creature_Demo_Loan::record_dispute_decision( $s2_charge, 'upheld', '2026-04-20', 1000 );
+Creature_Demo_Loan::tick( $s2, '2026-04-26' );
+creature_demo_expect( $s2_set === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'D2: no settle alert 6 days after the decision' );
+Creature_Demo_Loan::tick( $s2, '2026-04-27' );
+Creature_Demo_Loan::tick( $s2, '2026-04-28' );
+creature_demo_expect( $s2_set + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'D2: one settle alert 7 days after the decision' );
+Creature_Demo_Loan::refund_deemed( $s2, '2026-04-27' );
+Creature_Demo_Loan::tick( $s2, '2026-05-30' );
+creature_demo_expect( $s2_set + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'D2: nothing more once the deduction is settled' );
+unset( $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] );
 // 8.5(c): posted more than 30 days after the payment, the kit is the rider's.
 $d7 = creature_demo_paid_deemed_returned( '2026-04-08' );
 $d7->update_meta_data( '_creature_demo_deemed_paid_at', '2026-03-01' );
@@ -3220,6 +3300,7 @@ $refund192_charge = wc_get_order( $refund192_r['order_id'] );
 $refund192_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_192' );
 Creature_Demo_Loan::on_payment_complete( $refund192_r['order_id'] );
 Creature_Demo_Loan::record_return_scan( $refund192, '2026-04-08', '2026-04-08' );
+Creature_Demo_Loan::record_kit_received( $refund192, '2026-04-08' );
 Creature_Demo_Loan::complete_inspection( $refund192, '2026-04-08' );
 $refund192->update_meta_data( '_creature_demo_damage_pence', 1500 );
 $GLOBALS['creature_demo_refund_flag'] = true;

@@ -42,9 +42,6 @@ final class Creature_Demo_Loan {
 	/** Terms 8.5(b) and (c): the kit must be posted within this many days of the deemed payment to be refunded. */
 	const DEEMED_REFUND_DAYS = 30;
 
-	/** A damage or missing-parts deduction from the deemed refund must be billed within this many days of the kit's return. */
-	const DEEMED_DEDUCTION_DAYS = 30;
-
 	/** Hour (site time zone) the daily job runs. Late, so working day 5 is still open when it fires. */
 	const DAILY_RUN_HOUR = 22;
 
@@ -2008,10 +2005,14 @@ final class Creature_Demo_Loan {
 		if ( '' !== self::meta_string( $order, '_creature_demo_bill_state' ) ) {
 			return;
 		}
-		if ( 'yes' === self::meta_string( $order, '_creature_demo_inspection_done' ) || 'yes' === self::meta_string( $order, '_creature_demo_arrived_after_deemed' ) || 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' ) ) {
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_inspection_done' ) ) {
 			return;
 		}
-		$received = self::meta_string( $order, '_creature_demo_received_date' );
+		// A kit that came back after a deemed purchase was raised is billed as a late
+		// return (terms 8.5(a)). It gets the day-4 alert like any other kit. The
+		// late-fee-only fallback bill stays as it was: it is not sent for these.
+		$after_deemed = 'yes' === self::meta_string( $order, '_creature_demo_arrived_after_deemed' ) || 'yes' === self::meta_string( $order, '_creature_demo_deemed_raised' );
+		$received     = self::meta_string( $order, '_creature_demo_received_date' );
 		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $received ) ) {
 			// No Kit received date: no clock, no day-4 alert, no fallback bill.
 			// A return scan that predates this check still gets the one notice.
@@ -2025,24 +2026,113 @@ final class Creature_Demo_Loan {
 		// The daily job runs at about 22:00 site time, so on working day 5 itself
 		// the fallback bill goes out before the day ends (terms 4.4: within 5
 		// working days). Comparing with > would send it on day 6.
-		if ( $as_of >= $deadline ) {
+		if ( $as_of >= $deadline && ! $after_deemed ) {
 			self::raise_late_only_bill( $order, $as_of, $received, $deadline );
 			return;
 		}
-		if ( $as_of >= $warn_on && 'yes' !== self::meta_string( $order, '_creature_demo_bill_warn_sent' ) ) {
-			// Only reached before the deadline, so the deadline is a later day.
-			Creature_Demo_Loan_Mail::send_admin(
-				$order,
-				'admin_bill_due',
-				array(
-					'received'     => $received,
-					'deadline'     => $deadline,
-					'deadline_day' => 'the next working day',
-				)
-			);
-			$order->update_meta_data( '_creature_demo_bill_warn_sent', 'yes' );
-			$order->save();
+		// For a normal kit this is only reached before the deadline. A kit that came
+		// back after a deemed purchase has no fallback, so it is warned up to the deadline day.
+		if ( $as_of >= $warn_on && $as_of <= $deadline && 'yes' !== self::meta_string( $order, '_creature_demo_bill_warn_sent' ) ) {
+			self::send_bill_due_alert( $order, $received, $deadline );
 		}
+	}
+
+	/**
+	 * The day-4 shop alert, once.
+	 *
+	 * @param object $order
+	 * @param string $received
+	 * @param string $deadline
+	 */
+	private static function send_bill_due_alert( $order, $received, $deadline ) {
+		Creature_Demo_Loan_Mail::send_admin(
+			$order,
+			'admin_bill_due',
+			array(
+				'received'     => $received,
+				'deadline'     => $deadline,
+				'deadline_day' => 'the next working day',
+			)
+		);
+		$order->update_meta_data( '_creature_demo_bill_warn_sent', 'yes' );
+		$order->save();
+	}
+
+	/**
+	 * Daily check on a paid deemed purchase whose kit is back.
+	 *
+	 * Before a deduction is raised: the shop gets the day-4 alert, like any
+	 * kit, and a deduction cannot be raised after working day 5 from the entered
+	 * Kit received date. After it is noticed: the shop gets one alert when the
+	 * 7 days after the decision have passed, to settle it.
+	 *
+	 * @param object $order
+	 * @param string $as_of
+	 */
+	private static function check_deduction_deadline( $order, $as_of ) {
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_refund_done' ) ) {
+			return;
+		}
+		if ( 'noticed' === self::meta_string( $order, '_creature_demo_deduction_state' ) ) {
+			self::maybe_alert_deduction_settle( $order, $as_of );
+			return;
+		}
+		if ( '' !== self::meta_string( $order, '_creature_demo_deduction_state' ) ) {
+			return;
+		}
+		$received = self::meta_string( $order, '_creature_demo_received_date' );
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $received ) ) {
+			if ( '' !== self::meta_string( $order, '_creature_demo_return_scan_date' ) ) {
+				self::notify_no_received_date( $order );
+			}
+			return;
+		}
+		$deadline = Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WORKING_DAYS, array() );
+		$warn_on  = Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WARN_WORKING_DAY, array() );
+		if ( $as_of >= $warn_on && $as_of <= $deadline && 'yes' !== self::meta_string( $order, '_creature_demo_bill_warn_sent' ) ) {
+			self::send_bill_due_alert( $order, $received, $deadline );
+		}
+	}
+
+	/**
+	 * One shop alert when a noticed deduction can be settled: 7 days after the
+	 * decision on a disputed deduction (upheld or waived), or 7 days after the
+	 * notice when it was not disputed. An open dispute has no date yet.
+	 *
+	 * @param object $loan
+	 * @param string $as_of
+	 */
+	private static function maybe_alert_deduction_settle( $loan, $as_of ) {
+		if ( 'yes' === self::meta_string( $loan, '_creature_demo_deduction_settle_alert_sent' ) || ! function_exists( 'wc_get_order' ) ) {
+			return;
+		}
+		$charge = wc_get_order( (int) self::meta_string( $loan, '_creature_demo_damage_order_id' ) );
+		if ( ! is_object( $charge ) ) {
+			return;
+		}
+		$dispute = self::meta_string( $charge, '_creature_demo_dispute_status' );
+		if ( 'open' === $dispute ) {
+			return;
+		}
+		$from = '';
+		if ( in_array( $dispute, array( 'upheld', 'waived' ), true ) ) {
+			foreach ( array( '_creature_demo_decision_sent_at', '_creature_demo_dispute_decision_at' ) as $key ) {
+				$value = self::meta_string( $charge, $key );
+				if ( Creature_Demo_Loan_Calendar::is_real_ymd( $value ) ) {
+					$from = $value;
+					break;
+				}
+			}
+		} else {
+			$from = self::meta_string( $charge, '_creature_demo_charge_notice_at' );
+		}
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $from ) || $as_of < Creature_Demo_Loan_Calendar::add_days( $from, self::notice_days() ) ) {
+			return;
+		}
+		$loan->update_meta_data( '_creature_demo_deduction_settle_alert_sent', 'yes' );
+		$loan->save();
+		Creature_Demo_Loan_Mail::send_admin( $loan, 'admin_deduction_settle_due', array() );
+		self::note( $loan, 'The 7 days after the decision on the deduction have passed. Re-run Refund deemed purchase to settle the deduction.' );
 	}
 
 	/**
@@ -2293,6 +2383,12 @@ final class Creature_Demo_Loan {
 		if ( self::STATUS_INSPECT === $status ) {
 			// Kit is back and being inspected: watch the 5 working day bill clock.
 			self::check_bill_deadline( $order, $as_of );
+			return;
+		}
+		if ( self::STATUS_DEEMED === $status && 'yes' === self::meta_string( $order, '_creature_demo_deemed_paid' ) ) {
+			// A paid deemed purchase whose kit came back: watch the deduction deadline
+			// (terms 6.4(b)) and the settle date of a deduction that has been noticed.
+			self::check_deduction_deadline( $order, $as_of );
 			return;
 		}
 		$open = array( self::STATUS_LOAN, self::STATUS_OVERDUE, self::STATUS_BOOKED );
@@ -2821,6 +2917,13 @@ final class Creature_Demo_Loan {
 		if ( $held < 1 ) {
 			return self::finish_deemed_refund( $loan, $base );
 		}
+		// Terms 6.4(b): the 5 working days run from the Kit received date the shop
+		// entered. With no date there is no clock, so no deduction can be raised.
+		$received = self::meta_string( $loan, '_creature_demo_received_date' );
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $received ) ) {
+			self::note( $loan, 'Refund not sent: it has a damage or missing-parts deduction of ' . Creature_Demo_Loan_Money::format_gbp( $held ) . ' but no Kit received date is entered (terms 6.4(b)). Enter the date the kit arrived back and update the order, or clear the deduction, then try again.' );
+			return array( 'ok' => false, 'reason' => 'no_received_date', 'held' => $held );
+		}
 		// Terms 8.5(b) and 6.4: a deduction is billed like any damage or missing-parts
 		// charge, with the findings and the photos, and the rider has 7 days to pay or
 		// dispute. Nothing is taken silently.
@@ -2829,9 +2932,11 @@ final class Creature_Demo_Loan {
 			self::note( $loan, 'Refund not sent: it has a damage or missing-parts deduction and ' . ( 'no_findings' === $problem ? 'the inspection findings are empty' : 'there is no photo' ) . ' (terms 6.4(b) and 8.5(b)). ' . ( 'no_findings' === $problem ? 'Enter what you found' : 'Add at least one photo' ) . ' or clear the deduction, then try again.' );
 			return array( 'ok' => false, 'reason' => $problem );
 		}
-		// The deduction has to be billed within 30 days of the kit's return.
-		if ( '' !== $dispatch && $as_of > Creature_Demo_Loan_Calendar::add_days( $dispatch, self::DEEMED_DEDUCTION_DAYS ) ) {
-			self::note( $loan, 'Damage or missing-parts deduction of ' . Creature_Demo_Loan_Money::format_gbp( $held ) . ' blocked: it was not billed within 30 days of the kit being returned (' . $dispatch . '), so nothing can be deducted (terms 8.5(b) and (c)). The refund goes ahead without it.' );
+		// Terms 6.4(b): the deduction has to be raised within 5 working days of the
+		// Kit received date. The day-5 itself is still in time.
+		$deadline = Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WORKING_DAYS, array() );
+		if ( $as_of > $deadline ) {
+			self::note( $loan, 'Damage or missing-parts deduction of ' . Creature_Demo_Loan_Money::format_gbp( $held ) . ' refused: it was raised after ' . $deadline . ', which is 5 working days after the Kit received date (' . $received . '), so nothing can be deducted (terms 6.4(b)). The refund goes ahead without it.' );
 			$loan->update_meta_data( '_creature_demo_deduction_state', 'blocked' );
 			$loan->save();
 			return array_merge( self::finish_deemed_refund( $loan, $base ), array( 'deduction_blocked' => true ) );
