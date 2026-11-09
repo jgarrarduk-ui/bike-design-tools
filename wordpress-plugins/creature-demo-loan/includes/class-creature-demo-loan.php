@@ -3242,6 +3242,15 @@ final class Creature_Demo_Loan {
 		if ( '' === trim( $text ) ) {
 			return;
 		}
+		// With no "Send my kit now" label, or no recorded answer, the rider was
+		// never asked. Leave out the whole sentence, including the Yes / No
+		// follow-ups, rather than print "…: ." with nothing after it.
+		if ( '' === self::express_label() || '' === self::express_answer( $order ) ) {
+			$text = self::drop_express_answer_paragraph( $text );
+			if ( '' === trim( $text ) ) {
+				return;
+			}
+		}
 		// The wording says the terms PDF and the cancellation form are attached.
 		// Leave it out unless both are really there, and tell the shop.
 		$missing = self::missing_confirmation_files();
@@ -3263,6 +3272,18 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		echo '<div class="creature-demo-loan-booking"><p>' . nl2br( self::esc( $text ) ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	/**
+	 * Remove the paragraph that starts "Your answer to “Send my kit now”:" from
+	 * the booking confirmation text. Nothing else is changed.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	private static function drop_express_answer_paragraph( $text ) {
+		$out = preg_replace( '/Your answer to “Send my kit now”:[^\n]*(?:\n\n+|\n|$)/u', '', (string) $text );
+		return is_string( $out ) ? $out : (string) $text;
 	}
 
 	/**

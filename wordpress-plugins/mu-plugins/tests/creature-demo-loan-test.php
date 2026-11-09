@@ -3811,7 +3811,28 @@ $bc_plain = wc_create_order();
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, false, $bc_email );
 $bc_v2 = ob_get_clean();
-creature_demo_expect( false !== strpos( $bc_v2, 'De-Reacher demo booking (order ' . $bc_order->get_id() . ')' ) && false !== strpos( $bc_v2, 'Your answer to “Send my kit now”: Yes.' ), 'with the v2 wording the confirmation gets the booking block' );
+creature_demo_expect( false !== strpos( $bc_v2, 'De-Reacher demo booking (order ' . $bc_order->get_id() . ')' ) && false !== strpos( $bc_v2, 'Your keep price: £' ), 'with the v2 wording the confirmation gets the booking block' );
+// D1: no checkbox label (the slot is empty), so the rider was never asked. The whole sentence goes, even with an answer stored.
+creature_demo_absent( $bc_v2, 'Send my kit now', 'D1: with an empty express_request_checkbox the booking confirmation drops the whole "Send my kit now" sentence' );
+creature_demo_absent( $bc_v2, 'If you answered Yes', 'D1: and its Yes / No follow-ups' );
+creature_demo_absent( $bc_v2, 'answer to', 'D1: no dangling "answer to" text' );
+creature_demo_expect( false !== strpos( $bc_v2, 'Your keep price: £' ) && false !== strpos( $bc_v2, 'Your consent to later charges' ) && false !== strpos( $bc_v2, 'Cancelling: you can cancel' ), 'D1: the paragraphs either side of the dropped sentence are kept' );
+creature_demo_absent( $bc_v2, "\n\n\n", 'D1: dropping the sentence leaves no extra blank lines' );
+// D1: a label is set but the answer is blank (never recorded): dropped too.
+$GLOBALS['creature_demo_copy_override']['express_request_checkbox'] = array( 'subject' => '', 'body' => 'Test label for the express request.' );
+$bc_blank = creature_demo_booked_loan( '249.00' );
+$bc_blank->update_meta_data( '_creature_demo_express_request', '' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $bc_blank, false, false, $bc_email );
+$bc_blank_out = ob_get_clean();
+creature_demo_expect( false !== strpos( $bc_blank_out, 'De-Reacher demo booking' ) && false === strpos( $bc_blank_out, 'Send my kit now' ) && false === strpos( $bc_blank_out, 'If you answered' ), 'D1: a label with a blank answer drops the sentence too' );
+// D1: a label and an answer: the sentence is there.
+$bc_answered = creature_demo_booked_loan( '249.00' );
+$bc_answered->update_meta_data( '_creature_demo_express_request', 'yes' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $bc_answered, false, false, $bc_email );
+creature_demo_expect( false !== strpos( ob_get_clean(), 'Your answer to “Send my kit now”: Yes.' ), 'D1: with a label and an answer the sentence is shown' );
+unset( $GLOBALS['creature_demo_copy_override']['express_request_checkbox'] );
 $GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array(
 	'subject' => '',
 	'body'    => "Consent: {consent_version} on {consent_at}.\n{consent}\nExpress request: {express_answer}.",
