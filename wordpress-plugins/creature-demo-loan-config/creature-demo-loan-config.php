@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Creature Cycles Demo Loan Config
- * Description: Staging settings for demo product ids, coupon product ids, and the test redirect address. Cannot enable live charges or real customer email.
- * Version: 1.2.2
+ * Description: Staging settings for demo product ids, coupon product ids, the booking confirmation files, and the test redirect address. Cannot enable live charges or real customer email.
+ * Version: 1.3.0
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  * Requires Plugins: woocommerce
@@ -19,6 +19,12 @@
  * CREATURE_DEMO_LOAN_PRODUCT_IDS, CREATURE_DEMO_LOAN_COUPON_PRODUCT_IDS,
  * CREATURE_DEMO_LOAN_BUNDLE_PRODUCT_ID, and CREATURE_DEMO_LOAN_REDIRECT_EMAIL
  * win when they are defined.
+ *
+ * The terms PDF and the model cancellation form are attached to the booking
+ * confirmation of a demo order. Each is a media library ID or a file path. The
+ * demo loan plugin only attaches a document file inside the uploads folder, so
+ * a path typed here cannot attach a server file such as wp-config.php. With no
+ * file set nothing is attached and the demo loan plugin shows an admin notice.
  *
  * WooCommerce → Demo loan can run the staging walkthrough in-process. That
  * runner refuses creaturecycles.co.uk and www, and any host that is not
@@ -37,7 +43,7 @@ if ( defined( 'CREATURE_DEMO_LOAN_CONFIG_LOADED' ) ) {
 }
 
 define( 'CREATURE_DEMO_LOAN_CONFIG_LOADED', true );
-define( 'CREATURE_DEMO_LOAN_CONFIG_VERSION', '1.2.2' );
+define( 'CREATURE_DEMO_LOAN_CONFIG_VERSION', '1.3.0' );
 
 /**
  * Option-backed filters for the demo loan plugin.
@@ -73,6 +79,7 @@ final class Creature_Demo_Loan_Config {
 		add_filter( 'creature_demo_loan_coupon_product_ids', array( __CLASS__, 'filter_coupon_ids' ) );
 		add_filter( 'creature_demo_loan_bundle_product_id', array( __CLASS__, 'filter_bundle_id' ) );
 		add_filter( 'creature_demo_loan_redirect_email', array( __CLASS__, 'filter_redirect_email' ) );
+		add_filter( 'creature_demo_loan_confirmation_files', array( __CLASS__, 'filter_confirmation_files' ) );
 	}
 
 	public static function register_menu() {
@@ -106,7 +113,7 @@ final class Creature_Demo_Loan_Config {
 
 	/**
 	 * @param mixed $input
-	 * @return array{product_ids: string, coupon_product_ids: string, bundle_product_id: string, redirect_email: string}
+	 * @return array{product_ids: string, coupon_product_ids: string, bundle_product_id: string, redirect_email: string, terms_pdf: string, cancellation_form: string}
 	 */
 	public static function sanitize_settings( $input ) {
 		if ( ! is_array( $input ) ) {
@@ -117,7 +124,28 @@ final class Creature_Demo_Loan_Config {
 			'coupon_product_ids'  => self::sanitize_id_list( isset( $input['coupon_product_ids'] ) ? $input['coupon_product_ids'] : '' ),
 			'bundle_product_id'   => self::sanitize_single_id( isset( $input['bundle_product_id'] ) ? $input['bundle_product_id'] : '' ),
 			'redirect_email'      => self::sanitize_redirect( isset( $input['redirect_email'] ) ? $input['redirect_email'] : '' ),
+			'terms_pdf'           => self::sanitize_file_ref( isset( $input['terms_pdf'] ) ? $input['terms_pdf'] : '' ),
+			'cancellation_form'   => self::sanitize_file_ref( isset( $input['cancellation_form'] ) ? $input['cancellation_form'] : '' ),
 		);
+	}
+
+	/**
+	 * The booking confirmation files, for the demo loan plugin's
+	 * creature_demo_loan_confirmation_files filter. Only a file that is set is
+	 * returned, so a blank setting leaves the slot empty.
+	 *
+	 * @param mixed $files
+	 * @return mixed
+	 */
+	public static function filter_confirmation_files( $files ) {
+		$files = is_array( $files ) ? $files : array();
+		foreach ( array( 'terms_pdf', 'cancellation_form' ) as $key ) {
+			$stored = self::setting( $key );
+			if ( '' !== $stored ) {
+				$files[ $key ] = $stored;
+			}
+		}
+		return $files;
 	}
 
 	/**
@@ -190,9 +218,11 @@ final class Creature_Demo_Loan_Config {
 		}
 		echo '<input type="hidden" name="creature_demo_loan_config_save" value="1" />';
 		echo '<table class="form-table"><tbody>';
-		self::render_text_row( 'product_ids', 'Product IDs', $settings['product_ids'] );
+		self::render_text_row( 'product_ids', 'Product IDs (blank: 8946)', $settings['product_ids'] );
 		self::render_text_row( 'coupon_product_ids', 'Coupon product IDs', $settings['coupon_product_ids'] );
 		self::render_text_row( 'bundle_product_id', 'Bundle product ID (blank: 8425)', $settings['bundle_product_id'] );
+		self::render_text_row( 'terms_pdf', 'Terms PDF for the booking confirmation (media ID or file path)', $settings['terms_pdf'] );
+		self::render_text_row( 'cancellation_form', 'Model cancellation form for the booking confirmation (media ID or file path)', $settings['cancellation_form'] );
 		self::render_text_row( 'redirect_email', 'Test redirect address', $settings['redirect_email'] );
 		echo '</tbody></table>';
 		echo '<p><button type="submit" class="button button-primary">Save</button></p>';
@@ -210,7 +240,7 @@ final class Creature_Demo_Loan_Config {
 	}
 
 	/**
-	 * @return array{product_ids: string, coupon_product_ids: string, bundle_product_id: string, redirect_email: string}
+	 * @return array{product_ids: string, coupon_product_ids: string, bundle_product_id: string, redirect_email: string, terms_pdf: string, cancellation_form: string}
 	 */
 	public static function get_settings() {
 		$stored = array();
@@ -270,6 +300,28 @@ final class Creature_Demo_Loan_Config {
 			return '';
 		}
 		return (string) (int) $raw;
+	}
+
+	/**
+	 * A media library ID (digits) or a file path. Control characters, null
+	 * bytes and anything that is not text are dropped. The demo loan plugin
+	 * decides whether the file can be attached.
+	 *
+	 * @param mixed $raw
+	 * @return string
+	 */
+	private static function sanitize_file_ref( $raw ) {
+		if ( ! is_scalar( $raw ) ) {
+			return '';
+		}
+		$value = trim( preg_replace( '/[\x00-\x1F\x7F]/', '', (string) $raw ) );
+		if ( '' === $value ) {
+			return '';
+		}
+		if ( preg_match( '/^[0-9]+$/', $value ) ) {
+			return (int) $value > 0 ? (string) (int) $value : '';
+		}
+		return substr( $value, 0, 500 );
 	}
 
 	/**

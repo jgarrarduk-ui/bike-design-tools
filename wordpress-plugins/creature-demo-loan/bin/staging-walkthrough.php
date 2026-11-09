@@ -138,31 +138,32 @@ creature_demo_walkthrough_line( 'mail', $redirect );
 creature_demo_walkthrough_line( 'stripe charge enabled', $may_charge );
 echo "Dates are passed in. The shop clock is not changed.\n\n";
 
-echo "== Buy a new one ==\n";
-$buy = creature_demo_walkthrough_order( 'buy' );
-if ( ! is_object( $buy ) ) {
-	return 1;
-}
-$choice = Creature_Demo_Loan::choose( $buy, 'buy', '2026-03-10' );
-creature_demo_walkthrough_line( 'choice', isset( $choice['choice'] ) ? $choice['choice'] : $choice['reason'] );
-creature_demo_walkthrough_line( 'status', $buy->get_status() );
-$scan = Creature_Demo_Loan::record_return_scan( $buy, '2026-03-24', '2026-03-24' );
-creature_demo_walkthrough_line( 'scan late fee pence', isset( $scan['late_fee'] ) ? $scan['late_fee'] : 0 );
-$done = Creature_Demo_Loan::complete_inspection( $buy, '2026-03-24' );
-$code = ( is_array( $done ) && isset( $done['coupon']['code'] ) ) ? $done['coupon']['code'] : '';
-creature_demo_walkthrough_line( 'coupon', '' !== $code ? $code : '(none)' );
-creature_demo_walkthrough_line( 'status', $buy->get_status() );
-echo "\n";
-
-echo "== Return, don't buy ==\n";
+echo "== Return it (choice a): the £25 code on every inspected return ==\n";
 $back = creature_demo_walkthrough_order( 'return' );
 if ( ! is_object( $back ) ) {
 	return 1;
 }
-Creature_Demo_Loan::choose( $back, 'return', '2026-03-10' );
+$choice = Creature_Demo_Loan::choose( $back, 'return', '2026-03-10' );
+creature_demo_walkthrough_line( 'choice', isset( $choice['choice'] ) ? $choice['choice'] : $choice['reason'] );
 creature_demo_walkthrough_line( 'status', $back->get_status() );
-creature_demo_walkthrough_line( 'choice', $back->get_meta( '_creature_demo_choice' ) );
+$scan = Creature_Demo_Loan::record_return_scan( $back, '2026-03-24', '2026-03-24' );
+creature_demo_walkthrough_line( 'late fee pence (billed at inspection, not at the scan)', isset( $scan['late_fee'] ) ? $scan['late_fee'] : 0 );
+$done = Creature_Demo_Loan::complete_inspection( $back, '2026-03-24' );
+$code = ( is_array( $done ) && isset( $done['coupon']['code'] ) ) ? $done['coupon']['code'] : '';
+creature_demo_walkthrough_line( 'coupon', '' !== $code ? $code : '(none)' );
+creature_demo_walkthrough_line( 'status', $back->get_status() );
 echo "Shop mail for the Royal Mail QR was redirected to the test inbox.\n\n";
+
+echo "== No choice: treated as a return, code still issued ==\n";
+$none = creature_demo_walkthrough_order( 'no-choice' );
+if ( ! is_object( $none ) ) {
+	return 1;
+}
+Creature_Demo_Loan::record_return_scan( $none, '2026-03-24', '2026-03-24' );
+$none_done = Creature_Demo_Loan::complete_inspection( $none, '2026-03-24' );
+$none_code = ( is_array( $none_done ) && isset( $none_done['coupon']['code'] ) ) ? $none_done['coupon']['code'] : '';
+creature_demo_walkthrough_line( 'coupon', '' !== $none_code ? $none_code : '(none)' );
+echo "\n";
 
 echo "== Keep the demo unit ==\n";
 $keep = creature_demo_walkthrough_order( 'keep' );
@@ -191,25 +192,28 @@ if ( $may_charge && '' === $gate['code'] ) {
 creature_demo_walkthrough_line( 'status', $keep->get_status() );
 echo "\n";
 
-echo "== Disputed late fee ==\n";
+echo "== Disputed bill (late fee on the one bill) ==\n";
 $late = creature_demo_walkthrough_order( 'late' );
 if ( ! is_object( $late ) ) {
 	return 1;
 }
 Creature_Demo_Loan::record_return_scan( $late, '2026-03-30', '2026-03-30' );
-$late_charge_id = (int) $late->get_meta( '_creature_demo_late_fee_order_id' );
+Creature_Demo_Loan::complete_inspection( $late, '2026-03-30' );
+$late_charge_id = (int) $late->get_meta( '_creature_demo_bill_order_id' );
 $late_charge    = $late_charge_id ? wc_get_order( $late_charge_id ) : null;
-creature_demo_walkthrough_line( 'late fee order', $late_charge_id );
+creature_demo_walkthrough_line( 'bill order', $late_charge_id );
 if ( $late_charge ) {
 	Creature_Demo_Loan::mark_disputed( $late_charge, '2026-03-30' );
 	$blocked = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-06' );
 	creature_demo_walkthrough_line( 'gate while disputed', $blocked['code'] );
-	$decision = Creature_Demo_Loan::record_dispute_decision( $late_charge, 'upheld', '2026-04-06', null );
+	$decision = Creature_Demo_Loan::record_dispute_decision( $late_charge, 'upheld', '2026-04-06', null, 'Walkthrough: reasons for decision.' );
 	creature_demo_walkthrough_line( 'decision within 14 days', ! empty( $decision['timely'] ) );
-	$open = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-06' );
-	creature_demo_walkthrough_line( 'gate after uphold', '' === $open['code'] ? 'clear' : $open['code'] );
+	$soon = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-06' );
+	creature_demo_walkthrough_line( 'gate on the decision day', '' === $soon['code'] ? 'clear' : $soon['code'] );
+	$open = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-13' );
+	creature_demo_walkthrough_line( 'gate 7 days after the decision email', '' === $open['code'] ? 'clear' : $open['code'] );
 	if ( $may_charge && '' === $open['code'] ) {
-		$result = Creature_Demo_Loan::charge_saved_card( $late, '2026-04-06' );
+		$result = Creature_Demo_Loan::charge_saved_card( $late, '2026-04-13' );
 		creature_demo_walkthrough_line( 'charge', isset( $result['code'] ) ? $result['code'] : '' );
 	} else {
 		echo "Saved card not charged.\n";

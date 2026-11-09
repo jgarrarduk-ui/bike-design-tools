@@ -78,6 +78,36 @@ final class Creature_Demo_Loan_Calendar {
 	}
 
 	/**
+	 * A real calendar date in Y-m-d. is_ymd() only checks the shape, so
+	 * 2026-02-30 passes it. Admin date input goes through this one.
+	 *
+	 * @param mixed $ymd
+	 * @return bool
+	 */
+	public static function is_real_ymd( $ymd ) {
+		if ( ! self::is_ymd( $ymd ) ) {
+			return false;
+		}
+		$dt = DateTime::createFromFormat( '!Y-m-d', $ymd, new DateTimeZone( 'UTC' ) );
+		return $dt && $ymd === $dt->format( 'Y-m-d' );
+	}
+
+	/**
+	 * Customer-facing date, "30 November 2026". Stored dates stay Y-m-d. A
+	 * value that is not a real date comes back unchanged.
+	 *
+	 * @param mixed $ymd
+	 * @return string
+	 */
+	public static function format_uk( $ymd ) {
+		if ( ! self::is_real_ymd( $ymd ) ) {
+			return is_scalar( $ymd ) ? (string) $ymd : '';
+		}
+		$dt = DateTime::createFromFormat( '!Y-m-d', $ymd, new DateTimeZone( 'UTC' ) );
+		return $dt ? $dt->format( 'j F Y' ) : $ymd;
+	}
+
+	/**
 	 * @param string $ymd
 	 * @param int    $days Negative moves backward.
 	 * @return string

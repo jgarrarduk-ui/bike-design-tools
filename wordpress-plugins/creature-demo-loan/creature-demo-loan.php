@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Creature Cycles De-Reacher Demo Loan
  * Description: Postal demo loan for the De-Reacher. Consent, saved card, loan statuses, reminders, and charge-later on the WooCommerce Stripe Gateway. Test mode unless live charges are explicitly enabled.
- * Version: 1.2.2
+ * Version: 1.3.0
  * Author: Creature Cycles
  * License: GPL-2.0-or-later
  * Requires Plugins: woocommerce
@@ -18,8 +18,9 @@
  * Customer email stays redirected unless CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL
  * is boolean true. Undefined and any other value mean off.
  *
- * Product ids, coupon product ids, and the test redirect address can be set
- * from the companion Demo Loan Config plugin. A wp-config constant for the
+ * Product ids (default 8946), coupon product ids, the booking confirmation
+ * files, and the test redirect address can be set from the companion Demo
+ * Loan Config plugin. A wp-config constant for the
  * same value wins. That screen cannot turn live charges or real customer
  * email on. Those stay these two constants.
  *
@@ -37,7 +38,7 @@ if ( defined( 'CREATURE_DEMO_LOAN_LOADED' ) ) {
 define( 'CREATURE_DEMO_LOAN_LOADED', true );
 define( 'CREATURE_DEMO_LOAN_FILE', __FILE__ );
 define( 'CREATURE_DEMO_LOAN_DIR', __DIR__ );
-define( 'CREATURE_DEMO_LOAN_VERSION', '1.2.2' );
+define( 'CREATURE_DEMO_LOAN_VERSION', '1.3.0' );
 
 if ( ! defined( 'CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES' ) ) {
 	define( 'CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES', false );
@@ -63,6 +64,21 @@ require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan-stripe
 require_once CREATURE_DEMO_LOAN_DIR . '/includes/class-creature-demo-loan.php';
 
 add_action( 'plugins_loaded', array( 'Creature_Demo_Loan', 'boot' ), 20 );
+
+/**
+ * Register the My account "Demo loan" endpoint and flush the rewrite rules once.
+ * (A version bump flushes once more, on wp_loaded, from Creature_Demo_Loan::maybe_flush_rewrite_rules.)
+ */
+function creature_demo_loan_activate() {
+	if ( class_exists( 'Creature_Demo_Loan' ) ) {
+		Creature_Demo_Loan::register_account_endpoint();
+		Creature_Demo_Loan::maybe_flush_rewrite_rules();
+	}
+}
+
+if ( function_exists( 'register_activation_hook' ) ) {
+	register_activation_hook( CREATURE_DEMO_LOAN_FILE, 'creature_demo_loan_activate' );
+}
 
 /**
  * Drop the daily Action Scheduler job when the plugin is deactivated.

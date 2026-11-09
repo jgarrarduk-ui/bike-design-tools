@@ -124,7 +124,7 @@ final class Creature_Demo_Loan_Stripe {
 
 	/**
 	 * @param mixed $response
-	 * @return array{ok: bool, code: string, id: string}
+	 * @return array{ok: bool, code: string, id: string, declined?: bool}
 	 */
 	public static function interpret( $response ) {
 		if ( is_object( $response ) && is_a( $response, 'WP_Error' ) ) {
@@ -165,10 +165,13 @@ final class Creature_Demo_Loan_Stripe {
 					'id'   => '',
 				);
 			}
+			// The code stays stripe_error. `declined` marks a card the bank said no
+			// to, which is the one case that emails the rider (terms 4.5).
 			return array(
-				'ok'   => false,
-				'code' => 'stripe_error',
-				'id'   => '',
+				'ok'       => false,
+				'code'     => 'stripe_error',
+				'id'       => '',
+				'declined' => 'card_declined' === $error_code || '' !== $decline,
 			);
 		}
 

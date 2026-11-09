@@ -20,6 +20,9 @@ if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
  */
 final class Creature_Demo_Loan_Mail {
 
+	/** Every customer email carries this Reply-To so a reply reaches the shop. */
+	const REPLY_TO = 'info@creaturecycles.co.uk';
+
 	/**
 	 * Messages handed to wp_mail on this request.
 	 *
@@ -132,22 +135,49 @@ final class Creature_Demo_Loan_Mail {
 		}
 		$subject = Creature_Demo_Loan_Copy::subject( $slot, $args );
 		$body    = Creature_Demo_Loan_Copy::text( $slot, $args );
+		// A slot with no wording yet is never sent as a blank email. The row is
+		// still recorded and the send hook still fires, so the event is not lost.
+		// This is decided before the [TEST] prefix, which would make it look filled.
+		$empty = '' === trim( $subject ) && '' === trim( $body );
 		if ( ! empty( $route['prefix'] ) ) {
 			$subject = '[TEST] ' . $subject;
 		}
 		$subject = Creature_Demo_Loan::redact( $subject );
 		$body    = Creature_Demo_Loan::redact( $body );
+		$headers = 'customer' === $kind ? self::customer_headers() : array();
 		$row     = array(
 			'kind'    => (string) $kind,
 			'slot'    => (string) $slot,
 			'to'      => (string) $route['to'],
 			'subject' => $subject,
 			'body'    => $body,
+			'headers' => $headers,
+			'empty'   => $empty,
 		);
-		if ( empty( $route['suppressed'] ) && function_exists( 'wp_mail' ) ) {
-			wp_mail( $row['to'], $row['subject'], $row['body'] );
+		if ( empty( $route['suppressed'] ) && ! $empty && function_exists( 'wp_mail' ) ) {
+			wp_mail( $row['to'], $row['subject'], $row['body'], $headers );
 		}
 		self::$sent[] = $row;
+		if ( function_exists( 'do_action' ) ) {
+			/**
+			 * Fires once for each email the plugin sends, one hook per slot, for
+			 * example creature_demo_loan_mail_dates_on_delivery.
+			 *
+			 * @param array<string, mixed> $row   What was sent (or would have been).
+			 * @param object               $order The order the email is about.
+			 * @param array<string, mixed> $args  The merge values.
+			 */
+			do_action( 'creature_demo_loan_mail_' . $slot, $row, $order, $args );
+		}
 		return $row;
+	}
+
+	/**
+	 * Headers for a customer email.
+	 *
+	 * @return string[]
+	 */
+	public static function customer_headers() {
+		return array( 'Reply-To: ' . self::REPLY_TO );
 	}
 }
