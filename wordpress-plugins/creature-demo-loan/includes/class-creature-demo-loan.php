@@ -2061,9 +2061,8 @@ final class Creature_Demo_Loan {
 			$order,
 			'admin_bill_due',
 			array(
-				'received'     => $received,
-				'deadline'     => $deadline,
-				'deadline_day' => 'the next working day',
+				'received' => $received,
+				'deadline' => $deadline,
 			)
 		);
 		$order->update_meta_data( '_creature_demo_bill_warn_sent', 'yes' );

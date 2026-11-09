@@ -3527,7 +3527,11 @@ creature_demo_expect( $warns + 1 === creature_demo_mail_count( 'admin_bill_due' 
 $warn_mail = creature_demo_last_mail( 'admin_bill_due' );
 creature_demo_expect( 'info@creaturecycles.co.uk' === $warn_mail['to'] && 0 !== strpos( $warn_mail['subject'], '[TEST]' ), 'the working day 4 warning goes to info@' );
 creature_demo_expect( '' === $fb->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $fb ), 'the 22:00 run on working day 4 sends the warning and no bill' );
-creature_demo_expect( false !== strpos( $warn_mail['body'], 'The bill must go out by the end of the next working day (9 April 2026).' ), 'the day-4 alert says the bill must go out by the end of the next working day' );
+creature_demo_absent( $warn_mail['body'], 'The bill must go out by the end of', 'the {deadline_day} sentence is gone from the day-4 alert' );
+creature_demo_absent( $warn_mail['body'], '{deadline_day}', 'no {deadline_day} tag is left in the alert' );
+creature_demo_expect( false !== strpos( $warn_mail['body'], 'so by 9 April 2026. Bank holidays aren’t counted' ) && false !== strpos( $warn_mail['subject'], 'inspect and bill by 9 April 2026 (order ' ), 'the {deadline} tag fills as a UK date (j F Y) in the body and the subject' );
+creature_demo_expect( 'Work to this date.' . "\n\n" . 'Record the inspection on the order now' === substr( $warn_mail['body'], strpos( $warn_mail['body'], 'Work to this date.' ), strlen( 'Work to this date.' . "\n\n" . 'Record the inspection on the order now' ) ), 'the rest of the body is Cadence v2, with nothing added in its place' );
+creature_demo_expect( '9 April 2026' === Creature_Demo_Loan_Copy::fill( '{deadline}', array( 'deadline' => '2026-04-09' ) ), 'fill() formats {deadline} as j F Y' );
 creature_demo_expect( false !== strpos( $warn_mail['subject'], 'by 9 April 2026' ) && false !== strpos( $warn_mail['body'], 'received back on 2 April 2026' ) && 0 === preg_match( '/\b20\d\d-\d\d-\d\d\b/', $warn_mail['subject'] . $warn_mail['body'] ), 'item E: the shop alert shows UK dates (j F Y), no Y-m-d' );
 $fb_mails = creature_demo_charge_mail_count();
 Creature_Demo_Loan::tick( $fb, '2026-04-09' );

@@ -215,10 +215,11 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => 'Demo return booked: send the Royal Mail QR within 1 working day (order {order_id})',
 				'body'    => 'The rider on order {order_id} has booked a return. Email them a Royal Mail Tracked 48 QR code within 1 working day, with a post-by date (terms 10.1 and 10.3). Each extra working day moves their grace period, late fees and deemed purchase date back by a day. This email goes to the shop, not the rider.',
 			),
-			// Shop alert. Cadence v2, plus one plain sentence ({deadline_day}) for the day-4 warning.
+			// Shop alert. Cadence v2, as written. {deadline} is a UK date (j F Y). v2 has no extra sentence for the
+			// day-4 warning, so there is none: that wording is Cadence's to add.
 			'admin_bill_due'                => array(
 				'subject' => 'Demo kit back: inspect and bill by {deadline} (order {order_id})',
-				'body'    => "The demo kit on order {order_id} was received back on {received}. Under terms 4.4 and 6.4(b), the one bill for late fees, damage and missing parts must go out within 5 working days of that, so by {deadline}. Bank holidays aren’t counted, so the real deadline may be later. Work to this date.\n\nThe bill must go out by the end of {deadline_day} ({deadline}).\n\nRecord the inspection on the order now, even if nothing is owed. The rider’s £25 code is only issued once it’s recorded. If you’re charging for damage or missing parts, enter what you found and add the photos before saving. Without the findings the bill won’t send, and the terms require the photos in it. Recording the inspection raises the bill.\n\nIf the deadline passes with no inspection recorded, the plugin sends a late-fee-only bill (if a late fee is due), and no damage or missing-parts charge can be made on this loan. This email goes to the shop, not the rider.",
+				'body'    => "The demo kit on order {order_id} was received back on {received}. Under terms 4.4 and 6.4(b), the one bill for late fees, damage and missing parts must go out within 5 working days of that, so by {deadline}. Bank holidays aren’t counted, so the real deadline may be later. Work to this date.\n\nRecord the inspection on the order now, even if nothing is owed. The rider’s £25 code is only issued once it’s recorded. If you’re charging for damage or missing parts, enter what you found and add the photos before saving. Without the findings the bill won’t send, and the terms require the photos in it. Recording the inspection raises the bill.\n\nIf the deadline passes with no inspection recorded, the plugin sends a late-fee-only bill (if a late fee is due), and no damage or missing-parts charge can be made on this loan. This email goes to the shop, not the rider.",
 			),
 		);
 	}
@@ -346,7 +347,6 @@ final class Creature_Demo_Loan_Copy {
 			'{received}'        => $date( 'received' ),
 			'{deadline}'        => $date( 'deadline' ),
 			'{missing}'         => isset( $args['missing'] ) ? (string) $args['missing'] : '',
-			'{deadline_day}'    => isset( $args['deadline_day'] ) ? (string) $args['deadline_day'] : '',
 			'{consent}'         => isset( $args['consent'] ) ? (string) $args['consent'] : '',
 			'{consent_version}' => isset( $args['consent_version'] ) ? (string) $args['consent_version'] : '',
 			'{consent_at}'      => isset( $args['consent_at'] ) ? (string) $args['consent_at'] : '',
