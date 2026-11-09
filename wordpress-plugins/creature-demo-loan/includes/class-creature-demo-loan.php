@@ -39,6 +39,12 @@ final class Creature_Demo_Loan {
 	/** The shop is emailed on this working day if the bill is not raised yet. */
 	const BILL_WARN_WORKING_DAY = 4;
 
+	/** Terms 8.5(b) and (c): the kit must be posted within this many days of the deemed payment to be refunded. */
+	const DEEMED_REFUND_DAYS = 30;
+
+	/** A damage or missing-parts deduction from the deemed refund must be billed within this many days of the kit's return. */
+	const DEEMED_DEDUCTION_DAYS = 30;
+
 	/** Hour (site time zone) the daily job runs. Late, so working day 5 is still open when it fires. */
 	const DAILY_RUN_HOUR = 22;
 
@@ -576,6 +582,7 @@ final class Creature_Demo_Loan {
 			'dispute_waived'     => 'Charge refused: the dispute decision did not uphold the charge.',
 			'already_paid'         => 'Charge refused: this charge is already paid.',
 			'charge_cancelled'     => 'Charge refused: this charge order is cancelled, so the saved card is not charged for it.',
+			'charge_netted'        => 'Charge refused: this deduction is taken from the deemed purchase refund, not from the saved card.',
 			'payment_in_progress'  => 'Charge refused: a pay-link payment is already in progress on this charge order.',
 			'no_consent'           => 'Charge refused: the loan has no recorded consent for a later charge.',
 			'live_mode'          => 'Charge refused: the Stripe gateway is not in test mode.',
@@ -2336,6 +2343,11 @@ final class Creature_Demo_Loan {
 			self::note( $loan, self::refusal_message( 'charge_cancelled' ) );
 			return array( 'ok' => false, 'code' => 'charge_cancelled' );
 		}
+		// A deduction from the deemed refund is taken from the money already held.
+		if ( 'yes' === self::meta_string( $charge, '_creature_demo_charge_netted' ) ) {
+			self::note( $loan, self::refusal_message( 'charge_netted' ) );
+			return array( 'ok' => false, 'code' => 'charge_netted' );
+		}
 		$eval = self::evaluate_charge( $loan, $charge, $as_of );
 		if ( '' !== $eval['code'] ) {
 			self::note( $loan, self::refusal_message( $eval['code'] ) );
@@ -2669,7 +2681,7 @@ final class Creature_Demo_Loan {
 	 * @return array<string, mixed>
 	 */
 	public static function refund_deemed( $loan, $as_of = null ) {
-		unset( $as_of );
+		$as_of = Creature_Demo_Loan_Calendar::today( $as_of );
 		if ( 'yes' === self::meta_string( $loan, '_creature_demo_refund_done' ) ) {
 			return array(
 				'ok'         => true,
@@ -2694,42 +2706,244 @@ final class Creature_Demo_Loan {
 			self::note( $loan, 'Refund refused: this rider chose to keep the kit, and the post-deemed refund flag is off.' );
 			return array( 'ok' => false, 'reason' => 'keep_choice' );
 		}
-		$refund = Creature_Demo_Loan_Money::post_deemed_refund_pence(
-			self::loan_keep_price_pence( $loan ),
-			(int) self::meta_string( $loan, '_creature_demo_deemed_paid_pence' ),
-			(int) self::meta_string( $loan, '_creature_demo_late_fees_paid_pence' ),
-			(int) self::meta_string( $loan, '_creature_demo_damage_pence' ) + (int) self::meta_string( $loan, '_creature_demo_missing_pence' )
+		// Terms 8.5(c): the kit has to be posted within 30 days of the payment.
+		// After that the kit is the rider's and is not taken back as a demo return.
+		$dispatch = self::dispatch_date( $loan );
+		$paid_at  = self::meta_string( $loan, '_creature_demo_deemed_paid_at' );
+		if ( Creature_Demo_Loan_Calendar::is_real_ymd( $paid_at ) && '' !== $dispatch && $dispatch > Creature_Demo_Loan_Calendar::add_days( $paid_at, self::DEEMED_REFUND_DAYS ) ) {
+			self::note( $loan, 'Refund refused: the kit was posted more than 30 days after the deemed purchase was paid (' . $paid_at . '), so it is the rider\'s and is not taken back as a demo return (terms 8.5(c)).' );
+			return array( 'ok' => false, 'reason' => 'after_30_days' );
+		}
+		$keep   = self::loan_keep_price_pence( $loan );
+		$paid   = (int) self::meta_string( $loan, '_creature_demo_deemed_paid_pence' );
+		$late   = (int) self::meta_string( $loan, '_creature_demo_late_fees_paid_pence' );
+		$base   = Creature_Demo_Loan_Money::post_deemed_refund_pence( $keep, $paid, $late, 0 );
+		$state  = self::meta_string( $loan, '_creature_demo_deduction_state' );
+		if ( '' !== $state ) {
+			return self::advance_deduction( $loan, $as_of );
+		}
+		// What a damage or missing-parts deduction can be, under the £24 and keep-price caps.
+		$asked = (int) self::meta_string( $loan, '_creature_demo_damage_pence' ) + (int) self::meta_string( $loan, '_creature_demo_missing_pence' );
+		$held  = $base - Creature_Demo_Loan_Money::post_deemed_refund_pence( $keep, $paid, $late, $asked );
+		if ( $held < 1 ) {
+			return self::finish_deemed_refund( $loan, $base );
+		}
+		// Terms 8.5(b) and 6.4: a deduction is billed like any damage or missing-parts
+		// charge, with the findings and the photos, and the rider has 7 days to pay or
+		// dispute. Nothing is taken silently.
+		$problem = self::damage_evidence_problem( $loan );
+		if ( '' !== $problem ) {
+			self::note( $loan, 'Refund not sent: it has a damage or missing-parts deduction and ' . ( 'no_findings' === $problem ? 'the inspection findings are empty' : 'there is no photo' ) . ' (terms 6.4(b) and 8.5(b)). ' . ( 'no_findings' === $problem ? 'Enter what you found' : 'Add at least one photo' ) . ' or clear the deduction, then try again.' );
+			return array( 'ok' => false, 'reason' => $problem );
+		}
+		// The deduction has to be billed within 30 days of the kit's return.
+		if ( '' !== $dispatch && $as_of > Creature_Demo_Loan_Calendar::add_days( $dispatch, self::DEEMED_DEDUCTION_DAYS ) ) {
+			self::note( $loan, 'Damage or missing-parts deduction of ' . Creature_Demo_Loan_Money::format_gbp( $held ) . ' blocked: it was not billed within 30 days of the kit being returned (' . $dispatch . '), so nothing can be deducted (terms 8.5(b) and (c)). The refund goes ahead without it.' );
+			$loan->update_meta_data( '_creature_demo_deduction_state', 'blocked' );
+			$loan->save();
+			return array_merge( self::finish_deemed_refund( $loan, $base ), array( 'deduction_blocked' => true ) );
+		}
+		if ( ! self::raise_deduction_notice( $loan, $held, $base - $held, $as_of ) ) {
+			return array( 'ok' => false, 'reason' => 'order_failed' );
+		}
+		return self::advance_deduction( $loan, $as_of );
+	}
+
+	/**
+	 * Send the damage or missing-parts deduction notice (the same bill email and
+	 * the same 7-day pay-or-dispute rule as any bill) and hold the amount back
+	 * from the refund. The money is already held, so the saved card is never
+	 * charged for it.
+	 *
+	 * @param object $loan
+	 * @param int    $held        Deduction in pence, within the caps.
+	 * @param int    $undisputed  What is refunded now: the refund less the deduction.
+	 * @param string $as_of
+	 * @return bool
+	 */
+	private static function raise_deduction_notice( $loan, $held, $undisputed, $as_of ) {
+		$ask_damage = max( 0, (int) self::meta_string( $loan, '_creature_demo_damage_pence' ) );
+		$damage     = min( $ask_damage, $held );
+		$missing    = $held - $damage;
+		$lines      = array();
+		if ( $damage > 0 ) {
+			$lines[] = array(
+				'kind'  => 'damage',
+				'name'  => 'Damage',
+				'pence' => $damage,
+			);
+		}
+		if ( $missing > 0 ) {
+			$lines[] = array(
+				'kind'  => 'missing_parts',
+				'name'  => 'Missing parts',
+				'pence' => $missing,
+			);
+		}
+		$charge = self::ensure_charge_order( $loan, 'damage', $held, self::bill_reason( $lines ), $as_of, $lines );
+		if ( ! $charge ) {
+			return false;
+		}
+		// The deduction comes out of the refund. The saved card is not charged for it.
+		$charge->update_meta_data( '_creature_demo_charge_netted', 'yes' );
+		$charge->save();
+		$loan->update_meta_data( '_creature_demo_deduction_state', 'noticed' );
+		$loan->update_meta_data( '_creature_demo_deduction_pence', $held );
+		$loan->update_meta_data( '_creature_demo_deduction_undisputed_pence', $undisputed );
+		$loan->update_meta_data( '_creature_demo_bill_state', 'deduction' );
+		$loan->save();
+		self::note( $loan, 'Damage or missing-parts deduction of ' . Creature_Demo_Loan_Money::format_gbp( $held ) . ' billed with the findings and photos. The rider has 7 days to pay or dispute. The undisputed refund of ' . Creature_Demo_Loan_Money::format_gbp( $undisputed ) . ' goes now and the deduction is held. Run the refund action again after 7 days, or after a dispute decision.' );
+		return true;
+	}
+
+	/**
+	 * Move a noticed deduction forward: refund the undisputed amount, then hold
+	 * or settle the deduction through the dispute outcome.
+	 *
+	 * @param object $loan
+	 * @param string $as_of
+	 * @return array<string, mixed>
+	 */
+	private static function advance_deduction( $loan, $as_of ) {
+		$state = self::meta_string( $loan, '_creature_demo_deduction_state' );
+		if ( 'blocked' === $state ) {
+			$base = Creature_Demo_Loan_Money::post_deemed_refund_pence(
+				self::loan_keep_price_pence( $loan ),
+				(int) self::meta_string( $loan, '_creature_demo_deemed_paid_pence' ),
+				(int) self::meta_string( $loan, '_creature_demo_late_fees_paid_pence' ),
+				0
+			);
+			return array_merge( self::finish_deemed_refund( $loan, $base ), array( 'deduction_blocked' => true ) );
+		}
+		$held       = (int) self::meta_string( $loan, '_creature_demo_deduction_pence' );
+		$undisputed = (int) self::meta_string( $loan, '_creature_demo_deduction_undisputed_pence' );
+		if ( 'yes' !== self::meta_string( $loan, '_creature_demo_undisputed_refunded' ) ) {
+			if ( $undisputed > 0 ) {
+				$sent = self::send_deemed_refund( $loan, $undisputed, 'u' );
+				if ( empty( $sent['ok'] ) ) {
+					return $sent;
+				}
+			}
+			$loan->update_meta_data( '_creature_demo_undisputed_refunded', 'yes' );
+			$loan->update_meta_data( '_creature_demo_refund_pence', $undisputed );
+			$loan->save();
+			self::note( $loan, 'Undisputed refund confirmed: ' . Creature_Demo_Loan_Money::format_gbp( $undisputed ) . '. ' . Creature_Demo_Loan_Money::format_gbp( $held ) . ' is held until the deduction is settled.' );
+			return array(
+				'ok'      => true,
+				'pending' => true,
+				'amount'  => $undisputed,
+				'held'    => $held,
+			);
+		}
+		$charge = function_exists( 'wc_get_order' ) ? wc_get_order( (int) self::meta_string( $loan, '_creature_demo_damage_order_id' ) ) : null;
+		if ( ! is_object( $charge ) ) {
+			self::note( $loan, 'The deduction notice order cannot be found, so the held ' . Creature_Demo_Loan_Money::format_gbp( $held ) . ' is not settled.' );
+			return array( 'ok' => false, 'reason' => 'deduction_missing', 'held' => $held );
+		}
+		$keep_back = $held;
+		$why       = '';
+		$dispute   = self::meta_string( $charge, '_creature_demo_dispute_status' );
+		if ( 'yes' === self::meta_string( $charge, '_creature_demo_charge_paid' ) ) {
+			$keep_back = 0;
+			$why       = 'The rider paid the deduction notice, so the held amount is released.';
+		} elseif ( 'open' === $dispute ) {
+			return array( 'ok' => false, 'reason' => 'deduction_disputed', 'held' => $held );
+		} elseif ( 'waived' === $dispute ) {
+			$keep_back = 0;
+			$why       = 'The dispute was waived, so the held amount is released.';
+		} elseif ( 'upheld' === $dispute ) {
+			$sent_on = self::decision_sent_at( $charge );
+			if ( '' === $sent_on || Creature_Demo_Loan_Calendar::days_between( $sent_on, $as_of ) < self::notice_days() ) {
+				return array( 'ok' => false, 'reason' => 'deduction_decision_wait', 'held' => $held );
+			}
+			$keep_back = min( $held, (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' ) );
+			$why       = 'The dispute was upheld for ' . Creature_Demo_Loan_Money::format_gbp( $keep_back ) . '.';
+		} else {
+			$noticed = self::meta_string( $charge, '_creature_demo_charge_notice_at' );
+			if ( '' === $noticed || Creature_Demo_Loan_Calendar::days_between( $noticed, $as_of ) < self::notice_days() ) {
+				return array( 'ok' => false, 'reason' => 'deduction_pending', 'held' => $held );
+			}
+			$why = 'Not paid or disputed within 7 days, so the deduction is taken from the refund.';
+		}
+		$release = $held - $keep_back;
+		if ( $release > 0 ) {
+			$sent = self::send_deemed_refund( $loan, $release, 'r' );
+			if ( empty( $sent['ok'] ) ) {
+				return $sent;
+			}
+		}
+		// Settled. Close the unpaid notice so its link cannot be paid on top.
+		self::cancel_unpaid_charge( $loan, 'damage' );
+		$total = $undisputed + $release;
+		$loan->update_meta_data( '_creature_demo_deduction_state', 'settled' );
+		$loan->update_meta_data( '_creature_demo_refund_done', 'yes' );
+		$loan->update_meta_data( '_creature_demo_refund_pence', $total );
+		$loan->save();
+		self::note( $loan, $why . ' Post-deemed refund confirmed: ' . Creature_Demo_Loan_Money::format_gbp( $total ) . ' in all, with ' . Creature_Demo_Loan_Money::format_gbp( $keep_back ) . ' deducted.' );
+		return array(
+			'ok'       => true,
+			'amount'   => $total,
+			'deducted' => $keep_back,
+			'released' => $release,
 		);
-		$pi = self::meta_string( $loan, '_creature_demo_deemed_payment_intent' );
+	}
+
+	/**
+	 * The refund with no deduction (or a blocked one): send it and mark it done.
+	 *
+	 * @param object $loan
+	 * @param int    $refund
+	 * @return array<string, mixed>
+	 */
+	private static function finish_deemed_refund( $loan, $refund ) {
 		if ( $refund > 0 ) {
-			if ( '' === $pi || ! self::stripe_charge_allowed() ) {
-				$loan->update_meta_data( '_creature_demo_refund_recorded_pence', $refund );
-				$loan->save();
-				self::note( $loan, 'Refund recorded, not sent: ' . Creature_Demo_Loan_Money::format_gbp( $refund ) . '. Stripe has not confirmed it.' );
-				return array(
-					'ok'     => false,
-					'reason' => 'not_sent',
-					'amount' => $refund,
-				);
+			$sent = self::send_deemed_refund( $loan, $refund, '' );
+			if ( empty( $sent['ok'] ) ) {
+				return $sent;
 			}
-			$result = Creature_Demo_Loan_Stripe::refund( $pi, $refund, 'demo-loan-refund-' . (int) $loan->get_id() . '-' . $refund );
-			if ( empty( $result['ok'] ) ) {
-				$loan->update_meta_data( '_creature_demo_refund_recorded_pence', $refund );
-				$loan->save();
-				self::note( $loan, 'Stripe refund was not confirmed (' . $result['code'] . '). It is not marked done.' );
-				return array(
-					'ok'     => false,
-					'reason' => 'not_confirmed',
-					'amount' => $refund,
-				);
-			}
-			self::note( $loan, 'Stripe refund submitted.' . ( '' !== $result['id'] ? ' Refund ' . $result['id'] . '.' : '' ) );
 		}
 		$loan->update_meta_data( '_creature_demo_refund_done', 'yes' );
 		$loan->update_meta_data( '_creature_demo_refund_pence', $refund );
 		$loan->save();
 		self::note( $loan, 'Post-deemed refund confirmed: ' . Creature_Demo_Loan_Money::format_gbp( $refund ) . '.' );
 		return array( 'ok' => true, 'amount' => $refund );
+	}
+
+	/**
+	 * One Stripe refund against the deemed purchase payment. A refund that is
+	 * not confirmed is recorded and nothing is marked done.
+	 *
+	 * @param object $loan
+	 * @param int    $refund
+	 * @param string $stage '' for the whole refund, 'u' undisputed, 'r' release.
+	 * @return array<string, mixed>
+	 */
+	private static function send_deemed_refund( $loan, $refund, $stage ) {
+		$pi = self::meta_string( $loan, '_creature_demo_deemed_payment_intent' );
+		if ( '' === $pi || ! self::stripe_charge_allowed() ) {
+			$loan->update_meta_data( '_creature_demo_refund_recorded_pence', $refund );
+			$loan->save();
+			self::note( $loan, 'Refund recorded, not sent: ' . Creature_Demo_Loan_Money::format_gbp( $refund ) . '. Stripe has not confirmed it.' );
+			return array(
+				'ok'     => false,
+				'reason' => 'not_sent',
+				'amount' => $refund,
+			);
+		}
+		$key    = 'demo-loan-refund-' . (int) $loan->get_id() . ( '' !== $stage ? '-' . $stage : '' ) . '-' . $refund;
+		$result = Creature_Demo_Loan_Stripe::refund( $pi, $refund, $key );
+		if ( empty( $result['ok'] ) ) {
+			$loan->update_meta_data( '_creature_demo_refund_recorded_pence', $refund );
+			$loan->save();
+			self::note( $loan, 'Stripe refund was not confirmed (' . $result['code'] . '). It is not marked done.' );
+			return array(
+				'ok'     => false,
+				'reason' => 'not_confirmed',
+				'amount' => $refund,
+			);
+		}
+		self::note( $loan, 'Stripe refund submitted.' . ( '' !== $result['id'] ? ' Refund ' . $result['id'] . '.' : '' ) );
+		return array( 'ok' => true );
 	}
 
 	/**
@@ -3501,6 +3715,7 @@ final class Creature_Demo_Loan {
 				'raised'    => 'bill raised',
 				'late_only' => 'late-fee-only bill (5 working days passed), no damage can be charged',
 				'none'      => 'nothing owed, no bill',
+				'deduction' => 'deduction from the deemed purchase refund billed (7 days to pay or dispute)',
 			);
 			echo '<p>Bill: ' . self::esc( isset( $names[ $state ] ) ? $names[ $state ] : $state ) . '</p>';
 		} else {

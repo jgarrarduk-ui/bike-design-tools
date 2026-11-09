@@ -961,6 +961,19 @@ function creature_demo_last_mail( $slot ) {
 	return $found;
 }
 
+/** A paid deemed purchase (£212 less £20 of late fees paid), with the kit scanned and inspected after it. */
+function creature_demo_paid_deemed_returned( $scan = '2026-04-08' ) {
+	$loan = creature_demo_loan();
+	$loan->update_meta_data( '_creature_demo_late_fees_paid_pence', 2000 );
+	$raised = Creature_Demo_Loan::maybe_raise_deemed( $loan, '2026-04-07' );
+	wc_get_order( $raised['order_id'] )->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_item4_' . $loan->get_id() );
+	Creature_Demo_Loan::on_payment_complete( $raised['order_id'] );
+	$loan->update_meta_data( '_creature_demo_deemed_paid_at', '2026-04-07' );
+	Creature_Demo_Loan::record_return_scan( $loan, $scan, $scan );
+	Creature_Demo_Loan::complete_inspection( $loan, $scan );
+	return $loan;
+}
+
 /** Slot of the most recent charge_notice_* email. */
 function creature_demo_last_charge_slot() {
 	$found = '';
@@ -2147,10 +2160,20 @@ WC_Stripe_API::$response = (object) array(
 	'id'     => 're_test_demo_1',
 	'status' => 'succeeded',
 );
+$ba_requests = count( WC_Stripe_API::$requests );
 $refunded = Creature_Demo_Loan::refund_deemed( $back_after, '2026-04-09' );
+creature_demo_expect( ! empty( $refunded['ok'] ) && ! empty( $refunded['pending'] ) && 17300 === $refunded['amount'] && 1500 === $refunded['held'], 'with the flag on, the keep chooser is refunded the undisputed £173 and £15 of damage is held' );
+$ba_charge = wc_get_order( (int) $back_after->get_meta( '_creature_demo_damage_order_id' ) );
+creature_demo_expect( is_object( $ba_charge ) && 1500 === (int) $ba_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 'charge_notice_damage' === creature_demo_last_charge_slot(), 'the deduction goes out as a normal bill email (charge_notice_damage), not silently' );
+creature_demo_expect( $ba_requests + 1 === count( WC_Stripe_API::$requests ) && 17300 === (int) WC_Stripe_API::$requests[ $ba_requests ]['body']['amount'], 'only the undisputed amount goes to Stripe now' );
 $refunded_again = Creature_Demo_Loan::refund_deemed( $back_after, '2026-04-10' );
-creature_demo_expect( ! empty( $refunded['ok'] ) && 17300 === $refunded['amount'], 'with the flag on, the keep chooser is refunded £173' );
-creature_demo_expect( ! empty( $refunded_again['idempotent'] ), 'the refund is recorded once' );
+creature_demo_expect( empty( $refunded_again['ok'] ) && 'deduction_pending' === $refunded_again['reason'] && 'yes' !== $back_after->get_meta( '_creature_demo_refund_done' ), 'the deduction waits for the 7 days to pass' );
+creature_demo_expect( $ba_requests + 1 === count( WC_Stripe_API::$requests ), 'waiting sends nothing to Stripe' );
+creature_demo_expect( 'charge_netted' === Creature_Demo_Loan::charge_saved_card( $ba_charge, '2026-04-20' )['code'], 'the saved card is never charged for a deduction' );
+$ba_settled = Creature_Demo_Loan::refund_deemed( $back_after, '2026-04-16' );
+creature_demo_expect( ! empty( $ba_settled['ok'] ) && 17300 === $ba_settled['amount'] && 1500 === $ba_settled['deducted'] && 'yes' === $back_after->get_meta( '_creature_demo_refund_done' ), 'after 7 days with no dispute the £15 is deducted and the refund is done' );
+creature_demo_expect( 'cancelled' === $ba_charge->get_status() && $ba_requests + 1 === count( WC_Stripe_API::$requests ), 'the notice link is closed and nothing more goes to Stripe' );
+creature_demo_expect( ! empty( Creature_Demo_Loan::refund_deemed( $back_after, '2026-04-17' )['idempotent'] ), 'the refund is recorded once' );
 $refund_notes = implode( "\n", $back_after->notes );
 creature_demo_expect( false !== strpos( $refund_notes, 're_test_demo_1' ), 'the Stripe refund id is noted' );
 $GLOBALS['creature_demo_refund_flag'] = null;
@@ -2204,6 +2227,75 @@ $not_sent = Creature_Demo_Loan::refund_deemed( $blocked_refund, '2026-04-09' );
 creature_demo_expect( empty( $not_sent['ok'] ) && 'not_sent' === $not_sent['reason'], 'a refund is not marked done when the mode gate blocks Stripe' );
 creature_demo_expect( 'yes' !== $blocked_refund->get_meta( '_creature_demo_refund_done' ), 'a blocked refund can be tried again' );
 $GLOBALS['creature_demo_options']['woocommerce_stripe_settings']['testmode'] = 'yes';
+
+// Item 4, terms 8.5(b) and (c): a damage or missing-parts deduction from the deemed refund goes through the bill path.
+$GLOBALS['creature_demo_refund_flag'] = true;
+WC_Stripe_API::$response = (object) array( 'id' => 're_test_item4', 'status' => 'succeeded' );
+$d1 = creature_demo_paid_deemed_returned();
+$d1->update_meta_data( '_creature_demo_damage_pence', 1500 );
+$d1->update_meta_data( '_creature_demo_findings', '' );
+$d1_req   = count( WC_Stripe_API::$requests );
+$d1_mails = creature_demo_charge_mail_count();
+$d1_r     = Creature_Demo_Loan::refund_deemed( $d1, '2026-04-09' );
+creature_demo_expect( empty( $d1_r['ok'] ) && 'no_findings' === $d1_r['reason'], '8.5(b): a deduction with no findings is refused' );
+creature_demo_expect( $d1_req === count( WC_Stripe_API::$requests ) && $d1_mails === creature_demo_charge_mail_count() && '' === $d1->get_meta( '_creature_demo_deduction_state' ) && '' === $d1->get_meta( '_creature_demo_damage_order_id' ) && 'yes' !== $d1->get_meta( '_creature_demo_refund_done' ), 'a refused deduction sends no refund and no bill, and changes nothing' );
+$d1->update_meta_data( '_creature_demo_findings', 'Cracked bar clamp.' );
+$d1->update_meta_data( '_creature_demo_photos', array() );
+$d1_r2 = Creature_Demo_Loan::refund_deemed( $d1, '2026-04-09' );
+creature_demo_expect( empty( $d1_r2['ok'] ) && 'no_photos' === $d1_r2['reason'] && $d1_req === count( WC_Stripe_API::$requests ) && $d1_mails === creature_demo_charge_mail_count() && '' === $d1->get_meta( '_creature_demo_deduction_state' ), 'a deduction with findings but no photo is refused too' );
+$d1->update_meta_data( '_creature_demo_damage_pence', 0 );
+$d1_r3 = Creature_Demo_Loan::refund_deemed( $d1, '2026-04-09' );
+creature_demo_expect( ! empty( $d1_r3['ok'] ) && 18800 === $d1_r3['amount'] && 'yes' === $d1->get_meta( '_creature_demo_refund_done' ), 'clearing the deduction lets the refund through in full (£188 after the rest of the £24)' );
+// Disputed, then upheld in part.
+$d2 = creature_demo_paid_deemed_returned();
+$d2->update_meta_data( '_creature_demo_damage_pence', 1500 );
+$d2_r = Creature_Demo_Loan::refund_deemed( $d2, '2026-04-09' );
+$d2_charge = wc_get_order( (int) $d2->get_meta( '_creature_demo_damage_order_id' ) );
+creature_demo_expect( ! empty( $d2_r['pending'] ) && 17300 === $d2_r['amount'], 'the undisputed £173 is refunded and £15 held' );
+Creature_Demo_Loan::mark_disputed( $d2_charge, '2026-04-11' );
+$d2_wait = Creature_Demo_Loan::refund_deemed( $d2, '2026-04-30' );
+creature_demo_expect( empty( $d2_wait['ok'] ) && 'deduction_disputed' === $d2_wait['reason'] && 'yes' !== $d2->get_meta( '_creature_demo_refund_done' ), 'while a dispute is open the held amount stays held, however long it takes' );
+Creature_Demo_Loan::record_dispute_decision( $d2_charge, 'upheld', '2026-04-20', 1000 );
+$d2_wait2 = Creature_Demo_Loan::refund_deemed( $d2, '2026-04-22' );
+creature_demo_expect( empty( $d2_wait2['ok'] ) && 'deduction_decision_wait' === $d2_wait2['reason'], 'an upheld decision waits 7 days from the decision email before it is settled' );
+$d2_req  = count( WC_Stripe_API::$requests );
+$d2_done = Creature_Demo_Loan::refund_deemed( $d2, '2026-04-27' );
+creature_demo_expect( ! empty( $d2_done['ok'] ) && 1000 === $d2_done['deducted'] && 500 === $d2_done['released'] && 17800 === $d2_done['amount'], 'a partly upheld dispute deducts £10 and releases the other £5' );
+creature_demo_expect( $d2_req + 1 === count( WC_Stripe_API::$requests ) && 500 === (int) WC_Stripe_API::$requests[ $d2_req ]['body']['amount'] && 'yes' === $d2->get_meta( '_creature_demo_refund_done' ), 'the released £5 goes to Stripe once and the refund is done' );
+// Disputed, then waived: all of it comes back.
+$d3 = creature_demo_paid_deemed_returned();
+$d3->update_meta_data( '_creature_demo_damage_pence', 1500 );
+Creature_Demo_Loan::refund_deemed( $d3, '2026-04-09' );
+$d3_charge = wc_get_order( (int) $d3->get_meta( '_creature_demo_damage_order_id' ) );
+Creature_Demo_Loan::mark_disputed( $d3_charge, '2026-04-10' );
+Creature_Demo_Loan::record_dispute_decision( $d3_charge, 'waived', '2026-04-12', null );
+$d3_done = Creature_Demo_Loan::refund_deemed( $d3, '2026-04-12' );
+creature_demo_expect( ! empty( $d3_done['ok'] ) && 0 === $d3_done['deducted'] && 18800 === $d3_done['amount'], 'a waived dispute releases the whole £15' );
+// The rider pays the notice link instead: the held amount comes back.
+$d4 = creature_demo_paid_deemed_returned();
+$d4->update_meta_data( '_creature_demo_damage_pence', 1500 );
+Creature_Demo_Loan::refund_deemed( $d4, '2026-04-09' );
+$d4_charge = wc_get_order( (int) $d4->get_meta( '_creature_demo_damage_order_id' ) );
+Creature_Demo_Loan::on_charge_paid( $d4, $d4_charge );
+$d4_done = Creature_Demo_Loan::refund_deemed( $d4, '2026-04-10' );
+creature_demo_expect( ! empty( $d4_done['ok'] ) && 0 === $d4_done['deducted'] && 18800 === $d4_done['amount'], 'a rider who pays the deduction notice is not deducted twice: the held £15 is released' );
+// 30 days from the kit's return: after that nothing can be deducted.
+$d5 = creature_demo_paid_deemed_returned( '2026-04-08' );
+$d5->update_meta_data( '_creature_demo_damage_pence', 1500 );
+$d5_mails = creature_demo_charge_mail_count();
+$d5_done  = Creature_Demo_Loan::refund_deemed( $d5, '2026-05-09' );
+creature_demo_expect( ! empty( $d5_done['ok'] ) && ! empty( $d5_done['deduction_blocked'] ) && 18800 === $d5_done['amount'], 'a deduction first billed 31 days after the return is blocked: the refund goes ahead without it' );
+creature_demo_expect( '' === $d5->get_meta( '_creature_demo_damage_order_id' ) && $d5_mails === creature_demo_charge_mail_count() && false !== strpos( implode( "\n", $d5->notes ), 'blocked' ), 'no bill is sent for a blocked deduction, and the order says why' );
+$d6 = creature_demo_paid_deemed_returned( '2026-04-08' );
+$d6->update_meta_data( '_creature_demo_damage_pence', 1500 );
+$d6_r = Creature_Demo_Loan::refund_deemed( $d6, '2026-05-08' );
+creature_demo_expect( ! empty( $d6_r['pending'] ) && empty( $d6_r['deduction_blocked'] ), 'the 30th day after the return is still inside the window' );
+// 8.5(c): posted more than 30 days after the payment, the kit is the rider's.
+$d7 = creature_demo_paid_deemed_returned( '2026-04-08' );
+$d7->update_meta_data( '_creature_demo_deemed_paid_at', '2026-03-01' );
+$d7_r = Creature_Demo_Loan::refund_deemed( $d7, '2026-04-09' );
+creature_demo_expect( empty( $d7_r['ok'] ) && 'after_30_days' === $d7_r['reason'] && 'yes' !== $d7->get_meta( '_creature_demo_refund_done' ), '8.5(c): a kit posted more than 30 days after payment is not refunded' );
+$GLOBALS['creature_demo_refund_flag'] = null;
 
 $damage = creature_demo_loan();
 $mount = Creature_Demo_Loan::raise_damage_charge( $damage, 3500, 'Inverted mount kit', '2026-03-20' );
