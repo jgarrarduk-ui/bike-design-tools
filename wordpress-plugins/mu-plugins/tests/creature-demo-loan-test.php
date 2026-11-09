@@ -2672,6 +2672,7 @@ ob_start();
 Creature_Demo_Loan::render_meta_box( $p2_blank );
 $p2_html = ob_get_clean();
 creature_demo_expect( false !== strpos( $p2_html, 'name="creature_demo_decision_reasons"' ) && false !== strpos( $p2_html, 'Reasons for decision' ), 'reasons: the admin order screen has a "Reasons for decision" field' );
+creature_demo_expect( false !== strpos( $p2_html, 'This is shown to the customer after ‘because:’. Write it as a full sentence.' ), 'reasons: the field help text is exactly Cadence\'s' );
 $_POST = array();
 Creature_Demo_Loan::action_uphold( $p2_blank );
 creature_demo_expect( 'open' === $p2_blank->get_meta( '_creature_demo_dispute_status' ) && $p2_sent === creature_demo_mail_count( 'dispute_decision_deemed' ), 'reasons: admin Uphold with the field blank is refused' );

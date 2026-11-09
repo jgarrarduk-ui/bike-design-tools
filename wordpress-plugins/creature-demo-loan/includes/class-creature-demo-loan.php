@@ -4388,7 +4388,7 @@ final class Creature_Demo_Loan {
 			echo '<p><label>Photo ' . (int) $i . ' <input type="text" name="creature_demo_photo_' . (int) $i . '" value="' . self::esc( $value ) . '" /></label></p>';
 		}
 		echo '<p><label>Amount to keep when upholding (GBP, optional) <input type="text" name="creature_demo_decision_amount" value="" /></label> Blank upholds the charge in full. A smaller amount upholds in part: the difference is released. Not used by Waive.</p>';
-		echo '<p><label>Reasons for decision (required to uphold or waive a disputed charge; it goes in the decision email and the decision is refused while it is blank)<br /><textarea name="creature_demo_decision_reasons" rows="3" cols="60"></textarea></label></p>';
+		echo '<p><label>Reasons for decision<br /><textarea name="creature_demo_decision_reasons" rows="3" cols="60"></textarea></label><br /><span class="description">This is shown to the customer after ‘because:’. Write it as a full sentence.</span></p>';
 		$state = self::meta_string( $order, '_creature_demo_bill_state' );
 		if ( '' !== $state ) {
 			$names = array(
