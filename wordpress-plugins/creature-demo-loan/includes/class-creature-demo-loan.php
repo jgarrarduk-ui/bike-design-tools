@@ -2342,6 +2342,10 @@ final class Creature_Demo_Loan {
 				$amount  = $asked;
 				$charge->update_meta_data( '_creature_demo_idempotency_key', '' );
 				$charge->update_meta_data( '_creature_demo_charge_amount_pence', $amount );
+				// The late-fee line comes first on a bill, so a cut below it cuts it.
+				if ( (int) self::meta_string( $charge, '_creature_demo_charge_late_pence' ) > $amount ) {
+					$charge->update_meta_data( '_creature_demo_charge_late_pence', $amount );
+				}
 				if ( method_exists( $charge, 'set_total' ) ) {
 					$charge->set_total( Creature_Demo_Loan_Money::pence_to_decimal( $amount ) );
 				}
@@ -2414,8 +2418,11 @@ final class Creature_Demo_Loan {
 			return array( 'ok' => true, 'kind' => 'late_fee' );
 		}
 		if ( 'bill' === $kind ) {
-			// The late-fee line of the bill counts as late fees paid.
-			$late = (int) self::meta_string( $charge, '_creature_demo_charge_late_pence' );
+			// The late-fee line of the bill counts as late fees paid, but only up
+			// to what was actually charged. A dispute decision can cut the bill
+			// below its late-fee line, and the deemed amount and the £212 aggregate
+			// cap use this figure, so it must not be the original line.
+			$late = min( (int) self::meta_string( $charge, '_creature_demo_charge_late_pence' ), $amount );
 			if ( $late > 0 ) {
 				$loan->update_meta_data( '_creature_demo_late_fees_paid_pence', (int) self::meta_string( $loan, '_creature_demo_late_fees_paid_pence' ) + $late );
 				$loan->save();

@@ -1870,6 +1870,44 @@ creature_demo_expect( $notice_mails + 1 === creature_demo_mail_count( 'charge_no
 $rebuilt_key = Creature_Demo_Loan::idempotency_key( $cap_charge );
 creature_demo_expect( $rebuilt_key !== $cap_key && false !== strpos( $rebuilt_key, '200' ), 'the next idempotency key uses the new amount' );
 
+// Item 3: the late fee recorded as paid is what was actually charged, not the original line.
+// Scan 2026-04-02: late fee 4 days at £3 = £12 (1200p). Damage £20. Bill £32.
+$pu = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $pu, '2026-04-02', '2026-04-02' );
+$pu->update_meta_data( '_creature_demo_damage_pence', 2000 );
+$pu_charge = creature_demo_bill_charge( $pu, '2026-04-02' );
+creature_demo_expect( 3200 === (int) $pu_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 1200 === (int) $pu_charge->get_meta( '_creature_demo_charge_late_pence' ), 'the bill is £12 late fee and £20 damage' );
+Creature_Demo_Loan::mark_disputed( $pu_charge, '2026-04-03' );
+Creature_Demo_Loan::record_dispute_decision( $pu_charge, 'upheld', '2026-04-10', 500 );
+creature_demo_expect( 500 === (int) $pu_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 500 === (int) $pu_charge->get_meta( '_creature_demo_charge_late_pence' ), 'a decision that cuts the bill below its late-fee line cuts the late-fee line too' );
+Creature_Demo_Loan::on_charge_paid( $pu, $pu_charge );
+creature_demo_expect( '500' === (string) $pu->get_meta( '_creature_demo_late_fees_paid_pence' ), 'late fees paid is the £5 actually charged, not the £12 line' );
+// The deemed amount and the aggregate cap use that figure.
+creature_demo_expect( Creature_Demo_Loan_Money::deemed_amount_pence( 21200, 500 ) === 20700, 'the deemed amount is the keep price less the £5 actually paid' );
+// A partly upheld bill that still covers the late-fee line records the whole line.
+$pu2 = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $pu2, '2026-04-02', '2026-04-02' );
+$pu2->update_meta_data( '_creature_demo_damage_pence', 2000 );
+$pu2_charge = creature_demo_bill_charge( $pu2, '2026-04-02' );
+Creature_Demo_Loan::mark_disputed( $pu2_charge, '2026-04-03' );
+Creature_Demo_Loan::record_dispute_decision( $pu2_charge, 'upheld', '2026-04-10', 2000 );
+Creature_Demo_Loan::on_charge_paid( $pu2, $pu2_charge );
+creature_demo_expect( '1200' === (string) $pu2->get_meta( '_creature_demo_late_fees_paid_pence' ), 'a cut that leaves the late-fee line whole records the whole £12' );
+// An unchanged bill is unchanged.
+$pu3 = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $pu3, '2026-04-02', '2026-04-02' );
+$pu3->update_meta_data( '_creature_demo_damage_pence', 2000 );
+$pu3_charge = creature_demo_bill_charge( $pu3, '2026-04-02' );
+Creature_Demo_Loan::on_charge_paid( $pu3, $pu3_charge );
+creature_demo_expect( '1200' === (string) $pu3->get_meta( '_creature_demo_late_fees_paid_pence' ), 'a bill paid in full records its late-fee line' );
+// Defence in depth: if only the amount was lowered, payment still caps the late fee at what was charged.
+$pu4 = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $pu4, '2026-04-02', '2026-04-02' );
+$pu4_charge = creature_demo_bill_charge( $pu4, '2026-04-02' );
+$pu4_charge->update_meta_data( '_creature_demo_charge_amount_pence', 700 );
+Creature_Demo_Loan::on_charge_paid( $pu4, $pu4_charge );
+creature_demo_expect( '700' === (string) $pu4->get_meta( '_creature_demo_late_fees_paid_pence' ), 'payment records no more late fee than the amount charged' );
+
 $alert_loan = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $alert_loan, '2026-03-30', '2026-03-30' );
 $alert_charge = creature_demo_bill_charge( $alert_loan );
