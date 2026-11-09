@@ -262,6 +262,13 @@ if ( ! function_exists( 'get_option' ) ) {
 	}
 }
 
+if ( ! function_exists( 'update_option' ) ) {
+	function update_option( $key, $value, $autoload = null ) {
+		$GLOBALS['creature_demo_options'][ $key ] = $value;
+		return true;
+	}
+}
+
 if ( ! function_exists( 'maybe_serialize' ) ) {
 	function maybe_serialize( $data ) {
 		if ( is_array( $data ) || is_object( $data ) ) {
@@ -1240,6 +1247,7 @@ $expected_slots = array(
 	'admin_deduction_settle_due',
 	'dispute_decision_deemed',
 	'admin_dispute_decision_missing',
+	'admin_daily_job_late',
 );
 // The three emails Cadence has not written yet are slots with no wording.
 $expected_slots = array_merge( $expected_slots, array() );
@@ -4435,6 +4443,78 @@ $const_run = static function ( $constant_value ) {
 };
 creature_demo_expect( '[111,222]' === $const_run( '111, 222' ), 'a constant with ids wins over the default' );
 creature_demo_expect( '[8946]' === $const_run( '' ), 'an empty constant falls back to 8946' );
+
+// E4: the 22:00 job. A run is meant for a London date; a late or skipped run is caught up as of the right date and flagged.
+$e4_charge_notice_at = static function ( $loan ) {
+	foreach ( $GLOBALS['creature_demo_orders'] as $candidate ) {
+		if ( (int) $candidate->get_meta( '_creature_demo_parent_loan_id' ) === (int) $loan->get_id() ) {
+			return (string) $candidate->get_meta( '_creature_demo_charge_notice_at' );
+		}
+	}
+	return '';
+};
+$e4_orders_before = $GLOBALS['creature_demo_daily_orders'];
+$e4_make = static function () {
+	$loan = creature_demo_loan();
+	Creature_Demo_Loan::record_return_scan( $loan, '2026-04-02', '2026-04-02' );
+	Creature_Demo_Loan::record_kit_received( $loan, '2026-04-08' );
+	return $loan;
+};
+// Received Wed 2026-04-08: working day 4 is 04-14, working day 5 is 04-15.
+// A normal run: 22:00 BST on 04-14 is 21:00 UTC. Not late, nothing flagged.
+unset( $GLOBALS['creature_demo_options']['creature_demo_loan_daily_covered'], $GLOBALS['creature_demo_options']['creature_demo_loan_late_run'] );
+$e4a = $e4_make();
+$GLOBALS['creature_demo_daily_orders'] = array( $e4a );
+$e4_late_mails = creature_demo_mail_count( 'admin_daily_job_late' );
+Creature_Demo_Loan::run_scheduled( strtotime( '2026-04-14 21:00:00 UTC' ) );
+creature_demo_expect( '2026-04-14' === get_option( 'creature_demo_loan_daily_covered' ) && $e4_late_mails === creature_demo_mail_count( 'admin_daily_job_late' ) && false === get_option( 'creature_demo_loan_late_run', false ), 'E4: an on-time 22:00 run covers its own date and raises no flag' );
+creature_demo_expect( '' === $e4a->get_meta( '_creature_demo_bill_state' ), 'E4: working day 4 sends the alert, not the bill' );
+// Late: the day-5 run starts at 00:30 London on 04-16 (23:30 UTC on 04-15). It is for 04-15, not 04-16.
+Creature_Demo_Loan::run_scheduled( strtotime( '2026-04-15 23:30:00 UTC' ) );
+creature_demo_expect( 'late_only' === $e4a->get_meta( '_creature_demo_bill_state' ) && '2026-04-15' === $e4_charge_notice_at( $e4a ), 'E4: a run at 00:30 the next day makes the day-5 decision as of working day 5 (the bill is dated 04-15, not 04-16)' );
+creature_demo_expect( '2026-04-15' === get_option( 'creature_demo_loan_daily_covered' ), 'E4: it records 04-15 as covered, not 04-16' );
+$e4_flag = get_option( 'creature_demo_loan_late_run', array() );
+creature_demo_expect( is_array( $e4_flag ) && 'yes' === $e4_flag['flag'] && 1 === count( $e4_flag['events'] ) && 'after_midnight' === $e4_flag['events'][0]['kind'] && '2026-04-15' === $e4_flag['events'][0]['date'], 'E4: a late-run flag is recorded for 04-15 (started after midnight)' );
+creature_demo_expect( $e4_late_mails + 1 === creature_demo_mail_count( 'admin_daily_job_late' ), 'E4: the shop is told once' );
+$e4_mail = creature_demo_last_mail( 'admin_daily_job_late' );
+creature_demo_expect( 'info@creaturecycles.co.uk' === $e4_mail['to'] && false !== strpos( $e4_mail['body'], '2026-04-15' ) && false !== strpos( $e4_mail['body'], 'after midnight' ), 'E4: the notice goes to the shop and names the date' );
+Creature_Demo_Loan::run_scheduled( strtotime( '2026-04-15 23:45:00 UTC' ) );
+creature_demo_expect( $e4_late_mails + 1 === creature_demo_mail_count( 'admin_daily_job_late' ) && 1 === count( get_option( 'creature_demo_loan_late_run' )['events'] ), 'E4: the same occurrence is not reported twice' );
+// The next on-time run (04-16, 22:00 BST) is fine and adds nothing.
+Creature_Demo_Loan::run_scheduled( strtotime( '2026-04-16 21:00:00 UTC' ) );
+creature_demo_expect( '2026-04-16' === get_option( 'creature_demo_loan_daily_covered' ) && $e4_late_mails + 1 === creature_demo_mail_count( 'admin_daily_job_late' ), 'E4: an on-time run after a late one is not flagged' );
+// A skipped day: no run on Tue 04-14 or Wed 04-15 (nothing ran). Thu 04-16 22:00 BST comes round, with 04-13 as the last covered.
+unset( $GLOBALS['creature_demo_options']['creature_demo_loan_late_run'] );
+$GLOBALS['creature_demo_options']['creature_demo_loan_daily_covered'] = '2026-04-13';
+$e4b = $e4_make();
+$GLOBALS['creature_demo_daily_orders'] = array( $e4b );
+$e4_late_mails = creature_demo_mail_count( 'admin_daily_job_late' );
+Creature_Demo_Loan::run_scheduled( strtotime( '2026-04-16 21:00:00 UTC' ) );
+creature_demo_expect( 'late_only' === $e4b->get_meta( '_creature_demo_bill_state' ) && '2026-04-15' === $e4_charge_notice_at( $e4b ), 'E4: a skipped day is caught up in order: the day-5 bill is dated 04-15, not the day the run happened (04-16)' );
+creature_demo_expect( '2026-04-16' === get_option( 'creature_demo_loan_daily_covered' ), 'E4: after the catch-up 04-16 is covered' );
+$e4_flag = get_option( 'creature_demo_loan_late_run', array() );
+$e4_kinds = array();
+foreach ( $e4_flag['events'] as $e4_ev ) {
+	$e4_kinds[ $e4_ev['date'] ] = $e4_ev['kind'];
+}
+creature_demo_expect( array( '2026-04-14' => 'skipped', '2026-04-15' => 'skipped' ) === $e4_kinds, 'E4: both skipped dates are flagged (04-16 itself ran on time)' );
+creature_demo_expect( $e4_late_mails + 1 === creature_demo_mail_count( 'admin_daily_job_late' ), 'E4: one notice for the whole catch-up, listing both days' );
+creature_demo_expect( false !== strpos( creature_demo_last_mail( 'admin_daily_job_late' )['body'], '2026-04-14: no run happened' ) && false !== strpos( creature_demo_last_mail( 'admin_daily_job_late' )['body'], '2026-04-15: no run happened' ), 'E4: the notice names each skipped day' );
+// A first ever run has nothing to compare with, so it covers its own date and flags nothing.
+unset( $GLOBALS['creature_demo_options']['creature_demo_loan_daily_covered'], $GLOBALS['creature_demo_options']['creature_demo_loan_late_run'] );
+$e4_late_mails = creature_demo_mail_count( 'admin_daily_job_late' );
+Creature_Demo_Loan::run_scheduled( strtotime( '2026-05-04 21:00:00 UTC' ) );
+creature_demo_expect( '2026-05-04' === get_option( 'creature_demo_loan_daily_covered' ) && $e4_late_mails === creature_demo_mail_count( 'admin_daily_job_late' ), 'E4: a first run covers its own date and flags nothing' );
+// A gap longer than the catch-up limit runs the last 14 days and says so.
+$GLOBALS['creature_demo_options']['creature_demo_loan_daily_covered'] = '2026-05-04';
+Creature_Demo_Loan::run_scheduled( strtotime( '2026-06-15 21:00:00 UTC' ) );
+$e4_kinds = array();
+foreach ( get_option( 'creature_demo_loan_late_run' )['events'] as $e4_ev ) {
+	$e4_kinds[] = $e4_ev['kind'];
+}
+creature_demo_expect( in_array( 'gap_not_run', $e4_kinds, true ) && '2026-06-15' === get_option( 'creature_demo_loan_daily_covered' ), 'E4: a gap over 14 days is capped and the shop is told the earlier days were not run' );
+$GLOBALS['creature_demo_daily_orders'] = $e4_orders_before;
+creature_demo_expect( in_array( 'admin_daily_job_late', Creature_Demo_Loan_Copy::slots(), true ), 'E4: the shop notice is a slot' );
 
 $blob = creature_demo_sensitive_blob();
 creature_demo_absent( $blob, 'sk_live_', 'notes, mail, and Stripe bodies do not contain a live secret key' );

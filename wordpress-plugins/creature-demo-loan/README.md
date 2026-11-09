@@ -20,6 +20,15 @@ Optional: copy `optional-mu-loader/creature-demo-loan-loader.php` (the same file
 
 Do not install this on the live shop until James has turned Stripe test mode off on purpose. Live charges stay off unless `wp-config.php` defines `CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES` as boolean `true` before plugins load. Customer mail stays redirected to `demo-loan-test@creaturecycles.co.uk` with a `[TEST]` subject prefix unless `CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL` is boolean `true`.
 
+### The 22:00 job needs a real cron on live
+
+The plugin runs one daily job at 22:00 site time (Europe/London). It sends the working-day-4 alert and, on working day 5, the late-fee-only bill (terms 4.4 and 6.4(b)). WP-Cron and the Action Scheduler runner only start when someone loads a page. On a quiet site the 22:00 job can run late, or not at all that day. Before going live, do one of these:
+
+1. Set `define( 'DISABLE_WP_CRON', true );` in `wp-config.php` and add a server cron that calls `wp-cron.php` every 5 to 15 minutes, for example `*/10 * * * * curl -s https://example.com/wp-cron.php?doing_wp_cron > /dev/null` (use the real site address), or `wp cron event run --due-now`.
+2. Or run the Action Scheduler runner from the server (`wp action-scheduler run`) on the same schedule.
+
+**Detection.** Each run works out which London date it is for: a run that starts at or after 22:00 is for that day, an earlier run is for the day before. The plugin stores the last date covered (option `creature_demo_loan_daily_covered`). If a run starts after midnight London on the following day, or a scheduled day had no run, it runs every missed date in order with that date as the working day (fallback decisions are made on working-day dates, not on the time the run started), sets a late-run flag (option `creature_demo_loan_late_run`), emails the shop once for that occurrence (`admin_daily_job_late`) and shows an admin notice for 7 days. It catches up at most 14 days. It can only notice a missed run once some later run happens: if the job never runs again, nothing is flagged. It cannot undo a bill or alert that went out late, and a bill raised as of the working day but sent after midnight is still a late email in the rider's inbox.
+
 ## What Layout still sets
 
 The demo product defaults to **8946** when the constant, the filter and the config setting are all empty. To use other ids:

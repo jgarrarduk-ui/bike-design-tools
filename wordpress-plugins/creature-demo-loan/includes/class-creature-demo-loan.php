@@ -45,6 +45,15 @@ final class Creature_Demo_Loan {
 	/** Hour (site time zone) the daily job runs. Late, so working day 5 is still open when it fires. */
 	const DAILY_RUN_HOUR = 22;
 
+	/** Option: the last London date (Y-m-d) the scheduled job has covered. */
+	const DAILY_COVERED_OPTION = 'creature_demo_loan_daily_covered';
+
+	/** Option: the late-run flag and the occurrences already reported. */
+	const LATE_RUN_OPTION = 'creature_demo_loan_late_run';
+
+	/** The most days one catch-up will run. */
+	const DAILY_CATCH_UP_MAX = 14;
+
 	/** Photo slots on the damage entry (terms 6.4(b)). */
 	const PHOTO_SLOTS = 6;
 
@@ -96,7 +105,8 @@ final class Creature_Demo_Loan {
 
 		add_action( 'init', array( __CLASS__, 'on_init' ) );
 		add_action( 'woocommerce_init', array( __CLASS__, 'register_block_field' ) );
-		add_action( 'creature_demo_loan_daily', array( __CLASS__, 'run_daily' ) );
+		add_action( 'creature_demo_loan_daily', array( __CLASS__, 'run_scheduled' ) );
+		add_action( 'admin_notices', array( __CLASS__, 'render_late_run_notice' ) );
 
 		add_filter( 'woocommerce_register_shop_order_post_statuses', array( __CLASS__, 'filter_post_statuses' ) );
 		add_filter( 'wc_order_statuses', array( __CLASS__, 'filter_order_statuses' ) );
@@ -4339,6 +4349,147 @@ final class Creature_Demo_Loan {
 				wp_schedule_event( $run, 'daily', $hook );
 			}
 		}
+	}
+
+	/**
+	 * The scheduled daily job. It is meant to run at 22:00 London on a working day and
+	 * to make that day's decisions (the day-4 alert, the late-fee-only bill on working
+	 * day 5) as of that day. WP-Cron and Action Scheduler only start on a page visit
+	 * unless the server runs a real cron, so a run can start late or a day can be
+	 * skipped. This finds out which London date the run is for, runs every uncovered
+	 * date up to it in order with that date as the "as of" day (never the clock time of
+	 * the run), and records a late-run flag when a run started after midnight London on
+	 * the following day or a scheduled day had no run. It can only see a missed run
+	 * once some later run happens (see the README).
+	 *
+	 * @param int|null $now Unix time. Default: now.
+	 * @return int Orders ticked, summed over the dates run.
+	 */
+	public static function run_scheduled( $now = null ) {
+		$now = null === $now ? time() : (int) $now;
+		try {
+			$london = new DateTime( '@' . $now );
+			$london->setTimezone( new DateTimeZone( 'Europe/London' ) );
+		} catch ( Exception $e ) {
+			return self::run_daily( null );
+		}
+		$today    = $london->format( 'Y-m-d' );
+		$intended = (int) $london->format( 'G' ) >= self::DAILY_RUN_HOUR ? $today : Creature_Demo_Loan_Calendar::add_days( $today, -1 );
+		$covered  = function_exists( 'get_option' ) ? get_option( self::DAILY_COVERED_OPTION, '' ) : '';
+		$dates    = array( $intended );
+		$gap_cut  = false;
+		if ( is_string( $covered ) && Creature_Demo_Loan_Calendar::is_real_ymd( $covered ) && $covered < $intended ) {
+			$dates = array();
+			$day   = Creature_Demo_Loan_Calendar::add_days( $covered, 1 );
+			while ( $day <= $intended ) {
+				$dates[] = $day;
+				$day     = Creature_Demo_Loan_Calendar::add_days( $day, 1 );
+			}
+			if ( count( $dates ) > self::DAILY_CATCH_UP_MAX ) {
+				$dates   = array_slice( $dates, -self::DAILY_CATCH_UP_MAX );
+				$gap_cut = true;
+			}
+		}
+		$events = array();
+		$count  = 0;
+		foreach ( $dates as $date ) {
+			$count += self::run_daily( $date );
+			if ( $date < $intended ) {
+				$events[] = array(
+					'date' => $date,
+					'kind' => 'skipped',
+				);
+			} elseif ( $date < $today ) {
+				$events[] = array(
+					'date' => $date,
+					'kind' => 'after_midnight',
+				);
+			}
+		}
+		if ( $gap_cut ) {
+			$events[] = array(
+				'date' => $dates[0],
+				'kind' => 'gap_not_run',
+			);
+		}
+		if ( function_exists( 'update_option' ) && ( ! is_string( $covered ) || $covered < $intended ) ) {
+			update_option( self::DAILY_COVERED_OPTION, $intended, false );
+		}
+		if ( $events ) {
+			self::record_late_run( $events, $london->format( 'Y-m-d H:i' ), $intended );
+		}
+		return $count;
+	}
+
+	/**
+	 * Record a late-run flag and tell the shop once for each occurrence (one date and kind).
+	 *
+	 * @param array<int, array{date: string, kind: string}> $events
+	 * @param string                                        $ran_at   London time the run started.
+	 * @param string                                        $intended The date the run was meant for.
+	 */
+	private static function record_late_run( $events, $ran_at, $intended ) {
+		$stored = function_exists( 'get_option' ) ? get_option( self::LATE_RUN_OPTION, array() ) : array();
+		$stored = is_array( $stored ) ? $stored : array();
+		$seen   = isset( $stored['events'] ) && is_array( $stored['events'] ) ? $stored['events'] : array();
+		$fresh  = array();
+		foreach ( $events as $event ) {
+			$key = $event['date'] . '|' . $event['kind'];
+			foreach ( $seen as $old ) {
+				if ( isset( $old['key'] ) && $old['key'] === $key ) {
+					continue 2;
+				}
+			}
+			$event['key']    = $key;
+			$event['ran_at'] = $ran_at;
+			$fresh[]         = $event;
+		}
+		if ( ! $fresh ) {
+			return;
+		}
+		$seen = array_slice( array_merge( $seen, $fresh ), -20 );
+		if ( function_exists( 'update_option' ) ) {
+			update_option(
+				self::LATE_RUN_OPTION,
+				array(
+					'flag'   => 'yes',
+					'last'   => $ran_at,
+					'events' => $seen,
+				),
+				false
+			);
+		}
+		$lines = array();
+		foreach ( $fresh as $event ) {
+			if ( 'skipped' === $event['kind'] ) {
+				$lines[] = $event['date'] . ': no run happened that day; caught up at ' . $ran_at . '.';
+			} elseif ( 'gap_not_run' === $event['kind'] ) {
+				$lines[] = 'More than ' . self::DAILY_CATCH_UP_MAX . ' days had no run; days before ' . $event['date'] . ' were not caught up.';
+			} else {
+				$lines[] = $event['date'] . ': the run started after midnight London, at ' . $ran_at . '.';
+			}
+		}
+		Creature_Demo_Loan_Mail::send_admin( null, 'admin_daily_job_late', array( 'late_runs' => implode( "\n", $lines ) ) );
+	}
+
+	/**
+	 * Admin notice while a late-run flag from the last 7 days is set.
+	 */
+	public static function render_late_run_notice() {
+		if ( ! function_exists( 'current_user_can' ) || ! current_user_can( 'manage_woocommerce' ) || ! function_exists( 'get_option' ) ) {
+			return;
+		}
+		$stored = get_option( self::LATE_RUN_OPTION, array() );
+		if ( ! is_array( $stored ) || 'yes' !== ( isset( $stored['flag'] ) ? $stored['flag'] : '' ) || empty( $stored['events'] ) || ! is_array( $stored['events'] ) ) {
+			return;
+		}
+		$last  = end( $stored['events'] );
+		$since = isset( $last['date'] ) ? $last['date'] : '';
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $since ) || Creature_Demo_Loan_Calendar::days_between( $since, Creature_Demo_Loan_Calendar::today( null ) ) > 7 ) {
+			return;
+		}
+		$message = 'De-Reacher demo loan: the daily 22:00 job ran late or missed a day (most recent: ' . $since . ', run at ' . ( isset( $stored['last'] ) ? $stored['last'] : '' ) . '). Bills and alerts were caught up for the right dates, but a bill may have gone out after the 5 working days in clause 4.4 if the day was missed. Set up a real server cron for wp-cron.php (see the plugin README).';
+		echo '<div class="notice notice-warning"><p>' . self::esc( $message ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 	}
 
 	public static function print_checkout_script() {

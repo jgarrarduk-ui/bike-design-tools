@@ -10,7 +10,7 @@
  *
  * Placeholders: {amount} {price} {reason} {link} {due} {coupon} {order_id}
  * {choice_links} {decision} {findings} {photos} {grace_end} {deemed_on}
- * {consent} {consent_version} {consent_at} {express_answer}. {price} is the
+ * {consent} {consent_version} {consent_at} {express_answer} {late_runs}. {price} is the
  * loan's keep price. Dates that reach a customer ({due}, {grace_end},
  * {deemed_on}) are shown as "30 November 2026"; stored dates stay Y-m-d. Email
  * bodies are templates filled at send time and are edited in place; only the
@@ -210,8 +210,13 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => 'Demo dispute decision held: no deduction decision wording (order {order_id})',
 				'body'    => 'A dispute decision was recorded on a deemed-refund deduction on order {order_id}, but the dispute_decision_deemed wording is empty, so the decision email cannot be sent and the decision was not recorded. Add the wording, then record the decision again. This email goes to the shop, not the rider.',
 			),
+			// Shop alert, not rider copy. Plain wording, not Cadence's. The daily job is meant to run at 22:00 London.
+			'admin_daily_job_late'          => array(
+				'subject' => 'Demo loan daily job ran late or missed a day',
+				'body'    => "The daily 22:00 demo loan job did not run on time:\n{late_runs}\n\nThe bills and alerts for each missed day were caught up as of that day, not the day the job actually ran. If a day was missed, a bill may have gone out after the 5 working days in the demo terms (clause 4.4), so check any bill sent in this period. Fix: run a real server cron that calls wp-cron.php every 5 to 15 minutes (with DISABLE_WP_CRON set), or run the Action Scheduler runner; see the plugin README. This email goes to the shop, not the rider.",
+			),
 			// Shop alert, not rider copy. Plain wording, not Cadence's.
-			'admin_deduction_settle_due'   => array(
+			'admin_deduction_settle_due'  => array(
 				'subject' => 'Demo deduction ready to settle (order {order_id})',
 				'body'    => 'The 7 days since the decision on the deduction for order {order_id} have passed: re-run Refund deemed purchase to settle the deduction. This email goes to the shop, not the rider.',
 			),
@@ -359,6 +364,7 @@ final class Creature_Demo_Loan_Copy {
 			'{received}'        => $date( 'received' ),
 			'{deadline}'        => $date( 'deadline' ),
 			'{missing}'         => isset( $args['missing'] ) ? (string) $args['missing'] : '',
+			'{late_runs}'       => isset( $args['late_runs'] ) ? (string) $args['late_runs'] : '',
 			'{consent}'         => isset( $args['consent'] ) ? (string) $args['consent'] : '',
 			'{consent_version}' => isset( $args['consent_version'] ) ? (string) $args['consent_version'] : '',
 			'{consent_at}'      => isset( $args['consent_at'] ) ? (string) $args['consent_at'] : '',
