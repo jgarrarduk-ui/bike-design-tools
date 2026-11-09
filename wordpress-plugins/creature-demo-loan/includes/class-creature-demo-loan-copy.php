@@ -10,7 +10,7 @@
  *
  * Placeholders: {amount} {price} {released} {reason} {link} {due} {coupon} {order_id}
  * {choice_links} {decision} {findings} {photos} {grace_end} {deemed_on}
- * {consent} {consent_version} {consent_at} {express_answer} {late_runs}. {price} is the
+ * {consent} {consent_version} {consent_at} {express_answer} {late_runs} {kept} {decision_reasons}. {price} is the
  * loan's keep price. Dates that reach a customer ({due}, {grace_end},
  * {deemed_on}) are shown as "30 November 2026"; stored dates stay Y-m-d. Email
  * bodies are templates filled at send time and are edited in place; only the
@@ -55,7 +55,7 @@ final class Creature_Demo_Loan_Copy {
 		$mount_kit  = Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan_Money::MOUNT_KIT_PENCE );
 		$consent    = self::consent_wording( class_exists( 'Creature_Demo_Loan' ) ? Creature_Demo_Loan::consent_version() : self::CONSENT_CURRENT );
 		$grace      = sprintf(
-			'Your De-Reacher demo (order {order_id}) was due back on {due}. Your 5 days’ grace end at midnight (UK time) on the 5th day after that date. If the kit is posted after that, a late fee of %s a day applies from the 6th day after the due date up to and including the day you post it, up to %s in total. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. Late fees are billed once, after the kit is back. Book your return on this order’s page in My account, under Demo loan.',
+			'Your De-Reacher demo (order {order_id}) was due back on {due}. Your 5 days’ grace end at midnight (UK time) on the 5th day after that date. If the kit is posted after that, a late fee of %s a day applies from the 6th day after the due date up to and including the day you post it, up to %s in total. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. Late fees are billed once, after the kit is back. Book your return in My account, under Demo loan.',
 			$late_daily,
 			$late_cap
 		);
@@ -79,7 +79,7 @@ final class Creature_Demo_Loan_Copy {
 			// Terms 3A.3: shown when Keep is hidden or refused after a reported crash. Cadence v3.
 			'crash_hold_notice'             => array(
 				'subject' => '',
-				'body'    => 'You’ve told us about a crash, impact or failure, so you can’t choose to keep this kit until we’ve inspected it (demo terms, clause 3A.3). Please book your return on this order’s page in My account, under Demo loan, and send the kit back as normal. If it passes inspection, we’ll offer it to you at your keep price.',
+				'body'    => 'You’ve told us about a crash, impact or failure, so you can’t choose to keep this kit until we’ve inspected it (demo terms, clause 3A.3). Please book your return in My account, under Demo loan, and send the kit back as normal. If it passes inspection, we’ll offer it to you at your keep price.',
 			),
 			'consent_error'                 => array(
 				'subject' => '',
@@ -97,28 +97,28 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => '',
 				'body'    => 'Demo loan',
 			),
-			// The Demo loan tab in My account (terms 3A.1 and 3.2). v3 has no wording for these labels, so they
-			// are empty. A row with an empty label is not shown, and with no wording for the "no loans" line
-			// nothing is shown in its place.
+			// The Demo loan tab in My account (terms 3A.1 and 3.2). Cadence v4. A row with an empty label is
+			// not shown, and with no wording for the "no loans" line nothing is shown in its place.
 			'my_account_label_due'          => array(
 				'subject' => '',
-				'body'    => '',
+				'body'    => 'Due date:',
 			),
 			'my_account_label_grace_end'    => array(
 				'subject' => '',
-				'body'    => '',
+				'body'    => 'Last day of your grace period:',
 			),
 			'my_account_label_deemed_on'    => array(
 				'subject' => '',
-				'body'    => '',
+				'body'    => 'Deemed purchase date:',
 			),
 			'my_account_label_keep_price'   => array(
 				'subject' => '',
-				'body'    => '',
+				'body'    => 'Your keep price:',
 			),
+			// Cadence v4. Assumes the tab lists booked, deemed and inspecting kits (round 4 R1).
 			'my_account_no_loans'           => array(
 				'subject' => '',
-				'body'    => '',
+				'body'    => 'You don’t have a demo kit booked or on loan at the moment. When you book one, its keep price will show here, and once it’s delivered, so will your due date, the last day of your grace period and your deemed purchase date.',
 			),
 			'button_return'                 => array(
 				'subject' => '',
@@ -142,7 +142,7 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'reminder_deemed_warning'       => array(
 				'subject' => 'De-Reacher demo: it will be treated as bought unless it’s posted by day 13 (due date {due})',
-				'body'    => 'Your De-Reacher demo (order {order_id}) was due back on {due}. If it hasn’t been posted back by the end of the 13th day after that date, it will be treated as bought on the 14th day, at your keep price of {price}. No late fees are added to that price. We’ll email you the amount and a payment link first. If it isn’t paid or disputed within 7 days, we’ll charge your saved card. To avoid this, book your return on this order’s page in My account, under Demo loan, and post the kit with the QR code we email you. If you’d rather keep it, you can choose that now for the same price.',
+				'body'    => 'Your De-Reacher demo (order {order_id}) was due back on {due}. If it hasn’t been posted back by the end of the 13th day after that date, it will be treated as bought on the 14th day, at your keep price of {price}. No late fees are added to that price. We’ll email you the amount and a payment link first. If it isn’t paid or disputed within 7 days, we’ll charge your saved card. To avoid this, book your return in My account, under Demo loan, and post the kit with the QR code we email you. If you’d rather keep it, you can choose that now for the same price.',
 			),
 			'charge_notice_keep'            => array(
 				'subject' => 'Payment link to keep your De-Reacher demo kit ({amount})',
@@ -168,13 +168,14 @@ final class Creature_Demo_Loan_Copy {
 				'body'    => "Your demo kit (order {order_id}) is back with us and has been inspected. You’d paid the deemed purchase price and posted the kit back within 30 days, so under clause 8.5(b) we’re refunding your keep price of {price}, less late fees of £24 and any charge for damage or missing parts. The late fees are the £24 maximum because the kit was posted after the deemed purchase date.\n\nWhat we found:\n{findings}\nOur photos:\n{photos}\n\nDamage or missing parts: {reason}.\nAmount we’ll keep from your refund for this: {amount}.\nWe charge the lower of the reasonable cost of repair and the price on our spare-parts list (creaturecycles.co.uk/spare-parts/). A missing inverted mount kit is £35 rather than the price of its separate parts. We don’t charge for fair wear and tear, or for anything shown in our photos from before we sent the kit.\n\nWe’re refunding the rest to the card you paid with now. There’s nothing to pay, and we won’t charge your saved card.\n\nIf you think it’s wrong, reply to this email or email info@creaturecycles.co.uk within 7 days and tell us why. We’ll hold the {amount} while we look again, email you our decision and refund any part we don’t uphold. If you don’t reply within 7 days, we’ll keep it from your refund.",
 			),
 			// Terms 4.4(b) and 8.5(b): the final decision email when the disputed charge is a deduction from a
-			// deemed purchase refund. No pay link and no saved-card line. v3 has no wording for it, so the slot is
-			// empty. While it is empty the decision cannot be recorded or sent. Tags: {decision} {amount} {reason}
-			// {price} {findings} {photos} {released} {order_id}. {released} is the amount refunded back to the rider on
-			// a waiver or a partial uphold (£0.00 when the full amount is upheld).
+			// deemed purchase refund. No pay link and no saved-card line. Cadence v4 ({kept} version). While the
+			// slot is empty the decision cannot be recorded or sent. Tags: {decision} (upheld, upheld in part or
+			// waived) {amount} {reason} {price} {findings} {photos} {released} {kept} {decision_reasons} {order_id}.
+			// {released} is refunded to the rider on a waiver or a partial uphold (£0.00 on a full uphold). {kept}
+			// is what is finally kept (£0.00 on a waiver). v4 has no {decision_reasons} tag in its wording.
 			'dispute_decision_deemed'       => array(
-				'subject' => '',
-				'body'    => '',
+				'subject' => 'De-Reacher demo: our final decision on the deduction from your refund (order {order_id})',
+				'body'    => "Thanks for your reply about the amount we held back from your deemed purchase refund (order {order_id}). We’ve looked again, as clause 4.4(b) of the demo terms says we will.\n\nOur decision: the deduction is {decision}.\nWhat the deduction was for: {reason}.\nWhat we found:\n{findings}\nOur photos:\n{photos}\n\nWe’re keeping {kept} and refunding {released} of the amount we held to the card you paid the deemed purchase price with. If we’re keeping anything, we’ll settle it no sooner than 7 days after this email.\n\nThere’s nothing to pay, and we won’t charge your saved card.\n\nThis is our final response. If you still disagree, you can raise it with your card issuer or bank, or take it to court.",
 			),
 			'charge_authentication_required' => array(
 				'subject' => 'Action needed: pay your De-Reacher demo charge ({amount})',
@@ -188,12 +189,12 @@ final class Creature_Demo_Loan_Copy {
 			// Terms 3.2. Cadence v2.
 			'dates_on_delivery'             => array(
 				'subject' => 'Your De-Reacher demo dates: due back {due}',
-				'body'    => "Your De-Reacher demo kit (order {order_id}) has been delivered. The loan lasts 21 days, and the delivery day is day 1.\n\nDue date: {due}. Post the kit back by then, or choose to keep it.\nLast day of grace: {grace_end}. No fee if the kit is posted by the end of this day.\nLate fee: £3 a day from the day after {grace_end}, up to £24 in total.\nDeemed purchase date: {deemed_on}. If the kit hasn’t been posted back by the end of the day before, it’s treated as bought at your keep price of {price}.\n\nEach day ends at midnight, UK time. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. If you need longer, ask us before the due date.\n\nBefore you ride: fit it following our user guide (creaturecycles.co.uk/de-reacher-user-guide/), the inverted mount kit instructions and the torque card, using a calibrated torque wrench. Please don’t cut your steerer. Check the bolts before every ride. If you crash or have an impact, stop using it and tell us at info@creaturecycles.co.uk. Keep the original box, because the whole kit goes back in it.",
+				'body'    => "Your De-Reacher demo kit (order {order_id}) has been delivered. The loan lasts 21 days, and the delivery day is day 1.\n\nDue date: {due}. Post the kit back by then, or choose to keep it.\nLast day of grace: {grace_end}. No fee if the kit is posted by the end of this day.\nLate fee: £3 a day from the day after {grace_end}, up to £24 in total.\nDeemed purchase date: {deemed_on}. If the kit hasn’t been posted back by the end of the day before, it’s treated as bought at your keep price of {price}.\n\nEach day ends at midnight, UK time. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. These dates are also in My account, under Demo loan. If you need longer, ask us before the due date.\n\nBefore you ride: fit it following our user guide (creaturecycles.co.uk/de-reacher-user-guide/), the inverted mount kit instructions and the torque card, using a calibrated torque wrench. Please don’t cut your steerer. Check the bolts before every ride. If you crash or have an impact, stop using it and tell us at info@creaturecycles.co.uk. Keep the original box, because the whole kit goes back in it.",
 			),
 			// Terms 11.1 and Appendix B: body only, added to the end of the Woo order email. Cadence v2. The subject is not used.
 			'booking_confirmation'          => array(
 				'subject' => '',
-				'body'    => "De-Reacher demo booking (order {order_id})\n\nYour demo terms (version 5) and our model cancellation form are attached to this email. We’ll email your due date, the last day of your grace period and your deemed purchase date once the kit is delivered.\n\nYour keep price: {price}\n\nYour consent to later charges ({consent_version}, agreed on {consent_at}):\n“{consent}”\n\nYour answer to “Send my kit now”: {express_answer}. If you answered Yes, we’ll send the kit within your 14-day cancellation period. If you answered No, we’ll hold it until that period ends.\n\nCancelling: you can cancel this demo booking within 14 days of the day we confirm it, without giving a reason. Email info@creaturecycles.co.uk or use the attached model cancellation form. If you cancel before we’ve dispatched the kit, we’ll refund the full £25 within 14 days. If the kit has already been sent, book your return on this order’s page in My account, under Demo loan, and send it back. We’ll refund the £25 within 14 days of your cancellation, less £25 ÷ 21 for each day of the loan up to and including the day you post it.",
+				'body'    => "De-Reacher demo booking (order {order_id})\n\nYour demo terms (version 5) and our model cancellation form are attached to this email. We’ll email your due date, the last day of your grace period and your deemed purchase date once the kit is delivered.\n\nYour keep price: {price}\n\nYour consent to later charges ({consent_version}, agreed on {consent_at}):\n“{consent}”\n\nYour answer to “Send my kit now”: {express_answer}. If you answered Yes, we’ll send the kit within your 14-day cancellation period. If you answered No, we’ll hold it until that period ends.\n\nCancelling: you can cancel this demo booking within 14 days of the day we confirm it, without giving a reason. Email info@creaturecycles.co.uk or use the attached model cancellation form. If you cancel before we’ve dispatched the kit, we’ll refund the full £25 within 14 days. If the kit has already been sent, book your return in My account, under Demo loan, and send it back. We’ll refund the £25 within 14 days of your cancellation, less £25 ÷ 21 for each day of the loan up to and including the day you post it.",
 			),
 			'choice_return_recorded'        => array(
 				'subject' => 'Return booked for your De-Reacher demo: £25 code once it’s back',
@@ -213,7 +214,7 @@ final class Creature_Demo_Loan_Copy {
 			),
 			'keep_choice_lapsed'            => array(
 				'subject' => 'Your De-Reacher demo keep link has lapsed',
-				'body'    => 'The payment link to keep your demo kit (order {order_id}) wasn’t paid within 7 days, so that choice has lapsed. The kit is on loan again, and the usual dates and fees apply as if you hadn’t chosen to keep it. You can still choose to keep it up to the end of the 13th day after your due date. If you don’t choose, we treat it as a return. Book it on this order’s page in My account, under Demo loan.',
+				'body'    => 'The payment link to keep your demo kit (order {order_id}) wasn’t paid within 7 days, so that choice has lapsed. The kit is on loan again, and the usual dates and fees apply as if you hadn’t chosen to keep it. You can still choose to keep it up to the end of the 13th day after your due date. If you don’t choose, we treat it as a return. Book it in My account, under Demo loan.',
 			),
 			'dispute_decision'              => array(
 				'subject' => 'De-Reacher demo: our final decision on your disputed charge',
@@ -373,6 +374,8 @@ final class Creature_Demo_Loan_Copy {
 			'{amount}'          => isset( $args['amount'] ) ? (string) $args['amount'] : '',
 			'{price}'           => isset( $args['price'] ) ? (string) $args['price'] : '',
 			'{released}'        => isset( $args['released'] ) ? (string) $args['released'] : '',
+			'{kept}'            => isset( $args['kept'] ) ? (string) $args['kept'] : '',
+			'{decision_reasons}' => isset( $args['decision_reasons'] ) ? (string) $args['decision_reasons'] : '',
 			'{reason}'         => isset( $args['reason'] ) ? (string) $args['reason'] : '',
 			'{link}'            => isset( $args['link'] ) ? (string) $args['link'] : '',
 			'{due}'             => $date( 'due' ),

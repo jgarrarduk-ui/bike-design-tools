@@ -1274,7 +1274,7 @@ foreach ( $slots as $slot ) {
 	}
 }
 sort( $empty_slots );
-creature_demo_expect( array( 'dispute_decision_deemed', 'my_account_label_deemed_on', 'my_account_label_due', 'my_account_label_grace_end', 'my_account_label_keep_price', 'my_account_no_loans' ) === $empty_slots, 'v3 copy: every slot has wording except dispute_decision_deemed and the five Demo loan tab labels, which v3 does not give (v3 fills the checkbox label, the crash notice and the deemed deduction notice)' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
+creature_demo_expect( array() === $empty_slots, 'v4 copy: every slot has wording (v4 fills dispute_decision_deemed, the four tab labels and my_account_no_loans)' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
 $v3_express = Creature_Demo_Loan_Copy::text( 'express_request_checkbox' );
 creature_demo_expect( 'Send my kit now. I understand that if I cancel within the 14-day cancellation period after the kit has been sent, I’ll need to send it back, and you’ll keep part of the £25 for the days I’ve had it.' === $v3_express, 'v3 copy: the express checkbox label is the Appendix B text, curly apostrophes' );
 creature_demo_absent( $v3_express, "'", 'v3 copy: no straight apostrophe in the checkbox label' );
@@ -1290,9 +1290,9 @@ $v3_bill = $v3_cat['admin_bill_due']['body'];
 creature_demo_expect( false !== strpos( $v3_bill, 'before 10pm on {deadline}' ) && false !== strpos( $v3_bill, 'At 10pm that day the plugin sends the late-fee-only bill on its own (if a late fee is due)' ) && false !== strpos( $v3_bill, 'paid deemed purchase' ), 'v3 copy: admin_bill_due is the v3 body with {deadline}' );
 foreach ( array( 'reminder_grace_end', 'reminder_deemed_warning', 'keep_choice_lapsed', 'booking_confirmation' ) as $v3_slot ) {
 	$v3_text = Creature_Demo_Loan_Copy::text( $v3_slot );
-	creature_demo_expect( false !== strpos( $v3_text, 'on this order’s page in My account, under Demo loan' ) && false === strpos( $v3_text, 'My account →' ), 'v3 copy: ' . $v3_slot . ' uses the order-page wording' );
+	creature_demo_expect( false !== strpos( $v3_text, 'in My account, under Demo loan' ) && false === strpos( $v3_text, 'order’s page' ) && false === strpos( $v3_text, 'My account →' ), 'v4 copy: ' . $v3_slot . ' says "in My account, under Demo loan"' );
 }
-creature_demo_absent( Creature_Demo_Loan_Copy::text( 'dates_on_delivery' ), 'My account', 'v3 copy: dates_on_delivery no longer says the dates are in My account' );
+creature_demo_expect( false !== strpos( Creature_Demo_Loan_Copy::text( 'dates_on_delivery' ), 'These dates are also in My account, under Demo loan.' ), 'v4 copy: dates_on_delivery says the dates are also in My account, under Demo loan' );
 $GLOBALS['creature_demo_copy_override'] = $baseline_override;
 $v2_cat = Creature_Demo_Loan_Copy::catalogue();
 $v2_has = static function ( $slot, $needle ) use ( $v2_cat ) {
@@ -1776,7 +1776,7 @@ $r_dmg->update_meta_data( '_creature_demo_damage_pence', 2000 );
 Creature_Demo_Loan::record_return_scan( $r_dmg, '2026-03-30', '2026-03-30' );
 $r_dmg_charge = creature_demo_bill_charge( $r_dmg, '2026-03-30' );
 Creature_Demo_Loan::mark_disputed( $r_dmg_charge, '2026-03-31' );
-Creature_Demo_Loan::record_dispute_decision( $r_dmg_charge, 'upheld', '2026-04-05', 500 );
+Creature_Demo_Loan::record_dispute_decision( $r_dmg_charge, 'upheld', '2026-04-05', 500, 'Test reasons.' );
 $r_dmg->refunded = 15.0;
 creature_demo_expect( false === Creature_Demo_Loan::fee_was_refunded( $r_dmg ) && '' !== $r_dmg->get_meta( '_creature_demo_coupon_code' ), 'a damage refund after an upheld dispute does not block the code (the return still got it)' );
 creature_demo_stripe_test();
@@ -2027,7 +2027,7 @@ Creature_Demo_Loan::mark_disputed( $dispute_charge, '2026-03-30' );
 Creature_Demo_Loan::mark_disputed( $dispute_charge, '2026-03-31' );
 $while_open = Creature_Demo_Loan::charge_saved_card( $disputed, '2026-04-06' );
 creature_demo_expect( 'disputed' === $while_open['code'], 'an open dispute blocks the saved card' );
-$upheld = Creature_Demo_Loan::record_dispute_decision( $dispute_charge, 'upheld', '2026-04-02', null );
+$upheld = Creature_Demo_Loan::record_dispute_decision( $dispute_charge, 'upheld', '2026-04-02', null, 'Test reasons.' );
 creature_demo_expect( ! empty( $upheld['timely'] ), 'a decision 3 days later is inside 14 days' );
 $calls_before_uphold = count( WC_Stripe_API::$requests );
 WC_Stripe_API::$response = (object) array(
@@ -2050,11 +2050,11 @@ Creature_Demo_Loan::record_return_scan( $cap_loan, '2026-03-30', '2026-03-30' );
 $cap_charge = creature_demo_bill_charge( $cap_loan );
 Creature_Demo_Loan::mark_disputed( $cap_charge, '2026-03-30' );
 $cap_key = Creature_Demo_Loan::idempotency_key( $cap_charge );
-$over_cap = Creature_Demo_Loan::record_dispute_decision( $cap_charge, 'upheld', '2026-04-02', 9000 );
+$over_cap = Creature_Demo_Loan::record_dispute_decision( $cap_charge, 'upheld', '2026-04-02', 9000, 'Test reasons.' );
 creature_demo_expect( ! empty( $over_cap['capped'] ) && 300 === $over_cap['amount'], 'an upheld dispute cannot exceed the original notice' );
 creature_demo_expect( $cap_key === $cap_charge->get_meta( '_creature_demo_idempotency_key' ), 'capping to the same amount keeps the idempotency key' );
 $notice_mails = creature_demo_mail_count( 'charge_notice_late_fee' );
-$lowered = Creature_Demo_Loan::record_dispute_decision( $cap_charge, 'upheld', '2026-04-02', 200 );
+$lowered = Creature_Demo_Loan::record_dispute_decision( $cap_charge, 'upheld', '2026-04-02', 200, 'Test reasons.' );
 creature_demo_expect( 200 === $lowered['amount'], 'an upheld amount below the notice is kept' );
 creature_demo_expect( '' === $cap_charge->get_meta( '_creature_demo_idempotency_key' ), 'a changed amount clears the stored idempotency key' );
 creature_demo_expect( $notice_mails + 1 === creature_demo_mail_count( 'charge_notice_late_fee' ), 'a changed amount logs a fresh notice' );
@@ -2069,7 +2069,7 @@ $pu->update_meta_data( '_creature_demo_damage_pence', 2000 );
 $pu_charge = creature_demo_bill_charge( $pu, '2026-04-02' );
 creature_demo_expect( 3200 === (int) $pu_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 1200 === (int) $pu_charge->get_meta( '_creature_demo_charge_late_pence' ), 'the bill is £12 late fee and £20 damage' );
 Creature_Demo_Loan::mark_disputed( $pu_charge, '2026-04-03' );
-Creature_Demo_Loan::record_dispute_decision( $pu_charge, 'upheld', '2026-04-10', 500 );
+Creature_Demo_Loan::record_dispute_decision( $pu_charge, 'upheld', '2026-04-10', 500, 'Test reasons.' );
 creature_demo_expect( 500 === (int) $pu_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 500 === (int) $pu_charge->get_meta( '_creature_demo_charge_late_pence' ), 'a decision that cuts the bill below its late-fee line cuts the late-fee line too' );
 Creature_Demo_Loan::on_charge_paid( $pu, $pu_charge );
 creature_demo_expect( '500' === (string) $pu->get_meta( '_creature_demo_late_fees_paid_pence' ), 'late fees paid is the £5 actually charged, not the £12 line' );
@@ -2081,7 +2081,7 @@ Creature_Demo_Loan::record_return_scan( $pu2, '2026-04-02', '2026-04-02' );
 $pu2->update_meta_data( '_creature_demo_damage_pence', 2000 );
 $pu2_charge = creature_demo_bill_charge( $pu2, '2026-04-02' );
 Creature_Demo_Loan::mark_disputed( $pu2_charge, '2026-04-03' );
-Creature_Demo_Loan::record_dispute_decision( $pu2_charge, 'upheld', '2026-04-10', 2000 );
+Creature_Demo_Loan::record_dispute_decision( $pu2_charge, 'upheld', '2026-04-10', 2000, 'Test reasons.' );
 Creature_Demo_Loan::on_charge_paid( $pu2, $pu2_charge );
 creature_demo_expect( '1200' === (string) $pu2->get_meta( '_creature_demo_late_fees_paid_pence' ), 'a cut that leaves the late-fee line whole records the whole £12' );
 // An unchanged bill is unchanged.
@@ -2129,7 +2129,7 @@ $waived = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $waived, '2026-03-30', '2026-03-30' );
 $waive_charge = creature_demo_bill_charge( $waived );
 Creature_Demo_Loan::mark_disputed( $waive_charge, '2026-03-30' );
-Creature_Demo_Loan::record_dispute_decision( $waive_charge, 'waived', '2026-04-20', null );
+Creature_Demo_Loan::record_dispute_decision( $waive_charge, 'waived', '2026-04-20', null, 'Test reasons.' );
 $late_decision = Creature_Demo_Loan_Calendar::days_between( '2026-03-30', '2026-04-20' );
 creature_demo_expect( $late_decision > 14, 'this fixture is outside 14 days' );
 creature_demo_expect( 'no' === $waive_charge->get_meta( '_creature_demo_dispute_decision_within_14_days' ), 'a late decision is marked outside 14 days' );
@@ -2390,7 +2390,7 @@ creature_demo_expect( ! empty( $d2_r['pending'] ) && 17300 === $d2_r['amount'], 
 Creature_Demo_Loan::mark_disputed( $d2_charge, '2026-04-11' );
 $d2_wait = Creature_Demo_Loan::refund_deemed( $d2, '2026-04-30' );
 creature_demo_expect( empty( $d2_wait['ok'] ) && 'deduction_disputed' === $d2_wait['reason'] && 'yes' !== $d2->get_meta( '_creature_demo_refund_done' ), 'while a dispute is open the held amount stays held, however long it takes' );
-Creature_Demo_Loan::record_dispute_decision( $d2_charge, 'upheld', '2026-04-20', 1000 );
+Creature_Demo_Loan::record_dispute_decision( $d2_charge, 'upheld', '2026-04-20', 1000, 'Test reasons.' );
 $d2_wait2 = Creature_Demo_Loan::refund_deemed( $d2, '2026-04-22' );
 creature_demo_expect( empty( $d2_wait2['ok'] ) && 'deduction_decision_wait' === $d2_wait2['reason'], 'an upheld decision waits 7 days from the decision email before it is settled' );
 $d2_req  = count( WC_Stripe_API::$requests );
@@ -2403,7 +2403,7 @@ $d3->update_meta_data( '_creature_demo_damage_pence', 1500 );
 Creature_Demo_Loan::refund_deemed( $d3, '2026-04-09' );
 $d3_charge = wc_get_order( (int) $d3->get_meta( '_creature_demo_damage_order_id' ) );
 Creature_Demo_Loan::mark_disputed( $d3_charge, '2026-04-10' );
-Creature_Demo_Loan::record_dispute_decision( $d3_charge, 'waived', '2026-04-12', null );
+Creature_Demo_Loan::record_dispute_decision( $d3_charge, 'waived', '2026-04-12', null, 'Test reasons.' );
 $d3_done = Creature_Demo_Loan::refund_deemed( $d3, '2026-04-12' );
 creature_demo_expect( ! empty( $d3_done['ok'] ) && 0 === $d3_done['deducted'] && 18800 === $d3_done['amount'], 'a waived dispute releases the whole £15' );
 // The rider pays the notice link instead: the held amount comes back.
@@ -2492,7 +2492,7 @@ Creature_Demo_Loan::mark_disputed( $s2_charge, '2026-04-11' );
 $s2_set = creature_demo_mail_count( 'admin_deduction_settle_due' );
 Creature_Demo_Loan::tick( $s2, '2026-04-30' );
 creature_demo_expect( $s2_set === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'D2: no settle alert while the dispute is open' );
-Creature_Demo_Loan::record_dispute_decision( $s2_charge, 'upheld', '2026-04-20', 1000 );
+Creature_Demo_Loan::record_dispute_decision( $s2_charge, 'upheld', '2026-04-20', 1000, 'Test reasons.' );
 Creature_Demo_Loan::tick( $s2, '2026-04-26' );
 creature_demo_expect( $s2_set === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'D2: no settle alert 6 days after the decision' );
 Creature_Demo_Loan::tick( $s2, '2026-04-27' );
@@ -2542,18 +2542,18 @@ Creature_Demo_Loan::mark_disputed( $e3_charge, '2026-04-12' );
 $e3_plain   = creature_demo_mail_count( 'dispute_decision' );
 $e3_deemed  = creature_demo_mail_count( 'dispute_decision_deemed' );
 $e3_admin   = creature_demo_mail_count( 'admin_dispute_decision_missing' );
-$e3_blocked = Creature_Demo_Loan::record_dispute_decision( $e3_charge, 'upheld', '2026-04-14', null );
+$e3_blocked = Creature_Demo_Loan::record_dispute_decision( $e3_charge, 'upheld', '2026-04-14', null, 'Test reasons.' );
 creature_demo_expect( empty( $e3_blocked['ok'] ) && 'no_decision_wording' === $e3_blocked['reason'], 'E3: with dispute_decision_deemed empty the decision is blocked' );
 creature_demo_expect( $e3_plain === creature_demo_mail_count( 'dispute_decision' ) && $e3_deemed === creature_demo_mail_count( 'dispute_decision_deemed' ), 'E3: blocked: no decision email of either kind goes out (never the plain one with a pay link)' );
 creature_demo_expect( 'open' === $e3_charge->get_meta( '_creature_demo_dispute_status' ) && '' === $e3_charge->get_meta( '_creature_demo_decision_sent_at' ), 'E3: blocked: the dispute stays open and no 7-day clock starts' );
 creature_demo_expect( $e3_admin + 1 === creature_demo_mail_count( 'admin_dispute_decision_missing' ) && false !== strpos( implode( "\n", $e3_charge->notes ), 'dispute_decision_deemed' ), 'E3: blocked: the shop is emailed and the order note says why' );
-Creature_Demo_Loan::record_dispute_decision( $e3_charge, 'upheld', '2026-04-14', null );
+Creature_Demo_Loan::record_dispute_decision( $e3_charge, 'upheld', '2026-04-14', null, 'Test reasons.' );
 creature_demo_expect( $e3_admin + 1 === creature_demo_mail_count( 'admin_dispute_decision_missing' ), 'E3: blocked: the shop email is sent once, not on every retry' );
 $GLOBALS['creature_demo_copy_override']['dispute_decision_deemed'] = array(
 	'subject' => 'Test decision for {order_id}',
 	'body'    => 'Decision {decision}. Amount {amount}. Link: [{link}] Price {price}.',
 );
-$e3_ok = Creature_Demo_Loan::record_dispute_decision( $e3_charge, 'upheld', '2026-04-14', null );
+$e3_ok = Creature_Demo_Loan::record_dispute_decision( $e3_charge, 'upheld', '2026-04-14', null, 'Test reasons.' );
 creature_demo_expect( ! empty( $e3_ok['ok'] ) && 'upheld' === $e3_charge->get_meta( '_creature_demo_dispute_status' ), 'E3: once the wording is filled the decision is recorded' );
 $e3_mail = creature_demo_last_mail( 'dispute_decision_deemed' );
 creature_demo_expect( $e3_deemed + 1 === creature_demo_mail_count( 'dispute_decision_deemed' ) && $e3_plain === creature_demo_mail_count( 'dispute_decision' ), 'E3: filled: the deduction decision goes out as dispute_decision_deemed, not dispute_decision' );
@@ -2585,21 +2585,21 @@ $d4_damage  = creature_demo_mail_count( 'charge_notice_damage' );
 $d4_deemed  = creature_demo_mail_count( 'dispute_decision_deemed' );
 $d4_plain   = creature_demo_mail_count( 'dispute_decision' );
 $d4_notices = creature_demo_charge_mail_count();
-Creature_Demo_Loan::record_dispute_decision( $d4_charge, 'upheld', '2026-04-20', 1000 );
+Creature_Demo_Loan::record_dispute_decision( $d4_charge, 'upheld', '2026-04-20', 1000, 'Test reasons.' );
 $d4_mail = creature_demo_last_mail( 'dispute_decision_deemed' );
 creature_demo_expect( $d4_damage === creature_demo_mail_count( 'charge_notice_damage' ) && $d4_notices === creature_demo_charge_mail_count(), 'D4: a partial uphold sends no charge_notice_damage and no other charge notice' );
 creature_demo_expect( $d4_deemed + 1 === creature_demo_mail_count( 'dispute_decision_deemed' ) && $d4_plain === creature_demo_mail_count( 'dispute_decision' ), 'D4: dispute_decision_deemed is sent once, and not dispute_decision' );
 creature_demo_expect( false === stripos( $d4_mail['body'], 'http' ) && false !== strpos( $d4_mail['body'], 'Link: []' ), 'D4: no pay link in the decision email' );
-creature_demo_expect( 'Decision upheld. Amount £10.00. Released £5.00. Link: []' === $d4_mail['body'], '{released}: a partial uphold of £15.00 down to £10.00 releases £5.00 (the decision email carries the amount and the released part)' );
+creature_demo_expect( 'Decision upheld in part. Amount £10.00. Released £5.00. Link: []' === $d4_mail['body'], '{released}: a partial uphold of £15.00 down to £10.00 releases £5.00 (the decision email carries the amount and the released part)' );
 creature_demo_expect( 1000 === (int) $d4_charge->get_meta( '_creature_demo_charge_amount_pence' ) && 1000 === (int) $d4_charge->get_meta( '_creature_demo_charge_notice_amount' ), 'D4: the cut amount is recorded on the charge and the notice record' );
 // A full uphold releases nothing.
 list( $r4_full_loan, $r4_full ) = $r4_make();
-Creature_Demo_Loan::record_dispute_decision( $r4_full, 'upheld', '2026-04-20', null );
+Creature_Demo_Loan::record_dispute_decision( $r4_full, 'upheld', '2026-04-20', null, 'Test reasons.' );
 creature_demo_expect( 'Decision upheld. Amount £15.00. Released £0.00. Link: []' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], '{released}: a full uphold releases £0.00' );
 // A waiver releases the whole deduction.
 list( $r4_waive_loan, $r4_waive ) = $r4_make();
 $r4_alerts = creature_demo_mail_count( 'admin_deduction_settle_due' );
-Creature_Demo_Loan::record_dispute_decision( $r4_waive, 'waived', '2026-04-20', null );
+Creature_Demo_Loan::record_dispute_decision( $r4_waive, 'waived', '2026-04-20', null, 'Test reasons.' );
 creature_demo_expect( 'Decision waived. Amount £15.00. Released £15.00. Link: []' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], '{released}: a waiver releases the whole £15.00' );
 creature_demo_expect( creature_demo_mail_count( 'charge_notice_damage' ) === $d4_damage, 'D4: a waiver sends no damage notice either' );
 // Settle alert on waiver: straight away, not 7 days later, once.
@@ -2621,6 +2621,73 @@ $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array(
 creature_demo_expect( false !== strpos( Creature_Demo_Loan_Copy::text( 'admin_dispute_decision_missing' ), 'The 14 days for a final decision (4.4(b)) are still running.' ), 'round 4: admin_dispute_decision_missing has the 14-day sentence' );
 creature_demo_expect( false !== strpos( Creature_Demo_Loan_Copy::text( 'admin_daily_job_late' ), 'or confirm the host already runs cron' ), 'round 4: admin_daily_job_late says to confirm the host already runs cron' );
 creature_demo_expect( 'Demo deduction ready to settle (order 7)' === Creature_Demo_Loan_Copy::subject( 'admin_deduction_settle_due', array( 'order_id' => '7' ) ), 'round 4: the settle subject is unchanged' );
+
+// Round 4 part 2. {kept} and the three outcomes of dispute_decision_deemed: upheld, upheld in part, waived.
+$GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] = array( 'subject' => 'Test deduction for {order_id}', 'body' => 'Deduction {amount}.' );
+$GLOBALS['creature_demo_copy_override']['dispute_decision_deemed'] = array(
+	'subject' => 'Test decision for {order_id}',
+	'body'    => 'The deduction is {decision}. Kept {kept}. Released {released}. Reasons: [{decision_reasons}]',
+);
+$p2_make = static function () {
+	$loan = creature_demo_paid_deemed_returned( '2026-04-08' );
+	$loan->update_meta_data( '_creature_demo_damage_pence', 1500 );
+	Creature_Demo_Loan::refund_deemed( $loan, '2026-04-09' );
+	$charge = wc_get_order( (int) $loan->get_meta( '_creature_demo_damage_order_id' ) );
+	Creature_Demo_Loan::mark_disputed( $charge, '2026-04-11' );
+	return $charge;
+};
+$p2_full = $p2_make();
+Creature_Demo_Loan::record_dispute_decision( $p2_full, 'upheld', '2026-04-20', null, 'Photos show the damage.' );
+creature_demo_expect( 'The deduction is upheld. Kept £15.00. Released £0.00. Reasons: [Photos show the damage.]' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], 'decision outcome: upheld in full: {decision} is "upheld", {kept} is £15.00, {released} is £0.00' );
+$p2_part = $p2_make();
+Creature_Demo_Loan::record_dispute_decision( $p2_part, 'upheld', '2026-04-20', 1000, 'Part of the scuff was there before.' );
+creature_demo_expect( 'The deduction is upheld in part. Kept £10.00. Released £5.00. Reasons: [Part of the scuff was there before.]' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], 'decision outcome: a lowered amount reads "upheld in part", {kept} is £10.00, {released} is £5.00' );
+$p2_waive = $p2_make();
+Creature_Demo_Loan::record_dispute_decision( $p2_waive, 'waived', '2026-04-20', null, 'Our photos do not show it clearly.' );
+creature_demo_expect( 'The deduction is waived. Kept £0.00. Released £15.00. Reasons: [Our photos do not show it clearly.]' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], 'decision outcome: waived: {kept} is £0.00, {released} is the whole £15.00' );
+creature_demo_expect( 'upheld' === $p2_part->get_meta( '_creature_demo_dispute_status' ) && 'waived' === $p2_waive->get_meta( '_creature_demo_dispute_status' ), 'decision outcome: the stored status stays upheld or waived (upheld in part is a rendering only)' );
+creature_demo_expect( 'Kept £10.00.' === Creature_Demo_Loan_Copy::fill( 'Kept {kept}.', array( 'kept' => '£10.00' ) ) && 'Kept .' === Creature_Demo_Loan_Copy::fill( 'Kept {kept}.', array() ), '{kept}: the merge tag is filled from the kept argument and is empty without one' );
+
+// Reasons for decision (Appendix D): required, stored, rendered as {decision_reasons}.
+$p2_blank = $p2_make();
+$p2_sent  = creature_demo_mail_count( 'dispute_decision_deemed' );
+foreach ( array( '', '   ', "\n\t " ) as $p2_empty ) {
+	$p2_refused = Creature_Demo_Loan::record_dispute_decision( $p2_blank, 'upheld', '2026-04-20', null, $p2_empty );
+	creature_demo_expect( empty( $p2_refused['ok'] ) && 'no_decision_reasons' === $p2_refused['reason'], 'reasons: a blank value (' . strlen( $p2_empty ) . ' chars) refuses the decision' );
+}
+$p2_refused_none = Creature_Demo_Loan::record_dispute_decision( $p2_blank, 'waived', '2026-04-20', null );
+creature_demo_expect( empty( $p2_refused_none['ok'] ) && 'no_decision_reasons' === $p2_refused_none['reason'], 'reasons: leaving the argument out refuses the decision' );
+creature_demo_expect( 'open' === $p2_blank->get_meta( '_creature_demo_dispute_status' ) && '' === $p2_blank->get_meta( '_creature_demo_dispute_decision_at' ) && '' === $p2_blank->get_meta( '_creature_demo_decision_sent_at' ) && '' === $p2_blank->get_meta( '_creature_demo_dispute_decision_reasons' ), 'reasons: refused: the dispute stays open, nothing is stored and no 7-day clock starts' );
+creature_demo_expect( $p2_sent === creature_demo_mail_count( 'dispute_decision_deemed' ), 'reasons: refused: no decision email goes out' );
+creature_demo_expect( false !== strpos( implode( "\n", $p2_blank->notes ), 'Reasons for decision' ), 'reasons: refused: the order note says why' );
+// Admin UI: the textarea is on the order screen, and the uphold and waive actions read it.
+ob_start();
+Creature_Demo_Loan::render_meta_box( $p2_blank );
+$p2_html = ob_get_clean();
+creature_demo_expect( false !== strpos( $p2_html, 'name="creature_demo_decision_reasons"' ) && false !== strpos( $p2_html, 'Reasons for decision' ), 'reasons: the admin order screen has a "Reasons for decision" field' );
+$_POST = array();
+Creature_Demo_Loan::action_uphold( $p2_blank );
+creature_demo_expect( 'open' === $p2_blank->get_meta( '_creature_demo_dispute_status' ) && $p2_sent === creature_demo_mail_count( 'dispute_decision_deemed' ), 'reasons: admin Uphold with the field blank is refused' );
+$_POST = array( 'creature_demo_decision_reasons' => '   ' );
+Creature_Demo_Loan::action_waive( $p2_blank );
+creature_demo_expect( 'open' === $p2_blank->get_meta( '_creature_demo_dispute_status' ) && $p2_sent === creature_demo_mail_count( 'dispute_decision_deemed' ), 'reasons: admin Waive with only spaces is refused' );
+$_POST = array( 'creature_demo_decision_reasons' => '  Our photos were taken before dispatch.  ' );
+Creature_Demo_Loan::action_waive( $p2_blank );
+creature_demo_expect( 'waived' === $p2_blank->get_meta( '_creature_demo_dispute_status' ) && 'Our photos were taken before dispatch.' === $p2_blank->get_meta( '_creature_demo_dispute_decision_reasons' ), 'reasons: admin Waive with the field filled records the decision and stores the trimmed reasons' );
+creature_demo_expect( $p2_sent + 1 === creature_demo_mail_count( 'dispute_decision_deemed' ) && false !== strpos( creature_demo_last_mail( 'dispute_decision_deemed' )['body'], '[Our photos were taken before dispatch.]' ), 'reasons: filled: the email carries the reasons as {decision_reasons}' );
+$_POST = array();
+creature_demo_expect( 'Because Test.' === Creature_Demo_Loan_Copy::fill( 'Because {decision_reasons}.', array( 'decision_reasons' => 'Test' ) ) && 'Because .' === Creature_Demo_Loan_Copy::fill( 'Because {decision_reasons}.', array() ), '{decision_reasons}: the merge tag is filled from the argument and is empty without one' );
+// v4 has no {decision_reasons} tag in either decision email, so the shipped wording does not carry it.
+$GLOBALS['creature_demo_copy_override'] = array();
+creature_demo_expect( false === strpos( Creature_Demo_Loan_Copy::text( 'dispute_decision_deemed' ) . Creature_Demo_Loan_Copy::subject( 'dispute_decision_deemed' ) . Creature_Demo_Loan_Copy::text( 'dispute_decision' ) . Creature_Demo_Loan_Copy::subject( 'dispute_decision' ), '{decision_reasons}' ), 'reasons: v4 copy has no {decision_reasons} tag, so no wording was invented' );
+// The real v4 deduction decision, rendered for the waived outcome.
+$p2_v4 = Creature_Demo_Loan_Copy::text( 'dispute_decision_deemed', array( 'order_id' => '7', 'decision' => 'waived', 'reason' => 'Damage: £15.00', 'findings' => 'Scuff.', 'photos' => 'https://example.test/p.jpg', 'kept' => '£0.00', 'released' => '£15.00', 'amount' => '£15.00' ) );
+creature_demo_expect( false !== strpos( $p2_v4, 'Our decision: the deduction is waived.' ) && false !== strpos( $p2_v4, 'We’re keeping £0.00 and refunding £15.00 of the amount we held to the card you paid the deemed purchase price with.' ) && false === strpos( $p2_v4, '{' ), 'v4 copy: dispute_decision_deemed renders the {kept} wording with no unfilled tag' );
+// v4 My account slots, the real catalogue.
+creature_demo_expect( 'Due date:' === Creature_Demo_Loan_Copy::text( 'my_account_label_due' ) && 'Last day of your grace period:' === Creature_Demo_Loan_Copy::text( 'my_account_label_grace_end' ) && 'Deemed purchase date:' === Creature_Demo_Loan_Copy::text( 'my_account_label_deemed_on' ) && 'Your keep price:' === Creature_Demo_Loan_Copy::text( 'my_account_label_keep_price' ), 'v4 copy: the four tab labels' );
+creature_demo_expect( 'You don’t have a demo kit booked or on loan at the moment. When you book one, its keep price will show here, and once it’s delivered, so will your due date, the last day of your grace period and your deemed purchase date.' === Creature_Demo_Loan_Copy::text( 'my_account_no_loans' ), 'v4 copy: my_account_no_loans is the v4 text word for word' );
+creature_demo_expect( false !== strpos( Creature_Demo_Loan_Copy::text( 'dates_on_delivery' ), 'These dates are also in My account, under Demo loan.' ) && false === strpos( Creature_Demo_Loan_Copy::text( 'keep_choice_lapsed' ), 'order’s page' ) && false !== strpos( Creature_Demo_Loan_Copy::text( 'keep_choice_lapsed' ), 'Book it in My account, under Demo loan.' ), 'v4 copy: "in My account, under Demo loan" wording, and dates_on_delivery has its sentence back' );
+$GLOBALS['creature_demo_copy_override'] = creature_demo_empty_copy_baseline();
 
 $damage = creature_demo_loan();
 $mount = creature_demo_damage( $damage, 3500, 'Inverted mount kit', '2026-03-20' );
@@ -3929,7 +3996,7 @@ Creature_Demo_Loan::record_return_scan( $ud, '2026-03-30', '2026-03-30' );
 $ud_charge = creature_demo_bill_charge( $ud );
 Creature_Demo_Loan::mark_disputed( $ud_charge, '2026-03-31' );
 $ud_mails = creature_demo_mail_count( 'dispute_decision' );
-Creature_Demo_Loan::record_dispute_decision( $ud_charge, 'upheld', '2026-04-12', null );
+Creature_Demo_Loan::record_dispute_decision( $ud_charge, 'upheld', '2026-04-12', null, 'Test reasons.' );
 creature_demo_expect( $ud_mails + 1 === creature_demo_mail_count( 'dispute_decision' ), 'the final-decision email is sent once' );
 creature_demo_expect( '2026-04-12' === $ud_charge->get_meta( '_creature_demo_decision_sent_at' ), 'the decision-sent time is stored on the charge' );
 creature_demo_expect( 'notice_too_recent' === Creature_Demo_Loan::evaluate_charge( $ud, $ud_charge, '2026-04-13' )['code'], 'the day after an upheld decision is too soon, though the first notice was 14 days ago' );
@@ -3940,7 +4007,7 @@ $ud_wv = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $ud_wv, '2026-03-30', '2026-03-30' );
 $ud_wv_charge = creature_demo_bill_charge( $ud_wv );
 Creature_Demo_Loan::mark_disputed( $ud_wv_charge, '2026-03-31' );
-Creature_Demo_Loan::record_dispute_decision( $ud_wv_charge, 'waived', '2026-04-12', null );
+Creature_Demo_Loan::record_dispute_decision( $ud_wv_charge, 'waived', '2026-04-12', null, 'Test reasons.' );
 creature_demo_expect( 'dispute_waived' === Creature_Demo_Loan::evaluate_charge( $ud_wv, $ud_wv_charge, '2026-04-30' )['code'], 'a waived dispute still refuses the charge' );
 $ud_nd = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $ud_nd, '2026-03-30', '2026-03-30' );
@@ -4581,6 +4648,13 @@ $e1_items = array( 'dashboard' => 'Dashboard', 'orders' => 'Orders', 'customer-l
 $GLOBALS['creature_demo_user'] = 5501;
 $e1_menu = Creature_Demo_Loan::filter_account_menu( $e1_items );
 creature_demo_expect( array( 'dashboard', 'orders', 'demo-loan', 'customer-logout' ) === array_keys( $e1_menu ) && 'Demo loan' === $e1_menu['demo-loan'], 'E1: the menu item "Demo loan" (my_account_heading) goes in above Log out for a customer with a demo order' );
+// The real label: with no test override at all, the menu item and the page title are exactly "Demo loan".
+$p2_saved_override                      = $GLOBALS['creature_demo_copy_override'];
+$GLOBALS['creature_demo_copy_override'] = array();
+$p2_real_menu                           = Creature_Demo_Loan::filter_account_menu( $e1_items );
+creature_demo_expect( isset( $p2_real_menu['demo-loan'] ) && 'Demo loan' === $p2_real_menu['demo-loan'], 'menu label: the tab renders in the My account menu as exactly "Demo loan" (real catalogue, no test override)' );
+creature_demo_expect( 'Demo loan' === Creature_Demo_Loan::filter_account_title( 'Something else' ), 'menu label: the tab page title is exactly "Demo loan" too' );
+$GLOBALS['creature_demo_copy_override'] = $p2_saved_override;
 $GLOBALS['creature_demo_user'] = 5500;
 creature_demo_expect( $e1_items === Creature_Demo_Loan::filter_account_menu( $e1_items ), 'R1 menu: a customer with no demo order does not see the item' );
 $GLOBALS['creature_demo_user'] = 0;
@@ -4618,7 +4692,15 @@ ob_start();
 Creature_Demo_Loan::render_account_tab();
 creature_demo_expect( false !== strpos( ob_get_clean(), 'Test label price:</strong> £212.00' ), 'E1: a fallback booking shows the £212 ceiling, from the same loan_keep_price_pence path' );
 // An empty label slot hides its row: nothing is shown under a made-up label.
-$GLOBALS['creature_demo_copy_override'] = creature_demo_empty_copy_baseline();
+$GLOBALS['creature_demo_copy_override'] = array_merge(
+	creature_demo_empty_copy_baseline(),
+	array(
+		'my_account_label_due'        => array( 'subject' => '', 'body' => '' ),
+		'my_account_label_grace_end'  => array( 'subject' => '', 'body' => '' ),
+		'my_account_label_deemed_on'  => array( 'subject' => '', 'body' => '' ),
+		'my_account_label_keep_price' => array( 'subject' => '', 'body' => '' ),
+	)
+);
 ob_start();
 Creature_Demo_Loan::render_account_tab();
 $e1_nolabel = ob_get_clean();

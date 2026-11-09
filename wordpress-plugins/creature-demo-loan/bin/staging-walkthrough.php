@@ -206,7 +206,7 @@ if ( $late_charge ) {
 	Creature_Demo_Loan::mark_disputed( $late_charge, '2026-03-30' );
 	$blocked = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-06' );
 	creature_demo_walkthrough_line( 'gate while disputed', $blocked['code'] );
-	$decision = Creature_Demo_Loan::record_dispute_decision( $late_charge, 'upheld', '2026-04-06', null );
+	$decision = Creature_Demo_Loan::record_dispute_decision( $late_charge, 'upheld', '2026-04-06', null, 'Walkthrough: reasons for decision.' );
 	creature_demo_walkthrough_line( 'decision within 14 days', ! empty( $decision['timely'] ) );
 	$soon = Creature_Demo_Loan::evaluate_charge( $late, $late_charge, '2026-04-06' );
 	creature_demo_walkthrough_line( 'gate on the decision day', '' === $soon['code'] ? 'clear' : $soon['code'] );

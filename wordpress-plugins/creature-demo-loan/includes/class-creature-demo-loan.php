@@ -2703,11 +2703,22 @@ final class Creature_Demo_Loan {
 	 * @param string   $decision upheld|waived
 	 * @param mixed    $as_of
 	 * @param int|null $amount_pence
+	 * @param string   $reasons      Reasons for decision (Appendix D). Required: a blank value refuses the decision.
 	 * @return array<string, mixed>
 	 */
-	public static function record_dispute_decision( $charge, $decision, $as_of = null, $amount_pence = null ) {
+	public static function record_dispute_decision( $charge, $decision, $as_of = null, $amount_pence = null, $reasons = '' ) {
 		$as_of    = Creature_Demo_Loan_Calendar::today( $as_of );
 		$decision = 'upheld' === $decision ? 'upheld' : 'waived';
+		// Appendix D: "Our decision: [outcome and amount], because [reasons]". No reasons, no decision:
+		// nothing is stored, nothing is sent and the dispute stays open.
+		$reasons = is_string( $reasons ) ? trim( $reasons ) : '';
+		if ( '' === $reasons ) {
+			self::note( $charge, 'Decision not recorded or sent: Reasons for decision is blank. Enter the reasons, then record the decision again.' );
+			return array(
+				'ok'     => false,
+				'reason' => 'no_decision_reasons',
+			);
+		}
 		// A deemed-refund deduction has its own decision email: no pay link and no saved-card line
 		// (it comes out of the refund). While that wording is empty nothing is recorded or sent,
 		// and the shop is told once, as for deduction_notice_deemed. The dispute stays open.
@@ -2767,6 +2778,7 @@ final class Creature_Demo_Loan {
 		}
 		$charge->update_meta_data( '_creature_demo_dispute_status', $decision );
 		$charge->update_meta_data( '_creature_demo_dispute_decision_at', $as_of );
+		$charge->update_meta_data( '_creature_demo_dispute_decision_reasons', $reasons );
 		$charge->update_meta_data( '_creature_demo_dispute_decision_within_14_days', $within ? 'yes' : 'no' );
 		$charge->save();
 		if ( $changed ) {
@@ -2787,14 +2799,25 @@ final class Creature_Demo_Loan {
 		$loan   = self::parent_loan( $charge );
 		$target = $loan ? $loan : $charge;
 		$amount = (int) self::meta_string( $charge, '_creature_demo_charge_amount_pence' );
+		// What is finally kept: nothing on a waiver, otherwise the (possibly cut) amount.
+		$kept     = 'waived' === $decision ? 0 : $amount;
+		$released = 'waived' === $decision ? $noticed : max( 0, $noticed - $amount );
+		// The deduction email names three outcomes; the plain charge email keeps upheld or waived.
+		$outcome = $decision;
+		if ( $deduction && 'upheld' === $decision && $released > 0 ) {
+			$outcome = 'upheld in part';
+		}
 		$row    = Creature_Demo_Loan_Mail::send_customer(
 			$target,
 			$deduction ? 'dispute_decision_deemed' : 'dispute_decision',
 			array(
-				'decision' => $decision,
+				'decision' => $deduction ? $outcome : $decision,
 				'amount'   => Creature_Demo_Loan_Money::format_gbp( $amount ),
 				// Refunded back on a waiver (all of it) or a partial uphold (the part cut).
-				'released' => Creature_Demo_Loan_Money::format_gbp( 'waived' === $decision ? $noticed : max( 0, $noticed - $amount ) ),
+				'released' => Creature_Demo_Loan_Money::format_gbp( $released ),
+				// The amount finally kept (£0.00 on a waiver).
+				'kept'     => Creature_Demo_Loan_Money::format_gbp( $kept ),
+				'decision_reasons' => $reasons,
 				'reason'   => self::meta_string( $charge, '_creature_demo_charge_notice_reason' ),
 				// A deduction comes out of the refund, so its decision email never has a pay link.
 				'link'     => $deduction ? '' : self::payment_link( $charge ),
@@ -4052,7 +4075,7 @@ final class Creature_Demo_Loan {
 	public static function action_uphold( $order ) {
 		$charge = self::charge_from_context( $order );
 		if ( $charge ) {
-			self::record_dispute_decision( $charge, 'upheld', null, null );
+			self::record_dispute_decision( $charge, 'upheld', null, null, self::posted_field( 'creature_demo_decision_reasons' ) );
 		}
 	}
 
@@ -4062,7 +4085,7 @@ final class Creature_Demo_Loan {
 	public static function action_waive( $order ) {
 		$charge = self::charge_from_context( $order );
 		if ( $charge ) {
-			self::record_dispute_decision( $charge, 'waived', null, null );
+			self::record_dispute_decision( $charge, 'waived', null, null, self::posted_field( 'creature_demo_decision_reasons' ) );
 		}
 	}
 
@@ -4343,6 +4366,7 @@ final class Creature_Demo_Loan {
 			$value = isset( $photos[ $i - 1 ] ) ? $photos[ $i - 1 ] : '';
 			echo '<p><label>Photo ' . (int) $i . ' <input type="text" name="creature_demo_photo_' . (int) $i . '" value="' . self::esc( $value ) . '" /></label></p>';
 		}
+		echo '<p><label>Reasons for decision (required to uphold or waive a disputed charge; it goes in the decision email and the decision is refused while it is blank)<br /><textarea name="creature_demo_decision_reasons" rows="3" cols="60"></textarea></label></p>';
 		$state = self::meta_string( $order, '_creature_demo_bill_state' );
 		if ( '' !== $state ) {
 			$names = array(
