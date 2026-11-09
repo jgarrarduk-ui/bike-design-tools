@@ -1156,7 +1156,16 @@ foreach ( $slots as $slot ) {
 	}
 }
 sort( $empty_slots );
-creature_demo_expect( array( 'booking_confirmation', 'charge_declined', 'dates_on_delivery' ) === $empty_slots, 'exactly the three slots with no Cadence wording are empty' );
+creature_demo_expect( array() === $empty_slots, 'every slot has Cadence v2 wording, none is empty' . ( $empty_slots ? ': ' . implode( ', ', $empty_slots ) : '' ) );
+$v2_cat = Creature_Demo_Loan_Copy::catalogue();
+$v2_has = static function ( $slot, $needle ) use ( $v2_cat ) {
+	return false !== strpos( $v2_cat[ $slot ]['body'], $needle );
+};
+creature_demo_expect( 0 === strpos( $v2_cat['dates_on_delivery']['body'], 'Your De-Reacher demo kit (order {order_id}) has been delivered.' ) && 'Your De-Reacher demo dates: due back {due}' === $v2_cat['dates_on_delivery']['subject'], 'dates_on_delivery is Cadence v2' );
+creature_demo_expect( 'Your card was declined: De-Reacher demo charge ({amount})' === $v2_cat['charge_declined']['subject'] && $v2_has( 'charge_declined', 'The amount is still owed. Please pay it using the link.' ), 'charge_declined is Cadence v2' );
+creature_demo_expect( 'De-Reacher demo bill: {amount} to pay (order {order_id})' === $v2_cat['charge_notice_damage']['subject'] && $v2_has( 'charge_notice_damage', 'This is the only bill for this loan.' ) && $v2_has( 'charge_notice_damage', 'A missing inverted mount kit is £35.00 rather than' ), 'charge_notice_damage is the Cadence v2 combined bill, with the mount-kit price filled in' );
+creature_demo_expect( 'Demo kit back: inspect and bill by {deadline} (order {order_id})' === $v2_cat['admin_bill_due']['subject'] && $v2_has( 'admin_bill_due', 'Bank holidays aren’t counted' ), 'admin_bill_due is Cadence v2' );
+creature_demo_expect( '' === $v2_cat['booking_confirmation']['subject'] && $v2_has( 'booking_confirmation', 'Your keep price: {price}' ) && ! $v2_has( 'booking_confirmation', '[NEEDS' ), 'booking_confirmation is body only, with {price} where v2 had the note' );
 creature_demo_expect( '' === Creature_Demo_Loan_Copy::text( 'no_such_slot' ) && '' === Creature_Demo_Loan_Copy::subject( 'no_such_slot' ), 'an unknown slot returns an empty string, never a marker' );
 $marker_hits = array();
 $tree        = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( dirname( __DIR__, 2 ) . '/creature-demo-loan', FilesystemIterator::SKIP_DOTS ) );
@@ -3312,7 +3321,7 @@ creature_demo_expect( $dod_before + 1 === creature_demo_mail_count( 'dates_on_de
 creature_demo_expect( ! Creature_Demo_Loan::send_dates_on_delivery( $dod ) && $dod_before + 1 === creature_demo_mail_count( 'dates_on_delivery' ), 'dates_on_delivery fires once per loan' );
 $dod_hook = end( $GLOBALS['creature_demo_hook_args']['dates_on_delivery'] );
 creature_demo_expect( '2026-03-24' === $dod_hook[2]['due'] && '2026-03-29' === $dod_hook[2]['grace_end'] && '2026-04-07' === $dod_hook[2]['deemed_on'], 'it carries the due date, the last day of grace and the deemed purchase date' );
-creature_demo_expect( true === $dod_hook[0]['empty'] && $calls === $GLOBALS['creature_demo_mail_calls'], 'with no wording yet the slot is recorded but no blank email is sent' );
+creature_demo_expect( false === $dod_hook[0]['empty'] && $calls < $GLOBALS['creature_demo_mail_calls'] && 'Your De-Reacher demo dates: due back 24 March 2026' === preg_replace( '/^\[TEST\] /', '', $dod_hook[0]['subject'] ), 'with the v2 wording the dates email is a real email with the UK due date' );
 creature_demo_expect( 'Rider@Example.com' === $dod_hook[1]->get_billing_email() && 'demo-loan-test@creaturecycles.co.uk' === $dod_hook[0]['to'], 'the dates email is a customer email, redirected like the others' );
 creature_demo_expect( '24 March 2026 29 March 2026 7 April 2026' === Creature_Demo_Loan_Copy::fill( '{due} {grace_end} {deemed_on}', $dod_hook[2] ), 'the three dates read in the UK format' );
 $dod_est = wc_create_order();
@@ -3376,7 +3385,8 @@ $bc_order->update_meta_data( '_creature_demo_express_request', 'yes' );
 $bc_plain = wc_create_order();
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, false, $bc_email );
-creature_demo_expect( '' === ob_get_clean(), 'with no wording yet the confirmation gets no extra content' );
+$bc_v2 = ob_get_clean();
+creature_demo_expect( false !== strpos( $bc_v2, 'De-Reacher demo booking (order ' . $bc_order->get_id() . ')' ) && false !== strpos( $bc_v2, 'Your answer to “Send my kit now”: Yes.' ), 'with the v2 wording the confirmation gets the booking block' );
 $GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array(
 	'subject' => '',
 	'body'    => "Consent: {consent_version} on {consent_at}.\n{consent}\nExpress request: {express_answer}.",

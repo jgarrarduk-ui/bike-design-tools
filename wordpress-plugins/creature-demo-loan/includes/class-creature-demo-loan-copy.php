@@ -2,7 +2,7 @@
 /**
  * Customer copy for the De-Reacher demo loan.
  *
- * The wording is Cadence's, per slot, from demo-loan-copy-v1. A slot she has
+ * The wording is Cadence's, per slot, from demo-loan-copy-v2. A slot she has
  * not written yet is an empty string and is never sent as a blank email (see
  * Creature_Demo_Loan_Mail). The consent slot names the maxima from the money
  * constants (£24, £212, £35) in the sprintf slots so those figures cannot drift
@@ -60,7 +60,7 @@ final class Creature_Demo_Loan_Copy {
 			$late_cap
 		);
 		$damage = sprintf(
-			"Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. When your demo kit came back, our inspection found damage beyond fair wear and tear, or parts missing.\nWhat we found and our photos:\n{findings}\n{photos}\n\nWe charge the lower of the reasonable cost of repair and our published spare-parts price (creaturecycles.co.uk/spare-parts/). A missing inverted mount kit is %s rather than the price of its separate parts. We don’t charge for fair wear and tear or for anything shown in our photos from before we sent the kit. The most you can be charged after the £25 demo fee is £212 in total.\n\nIf you think it’s wrong, reply to this email or email info@creaturecycles.co.uk within 7 days and tell us why. We won’t charge your card while we look at it. If it isn’t paid or disputed within 7 days, we’ll charge your saved card.",
+			"Your demo kit (order {order_id}) is back with us and has been inspected. This is the only bill for this loan.\n\nWhat’s owed: {reason}.\nTotal: {amount}.\nPay here: {link}\n\nDamage or missing parts. What we found:\n{findings}\nOur photos:\n{photos}\nWe charge the lower of the reasonable cost of repair and the price on our spare-parts list (creaturecycles.co.uk/spare-parts/). A missing inverted mount kit is %s rather than the price of its separate parts. We don’t charge for fair wear and tear, or for anything shown in our photos from before we sent the kit.\n\nIf a late fee is listed above: your due date was {due}. After 5 days’ grace, it’s £3 for each day from the 6th day after the due date up to and including the day you posted the kit (the earlier of your proof of posting and Royal Mail’s first scan), up to £24.\n\nThe most you can be charged after the £25 demo fee is £212 in total.\n\nIf you think it’s wrong, reply to this email or email info@creaturecycles.co.uk within 7 days and tell us why. We won’t charge your card while we look at it. If it isn’t paid or disputed within 7 days, we’ll charge your saved card.",
 			$mount_kit
 		);
 
@@ -122,27 +122,27 @@ final class Creature_Demo_Loan_Copy {
 				'body'    => "Amount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. The kit wasn’t posted back by the end of the 13th day after your due date ({due}), so under clause 8 of the demo terms it’s treated as bought, for your keep price of {price} less any late fees you’ve already paid. No late fees are added. The kit is yours once this is paid. It’s sold as used, with our standard 2-year warranty from the date of payment.\n\nIf you post it back before paying, we’ll cancel this and bill late fees of £24 instead, plus any charge for damage or missing parts. If you post it back within 30 days of paying, we’ll inspect it and refund the keep price less late fees of £24 and any damage charge.\n\nTo dispute this, reply to this email or email info@creaturecycles.co.uk within 7 days. If it isn’t paid or disputed within 7 days, we’ll charge your saved card.",
 			),
 			'charge_notice_damage'          => array(
-				'subject' => 'De-Reacher demo damage or missing parts: {amount} to pay',
+				'subject' => 'De-Reacher demo bill: {amount} to pay (order {order_id})',
 				'body'    => $damage,
 			),
 			'charge_authentication_required' => array(
 				'subject' => 'Action needed: pay your De-Reacher demo charge ({amount})',
 				'body'    => "Your bank asked to confirm this payment, so your saved card wasn’t charged.\nAmount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nOrder {order_id}. The amount is still owed. Please pay it using the link.",
 			),
-			// Terms 4.5. No wording from Cadence yet, so this stays empty and is not sent.
+			// Terms 4.5. Cadence v2.
 			'charge_declined'               => array(
-				'subject' => '',
-				'body'    => '',
+				'subject' => 'Your card was declined: De-Reacher demo charge ({amount})',
+				'body'    => "We tried to charge your saved card for your De-Reacher demo (order {order_id}), and the payment was declined.\nAmount: {amount}.\nReason: {reason}.\nPayment link: {link}\n\nThe amount is still owed. Please pay it using the link.",
 			),
-			// Terms 3.2. No wording from Cadence yet.
+			// Terms 3.2. Cadence v2.
 			'dates_on_delivery'             => array(
-				'subject' => '',
-				'body'    => '',
+				'subject' => 'Your De-Reacher demo dates: due back {due}',
+				'body'    => "Your De-Reacher demo kit (order {order_id}) has been delivered. The loan lasts 21 days, and the delivery day is day 1.\n\nDue date: {due}. Post the kit back by then, or choose to keep it.\nLast day of grace: {grace_end}. No fee if the kit is posted by the end of this day.\nLate fee: £3 a day from the day after {grace_end}, up to £24 in total.\nDeemed purchase date: {deemed_on}. If the kit hasn’t been posted back by the end of the day before, it’s treated as bought at your keep price of {price}.\n\nEach day ends at midnight, UK time. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. These dates are also in My account → Demo loan. If you need longer, ask us before the due date.\n\nBefore you ride: fit it following our user guide (creaturecycles.co.uk/de-reacher-user-guide/), the inverted mount kit instructions and the torque card, using a calibrated torque wrench. Please don’t cut your steerer. Check the bolts before every ride. If you crash or have an impact, stop using it and tell us at info@creaturecycles.co.uk. Keep the original box, because the whole kit goes back in it.",
 			),
-			// Terms 11.1 and Appendix B: extra content on the order confirmation. No wording from Cadence yet.
+			// Terms 11.1 and Appendix B: body only, added to the end of the Woo order email. Cadence v2. The subject is not used.
 			'booking_confirmation'          => array(
 				'subject' => '',
-				'body'    => '',
+				'body'    => "De-Reacher demo booking (order {order_id})\n\nYour demo terms (version 5) and our model cancellation form are attached to this email. We’ll email your due date, the last day of your grace period and your deemed purchase date once the kit is delivered.\n\nYour keep price: {price}\n\nYour consent to later charges ({consent_version}, agreed on {consent_at}):\n“{consent}”\n\nYour answer to “Send my kit now”: {express_answer}. If you answered Yes, we’ll send the kit within your 14-day cancellation period. If you answered No, we’ll hold it until that period ends.\n\nCancelling: you can cancel this demo booking within 14 days of the day we confirm it, without giving a reason. Email info@creaturecycles.co.uk or use the attached model cancellation form. If you cancel before we’ve dispatched the kit, we’ll refund the full £25 within 14 days. If the kit has already been sent, book your return in My account → Demo loan and send it back. We’ll refund the £25 within 14 days of your cancellation, less £25 ÷ 21 for each day of the loan up to and including the day you post it.",
 			),
 			'choice_return_recorded'        => array(
 				'subject' => 'Return booked for your De-Reacher demo: £25 code once it’s back',
@@ -176,10 +176,10 @@ final class Creature_Demo_Loan_Copy {
 				'subject' => 'Demo return booked: send the Royal Mail QR within 1 working day (order {order_id})',
 				'body'    => 'The rider on order {order_id} has booked a return. Email them a Royal Mail Tracked 48 QR code within 1 working day, with a post-by date (terms 10.1 and 10.3). Each extra working day moves their grace period, late fees and deemed purchase date back by a day. This email goes to the shop, not the rider.',
 			),
-			// Internal alert to the shop, not Cadence's wording. Written to be plain and functional.
+			// Shop alert. Cadence v2, plus one plain sentence ({deadline_day}) for the day-4 warning.
 			'admin_bill_due'                => array(
-				'subject' => 'Demo bill due by {deadline}: inspect and bill (order {order_id})',
-				'body'    => 'The kit on order {order_id} arrived back on {received}. Terms 4.4 and 6.4(b) say the one bill for late fees, damage and missing parts goes out within 5 working days of that, so by {deadline}. Record the inspection and raise the bill. If day 5 passes without it, the plugin sends a late-fee-only bill and no damage or missing-parts charge can follow on this loan. This email goes to the shop, not the rider.',
+				'subject' => 'Demo kit back: inspect and bill by {deadline} (order {order_id})',
+				'body'    => "The demo kit on order {order_id} was received back on {received}. Under terms 4.4 and 6.4(b), the one bill for late fees, damage and missing parts must go out within 5 working days of that, so by {deadline}. Bank holidays aren’t counted, so the real deadline may be later. Work to this date.\n\nThe bill must go out by the end of {deadline_day} ({deadline}).\n\nRecord the inspection on the order now, even if nothing is owed. The rider’s £25 code is only issued once it’s recorded. If you’re charging for damage or missing parts, enter what you found and add the photos before saving. Without the findings the bill won’t send, and the terms require the photos in it. Recording the inspection raises the bill.\n\nIf the deadline passes with no inspection recorded, the plugin sends a late-fee-only bill (if a late fee is due), and no damage or missing-parts charge can be made on this loan. This email goes to the shop, not the rider.",
 			),
 		);
 	}
@@ -306,6 +306,7 @@ final class Creature_Demo_Loan_Copy {
 			'{photos}'          => isset( $args['photos'] ) ? (string) $args['photos'] : '',
 			'{received}'        => isset( $args['received'] ) ? (string) $args['received'] : '',
 			'{deadline}'        => isset( $args['deadline'] ) ? (string) $args['deadline'] : '',
+			'{deadline_day}'    => isset( $args['deadline_day'] ) ? (string) $args['deadline_day'] : '',
 			'{consent}'         => isset( $args['consent'] ) ? (string) $args['consent'] : '',
 			'{consent_version}' => isset( $args['consent_version'] ) ? (string) $args['consent_version'] : '',
 			'{consent_at}'      => isset( $args['consent_at'] ) ? (string) $args['consent_at'] : '',
