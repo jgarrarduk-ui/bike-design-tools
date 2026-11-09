@@ -3203,6 +3203,12 @@ final class Creature_Demo_Loan {
 		if ( $sent_to_admin || ! self::is_booking_email( $email ) || ! is_object( $order ) || ! self::order_is_demo( $order ) ) {
 			return;
 		}
+		// Both the on-hold and the processing email can follow one order. The
+		// booking block goes in the first one only. A resend by hand does not
+		// repeat it.
+		if ( 'yes' === self::meta_string( $order, '_creature_demo_booking_block_sent' ) ) {
+			return;
+		}
 		$record = self::consent_record( $order );
 		$text   = Creature_Demo_Loan_Copy::text(
 			'booking_confirmation',
@@ -3218,6 +3224,10 @@ final class Creature_Demo_Loan {
 		);
 		if ( '' === trim( $text ) ) {
 			return;
+		}
+		$order->update_meta_data( '_creature_demo_booking_block_sent', 'yes' );
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
 		}
 		if ( $plain_text ) {
 			echo "\n" . $text . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped

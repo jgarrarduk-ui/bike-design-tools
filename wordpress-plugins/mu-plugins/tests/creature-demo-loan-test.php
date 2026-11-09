@@ -3749,20 +3749,24 @@ $GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array(
 	'subject' => '',
 	'body'    => "Consent: {consent_version} on {consent_at}.\n{consent}\nExpress request: {express_answer}.",
 );
+$bc_order->update_meta_data( '_creature_demo_booking_block_sent', '' );
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, false, $bc_email );
 $bc_html = ob_get_clean();
 creature_demo_expect( false !== strpos( $bc_html, 'Consent: Terms version 5 on ' . Creature_Demo_Loan::consent_record( $bc_order )['date'] . '.' ) && '' !== Creature_Demo_Loan::consent_record( $bc_order )['date'], 'the confirmation names the consent version and the date' );
 creature_demo_expect( false !== strpos( $bc_html, str_replace( '&#039;', '’', htmlspecialchars( $fixture, ENT_QUOTES, 'UTF-8' ) ) ) || false !== strpos( $bc_html, $fixture ), 'the confirmation carries the consent wording the rider agreed to' );
 creature_demo_expect( false !== strpos( $bc_html, 'Express request: Yes.' ), 'the confirmation gives the rider’s answer to the express request' );
+$bc_order->update_meta_data( '_creature_demo_booking_block_sent', '' );
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, true, $bc_email );
 $bc_text = ob_get_clean();
 creature_demo_expect( false !== strpos( $bc_text, 'Express request: Yes.' ) && false === strpos( $bc_text, '<p>' ), 'the plain text email gets the same content without markup' );
 $bc_order->update_meta_data( '_creature_demo_express_request', 'no' );
+$bc_order->update_meta_data( '_creature_demo_booking_block_sent', '' );
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, true, $bc_email );
 creature_demo_expect( false !== strpos( ob_get_clean(), 'Express request: No.' ), 'a "no" to the express request reads No' );
+$bc_order->update_meta_data( '_creature_demo_booking_block_sent', '' );
 foreach ( array(
 	'a non-demo order'        => array( $bc_plain, false, $bc_email ),
 	'the admin copy'          => array( $bc_order, true, $bc_email ),
@@ -3803,6 +3807,7 @@ creature_demo_expect( 'yes' === $ex_yes->get_meta( '_creature_demo_express_reque
 creature_demo_expect( 'no' === $ex_no->get_meta( '_creature_demo_express_request' ) && 'No' === Creature_Demo_Loan::express_answer( $ex_no ), 'unticked: stored as no' );
 foreach ( array( 'ticked' => $ex_yes, 'unticked' => $ex_no ) as $ex_label => $ex_order ) {
 	foreach ( array( false, true ) as $ex_plain ) {
+		$ex_order->update_meta_data( '_creature_demo_booking_block_sent', '' );
 		ob_start();
 		Creature_Demo_Loan::render_booking_confirmation( $ex_order, false, $ex_plain, $bc_email );
 		$ex_out = ob_get_clean();
@@ -3848,10 +3853,46 @@ foreach ( array( array( $kp_212, '£212.00' ), array( $kp_192, '£192.00' ), arr
 	$kp_out = ob_get_clean();
 	creature_demo_expect( false !== strpos( $kp_out, 'Your keep price: ' . $kp_case[1] ) && false === strpos( $kp_out, '{price}' ), 'the booking confirmation shows the loan\'s keep price ' . $kp_case[1] );
 }
+$kp_192->update_meta_data( '_creature_demo_booking_block_sent', '' );
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $kp_192, false, false, $bc_email );
 creature_demo_expect( false !== strpos( ob_get_clean(), 'Your keep price: £192.00' ), 'the HTML confirmation shows it too' );
 creature_demo_expect( Creature_Demo_Loan_Money::format_gbp( Creature_Demo_Loan::loan_keep_price_pence( $kp_192 ) ) === '£192.00', 'it uses the same money format as the reminder and bill emails (£x.xx)' );
+
+// Item G: the booking block goes in once per order, even on-hold then processing.
+$gb_order = creature_demo_booked_loan( '249.00' );
+$gb_hold  = (object) array( 'id' => 'customer_on_hold_order' );
+$gb_proc  = (object) array( 'id' => 'customer_processing_order' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $gb_order, false, false, $gb_hold );
+$gb_first = ob_get_clean();
+creature_demo_expect( false !== strpos( $gb_first, 'De-Reacher demo booking' ) && 'yes' === $gb_order->get_meta( '_creature_demo_booking_block_sent' ), 'the on-hold email gets the block and a sent marker is stored' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $gb_order, false, false, $gb_proc );
+creature_demo_expect( '' === ob_get_clean(), 'the processing email that follows does not get it again' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $gb_order, false, true, $gb_proc );
+creature_demo_expect( '' === ob_get_clean(), 'nor does a plain-text version' );
+$gb_other = creature_demo_booked_loan( '249.00' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $gb_other, false, false, $gb_proc );
+creature_demo_expect( false !== strpos( ob_get_clean(), 'De-Reacher demo booking' ), 'another order still gets its own block' );
+// Straight to processing: once.
+$gb_direct = creature_demo_booked_loan( '249.00' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $gb_direct, false, false, $gb_proc );
+$gb_d1 = ob_get_clean();
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $gb_direct, false, false, $gb_proc );
+creature_demo_expect( '' !== $gb_d1 && '' === ob_get_clean(), 'processing twice still adds it once' );
+// An empty slot sets no marker, so the block can still come once wording exists.
+$GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array( 'subject' => '', 'body' => '' );
+$gb_empty = creature_demo_booked_loan( '249.00' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $gb_empty, false, false, $gb_proc );
+ob_end_clean();
+creature_demo_expect( '' === $gb_empty->get_meta( '_creature_demo_booking_block_sent' ), 'no marker is stored when there was nothing to add' );
+$GLOBALS['creature_demo_copy_override'] = array();
 
 // The attachments: media ids or file paths, set through the filter (the config screen sets it).
 $up = sys_get_temp_dir() . '/creature-demo-uploads-' . getmypid();
