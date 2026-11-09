@@ -2053,6 +2053,12 @@ $cap_key = Creature_Demo_Loan::idempotency_key( $cap_charge );
 $over_cap = Creature_Demo_Loan::record_dispute_decision( $cap_charge, 'upheld', '2026-04-02', 9000, 'Test reasons.' );
 creature_demo_expect( ! empty( $over_cap['capped'] ) && 300 === $over_cap['amount'], 'an upheld dispute cannot exceed the original notice' );
 creature_demo_expect( $cap_key === $cap_charge->get_meta( '_creature_demo_idempotency_key' ), 'capping to the same amount keeps the idempotency key' );
+// A decision is final (round 5), so the lowered case runs on a charge of its own.
+$cap_loan = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $cap_loan, '2026-03-30', '2026-03-30' );
+$cap_charge = creature_demo_bill_charge( $cap_loan );
+Creature_Demo_Loan::mark_disputed( $cap_charge, '2026-03-30' );
+$cap_key = Creature_Demo_Loan::idempotency_key( $cap_charge );
 $notice_mails = creature_demo_mail_count( 'charge_notice_late_fee' );
 $lowered = Creature_Demo_Loan::record_dispute_decision( $cap_charge, 'upheld', '2026-04-02', 200, 'Test reasons.' );
 creature_demo_expect( 200 === $lowered['amount'], 'an upheld amount below the notice is kept' );
@@ -2677,6 +2683,52 @@ creature_demo_expect( 'waived' === $p2_blank->get_meta( '_creature_demo_dispute_
 creature_demo_expect( $p2_sent + 1 === creature_demo_mail_count( 'dispute_decision_deemed' ) && false !== strpos( creature_demo_last_mail( 'dispute_decision_deemed' )['body'], '[Our photos were taken before dispatch.]' ), 'reasons: filled: the email carries the reasons as {decision_reasons}' );
 $_POST = array();
 creature_demo_expect( 'Because Test.' === Creature_Demo_Loan_Copy::fill( 'Because {decision_reasons}.', array( 'decision_reasons' => 'Test' ) ) && 'Because .' === Creature_Demo_Loan_Copy::fill( 'Because {decision_reasons}.', array() ), '{decision_reasons}: the merge tag is filled from the argument and is empty without one' );
+// Round 5, item 1: the first decision is final (4.4(b)). A second one stores nothing, sends nothing and changes no figure.
+$f1 = $p2_make();
+Creature_Demo_Loan::record_dispute_decision( $f1, 'upheld', '2026-04-20', 1000, 'First decision.' );
+$f1_body = creature_demo_last_mail( 'dispute_decision_deemed' )['body'];
+$f1_sent = creature_demo_mail_count( 'dispute_decision_deemed' );
+creature_demo_expect( 'The deduction is upheld in part. Kept £10.00. Released £5.00. Reasons: [First decision.]' === $f1_body, 'final decision: the first decision is upheld in part, kept £10.00, released £5.00' );
+foreach ( array( array( 'upheld', 500 ), array( 'upheld', null ), array( 'waived', null ) ) as $f1_try ) {
+	$f1_second = Creature_Demo_Loan::record_dispute_decision( $f1, $f1_try[0], '2026-04-22', $f1_try[1], 'Second decision.' );
+	creature_demo_expect( empty( $f1_second['ok'] ) && 'already_decided' === $f1_second['reason'], 'final decision: a second ' . $f1_try[0] . ' (' . var_export( $f1_try[1], true ) . ') is refused' );
+}
+creature_demo_expect( $f1_sent === creature_demo_mail_count( 'dispute_decision_deemed' ) && $f1_body === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], 'final decision: a second decision sends no email' );
+creature_demo_expect( 'upheld' === $f1->get_meta( '_creature_demo_dispute_status' ) && '2026-04-20' === $f1->get_meta( '_creature_demo_dispute_decision_at' ) && '2026-04-20' === $f1->get_meta( '_creature_demo_decision_sent_at' ) && 'First decision.' === $f1->get_meta( '_creature_demo_dispute_decision_reasons' ) && 1000 === (int) $f1->get_meta( '_creature_demo_charge_amount_pence' ), 'final decision: status, date, reasons and the kept amount (£10.00) are unchanged' );
+creature_demo_expect( false !== strpos( implode( "\n", $f1->notes ), 'terms 4.4(b)' ), 'final decision: the order note says why' );
+// Round 5, item 2: the admin amount field on Uphold. Amount = the amount KEPT; the rest is released.
+ob_start();
+Creature_Demo_Loan::render_meta_box( $f1 );
+$f2_html = ob_get_clean();
+creature_demo_expect( false !== strpos( $f2_html, 'name="creature_demo_decision_amount"' ), 'admin amount: the order screen has an amount field next to the decision actions' );
+$f2_a = $p2_make();
+$_POST = array( 'creature_demo_decision_reasons' => 'Full.', 'creature_demo_decision_amount' => '' );
+Creature_Demo_Loan::action_uphold( $f2_a );
+creature_demo_expect( 'upheld' === $f2_a->get_meta( '_creature_demo_dispute_status' ) && 1500 === (int) $f2_a->get_meta( '_creature_demo_charge_amount_pence' ) && 'The deduction is upheld. Kept £15.00. Released £0.00. Reasons: [Full.]' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], 'admin amount: blank amount upholds in full (£15.00 kept, £0.00 released)' );
+$f2_b = $p2_make();
+$_POST = array( 'creature_demo_decision_reasons' => 'Part.', 'creature_demo_decision_amount' => '10.00' );
+Creature_Demo_Loan::action_uphold( $f2_b );
+creature_demo_expect( 1000 === (int) $f2_b->get_meta( '_creature_demo_charge_amount_pence' ) && 'The deduction is upheld in part. Kept £10.00. Released £5.00. Reasons: [Part.]' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], 'admin amount: £10.00 below the £15.00 noticed upholds in part (kept £10.00, released £5.00)' );
+$f2_c = $p2_make();
+$_POST = array( 'creature_demo_decision_reasons' => 'Over.', 'creature_demo_decision_amount' => '99.00' );
+Creature_Demo_Loan::action_uphold( $f2_c );
+creature_demo_expect( 1500 === (int) $f2_c->get_meta( '_creature_demo_charge_amount_pence' ) && 'The deduction is upheld. Kept £15.00. Released £0.00. Reasons: [Over.]' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'] && false !== strpos( implode( "\n", $f2_c->notes ), 'capped at the original notice' ), 'admin amount: £99.00 above the noticed amount is capped at £15.00 (existing behaviour), not refused' );
+$f2_d = $p2_make();
+$_POST = array( 'creature_demo_decision_reasons' => 'Waived.', 'creature_demo_decision_amount' => '5.00' );
+Creature_Demo_Loan::action_waive( $f2_d );
+creature_demo_expect( 'waived' === $f2_d->get_meta( '_creature_demo_dispute_status' ) && 1500 === (int) $f2_d->get_meta( '_creature_demo_charge_amount_pence' ) && 'The deduction is waived. Kept £0.00. Released £15.00. Reasons: [Waived.]' === creature_demo_last_mail( 'dispute_decision_deemed' )['body'], 'admin amount: Waive ignores the amount field' );
+$f2_sent = creature_demo_mail_count( 'dispute_decision_deemed' );
+foreach ( array( 'abc', '-3', '0', '0.00', '1.234' ) as $f2_bad ) {
+	$f2_e = $p2_make();
+	$_POST = array( 'creature_demo_decision_reasons' => 'Bad.', 'creature_demo_decision_amount' => $f2_bad );
+	Creature_Demo_Loan::action_uphold( $f2_e );
+	creature_demo_expect( 'open' === $f2_e->get_meta( '_creature_demo_dispute_status' ) && $f2_sent === creature_demo_mail_count( 'dispute_decision_deemed' ), 'admin amount: "' . $f2_bad . '" is refused, the dispute stays open and nothing is sent' );
+}
+$f2_g = $p2_make();
+$_POST = array( 'creature_demo_decision_reasons' => '', 'creature_demo_decision_amount' => '10.00' );
+Creature_Demo_Loan::action_uphold( $f2_g );
+creature_demo_expect( 'open' === $f2_g->get_meta( '_creature_demo_dispute_status' ) && $f2_sent === creature_demo_mail_count( 'dispute_decision_deemed' ), 'admin amount: reasons are still required with an amount' );
+$_POST = array();
 // v4 has no {decision_reasons} tag in either decision email, so the shipped wording does not carry it.
 $GLOBALS['creature_demo_copy_override'] = array();
 creature_demo_expect( false === strpos( Creature_Demo_Loan_Copy::text( 'dispute_decision_deemed' ) . Creature_Demo_Loan_Copy::subject( 'dispute_decision_deemed' ) . Creature_Demo_Loan_Copy::text( 'dispute_decision' ) . Creature_Demo_Loan_Copy::subject( 'dispute_decision' ), '{decision_reasons}' ), 'reasons: v4 copy has no {decision_reasons} tag, so no wording was invented' );

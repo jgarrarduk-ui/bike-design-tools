@@ -2709,6 +2709,16 @@ final class Creature_Demo_Loan {
 	public static function record_dispute_decision( $charge, $decision, $as_of = null, $amount_pence = null, $reasons = '' ) {
 		$as_of    = Creature_Demo_Loan_Calendar::today( $as_of );
 		$decision = 'upheld' === $decision ? 'upheld' : 'waived';
+		// 4.4(b): the first decision is the final decision. A second one would also work out the
+		// released amount from the already-cut amount. Nothing is stored or sent.
+		$stored = self::meta_string( $charge, '_creature_demo_dispute_status' );
+		if ( 'upheld' === $stored || 'waived' === $stored ) {
+			self::note( $charge, 'Decision not recorded or sent: a final decision (' . $stored . ') is already recorded on this charge (terms 4.4(b)).' );
+			return array(
+				'ok'     => false,
+				'reason' => 'already_decided',
+			);
+		}
 		// Appendix D: "Our decision: [outcome and amount], because [reasons]". No reasons, no decision:
 		// nothing is stored, nothing is sent and the dispute stays open.
 		$reasons = is_string( $reasons ) ? trim( $reasons ) : '';
@@ -4075,7 +4085,18 @@ final class Creature_Demo_Loan {
 	public static function action_uphold( $order ) {
 		$charge = self::charge_from_context( $order );
 		if ( $charge ) {
-			self::record_dispute_decision( $charge, 'upheld', null, null, self::posted_field( 'creature_demo_decision_reasons' ) );
+			// Blank amount: uphold in full. A filled amount is the amount kept (what the shop keeps
+			// of the noticed charge); the rest is released. Waive takes no amount.
+			$raw    = trim( self::posted_field( 'creature_demo_decision_amount' ) );
+			$amount = null;
+			if ( '' !== $raw ) {
+				$amount = self::parse_pounds( $raw );
+				if ( null === $amount || $amount < 1 ) {
+					self::note( $charge, 'Decision not recorded or sent: the amount to keep must be a sum in pounds above £0.00 (for example 12.50). Leave it blank to uphold in full, or use Waive.' );
+					return;
+				}
+			}
+			self::record_dispute_decision( $charge, 'upheld', null, $amount, self::posted_field( 'creature_demo_decision_reasons' ) );
 		}
 	}
 
@@ -4366,6 +4387,7 @@ final class Creature_Demo_Loan {
 			$value = isset( $photos[ $i - 1 ] ) ? $photos[ $i - 1 ] : '';
 			echo '<p><label>Photo ' . (int) $i . ' <input type="text" name="creature_demo_photo_' . (int) $i . '" value="' . self::esc( $value ) . '" /></label></p>';
 		}
+		echo '<p><label>Amount to keep when upholding (GBP, optional) <input type="text" name="creature_demo_decision_amount" value="" /></label> Blank upholds the charge in full. A smaller amount upholds in part: the difference is released. Not used by Waive.</p>';
 		echo '<p><label>Reasons for decision (required to uphold or waive a disputed charge; it goes in the decision email and the decision is refused while it is blank)<br /><textarea name="creature_demo_decision_reasons" rows="3" cols="60"></textarea></label></p>';
 		$state = self::meta_string( $order, '_creature_demo_bill_state' );
 		if ( '' !== $state ) {
