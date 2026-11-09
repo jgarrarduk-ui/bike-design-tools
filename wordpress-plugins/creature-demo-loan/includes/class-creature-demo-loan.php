@@ -1866,6 +1866,18 @@ final class Creature_Demo_Loan {
 		// Terms 6.4(b): no damage or missing-parts line without what we found and
 		// the photos. Nothing is created and nothing is emailed until both are in.
 		if ( ( $damage_line + $missing_line ) > 0 ) {
+			// Terms 6.4(b): the 5 working days run from the Kit received date. With no
+			// date entered there is no clock, so no damage or missing-parts line.
+			if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( self::meta_string( $order, '_creature_demo_received_date' ) ) ) {
+				self::note( $order, 'Bill not sent: it has a damage or missing-parts line but no Kit received date is entered (terms 6.4(b)). Enter the date the kit arrived back, update the order and try again.' );
+				return array_merge(
+					array(
+						'ok'     => false,
+						'reason' => 'no_received_date',
+					),
+					$clamp
+				);
+			}
 			$evidence = self::damage_evidence_problem( $order );
 			if ( '' !== $evidence ) {
 				self::note( $order, 'Bill not sent: it has a damage or missing-parts line and ' . ( 'no_findings' === $evidence ? 'the inspection findings are empty' : 'there is no photo' ) . ' (terms 6.4(b)). ' . ( 'no_findings' === $evidence ? 'Enter what you found' : 'Add at least one photo' ) . ' and try again.' );

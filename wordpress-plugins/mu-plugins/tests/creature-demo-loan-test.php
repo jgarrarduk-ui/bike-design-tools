@@ -982,7 +982,7 @@ function creature_demo_paid_deemed_returned( $scan = '2026-04-08' ) {
 	Creature_Demo_Loan::record_return_scan( $loan, $scan, $scan );
 	// The shop enters the Kit received date (terms 6.4(b)): the scan never starts the clock.
 	Creature_Demo_Loan::record_kit_received( $loan, $scan );
-	Creature_Demo_Loan::complete_inspection( $loan, $scan );
+	creature_demo_inspect( $loan, $scan );
 	return $loan;
 }
 
@@ -1026,8 +1026,32 @@ function creature_demo_loan( $dispatch = '2026-03-02', $delivery = '2026-03-04' 
  * charge order.
  */
 function creature_demo_bill_charge( $loan, $as_of = '2026-03-30' ) {
-	Creature_Demo_Loan::complete_inspection( $loan, $as_of );
+	creature_demo_inspect( $loan, $as_of );
 	return wc_get_order( (int) $loan->get_meta( '_creature_demo_bill_order_id' ) );
+}
+
+/**
+ * complete_inspection() as the shop would use it. When a damage or missing-parts charge is entered,
+ * the Kit received date is entered first (terms 6.4(b)): the bill is refused without it. A clean
+ * inspection needs no date and is passed straight through.
+ */
+function creature_demo_inspect( $loan, $as_of = null ) {
+	$asked = (int) $loan->get_meta( '_creature_demo_damage_pence' ) + (int) $loan->get_meta( '_creature_demo_missing_pence' );
+	if ( $asked > 0 && '' === (string) $loan->get_meta( '_creature_demo_received_date' ) ) {
+		Creature_Demo_Loan::record_kit_received( $loan, null === $as_of ? '2026-03-30' : $as_of );
+	}
+	return Creature_Demo_Loan::complete_inspection( $loan, $as_of );
+}
+
+/**
+ * raise_damage_charge() as the shop would use it: the Kit received date is entered first
+ * (terms 6.4(b)), because a damage or missing-parts line is refused without it.
+ */
+function creature_demo_damage( $loan, $pence, $label, $as_of = null ) {
+	if ( '' === (string) $loan->get_meta( '_creature_demo_received_date' ) ) {
+		Creature_Demo_Loan::record_kit_received( $loan, null === $as_of ? '2026-03-20' : $as_of );
+	}
+	return Creature_Demo_Loan::raise_damage_charge( $loan, $pence, $label, $as_of );
 }
 
 function creature_demo_stripe_test() {
@@ -1581,8 +1605,8 @@ creature_demo_expect( 'rider@example.com' === Creature_Demo_Loan::filter_custome
 
 $on_time = Creature_Demo_Loan::record_return_scan( $buy, '2026-03-24', '2026-03-24' );
 creature_demo_expect( 0 === $on_time['late_fee'], 'an on-time scan has no late fee' );
-$inspected = Creature_Demo_Loan::complete_inspection( $buy, '2026-03-24' );
-$again_inspected = Creature_Demo_Loan::complete_inspection( $buy, '2026-03-25' );
+$inspected = creature_demo_inspect( $buy, '2026-03-24' );
+$again_inspected = creature_demo_inspect( $buy, '2026-03-25' );
 creature_demo_expect( ! empty( $again_inspected['idempotent'] ), 'inspection twice is idempotent' );
 creature_demo_expect( 'demo-closed' === $buy->get_status(), 'an on-time buy return closes the loan' );
 creature_demo_expect( ! empty( $inspected['coupon']['code'] ), 'inspection issues the £25 code' );
@@ -1615,14 +1639,14 @@ creature_demo_expect( false !== strpos( $legacy_html, 'creature_demo_choice=retu
 creature_demo_expect( false === strpos( $legacy_html, 'creature_demo_choice=buy' ), 'My account has no buy choice' );
 creature_demo_expect( false !== strpos( $legacy_html, Creature_Demo_Loan_Copy::text( 'button_return' ) ), 'My account labels the return button from the copy slot' );
 Creature_Demo_Loan::record_return_scan( $legacy, '2026-03-20', '2026-03-20' );
-$legacy_done = Creature_Demo_Loan::complete_inspection( $legacy, '2026-03-20' );
+$legacy_done = creature_demo_inspect( $legacy, '2026-03-20' );
 creature_demo_expect( ! empty( $legacy_done['coupon']['code'] ), 'a stored buy still gets the £25 code at inspection' );
 
 $nochoice = creature_demo_loan();
 creature_demo_expect( '' === $nochoice->get_meta( '_creature_demo_choice' ), 'this loan has no stored choice' );
 $coupons_before = count( $GLOBALS['creature_demo_coupons'] );
 Creature_Demo_Loan::record_return_scan( $nochoice, '2026-03-20', '2026-03-20' );
-$nochoice_done = Creature_Demo_Loan::complete_inspection( $nochoice, '2026-03-20' );
+$nochoice_done = creature_demo_inspect( $nochoice, '2026-03-20' );
 creature_demo_expect( ! empty( $nochoice_done['coupon']['code'] ), 'an inspected return with no choice gets the £25 code' );
 creature_demo_expect( $coupons_before + 1 === count( $GLOBALS['creature_demo_coupons'] ), 'the no-choice return saves one coupon' );
 creature_demo_expect( 'demo-closed' === $nochoice->get_status(), 'a no-choice on-time return closes the loan' );
@@ -1630,7 +1654,7 @@ creature_demo_expect( 'demo-closed' === $nochoice->get_status(), 'a no-choice on
 $return_chosen = creature_demo_loan();
 Creature_Demo_Loan::choose( $return_chosen, 'return', '2026-03-10' );
 Creature_Demo_Loan::record_return_scan( $return_chosen, '2026-03-20', '2026-03-20' );
-$return_done = Creature_Demo_Loan::complete_inspection( $return_chosen, '2026-03-20' );
+$return_done = creature_demo_inspect( $return_chosen, '2026-03-20' );
 creature_demo_expect( ! empty( $return_done['coupon']['code'] ), 'a chosen return gets the £25 code at inspection' );
 
 $paid_keep = creature_demo_loan();
@@ -1643,7 +1667,7 @@ $deemed_back = creature_demo_loan();
 Creature_Demo_Loan::maybe_raise_deemed( $deemed_back, '2026-04-07' );
 $coupons_before = count( $GLOBALS['creature_demo_coupons'] );
 Creature_Demo_Loan::record_return_scan( $deemed_back, '2026-04-09', '2026-04-09' );
-$deemed_back_done = Creature_Demo_Loan::complete_inspection( $deemed_back, '2026-04-09' );
+$deemed_back_done = creature_demo_inspect( $deemed_back, '2026-04-09' );
 creature_demo_expect( empty( $deemed_back_done['coupon']['ok'] ), 'no code after clause 8 applies, even when the kit comes back and the unpaid deemed purchase is cancelled' );
 creature_demo_expect( $coupons_before === count( $GLOBALS['creature_demo_coupons'] ), 'a deemed purchase saves no coupon' );
 
@@ -1664,7 +1688,7 @@ $r_back = creature_demo_loan();
 $r_back->update_status( 'cancelled' );
 Creature_Demo_Loan::mark_refunded_under_10_4_or_11( $r_back, '11.3' );
 Creature_Demo_Loan::record_return_scan( $r_back, '2026-03-20', '2026-03-20' );
-$r_back_done = Creature_Demo_Loan::complete_inspection( $r_back, '2026-03-20' );
+$r_back_done = creature_demo_inspect( $r_back, '2026-03-20' );
 creature_demo_expect( empty( $r_back_done['coupon']['ok'] ) && 'fee_refunded' === $r_back_done['coupon']['reason'], 'a marked order that comes back and is inspected still gets no code' );
 // A manual refund made in Woo admin: the admin ticks the checkbox on the order screen.
 $r_man = creature_demo_loan();
@@ -1865,7 +1889,7 @@ $unconsented->update_meta_data( '_stripe_customer_id', 'cus_test_walker' );
 $unconsented->update_meta_data( '_stripe_source_id', 'pm_test_walker' );
 Creature_Demo_Loan::start_loan( $unconsented, '2026-03-02', '2026-03-04' );
 Creature_Demo_Loan::record_return_scan( $unconsented, '2026-03-30', '2026-03-30' );
-Creature_Demo_Loan::complete_inspection( $unconsented, '2026-03-30' );
+creature_demo_inspect( $unconsented, '2026-03-30' );
 $consent_calls = count( WC_Stripe_API::$requests );
 $refused_consent = Creature_Demo_Loan::charge_saved_card( $unconsented, '2026-04-06' );
 creature_demo_expect( 'no_consent' === $refused_consent['code'], 'a charge without recorded consent is refused' );
@@ -2147,7 +2171,8 @@ creature_demo_expect( empty( $ua_again['ok'] ) && 'cancelled' === $ua_again['rea
 Creature_Demo_Loan::tick( $ua, '2026-04-21' );
 creature_demo_expect( 'cancelled' === $ua_charge->get_status() && 'yes' !== $ua->get_meta( '_creature_demo_deemed_raised' ), 'the daily check does not bring it back' );
 $ua->update_meta_data( '_creature_demo_damage_pence', 2000 );
-$ua_done   = Creature_Demo_Loan::complete_inspection( $ua, '2026-04-09' );
+Creature_Demo_Loan::record_kit_received( $ua, '2026-04-09' );
+$ua_done   = creature_demo_inspect( $ua, '2026-04-09' );
 $ua_bill   = wc_get_order( (int) $ua->get_meta( '_creature_demo_bill_order_id' ) );
 $ua_lines  = $ua_bill ? $ua_bill->get_meta( '_creature_demo_charge_lines' ) : array();
 creature_demo_expect( ! empty( $ua_done['ok'] ) && 4400 === (int) $ua_bill->get_meta( '_creature_demo_charge_amount_pence' ), 'the late return goes through the one bill: £24 late fee plus £20 damage' );
@@ -2160,7 +2185,7 @@ $ub = creature_demo_loan();
 $ub_coupons = count( $GLOBALS['creature_demo_coupons'] );
 $ub_scan = Creature_Demo_Loan::record_return_scan( $ub, '2026-04-20', '2026-04-20' );
 creature_demo_expect( 0 === creature_demo_charge_orders_for( $ub ) && 'demo-inspect' === $ub->get_status() && ! empty( $ub_scan['after_deemed'] ), 'a scan after day 14 with no deemed charge yet raises none' );
-$ub_done = Creature_Demo_Loan::complete_inspection( $ub, '2026-04-20' );
+$ub_done = creature_demo_inspect( $ub, '2026-04-20' );
 creature_demo_expect( 2400 === (int) wc_get_order( (int) $ub->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_amount_pence' ) && $ub_coupons === count( $GLOBALS['creature_demo_coupons'] ), 'that late return is billed £24 and gets no code' );
 // Paid: 8.5(b), nothing is cancelled and nothing is billed. The refund is a separate action.
 $pa = creature_demo_loan();
@@ -2171,7 +2196,7 @@ Creature_Demo_Loan::on_payment_complete( $pa_raised['order_id'] );
 creature_demo_expect( 'yes' === $pa->get_meta( '_creature_demo_deemed_paid' ) && '' !== $pa->get_meta( '_creature_demo_deemed_paid_at' ), 'a paid deemed purchase records the date it was paid' );
 $pa_scan = Creature_Demo_Loan::record_return_scan( $pa, '2026-04-10', '2026-04-10' );
 creature_demo_expect( ! empty( $pa_scan['after_deemed'] ) && empty( $pa_scan['deemed_cancelled'] ) && 'cancelled' !== $pa_charge->get_status() && 'demo-deemed' === $pa->get_status(), 'a paid deemed purchase is not cancelled when the kit comes back' );
-$pa_done = Creature_Demo_Loan::complete_inspection( $pa, '2026-04-10' );
+$pa_done = creature_demo_inspect( $pa, '2026-04-10' );
 creature_demo_expect( ! empty( $pa_done['awaiting_refund'] ) && '' === $pa->get_meta( '_creature_demo_bill_state' ) && '' === $pa->get_meta( '_creature_demo_bill_order_id' ) && '' === $pa->get_meta( '_creature_demo_coupon_code' ), 'paid: no late-return bill and no code, the refund waits for the refund action' );
 // Posted by the end of day 13 but the deemed charge was raised before anyone knew: a normal return, with the code.
 $pd = creature_demo_loan();
@@ -2179,7 +2204,7 @@ $pd_raised = Creature_Demo_Loan::maybe_raise_deemed( $pd, '2026-04-07' );
 $pd_charge = wc_get_order( $pd_raised['order_id'] );
 Creature_Demo_Loan::record_return_posted( $pd, '2026-04-06' );
 Creature_Demo_Loan::record_return_scan( $pd, '2026-04-09', '2026-04-09' );
-$pd_done = Creature_Demo_Loan::complete_inspection( $pd, '2026-04-09' );
+$pd_done = creature_demo_inspect( $pd, '2026-04-09' );
 creature_demo_expect( 'cancelled' === $pd_charge->get_status() && ! empty( $pd_done['coupon']['code'] ), 'posted in time: the early deemed charge is cancelled and the return gets the £25 code' );
 
 // The deemed deduction notice has no v2 wording (the slot is empty). These tests of the refund flow
@@ -2197,7 +2222,7 @@ $back_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_refund' );
 Creature_Demo_Loan::on_payment_complete( $back_raised['order_id'] );
 Creature_Demo_Loan::record_return_scan( $back_after, '2026-04-08', '2026-04-08' );
 Creature_Demo_Loan::record_kit_received( $back_after, '2026-04-08' );
-$awaiting = Creature_Demo_Loan::complete_inspection( $back_after, '2026-04-08' );
+$awaiting = creature_demo_inspect( $back_after, '2026-04-08' );
 creature_demo_expect( ! empty( $awaiting['awaiting_refund'] ), 'inspection after a deemed purchase waits for the refund action' );
 creature_demo_expect( 'demo-deemed' === $back_after->get_status(), 'inspection does not close a deemed purchase on its own' );
 $back_after->update_meta_data( '_creature_demo_damage_pence', 1500 );
@@ -2239,7 +2264,7 @@ WC_Stripe_API::$response = (object) array(
 );
 Creature_Demo_Loan::on_payment_complete( $never_raised['order_id'] );
 Creature_Demo_Loan::record_return_scan( $never_keep, '2026-04-08', '2026-04-08' );
-Creature_Demo_Loan::complete_inspection( $never_keep, '2026-04-08' );
+creature_demo_inspect( $never_keep, '2026-04-08' );
 $GLOBALS['creature_demo_refund_flag'] = false;
 $still = Creature_Demo_Loan::refund_deemed( $never_keep, '2026-04-09' );
 $GLOBALS['creature_demo_refund_flag'] = null;
@@ -2251,7 +2276,7 @@ $failed_charge = wc_get_order( $failed_raised['order_id'] );
 $failed_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_fail' );
 Creature_Demo_Loan::on_payment_complete( $failed_raised['order_id'] );
 Creature_Demo_Loan::record_return_scan( $failed_refund, '2026-04-08', '2026-04-08' );
-Creature_Demo_Loan::complete_inspection( $failed_refund, '2026-04-08' );
+creature_demo_inspect( $failed_refund, '2026-04-08' );
 WC_Stripe_API::$response = (object) array(
 	'error' => (object) array( 'code' => 'api_error' ),
 );
@@ -2273,7 +2298,7 @@ $GLOBALS['creature_demo_options']['woocommerce_stripe_settings']['testmode'] = '
 Creature_Demo_Loan::on_payment_complete( $blocked_raised['order_id'] );
 $GLOBALS['creature_demo_options']['woocommerce_stripe_settings']['testmode'] = 'no';
 Creature_Demo_Loan::record_return_scan( $blocked_refund, '2026-04-08', '2026-04-08' );
-Creature_Demo_Loan::complete_inspection( $blocked_refund, '2026-04-08' );
+creature_demo_inspect( $blocked_refund, '2026-04-08' );
 $not_sent = Creature_Demo_Loan::refund_deemed( $blocked_refund, '2026-04-09' );
 creature_demo_expect( empty( $not_sent['ok'] ) && 'not_sent' === $not_sent['reason'], 'a refund is not marked done when the mode gate blocks Stripe' );
 creature_demo_expect( 'yes' !== $blocked_refund->get_meta( '_creature_demo_refund_done' ), 'a blocked refund can be tried again' );
@@ -2446,8 +2471,8 @@ unset( $GLOBALS['creature_demo_copy_override']['deduction_notice_deemed'] );
 $GLOBALS['creature_demo_refund_flag'] = null;
 
 $damage = creature_demo_loan();
-$mount = Creature_Demo_Loan::raise_damage_charge( $damage, 3500, 'Inverted mount kit', '2026-03-20' );
-$mount_again = Creature_Demo_Loan::raise_damage_charge( $damage, 3500, 'Inverted mount kit', '2026-03-20' );
+$mount = creature_demo_damage( $damage, 3500, 'Inverted mount kit', '2026-03-20' );
+$mount_again = creature_demo_damage( $damage, 3500, 'Inverted mount kit', '2026-03-20' );
 creature_demo_expect( ! empty( $mount['ok'] ) && 3500 === $mount['amount'], 'a missing mount kit is £35' );
 creature_demo_expect( $mount['order_id'] === $mount_again['order_id'], 'the damage charge is not duplicated' );
 $damage_mail = creature_demo_last_mail( 'charge_notice_damage' );
@@ -2456,7 +2481,7 @@ $same_day = Creature_Demo_Loan::charge_saved_card( $damage, '2026-03-20' );
 creature_demo_expect( 'notice_too_recent' === $same_day['code'], 'the damage notice still waits 7 days' );
 creature_demo_expect( false !== strpos( $damage_mail['body'], '£35.00' ) && false !== strpos( $damage_mail['body'], 'inverted mount kit' ), 'the damage notice names the mount kit from the constant' );
 $capped = creature_demo_loan();
-$cap = Creature_Demo_Loan::raise_damage_charge( $capped, 30000, 'Damage', '2026-03-20' );
+$cap = creature_demo_damage( $capped, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 21200 === $cap['amount'], 'damage with no late fees is capped at £212' );
 $fee24 = wc_create_order();
 $fee24->update_meta_data( '_creature_demo_charge_amount_pence', 2400 );
@@ -2464,7 +2489,7 @@ $fee24->save();
 $with24 = creature_demo_loan();
 $with24->update_meta_data( '_creature_demo_late_fee_order_id', $fee24->get_id() );
 $with24->save();
-$room24 = Creature_Demo_Loan::raise_damage_charge( $with24, 30000, 'Damage', '2026-03-20' );
+$room24 = creature_demo_damage( $with24, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( ! empty( $room24['ok'] ) && 18800 === $room24['amount'], '£24 of late fees leaves £188 of damage' );
 creature_demo_expect( ! empty( $room24['clamped'] ) && 11200 === $room24['reduced_pence'], 'a damage request above that headroom is clamped' );
 creature_demo_expect( '2400' === (string) $fee24->get_meta( '_creature_demo_charge_amount_pence' ), 'clamping damage leaves the late fee as billed' );
@@ -2474,19 +2499,19 @@ $fee9->save();
 $with9 = creature_demo_loan();
 $with9->update_meta_data( '_creature_demo_late_fee_order_id', $fee9->get_id() );
 $with9->save();
-$room9 = Creature_Demo_Loan::raise_damage_charge( $with9, 3500, 'Inverted mount kit', '2026-03-20' );
+$room9 = creature_demo_damage( $with9, 3500, 'Inverted mount kit', '2026-03-20' );
 creature_demo_expect( ! empty( $room9['ok'] ) && 3500 === $room9['amount'] && empty( $room9['clamped'] ), '£9 of late fees still leaves room for the £35 mount kit' );
 $with9_over = creature_demo_loan();
 $with9_over->update_meta_data( '_creature_demo_late_fee_order_id', $fee9->get_id() );
 $with9_over->save();
-$room9_over = Creature_Demo_Loan::raise_damage_charge( $with9_over, 30000, 'Damage', '2026-03-20' );
+$room9_over = creature_demo_damage( $with9_over, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 20300 === $room9_over['amount'] && ! empty( $room9_over['clamped'] ), '£9 of late fees leaves £203 of damage' );
 creature_demo_expect( '900' === (string) $fee9->get_meta( '_creature_demo_charge_amount_pence' ), 'the £9 late fee stays as billed' );
 $zero_loan = creature_demo_loan();
-$zero = Creature_Demo_Loan::raise_damage_charge( $zero_loan, 0, 'Damage', '2026-03-20' );
+$zero = creature_demo_damage( $zero_loan, 0, 'Damage', '2026-03-20' );
 creature_demo_expect( empty( $zero['ok'] ) && 'no_amount' === $zero['reason'], 'a zero damage amount does not create a charge' );
 creature_demo_expect( '' === $zero_loan->get_meta( '_creature_demo_bill_state' ), 'a zero amount does not close the bill' );
-$capped_again = Creature_Demo_Loan::raise_damage_charge( $capped, 100, 'Damage', '2026-03-21' );
+$capped_again = creature_demo_damage( $capped, 100, 'Damage', '2026-03-21' );
 creature_demo_expect( ! empty( $capped_again['idempotent'] ) && $cap['order_id'] === $capped_again['order_id'], 'a second damage call returns the same bill and does not raise another' );
 
 $pan = '4242424242424242';
@@ -2591,7 +2616,7 @@ creature_demo_expect( false === strpos( ob_get_clean(), 'creature_demo_choice=ke
 creature_demo_expect( 'Charge refused.' === Creature_Demo_Loan::refusal_message( 'crash_hold' ), 'the rider-facing refusal has no invented wording (slot is empty)' );
 // Inspection recorded: the hold ends.
 Creature_Demo_Loan::record_return_scan( $cr2, '2026-11-02', '2026-11-02' );
-Creature_Demo_Loan::complete_inspection( $cr2, '2026-11-02' );
+creature_demo_inspect( $cr2, '2026-11-02' );
 creature_demo_expect( false === Creature_Demo_Loan::crash_hold( $cr2 ) && 'yes' === $cr2->get_meta( '_creature_demo_crash_reported' ), 'once the inspection is recorded the hold is lifted (the report stays on file)' );
 // Unticking clears it.
 $_POST = array( 'creature_demo_loan_admin_nonce' => 'creature_demo_loan_admin', 'creature_demo_flags_present' => '1' );
@@ -3202,28 +3227,28 @@ creature_demo_expect( 22900 === (int) $block_demo->get_meta( '_creature_demo_bun
 
 // The cap is the lower of £212 and the loan's keep price, and the filter is clamped.
 $cap192 = creature_demo_booked_loan( '229.00' );
-$cap_r  = Creature_Demo_Loan::raise_damage_charge( $cap192, 30000, 'Damage', '2026-03-20' );
+$cap_r  = creature_demo_damage( $cap192, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 19200 === $cap_r['amount'], 'damage on a £192 loan is capped at £192' );
 $cap162 = creature_demo_booked_loan( '199.00' );
-$cap_r  = Creature_Demo_Loan::raise_damage_charge( $cap162, 30000, 'Damage', '2026-03-20' );
+$cap_r  = creature_demo_damage( $cap162, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 16200 === $cap_r['amount'], 'damage on a £162 loan is capped at £162' );
 $cap212 = creature_demo_booked_loan( '249.00' );
-$cap_r  = Creature_Demo_Loan::raise_damage_charge( $cap212, 30000, 'Damage', '2026-03-20' );
+$cap_r  = creature_demo_damage( $cap212, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 21200 === $cap_r['amount'], 'damage on a £212 loan is capped at £212' );
 $GLOBALS['creature_demo_damage_cap_override'] = 99999;
 $cap_up = creature_demo_booked_loan( '229.00' );
-$cap_r  = Creature_Demo_Loan::raise_damage_charge( $cap_up, 30000, 'Damage', '2026-03-20' );
+$cap_r  = creature_demo_damage( $cap_up, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 19200 === $cap_r['amount'], 'a filter above the keep price cannot lift the damage cap on a £192 loan' );
 $cap_up212 = creature_demo_booked_loan( '249.00' );
-$cap_r     = Creature_Demo_Loan::raise_damage_charge( $cap_up212, 30000, 'Damage', '2026-03-20' );
+$cap_r     = creature_demo_damage( $cap_up212, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 21200 === $cap_r['amount'], 'a filter above £212 cannot lift the damage cap past £212' );
 $GLOBALS['creature_demo_damage_cap_override'] = 10000;
 $cap_down = creature_demo_booked_loan( '229.00' );
-$cap_r    = Creature_Demo_Loan::raise_damage_charge( $cap_down, 30000, 'Damage', '2026-03-20' );
+$cap_r    = creature_demo_damage( $cap_down, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 10000 === $cap_r['amount'], 'a filter below the keep price still lowers the damage cap' );
 $GLOBALS['creature_demo_damage_cap_override'] = -5;
 $cap_neg = creature_demo_booked_loan( '229.00' );
-$cap_r   = Creature_Demo_Loan::raise_damage_charge( $cap_neg, 30000, 'Damage', '2026-03-20' );
+$cap_r   = creature_demo_damage( $cap_neg, 30000, 'Damage', '2026-03-20' );
 creature_demo_expect( 19200 === $cap_r['amount'], 'a negative filter falls back to the keep price' );
 $GLOBALS['creature_demo_damage_cap_override'] = null;
 
@@ -3301,7 +3326,7 @@ $refund192_charge->update_meta_data( '_stripe_intent_id', 'pi_test_deemed_192' )
 Creature_Demo_Loan::on_payment_complete( $refund192_r['order_id'] );
 Creature_Demo_Loan::record_return_scan( $refund192, '2026-04-08', '2026-04-08' );
 Creature_Demo_Loan::record_kit_received( $refund192, '2026-04-08' );
-Creature_Demo_Loan::complete_inspection( $refund192, '2026-04-08' );
+creature_demo_inspect( $refund192, '2026-04-08' );
 $refund192->update_meta_data( '_creature_demo_damage_pence', 1500 );
 $GLOBALS['creature_demo_refund_flag'] = true;
 WC_Stripe_API::$response = (object) array(
@@ -3321,18 +3346,18 @@ $room_fee->save();
 $room_loan = creature_demo_booked_loan( '90.00' );
 creature_demo_expect( 5300 === Creature_Demo_Loan::loan_keep_price_pence( $room_loan ), 'a £90 bundle gives a £53 keep price' );
 $room_loan->update_meta_data( '_creature_demo_late_fee_order_id', $room_fee->get_id() );
-$room_r = Creature_Demo_Loan::raise_damage_charge( $room_loan, 3500, 'Inverted mount kit', '2026-03-20' );
+$room_r = creature_demo_damage( $room_loan, 3500, 'Inverted mount kit', '2026-03-20' );
 creature_demo_expect( ! empty( $room_r['ok'] ) && 3500 === $room_r['amount'] && empty( $room_r['clamped'] ), 'a £35 mount kit is charged in full when £44 of headroom is left' );
 $tight_fee = wc_create_order();
 $tight_fee->update_meta_data( '_creature_demo_charge_amount_pence', 2400 );
 $tight_fee->save();
 $tight_loan = creature_demo_booked_loan( '90.00' );
 $tight_loan->update_meta_data( '_creature_demo_late_fee_order_id', $tight_fee->get_id() );
-$tight_r = Creature_Demo_Loan::raise_damage_charge( $tight_loan, 3500, 'Inverted mount kit', '2026-03-20' );
+$tight_r = creature_demo_damage( $tight_loan, 3500, 'Inverted mount kit', '2026-03-20' );
 creature_demo_expect( ! empty( $tight_r['ok'] ) && 2900 === $tight_r['amount'] && ! empty( $tight_r['clamped'] ) && 600 === $tight_r['reduced_pence'], 'a £35 mount kit is clamped to the £29 of headroom left on a £53 loan' );
 $wide_loan = creature_demo_booked_loan( '249.00' );
 $wide_loan->update_meta_data( '_creature_demo_late_fee_order_id', $tight_fee->get_id() );
-$wide_r = Creature_Demo_Loan::raise_damage_charge( $wide_loan, 3500, 'Inverted mount kit', '2026-03-20' );
+$wide_r = creature_demo_damage( $wide_loan, 3500, 'Inverted mount kit', '2026-03-20' );
 creature_demo_expect( ! empty( $wide_r['ok'] ) && 3500 === $wide_r['amount'] && empty( $wide_r['clamped'] ), 'a £35 mount kit still charges in full on a £212 loan with £24 of late fees' );
 
 /**
@@ -3429,7 +3454,8 @@ creature_demo_expect( 0 === creature_demo_charge_orders_for( $ob ), 'nothing is 
 $ob->update_meta_data( '_creature_demo_damage_pence', 2000 );
 $ob->update_meta_data( '_creature_demo_missing_pence', 3500 );
 $ob_mails = creature_demo_charge_mail_count();
-$ob_done  = Creature_Demo_Loan::complete_inspection( $ob, '2026-04-02' );
+Creature_Demo_Loan::record_kit_received( $ob, '2026-04-02' );
+$ob_done  = creature_demo_inspect( $ob, '2026-04-02' );
 $ob_order = wc_get_order( (int) $ob->get_meta( '_creature_demo_bill_order_id' ) );
 creature_demo_expect( ! empty( $ob_done['ok'] ) && 'raised' === $ob->get_meta( '_creature_demo_bill_state' ), 'inspection raises the bill' );
 creature_demo_expect( 1 === creature_demo_charge_orders_for( $ob ), 'late fee, damage and missing parts are one charge order' );
@@ -3440,28 +3466,29 @@ creature_demo_expect( $ob_mails + 1 === creature_demo_charge_mail_count(), 'one 
 $ob_mail = creature_demo_last_mail( 'charge_notice_damage' );
 creature_demo_expect( false !== strpos( $ob_mail['body'], '£67.00' ), 'the bill email names the total' );
 creature_demo_expect( false !== strpos( $ob_mail['body'], 'Late fees for the demo loan: £12.00' ) && false !== strpos( $ob_mail['body'], 'Damage: £20.00' ) && false !== strpos( $ob_mail['body'], 'Missing parts: £35.00' ), 'the bill email lists every line' );
-$ob_again = Creature_Demo_Loan::raise_damage_charge( $ob, 100, 'Damage', '2026-04-03' );
+$ob_again = creature_demo_damage( $ob, 100, 'Damage', '2026-04-03' );
 creature_demo_expect( ! empty( $ob_again['idempotent'] ) && 1 === creature_demo_charge_orders_for( $ob ), 'a second damage entry does not raise a second bill' );
-creature_demo_expect( ! empty( Creature_Demo_Loan::complete_inspection( $ob, '2026-04-04' )['idempotent'] ) && $ob_mails + 1 === creature_demo_charge_mail_count(), 'inspecting twice does not send a second bill' );
+creature_demo_expect( ! empty( creature_demo_inspect( $ob, '2026-04-04' )['idempotent'] ) && $ob_mails + 1 === creature_demo_charge_mail_count(), 'inspecting twice does not send a second bill' );
 creature_demo_expect( ! empty( $ob_done['coupon']['code'] ), 'a billed return still gets the £25 code' );
 
 // A late fee on its own uses the late-fee wording.
 $lo = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $lo, '2026-04-02', '2026-04-02' );
 $lo_mails = creature_demo_mail_count( 'charge_notice_late_fee' );
-Creature_Demo_Loan::complete_inspection( $lo, '2026-04-02' );
+creature_demo_inspect( $lo, '2026-04-02' );
 creature_demo_expect( $lo_mails + 1 === creature_demo_mail_count( 'charge_notice_late_fee' ), 'a late-fee-only bill uses the late-fee email' );
 creature_demo_expect( 1200 === (int) wc_get_order( (int) $lo->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_amount_pence' ), 'the late-fee-only bill is £12' );
 
 // A clean return has no bill. No scan or posting date means no late-fee line.
 $clean = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $clean, '2026-03-20', '2026-03-20' );
-$clean_done = Creature_Demo_Loan::complete_inspection( $clean, '2026-03-20' );
+$clean_done = creature_demo_inspect( $clean, '2026-03-20' );
 creature_demo_expect( ! empty( $clean_done['ok'] ) && 'none' === $clean->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $clean ), 'an on-time clean return has no bill' );
 creature_demo_expect( 'demo-closed' === $clean->get_status(), 'an on-time clean return closes the loan' );
 $undated = creature_demo_loan();
 $undated->update_meta_data( '_creature_demo_damage_pence', 2000 );
-Creature_Demo_Loan::complete_inspection( $undated, '2026-04-02' );
+Creature_Demo_Loan::record_kit_received( $undated, '2026-04-02' );
+creature_demo_inspect( $undated, '2026-04-02' );
 creature_demo_expect( 2000 === (int) wc_get_order( (int) $undated->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_amount_pence' ), 'with neither date set the bill has no late-fee line' );
 
 // Caps across the whole bill: £24 on late fees, and the overall cap on the total.
@@ -3469,7 +3496,7 @@ $cp = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $cp, '2026-04-06', '2026-04-06' );
 $cp->update_meta_data( '_creature_demo_damage_pence', 18000 );
 $cp->update_meta_data( '_creature_demo_missing_pence', 3500 );
-$cp_done = Creature_Demo_Loan::complete_inspection( $cp, '2026-04-06' );
+$cp_done = creature_demo_inspect( $cp, '2026-04-06' );
 $cp_lines = wc_get_order( (int) $cp->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_lines' );
 creature_demo_expect( 21200 === $cp_done['bill']['amount'], 'late fee, damage and missing parts together stop at £212' );
 creature_demo_expect( array( 2400, 18000, 800 ) === array_column( $cp_lines, 'pence' ), 'the late fee stays £24 and missing parts take what is left' );
@@ -3478,7 +3505,7 @@ $cp_small = creature_demo_booked_loan( '50.00' );
 creature_demo_expect( 1300 === Creature_Demo_Loan::loan_keep_price_pence( $cp_small ), 'a £50 bundle gives a £13 keep price' );
 Creature_Demo_Loan::record_return_scan( $cp_small, '2026-04-06', '2026-04-06' );
 $cp_small->update_meta_data( '_creature_demo_damage_pence', 5000 );
-$cp_small_done = Creature_Demo_Loan::complete_inspection( $cp_small, '2026-04-06' );
+$cp_small_done = creature_demo_inspect( $cp_small, '2026-04-06' );
 creature_demo_expect( 1300 === $cp_small_done['bill']['amount'] && array( 1300 ) === array_column( wc_get_order( (int) $cp_small->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_lines' ), 'pence' ), 'the late fee is held to the overall cap on a small keep price, and damage gets nothing' );
 $cp_cheap = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $cp_cheap, '2026-04-20', '2026-04-20' );
@@ -3511,12 +3538,12 @@ Creature_Demo_Loan::tick( $fb, '2026-04-11' );
 creature_demo_expect( 'late_only' === $fb->get_meta( '_creature_demo_bill_state' ), 'once day 5 has come uninspected the bill window is closed' );
 creature_demo_expect( 1 === creature_demo_charge_orders_for( $fb ) && $fb_mails + 1 === creature_demo_charge_mail_count(), 'one late-fee-only bill goes out, once' );
 creature_demo_expect( 1200 === (int) wc_get_order( (int) $fb->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_amount_pence' ), 'the late-fee-only bill leaves out the damage that was entered' );
-$fb_damage = Creature_Demo_Loan::raise_damage_charge( $fb, 2000, 'Damage', '2026-04-13' );
+$fb_damage = creature_demo_damage( $fb, 2000, 'Damage', '2026-04-13' );
 creature_demo_expect( empty( $fb_damage['ok'] ) && 'bill_closed' === $fb_damage['reason'], 'a later damage charge on that loan is refused' );
 $fb_bill = Creature_Demo_Loan::raise_bill( $fb, '2026-04-13' );
 creature_demo_expect( ! empty( $fb_bill['idempotent'] ) || empty( $fb_bill['ok'] ), 'a later bill on that loan is not raised' );
 $fb_coupons = count( $GLOBALS['creature_demo_coupons'] );
-$fb_done = Creature_Demo_Loan::complete_inspection( $fb, '2026-04-13' );
+$fb_done = creature_demo_inspect( $fb, '2026-04-13' );
 creature_demo_expect( ! empty( $fb_done['ok'] ) && 1 === creature_demo_charge_orders_for( $fb ), 'inspecting after the window raises no second bill' );
 creature_demo_expect( $fb_coupons + 1 === count( $GLOBALS['creature_demo_coupons'] ), 'the £25 code is still issued on the late inspected return' );
 creature_demo_expect( false !== strpos( implode( "\n", $fb->notes ), 'not charged' ), 'the order notes say the damage is not charged' );
@@ -3580,7 +3607,7 @@ Creature_Demo_Loan::record_kit_received( $fb0, '2026-04-02' );
 $fb0->update_meta_data( '_creature_demo_damage_pence', 2000 );
 Creature_Demo_Loan::tick( $fb0, '2026-04-10' );
 creature_demo_expect( 'late_only' === $fb0->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $fb0 ), 'a return posted in grace falls back to no bill and no later damage charge' );
-creature_demo_expect( empty( Creature_Demo_Loan::raise_damage_charge( $fb0, 2000, 'Damage', '2026-04-11' )['ok'] ), 'no damage charge after the window closes with nothing billed' );
+creature_demo_expect( empty( creature_demo_damage( $fb0, 2000, 'Damage', '2026-04-11' )['ok'] ), 'no damage charge after the window closes with nothing billed' );
 $fb0_post = Creature_Demo_Loan::record_return_posted( $fb0, '2026-03-20' );
 creature_demo_expect( empty( $fb0_post['ok'] ) && 'billed' === $fb0_post['reason'], 'the posting date is locked once the bill is final' );
 
@@ -3610,7 +3637,7 @@ Creature_Demo_Loan::tick( $nr, '2026-06-08' );
 creature_demo_expect( 'late_only' === $nr->get_meta( '_creature_demo_bill_state' ), 'working day 5 from the entered date sends the fallback bill' );
 $nr_insp = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $nr_insp, '2026-03-30', '2026-03-30' );
-Creature_Demo_Loan::complete_inspection( $nr_insp, '2026-03-30' );
+creature_demo_inspect( $nr_insp, '2026-03-30' );
 creature_demo_expect( '' === $nr_insp->get_meta( '_creature_demo_received_date' ), 'recording the inspection does not set a received date either' );
 
 // A manual received date is kept when the scan is recorded.
@@ -3627,7 +3654,7 @@ $nf->update_meta_data( '_creature_demo_findings', '' );
 Creature_Demo_Loan::record_return_scan( $nf, '2026-03-30', '2026-03-30' );
 $nf->update_meta_data( '_creature_demo_damage_pence', 2000 );
 $nf_mails = creature_demo_charge_mail_count();
-$nf_r = Creature_Demo_Loan::complete_inspection( $nf, '2026-03-30' );
+$nf_r = creature_demo_inspect( $nf, '2026-03-30' );
 creature_demo_expect( empty( $nf_r['ok'] ) && 'no_findings' === $nf_r['reason'], 'a bill with a damage line and empty findings is refused' );
 creature_demo_expect( 0 === creature_demo_charge_orders_for( $nf ) && $nf_mails === creature_demo_charge_mail_count(), 'a refused bill creates no order and sends no email' );
 creature_demo_expect( '' === $nf->get_meta( '_creature_demo_inspection_done' ) && '' === $nf->get_meta( '_creature_demo_bill_state' ), 'a refused bill leaves the inspection open to try again' );
@@ -3637,6 +3664,7 @@ creature_demo_expect( false !== strpos( implode( "\n", $nf->notes ), 'findings' 
 $nm = creature_demo_loan();
 $nm->update_meta_data( '_creature_demo_findings', '' );
 $nm->update_meta_data( '_creature_demo_missing_pence', 3500 );
+Creature_Demo_Loan::record_kit_received( $nm, '2026-03-30' );
 creature_demo_expect( 'no_findings' === Creature_Demo_Loan::raise_bill( $nm, '2026-03-30' )['reason'], 'a missing-parts line needs findings too' );
 $nl = creature_demo_loan();
 $nl->update_meta_data( '_creature_demo_findings', '' );
@@ -3649,25 +3677,48 @@ $np->update_meta_data( '_creature_demo_photos', array() );
 Creature_Demo_Loan::record_return_scan( $np, '2026-03-30', '2026-03-30' );
 $np->update_meta_data( '_creature_demo_damage_pence', 2000 );
 $np_mails = creature_demo_charge_mail_count();
-$np_r     = Creature_Demo_Loan::complete_inspection( $np, '2026-03-30' );
+$np_r     = creature_demo_inspect( $np, '2026-03-30' );
 creature_demo_expect( empty( $np_r['ok'] ) && 'no_photos' === $np_r['reason'], 'a damage line with findings but no photo is refused' );
 creature_demo_expect( 0 === creature_demo_charge_orders_for( $np ) && $np_mails === creature_demo_charge_mail_count() && '' === $np->get_meta( '_creature_demo_bill_state' ) && '' === $np->get_meta( '_creature_demo_inspection_done' ), 'the refused bill makes no order, sends no email and leaves the inspection open' );
 creature_demo_expect( false !== strpos( implode( "\n", $np->notes ), 'there is no photo' ), 'the refusal says a photo is missing' );
 $np->update_meta_data( '_creature_demo_photos', array( 'not a url', 'ftp://example.com/x.jpg', '0' ) );
 creature_demo_expect( 'no_photos' === Creature_Demo_Loan::raise_bill( $np, '2026-03-30' )['reason'], 'photo slots that are not valid photos do not count' );
-creature_demo_expect( 'no_photos' === Creature_Demo_Loan::raise_damage_charge( $np, 2000, 'Damage', '2026-03-30' )['reason'], 'raise_damage_charge needs a photo too' );
+creature_demo_expect( 'no_photos' === creature_demo_damage( $np, 2000, 'Damage', '2026-03-30' )['reason'], 'raise_damage_charge needs a photo too' );
 Creature_Demo_Loan::action_damage( $np );
 creature_demo_expect( 0 === creature_demo_charge_orders_for( $np ) && $np_mails === creature_demo_charge_mail_count(), 'the admin Email a damage charge action sends nothing without a photo' );
 $npm = creature_demo_loan();
 $npm->update_meta_data( '_creature_demo_photos', array() );
 $npm->update_meta_data( '_creature_demo_missing_pence', 3500 );
+Creature_Demo_Loan::record_kit_received( $npm, '2026-03-30' );
 creature_demo_expect( 'no_photos' === Creature_Demo_Loan::raise_bill( $npm, '2026-03-30' )['reason'], 'a missing-parts line needs a photo too' );
+// raise_bill: no damage or missing-parts line until the Kit received date is entered (terms 6.4(b)).
+foreach ( array( '_creature_demo_damage_pence' => 'damage', '_creature_demo_missing_pence' => 'missing parts' ) as $rb_key => $rb_what ) {
+	$rb = creature_demo_loan();
+	Creature_Demo_Loan::record_return_scan( $rb, '2026-04-02', '2026-04-02' );
+	$rb->update_meta_data( $rb_key, 2000 );
+	$rb_mails = creature_demo_charge_mail_count();
+	$rb_r     = Creature_Demo_Loan::raise_bill( $rb, '2026-04-02' );
+	creature_demo_expect( empty( $rb_r['ok'] ) && 'no_received_date' === $rb_r['reason'], "raise_bill: a {$rb_what} line is refused with no Kit received date" );
+	creature_demo_expect( 0 === creature_demo_charge_orders_for( $rb ) && $rb_mails === creature_demo_charge_mail_count() && '' === $rb->get_meta( '_creature_demo_bill_state' ), "raise_bill: nothing is created or emailed for {$rb_what} without the date" );
+	creature_demo_expect( empty( Creature_Demo_Loan::complete_inspection( $rb, '2026-04-02' )['ok'] ) && 'yes' !== $rb->get_meta( '_creature_demo_inspection_done' ), "raise_bill: recording the inspection is refused the same way for {$rb_what}" );
+	Creature_Demo_Loan::record_kit_received( $rb, '2026-04-02' );
+	$rb_ok = Creature_Demo_Loan::raise_bill( $rb, '2026-04-02' );
+	creature_demo_expect( ! empty( $rb_ok['ok'] ) && 3200 === $rb_ok['amount'], "raise_bill: once the date is entered the {$rb_what} line goes on the bill (£12 late fee + £20)" );
+}
+$rbd = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $rbd, '2026-04-02', '2026-04-02' );
+$rbd_r = Creature_Demo_Loan::raise_damage_charge( $rbd, 2000, 'Damage', '2026-04-02' );
+creature_demo_expect( empty( $rbd_r['ok'] ) && 'no_received_date' === $rbd_r['reason'] && 0 === creature_demo_charge_orders_for( $rbd ), 'raise_bill: the damage charge action is refused the same way' );
+$rbl = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $rbl, '2026-04-02', '2026-04-02' );
+$rbl_r = Creature_Demo_Loan::raise_bill( $rbl, '2026-04-02' );
+creature_demo_expect( ! empty( $rbl_r['ok'] ) && 1200 === $rbl_r['amount'], 'raise_bill: a late-fee-only bill still needs no received date' );
 $npl = creature_demo_loan();
 $npl->update_meta_data( '_creature_demo_photos', array() );
 Creature_Demo_Loan::record_return_scan( $npl, '2026-04-02', '2026-04-02' );
 creature_demo_expect( ! empty( Creature_Demo_Loan::raise_bill( $npl, '2026-04-02' )['ok'] ), 'a late-fee-only bill needs no photo' );
 $np->update_meta_data( '_creature_demo_photos', array( 'https://example.com/uploads/crack.jpg' ) );
-$np_r2 = Creature_Demo_Loan::complete_inspection( $np, '2026-03-30' );
+$np_r2 = creature_demo_inspect( $np, '2026-03-30' );
 creature_demo_expect( ! empty( $np_r2['ok'] ) && 1 === creature_demo_charge_orders_for( $np ), 'with a photo added the same bill goes out' );
 ob_start();
 Creature_Demo_Loan::render_meta_box( $np );
@@ -3676,7 +3727,7 @@ creature_demo_expect( false !== strpos( $np_html, 'at least one photo' ), 'the o
 
 $nf->update_meta_data( '_creature_demo_findings', 'Steerer cap cracked at the slot.' );
 $nf->update_meta_data( '_creature_demo_photos', array( '123', 'https://example.com/a.jpg', 'ftp://example.com/b.jpg', 'javascript:alert(1)', 'not a url', '0', '456 789' ) );
-$nf_r2 = Creature_Demo_Loan::complete_inspection( $nf, '2026-03-30' );
+$nf_r2 = creature_demo_inspect( $nf, '2026-03-30' );
 creature_demo_expect( ! empty( $nf_r2['ok'] ) && 2300 === $nf_r2['bill']['amount'], 'with findings the bill goes out: £3 late fee and £20 damage' );
 $nf_mail = creature_demo_last_mail( 'charge_notice_damage' );
 creature_demo_expect( false !== strpos( $nf_mail['body'], 'Steerer cap cracked at the slot.' ), 'the findings go into the bill as {findings}' );
@@ -4223,7 +4274,7 @@ $ukd_grace = creature_demo_last_mail( 'reminder_grace_end' );
 creature_demo_expect( false !== strpos( $ukd_grace['body'], 'was due back on 24 March 2026.' ) && false !== strpos( $ukd_grace['subject'], '(due date 24 March 2026)' ), 'the grace-end reminder shows the due date as 24 March 2026' );
 $ukd_scan = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $ukd_scan, '2026-04-02', '2026-04-02' );
-Creature_Demo_Loan::complete_inspection( $ukd_scan, '2026-04-02' );
+creature_demo_inspect( $ukd_scan, '2026-04-02' );
 $ukd_bill = creature_demo_last_mail( 'charge_notice_late_fee' );
 creature_demo_expect( false !== strpos( $ukd_bill['body'], 'Your due date was 24 March 2026.' ), 'the bill shows the due date as 24 March 2026' );
 $ukd_all = '';
