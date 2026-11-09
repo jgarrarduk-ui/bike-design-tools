@@ -381,7 +381,13 @@ if ( ! function_exists( 'register_post_status' ) ) {
 
 if ( ! function_exists( 'as_next_scheduled_action' ) ) {
 	function as_next_scheduled_action( $hook ) {
-		return empty( $GLOBALS['creature_demo_scheduled'][ $hook ] ) ? false : 1;
+		return empty( $GLOBALS['creature_demo_scheduled'][ $hook ] ) ? false : $GLOBALS['creature_demo_scheduled'][ $hook ][0];
+	}
+}
+
+if ( ! function_exists( 'wp_timezone' ) ) {
+	function wp_timezone() {
+		return new DateTimeZone( isset( $GLOBALS['creature_demo_tz'] ) ? $GLOBALS['creature_demo_tz'] : 'Europe/London' );
 	}
 }
 
@@ -3054,13 +3060,15 @@ Creature_Demo_Loan::tick( $fb, '2026-04-08' );
 creature_demo_expect( $warns + 1 === creature_demo_mail_count( 'admin_bill_due' ), 'the shop is emailed once on working day 4' );
 $warn_mail = creature_demo_last_mail( 'admin_bill_due' );
 creature_demo_expect( 'info@creaturecycles.co.uk' === $warn_mail['to'] && 0 !== strpos( $warn_mail['subject'], '[TEST]' ), 'the working day 4 warning goes to info@' );
-Creature_Demo_Loan::tick( $fb, '2026-04-09' );
-creature_demo_expect( '' === $fb->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $fb ), 'working day 5 itself is still inside the window' );
-creature_demo_expect( $warns + 1 === creature_demo_mail_count( 'admin_bill_due' ), 'the warning is not repeated on day 5' );
+creature_demo_expect( '' === $fb->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $fb ), 'the 22:00 run on working day 4 sends the warning and no bill' );
+creature_demo_expect( false !== strpos( $warn_mail['body'], 'The bill must go out by the end of the next working day (' ), 'the day-4 alert says the bill must go out by the end of the next working day' );
 $fb_mails = creature_demo_charge_mail_count();
+Creature_Demo_Loan::tick( $fb, '2026-04-09' );
+creature_demo_expect( 'late_only' === $fb->get_meta( '_creature_demo_bill_state' ), 'the 22:00 run on working day 5 sends the late-fee-only bill (>=, not day 6)' );
+creature_demo_expect( $warns + 1 === creature_demo_mail_count( 'admin_bill_due' ), 'the warning is not repeated on day 5' );
 Creature_Demo_Loan::tick( $fb, '2026-04-10' );
 Creature_Demo_Loan::tick( $fb, '2026-04-11' );
-creature_demo_expect( 'late_only' === $fb->get_meta( '_creature_demo_bill_state' ), 'once day 5 has passed uninspected the bill window closes' );
+creature_demo_expect( 'late_only' === $fb->get_meta( '_creature_demo_bill_state' ), 'once day 5 has come uninspected the bill window is closed' );
 creature_demo_expect( 1 === creature_demo_charge_orders_for( $fb ) && $fb_mails + 1 === creature_demo_charge_mail_count(), 'one late-fee-only bill goes out, once' );
 creature_demo_expect( 1200 === (int) wc_get_order( (int) $fb->get_meta( '_creature_demo_bill_order_id' ) )->get_meta( '_creature_demo_charge_amount_pence' ), 'the late-fee-only bill leaves out the damage that was entered' );
 $fb_damage = Creature_Demo_Loan::raise_damage_charge( $fb, 2000, 'Damage', '2026-04-13' );
@@ -3081,8 +3089,46 @@ $wk = creature_demo_loan();
 Creature_Demo_Loan::record_return_scan( $wk, '2026-03-26', '2026-03-27' );
 Creature_Demo_Loan::tick( $wk, '2026-04-01' );
 creature_demo_expect( 0 === creature_demo_charge_orders_for( $wk ) && '' === $wk->get_meta( '_creature_demo_bill_state' ), 'three working days in, no fallback yet' );
-Creature_Demo_Loan::tick( $wk, '2026-04-04' );
-creature_demo_expect( 'late_only' === $wk->get_meta( '_creature_demo_bill_state' ), 'the Saturday after day 5 falls back to a late-fee-only bill' );
+Creature_Demo_Loan::tick( $wk, '2026-04-03' );
+creature_demo_expect( 'late_only' === $wk->get_meta( '_creature_demo_bill_state' ), 'working day 5 (Friday) falls back to a late-fee-only bill that evening' );
+
+// A weekend between day 4 and day 5: received Mon 2026-03-30, day 4 is Fri 04-03, day 5 is Mon 04-06.
+$we = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $we, '2026-03-30', '2026-03-30' );
+$we_warns = creature_demo_mail_count( 'admin_bill_due' );
+Creature_Demo_Loan::tick( $we, '2026-04-03' );
+creature_demo_expect( $we_warns + 1 === creature_demo_mail_count( 'admin_bill_due' ) && '' === $we->get_meta( '_creature_demo_bill_state' ), 'Friday is working day 4: the alert goes, no bill yet' );
+Creature_Demo_Loan::tick( $we, '2026-04-04' );
+Creature_Demo_Loan::tick( $we, '2026-04-05' );
+creature_demo_expect( '' === $we->get_meta( '_creature_demo_bill_state' ) && 0 === creature_demo_charge_orders_for( $we ) && $we_warns + 1 === creature_demo_mail_count( 'admin_bill_due' ), 'Saturday and Sunday run nothing: no bill and no second alert' );
+Creature_Demo_Loan::tick( $we, '2026-04-06' );
+creature_demo_expect( 'late_only' === $we->get_meta( '_creature_demo_bill_state' ), 'Monday, working day 5, sends the fallback bill' );
+
+// The daily job runs at 22:00 site time (Europe/London), so working day 5 is still open when it fires.
+$GLOBALS['creature_demo_tz'] = 'Europe/London';
+$noon_gmt  = strtotime( '2026-03-02 12:00:00 UTC' );
+$late_gmt  = strtotime( '2026-03-02 22:30:00 UTC' );
+$noon_bst  = strtotime( '2026-06-02 12:00:00 UTC' );
+creature_demo_expect( strtotime( '2026-03-02 22:00:00 UTC' ) === Creature_Demo_Loan::daily_run_timestamp( $noon_gmt ), 'the next run is 22:00 London the same day (GMT)' );
+creature_demo_expect( strtotime( '2026-03-03 22:00:00 UTC' ) === Creature_Demo_Loan::daily_run_timestamp( $late_gmt ), 'after 22:00 the next run is 22:00 tomorrow' );
+creature_demo_expect( strtotime( '2026-06-02 21:00:00 UTC' ) === Creature_Demo_Loan::daily_run_timestamp( $noon_bst ), '22:00 London in summer is 21:00 UTC' );
+$GLOBALS['creature_demo_tz'] = 'America/New_York';
+creature_demo_expect( strtotime( '2026-03-03 03:00:00 UTC' ) === Creature_Demo_Loan::daily_run_timestamp( $noon_gmt ), 'it uses wp_timezone(), not a fixed offset' );
+$GLOBALS['creature_demo_tz'] = 'Europe/London';
+// An event an earlier version scheduled at the wrong time is moved once.
+unset( $GLOBALS['creature_demo_scheduled']['creature_demo_loan_daily'] );
+$GLOBALS['creature_demo_unscheduled'] = array();
+$GLOBALS['creature_demo_scheduled']['creature_demo_loan_daily'] = array( strtotime( '2026-03-02 13:17:00 UTC' ), DAY_IN_SECONDS, array(), 'creature-demo-loan' );
+Creature_Demo_Loan::schedule_daily( $noon_gmt );
+$resched = $GLOBALS['creature_demo_scheduled']['creature_demo_loan_daily'];
+creature_demo_expect( strtotime( '2026-03-02 22:00:00 UTC' ) === $resched[0] && DAY_IN_SECONDS === $resched[1] && 1 === count( $GLOBALS['creature_demo_unscheduled'] ), 'an existing event at the wrong time is rescheduled to 22:00, once' );
+Creature_Demo_Loan::schedule_daily( $noon_gmt );
+Creature_Demo_Loan::schedule_daily( $late_gmt );
+creature_demo_expect( $resched === $GLOBALS['creature_demo_scheduled']['creature_demo_loan_daily'] && 1 === count( $GLOBALS['creature_demo_unscheduled'] ), 'an event already at 22:00 is left alone on later loads' );
+unset( $GLOBALS['creature_demo_scheduled']['creature_demo_loan_daily'] );
+Creature_Demo_Loan::schedule_daily( $noon_gmt );
+creature_demo_expect( strtotime( '2026-03-02 22:00:00 UTC' ) === $GLOBALS['creature_demo_scheduled']['creature_demo_loan_daily'][0], 'a new schedule is set for the next 22:00' );
+$GLOBALS['creature_demo_unscheduled'] = array();
 
 // No late fee to bill: the window still closes, with no order.
 $fb0 = creature_demo_loan();

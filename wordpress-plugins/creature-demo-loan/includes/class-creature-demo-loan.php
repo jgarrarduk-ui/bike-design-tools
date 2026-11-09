@@ -39,6 +39,9 @@ final class Creature_Demo_Loan {
 	/** The shop is emailed on this working day if the bill is not raised yet. */
 	const BILL_WARN_WORKING_DAY = 4;
 
+	/** Hour (site time zone) the daily job runs. Late, so working day 5 is still open when it fires. */
+	const DAILY_RUN_HOUR = 22;
+
 	/** Photo slots on the damage entry (terms 6.4(b)). */
 	const PHOTO_SLOTS = 6;
 
@@ -1794,9 +1797,10 @@ final class Creature_Demo_Loan {
 	 * only: there is no bank-holiday table here, so the clock can only run
 	 * ahead of the real one.
 	 *
-	 * On working day 4 the shop is emailed. Once day 5 has passed with no
-	 * inspection, a late-fee-only bill goes out and no damage or missing-parts
-	 * charge can follow, because the terms allow one bill.
+	 * On working day 4 the shop is emailed. The daily job runs at about 22:00,
+	 * so on working day 5 with no inspection a late-fee-only bill goes out that
+	 * evening, inside the 5 days, and no damage or missing-parts charge can
+	 * follow, because the terms allow one bill.
 	 *
 	 * @param object $order
 	 * @param string $as_of
@@ -1814,17 +1818,22 @@ final class Creature_Demo_Loan {
 		}
 		$deadline = Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WORKING_DAYS, array() );
 		$warn_on  = Creature_Demo_Loan_Calendar::add_working_days( $received, self::BILL_WARN_WORKING_DAY, array() );
-		if ( $as_of > $deadline ) {
+		// The daily job runs at about 22:00 site time, so on working day 5 itself
+		// the fallback bill goes out before the day ends (terms 4.4: within 5
+		// working days). Comparing with > would send it on day 6.
+		if ( $as_of >= $deadline ) {
 			self::raise_late_only_bill( $order, $as_of, $received, $deadline );
 			return;
 		}
 		if ( $as_of >= $warn_on && 'yes' !== self::meta_string( $order, '_creature_demo_bill_warn_sent' ) ) {
+			// Only reached before the deadline, so the deadline is a later day.
 			Creature_Demo_Loan_Mail::send_admin(
 				$order,
 				'admin_bill_due',
 				array(
-					'received' => $received,
-					'deadline' => $deadline,
+					'received'     => $received,
+					'deadline'     => $deadline,
+					'deadline_day' => 'the next working day',
 				)
 			);
 			$order->update_meta_data( '_creature_demo_bill_warn_sent', 'yes' );
@@ -1833,7 +1842,7 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * Working day 5 has passed without an inspection. Bill the late fee alone
+	 * Working day 5 has come with no inspection. Bill the late fee alone
 	 * and close the bill for this loan.
 	 *
 	 * @param object $order
@@ -3504,19 +3513,84 @@ final class Creature_Demo_Loan {
 		}
 	}
 
-	public static function schedule_daily() {
+	/**
+	 * The next 22:00 in the site's time zone (terms 4.4: the bill is due by the
+	 * end of working day 5, so the daily job runs late in the day, not an hour
+	 * after the plugin loads).
+	 *
+	 * @param int|null $now Unix time. Default: now.
+	 * @return int
+	 */
+	public static function daily_run_timestamp( $now = null ) {
+		$now = null === $now ? time() : (int) $now;
+		$dt  = new DateTime( '@' . $now );
+		$dt->setTimezone( self::daily_timezone() );
+		$dt->setTime( self::DAILY_RUN_HOUR, 0, 0 );
+		if ( $dt->getTimestamp() <= $now ) {
+			$dt->modify( '+1 day' );
+			$dt->setTime( self::DAILY_RUN_HOUR, 0, 0 );
+		}
+		return $dt->getTimestamp();
+	}
+
+	/**
+	 * @return DateTimeZone
+	 */
+	private static function daily_timezone() {
+		if ( function_exists( 'wp_timezone' ) ) {
+			$tz = wp_timezone();
+			if ( $tz instanceof DateTimeZone ) {
+				return $tz;
+			}
+		}
+		return new DateTimeZone( 'Europe/London' );
+	}
+
+	/**
+	 * @param mixed $timestamp
+	 * @return bool True when this is a real Unix time that is not 22:00 local.
+	 */
+	private static function daily_time_is_wrong( $timestamp ) {
+		if ( ! is_int( $timestamp ) || $timestamp < 1000000000 ) {
+			// false (nothing scheduled) or true (running now): nothing to judge.
+			return false;
+		}
+		$dt = new DateTime( '@' . $timestamp );
+		$dt->setTimezone( self::daily_timezone() );
+		return sprintf( '%02d:00', self::DAILY_RUN_HOUR ) !== $dt->format( 'H:i' );
+	}
+
+	/**
+	 * Schedule the daily job for 22:00 local time. A job that an earlier version
+	 * scheduled at another time is moved to 22:00 once; after that it is at the
+	 * right time and is left alone.
+	 *
+	 * @param int|null $now Unix time. Default: now.
+	 */
+	public static function schedule_daily( $now = null ) {
 		$hook = 'creature_demo_loan_daily';
+		$day  = defined( 'DAY_IN_SECONDS' ) ? DAY_IN_SECONDS : 86400;
+		$run  = self::daily_run_timestamp( $now );
 		if ( function_exists( 'as_next_scheduled_action' ) && function_exists( 'as_schedule_recurring_action' ) ) {
-			if ( false === as_next_scheduled_action( $hook ) ) {
-				$delay = defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600;
-				$day   = defined( 'DAY_IN_SECONDS' ) ? DAY_IN_SECONDS : 86400;
-				as_schedule_recurring_action( time() + $delay, $day, $hook, array(), 'creature-demo-loan' );
+			$next = as_next_scheduled_action( $hook );
+			if ( false !== $next && self::daily_time_is_wrong( $next ) && function_exists( 'as_unschedule_all_actions' ) ) {
+				as_unschedule_all_actions( $hook, array(), 'creature-demo-loan' );
+				$next = false;
+			}
+			if ( false === $next ) {
+				as_schedule_recurring_action( $run, $day, $hook, array(), 'creature-demo-loan' );
 			}
 			return;
 		}
-		if ( function_exists( 'wp_next_scheduled' ) && function_exists( 'wp_schedule_event' ) && ! wp_next_scheduled( $hook ) ) {
-			$delay = defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600;
-			wp_schedule_event( time() + $delay, 'daily', $hook );
+		if ( function_exists( 'wp_next_scheduled' ) && function_exists( 'wp_schedule_event' ) ) {
+			$next = wp_next_scheduled( $hook );
+			if ( false !== $next && self::daily_time_is_wrong( $next ) && function_exists( 'wp_clear_scheduled_hook' ) ) {
+				wp_clear_scheduled_hook( $hook );
+				$next = false;
+			}
+			if ( ! $next ) {
+				wp_schedule_event( $run, 'daily', $hook );
+			}
 		}
 	}
 
