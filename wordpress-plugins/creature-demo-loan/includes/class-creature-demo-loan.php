@@ -27,6 +27,9 @@ final class Creature_Demo_Loan {
 	const STATUS_DEEMED   = 'demo-deemed';
 	const STATUS_CLOSED   = 'demo-closed';
 
+	/** Order meta set to "yes" on a test order, which enables the as-of date tool. */
+	const TEST_META = '_creature_demo_test';
+
 	/**
 	 * A pay-link lock older than this is not treated as in progress.
 	 * The creature_demo_loan_charge_lock_stale_seconds filter can change it.
@@ -150,6 +153,7 @@ final class Creature_Demo_Loan {
 		add_action( 'woocommerce_order_action_creature_demo_complete_inspection', array( __CLASS__, 'action_inspect' ) );
 		add_action( 'woocommerce_order_action_creature_demo_refund_deemed', array( __CLASS__, 'action_refund' ) );
 		add_action( 'woocommerce_order_action_creature_demo_raise_damage', array( __CLASS__, 'action_damage' ) );
+		add_action( 'woocommerce_order_action_creature_demo_run_asof', array( __CLASS__, 'action_run_asof' ) );
 		add_action( 'woocommerce_admin_order_data_after_order_details', array( __CLASS__, 'render_meta_box' ) );
 		add_action( 'woocommerce_process_shop_order_meta', array( __CLASS__, 'save_meta_box' ), 10, 2 );
 
@@ -4051,6 +4055,7 @@ final class Creature_Demo_Loan {
 		$actions['creature_demo_complete_inspection']  = 'Complete demo inspection';
 		$actions['creature_demo_refund_deemed']        = 'Refund deemed purchase (after inspection)';
 		$actions['creature_demo_raise_damage']         = 'Email a damage or missing-parts charge';
+		$actions['creature_demo_run_asof']             = 'Run daily job as of date (test orders only)';
 		return $actions;
 	}
 
@@ -4077,6 +4082,177 @@ final class Creature_Demo_Loan {
 	 */
 	public static function action_charge( $order ) {
 		self::charge_saved_card( $order, null );
+	}
+
+	/**
+	 * Admin-only as-of test tool (1.3.1). The order action "Run daily job as of
+	 * date (test orders only)".
+	 *
+	 * The only plugin code it runs is tick() and the read-only evaluate_charge().
+	 * It never calls charge_saved_card, send_deemed_refund, advance_deduction,
+	 * finish_deemed_refund or any Stripe method, whatever the live-charge
+	 * constant says. It sets no clock: the date goes to tick() as an argument.
+	 *
+	 * @param object $order
+	 */
+	public static function action_run_asof( $order ) {
+		if ( ! is_object( $order ) || ! self::asof_can() || ! self::asof_nonce_ok() ) {
+			return;
+		}
+		if ( ! self::is_test_order( $order ) ) {
+			self::note( $order, 'As-of run refused: this order is not flagged as a test order. Nothing was run.' );
+			return;
+		}
+		$raw = trim( self::posted_field( 'creature_demo_asof_date' ) );
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $raw ) ) {
+			self::note( $order, 'As-of run refused: the date must be a real date in Y-m-d form (for example 2026-04-06). Nothing was run.' );
+			return;
+		}
+		if ( 'yes' !== self::meta_string( $order, '_creature_demo_loan' ) ) {
+			self::note( $order, 'As-of run refused: this is not a demo loan order (the daily job only visits loan orders). Nothing was run.' );
+			return;
+		}
+		self::run_asof( $order, $raw );
+	}
+
+	/**
+	 * @param object $order
+	 * @return bool
+	 */
+	private static function is_test_order( $order ) {
+		return is_object( $order ) && 'yes' === self::meta_string( $order, self::TEST_META );
+	}
+
+	/**
+	 * @return bool
+	 */
+	private static function asof_can() {
+		return function_exists( 'current_user_can' ) && current_user_can( 'manage_woocommerce' );
+	}
+
+	/**
+	 * @return bool
+	 */
+	private static function asof_nonce_ok() {
+		if ( ! isset( $_POST['creature_demo_asof_nonce'] ) || ! function_exists( 'wp_verify_nonce' ) ) {
+			return false;
+		}
+		return (bool) wp_verify_nonce( self::unslash_string( $_POST['creature_demo_asof_nonce'] ), 'creature_demo_asof_run' );
+	}
+
+	/**
+	 * Run tick() for one flagged loan as of a date, then write one order note.
+	 *
+	 * @param object $order
+	 * @param string $as_of A real Y-m-d date.
+	 */
+	private static function run_asof( $order, $as_of ) {
+		$status_before = (string) $order->get_status();
+		$meta_before   = self::demo_meta_snapshot( $order );
+		$mail_before   = count( Creature_Demo_Loan_Mail::$sent );
+
+		self::tick( $order, $as_of );
+
+		$status_after = (string) $order->get_status();
+		$meta_after   = self::demo_meta_snapshot( $order );
+		$fired        = array();
+		foreach ( array_slice( Creature_Demo_Loan_Mail::$sent, $mail_before ) as $row ) {
+			$fired[] = 'email ' . ( isset( $row['slot'] ) ? (string) $row['slot'] : '?' );
+		}
+		foreach ( $meta_after as $key => $value ) {
+			if ( ! array_key_exists( $key, $meta_before ) ) {
+				$fired[] = $key . ' set';
+			} elseif ( $meta_before[ $key ] !== $value ) {
+				$fired[] = $key . ' changed';
+			}
+		}
+		foreach ( $meta_before as $key => $value ) {
+			if ( ! array_key_exists( $key, $meta_after ) ) {
+				$fired[] = $key . ' removed';
+			}
+		}
+
+		$text = 'As-of run (test order) for ' . $as_of . ' by ' . self::asof_user_label() . '. Status before: ' . $status_before . '; after: ' . $status_after . '. What fired: ' . ( $fired ? implode( ', ', $fired ) : 'nothing' ) . '.';
+
+		// Read-only look at the 7-day charge gate at this date. Nothing is charged.
+		foreach ( array( self::open_charge_order( $order ), $order ) as $candidate ) {
+			if ( ! is_object( $candidate ) ) {
+				continue;
+			}
+			if ( 'yes' !== self::meta_string( $candidate, '_creature_demo_charge_notice_logged' ) && '' === self::meta_string( $candidate, '_creature_demo_charge_notice_at' ) ) {
+				continue;
+			}
+			$eval  = self::evaluate_charge( $order, $candidate, $as_of );
+			$text .= ' Charge gate at ' . $as_of . ': refusal code ' . ( '' !== $eval['code'] ? $eval['code'] : 'none (the gate would pass)' ) . '; days_since_notice ' . (int) $eval['state']['days_since_notice'] . '; required_days ' . (int) $eval['state']['required_days'] . '. This tool never charges the card.';
+			break;
+		}
+		self::note( $order, $text );
+	}
+
+	/**
+	 * The _creature_demo_ meta of an order, as key => short comparable value.
+	 *
+	 * @param object $order
+	 * @return array<string, string>
+	 */
+	private static function demo_meta_snapshot( $order ) {
+		$out = array();
+		if ( ! method_exists( $order, 'get_meta_data' ) ) {
+			return $out;
+		}
+		foreach ( (array) $order->get_meta_data() as $row ) {
+			$data = array();
+			if ( is_object( $row ) && method_exists( $row, 'get_data' ) ) {
+				$data = (array) $row->get_data();
+			} elseif ( is_array( $row ) ) {
+				$data = $row;
+			}
+			$key = isset( $data['key'] ) ? (string) $data['key'] : '';
+			if ( 0 !== strpos( $key, '_creature_demo_' ) ) {
+				continue;
+			}
+			$value       = isset( $data['value'] ) ? $data['value'] : '';
+			$out[ $key ] = is_scalar( $value ) ? (string) $value : 'h' . substr( md5( serialize( $value ) ), 0, 12 );
+		}
+		return $out;
+	}
+
+	/**
+	 * @return string
+	 */
+	private static function asof_user_label() {
+		$id    = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		$login = '';
+		if ( function_exists( 'wp_get_current_user' ) ) {
+			$user = wp_get_current_user();
+			if ( is_object( $user ) && isset( $user->user_login ) ) {
+				$login = (string) $user->user_login;
+			}
+		}
+		return '' !== $login ? $login . ' (user ID ' . $id . ')' : 'user ID ' . $id;
+	}
+
+	/**
+	 * The "Test order" checkbox on the order screen. Same nonce and flags_present
+	 * field as the other demo checkboxes, and manage_woocommerce only.
+	 *
+	 * @param object $order
+	 */
+	private static function save_test_flag_from_post( $order ) {
+		if ( ! isset( $_POST['creature_demo_flags_present'] ) || ! self::asof_can() ) {
+			return;
+		}
+		$want = isset( $_POST['creature_demo_test_order'] ) && '1' === self::unslash_string( $_POST['creature_demo_test_order'] );
+		if ( $want === self::is_test_order( $order ) ) {
+			return;
+		}
+		if ( $want ) {
+			$order->update_meta_data( self::TEST_META, 'yes' );
+		} else {
+			$order->delete_meta_data( self::TEST_META );
+		}
+		$order->save();
+		self::note( $order, $want ? 'Marked as a TEST ORDER: the as-of date tool can run on this order.' : 'Test order mark cleared: the as-of date tool is off for this order.' );
 	}
 
 	/**
@@ -4370,6 +4546,15 @@ final class Creature_Demo_Loan {
 		echo '<p><label><input type="checkbox" name="creature_demo_refunded_10411" value="1"' . ( self::fee_was_refunded( $order ) ? ' checked="checked"' : '' ) . ' /> Refunded under 10.4/11 (no £25 code)</label></p>';
 		echo '<p>Admin step for an 11.3 cancellation and for a 10.4 refund: tick &ldquo;Refunded under 10.4/11 (no £25 code)&rdquo; above and update the order. Without the tick the rider is sent a £25 code when the kit is inspected (terms 3A.4).</p>';
 		echo '<p><label><input type="checkbox" name="creature_demo_crash_reported" value="1"' . ( 'yes' === self::meta_string( $order, '_creature_demo_crash_reported' ) ? ' checked="checked"' : '' ) . ' /> Crash, impact or failure reported (terms 3A.3): the keep choice stays hidden until the inspection is recorded</label></p>';
+		if ( self::is_test_order( $order ) ) {
+			echo '<p class="creature-demo-test-marker" style="background:#fff3cd;border:2px solid #d63638;padding:6px 10px;"><strong>TEST ORDER</strong>: the as-of date tool below is on for this order.</p>';
+		}
+		echo '<p><label><input type="checkbox" name="creature_demo_test_order" value="1"' . ( self::is_test_order( $order ) ? ' checked="checked"' : '' ) . ' /> Test order (turns on the as-of date tool for this order; leave off for real orders)</label></p>';
+		if ( function_exists( 'wp_nonce_field' ) ) {
+			wp_nonce_field( 'creature_demo_asof_run', 'creature_demo_asof_nonce', false );
+		}
+		self::date_input( 'creature_demo_asof_date', 'Run daily job as of (Y-m-d, test orders only)', '' );
+		echo '<p>To use it, tick Test order and update the order, enter a date, choose the order action &ldquo;Run daily job as of date (test orders only)&rdquo; and update. It runs the daily checks for this order only, as of that date, and adds an order note. It never charges the saved card and never sends a refund. Emails follow the normal test redirect. What it sets stays set on this order.</p>';
 		$express = self::express_answer( $order );
 		echo '<p>Send my kit now (terms 11.3, asked at checkout): ' . self::esc( '' !== $express ? $express : 'not asked' ) . '. ' . ( 'Yes' === $express ? 'The rider asked for the kit within the 14-day cancellation period. If they cancel after dispatch, the pro-rata refund is worked out by hand.' : '' ) . '</p>';
 		self::date_input( 'creature_demo_dispatch_date', 'Dispatch date', self::meta_string( $order, '_creature_demo_dispatch_date' ) );
@@ -4442,6 +4627,7 @@ final class Creature_Demo_Loan {
 		self::save_damage_from_post( $order );
 		self::save_return_dates_from_post( $order );
 		self::save_flags_from_post( $order );
+		self::save_test_flag_from_post( $order );
 		$delivery = self::posted_date( 'creature_demo_delivery_date' );
 		if ( '' !== $delivery ) {
 			self::correct_delivery_date( $order, $delivery );

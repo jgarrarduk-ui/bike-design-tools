@@ -127,6 +127,25 @@ Each default matches the v5 terms.
 
 Other hooks: `creature_demo_loan_confirmation_files`, `creature_demo_loan_attachment_roots`, `creature_demo_loan_copy_catalogue` (change a copy slot without editing the file), and one action per email slot, `creature_demo_loan_mail_{slot}`, fired with the row, the order and the merge values each time an email is sent.
 
+## As-of test tool (test orders only)
+
+Version 1.3.1 adds an admin tool for walking a test order forward in time without waiting for real days to pass.
+
+1. On the order screen, tick **Test order** and update the order. The panel shows a **TEST ORDER** marker and the order gets the meta `_creature_demo_test` = `yes`. Unticking removes it.
+2. Enter a date (`Y-m-d`) in **Run daily job as of**, choose the order action **Run daily job as of date (test orders only)** and update the order.
+
+What it does: runs `Creature_Demo_Loan::tick()` for that one order with that date, exactly as the daily job would for it (overdue status, the day-4 bill alert, the deduction settle alert, due reminders, keep-link lapse, the deemed raise). It then adds one order note with the date, who ran it, the status before and after, and what fired (the emails and the demo meta that changed). If the order or its open charge order has a charge notice, the note also gives the read-only 7-day gate at that date: the refusal code, `days_since_notice` and `required_days`.
+
+What it never does: it never charges the saved card, never sends a refund, and never calls Stripe, whatever `CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES` is set to. It does not change the real daily job, the cron or any clock, so real orders are untouched. An order that is not flagged, a date that is not a real `Y-m-d`, a user without `manage_woocommerce` and a bad nonce are all refused; a refusal on an unflagged order or a bad date adds an order note and does nothing else.
+
+Emails follow the normal path: customer emails still go to the test redirect address while `CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL` is unset. What a run sets (a reminder sent, the deemed raise) stays set on that order.
+
+Not covered: the 60-day coupon expiry. It is set when the kit is returned or inspected, not by the daily job, so this tool does not move it.
+
+### Changelog
+
+- **1.3.1**: as-of test tool (test orders only), described above.
+
 ## Checks
 
 ```bash

@@ -465,9 +465,9 @@ $require_pos = strpos( $config_src, 'require $creature_demo_walkthrough_script' 
 creature_demo_config_expect( false !== $host_pos && false !== $require_pos && $host_pos < $require_pos, 'the live-host check is before the walkthrough is included' );
 creature_demo_config_expect( '1.3.0' === CREATURE_DEMO_LOAN_CONFIG_VERSION, 'the config plugin version constant is 1.3.0' );
 creature_demo_config_expect( false !== strpos( $config_src, 'Version: 1.3.0' ), 'the plugin header version is 1.3.0' );
-creature_demo_config_expect( '1.3.0' === CREATURE_DEMO_LOAN_VERSION, 'the demo loan plugin version constant is 1.3.0' );
+creature_demo_config_expect( '1.3.1' === CREATURE_DEMO_LOAN_VERSION, 'the demo loan plugin version constant is 1.3.1' );
 $loan_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/creature-demo-loan.php' );
-creature_demo_config_expect( false !== strpos( $loan_src, 'Version: 1.3.0' ), 'the demo loan plugin header version is 1.3.0' );
+creature_demo_config_expect( false !== strpos( $loan_src, 'Version: 1.3.1' ), 'the demo loan plugin header version is 1.3.1' );
 creature_demo_config_expect( false !== strpos( $config_src, 'WP_PLUGIN_DIR' ), 'the walkthrough path is resolved from the demo loan plugin directory' );
 $guard_pos = strpos( $config_src, 'walkthrough_guard_errors()' );
 creature_demo_config_expect( false !== $guard_pos && $guard_pos < $require_pos, 'an inactive demo loan plugin is refused before the script is included' );
