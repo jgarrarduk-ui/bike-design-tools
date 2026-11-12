@@ -141,7 +141,9 @@ What it does: runs `Creature_Demo_Loan::tick()` for that one order with that dat
 
 What it never does: it never charges the saved card, never sends a refund, and never calls Stripe, whatever `CREATURE_DEMO_LOAN_ALLOW_LIVE_CHARGES` is set to. It does not change the real daily job, the cron or any clock, so real orders are untouched. An order that is not flagged, a date that is not a real `Y-m-d`, a user without `manage_woocommerce` and a bad nonce are all refused; a refusal on an unflagged order or a bad date adds an order note and does nothing else.
 
-Emails: customer emails for a test-flagged order, and for charge orders created from a test-flagged loan, always go to the test redirect address with the `[TEST]` prefix, even when `CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL` is `true`. Non-test orders are unchanged (redirected while that constant is unset). Admin alerts (day-4 bill alert, deduction settle alert, dispute alerts) go to `info@creaturecycles.co.uk` (`Mail::admin_address`), not to the redirect address.
+Unticking **Test order** on a loan deliberately leaves its existing charge orders flagged, so they stay uncharged from the saved card.
+
+Emails: every customer email on a test-flagged order, and on charge orders created from a test-flagged loan, always goes to the test redirect address with the `[TEST]` prefix, even when `CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL` is `true`. This covers both the plugin's own emails and WooCommerce's customer emails (payment link or invoice, failed, cancelled, customer note and the rest). Non-test orders are unchanged (redirected while that constant is unset). Admin alerts (day-4 bill alert, deduction settle alert, dispute alerts) go to `info@creaturecycles.co.uk` (`Mail::admin_address`), not to the redirect address.
 
 Charge orders: a charge order created during a run on a test-flagged loan is itself flagged `_creature_demo_test` = `yes`. `charge_saved_card` refuses a test-flagged charge order (code `test_order`, with an order note) before any Stripe call, so flagged charge orders can never be charged from the saved card.
 

@@ -5041,6 +5041,10 @@ function creature_demo_asof_save_flag( $order, $ticked, $can = true, $nonce = 'c
 function creature_demo_asof_flag( $order ) {
 	$order->update_meta_data( '_creature_demo_test', 'yes' );
 	$order->update_meta_data( '_creature_demo_test_at', (string) ( (float) $_SERVER['REQUEST_TIME_FLOAT'] - 60 ) );
+	if ( null === $order->created ) {
+		// A run now needs a created date (round 3, R2-2); fixtures get one well before the dates the tests use.
+		$order->created = '2026-01-01 10:00:00';
+	}
 	return $order;
 }
 
@@ -5191,6 +5195,7 @@ creature_demo_expect( false !== strpos( ob_get_clean(), 'name="creature_demo_tes
 
 // Flag and run in one request: refused with a note.
 $as_one = creature_demo_loan();
+$as_one->created = '2026-01-01 10:00:00';
 creature_demo_asof_save_flag( $as_one, true );
 creature_demo_expect( 'yes' === $as_one->get_meta( '_creature_demo_test' ) && is_numeric( $as_one->get_meta( '_creature_demo_test_at' ) ), 'as-of S2: ticking the box stamps _creature_demo_test_at' );
 $as_one_mails  = count( Creature_Demo_Loan_Mail::$sent );
@@ -5240,6 +5245,13 @@ foreach ( array( '2026-03-01', '2027-03-03', '9999-12-31', '0001-01-01' ) as $as
 creature_demo_expect( $as_dr_meta === $as_dr->meta, 'as-of: a refused out-of-range date changes nothing' );
 creature_demo_asof_run( $as_dr, '2027-03-02' );
 creature_demo_expect( false !== strpos( creature_demo_asof_last_note( $as_dr ), 'As-of run (test order)' ), 'as-of: exactly one year after the created date is allowed' );
+// Round 3 (R2-2): no created date means the run is refused with a note.
+$as_nd = creature_demo_asof_flag( creature_demo_loan() );
+$as_nd->created = null;
+$as_nd_meta  = $as_nd->meta;
+$as_nd_notes = count( $as_nd->notes );
+creature_demo_asof_run( $as_nd, '2026-03-19' );
+creature_demo_expect( $as_nd_notes + 1 === count( $as_nd->notes ) && false !== strpos( creature_demo_asof_last_note( $as_nd ), 'refused' ) && false !== strpos( creature_demo_asof_last_note( $as_nd ), 'no created date' ) && $as_nd_meta === $as_nd->meta, 'as-of R2-2: an order with no created date is refused with a note and nothing runs' );
 
 // ---- Round 2 (S3): charge orders created by a run carry the flag; a flagged charge is never charged. ----
 creature_demo_stripe_test();
@@ -5298,6 +5310,10 @@ foreach ( $orders as $id => $o ) {
 }
 $admin = Creature_Demo_Loan_Mail::send_admin( $orders[1], "admin_bill_due", array() );
 $out["admin"] = $admin["to"];
+foreach ( $orders as $id => $o ) {
+	$out[ "wto" . $id ] = Creature_Demo_Loan::filter_customer_recipient( "rider@example.test", $o, null );
+	$out[ "wsub" . $id ] = Creature_Demo_Loan::filter_customer_subject( "Your order", $o, null );
+}
 echo json_encode( $out );
 PHPCODE;
 	$code = str_replace( '__DIR__PLACEHOLDER__', $dir, $code );
@@ -5309,6 +5325,10 @@ creature_demo_expect( is_array( $as_mail ) && 'redirect@example.test' === $as_ma
 creature_demo_expect( is_array( $as_mail ) && 'redirect@example.test' === $as_mail['to3'], 'as-of S1: a charge order of a test-flagged loan mails the redirect address' );
 creature_demo_expect( is_array( $as_mail ) && 'rider@example.test' === $as_mail['to2'] && 'rider@example.test' === $as_mail['to4'] && 0 !== strpos( $as_mail['subject2'], '[TEST] ' ), 'as-of S1: a non-test order (and its charge order) mails the billing address exactly as before' );
 creature_demo_expect( is_array( $as_mail ) && 'info@creaturecycles.co.uk' === $as_mail['admin'], 'as-of S1: admin alerts still go to the admin address' );
+// Round 3 (R2-1): WooCommerce's own customer emails for flagged orders are redirected even with ALLOW_CUSTOMER_EMAIL true.
+creature_demo_expect( is_array( $as_mail ) && 'redirect@example.test' === $as_mail['wto1'] && 0 === strpos( $as_mail['wsub1'], '[TEST] ' ), 'as-of R2-1: with customer email on, a Woo customer email for a flagged loan is redirected with [TEST]' );
+creature_demo_expect( is_array( $as_mail ) && 'redirect@example.test' === $as_mail['wto3'] && 0 === strpos( $as_mail['wsub3'], '[TEST] ' ), 'as-of R2-1: with customer email on, a Woo customer email for a flagged loan charge order is redirected with [TEST]' );
+creature_demo_expect( is_array( $as_mail ) && 'rider@example.test' === $as_mail['wto2'] && 'rider@example.test' === $as_mail['wto4'] && 'Your order' === $as_mail['wsub2'] && 'Your order' === $as_mail['wsub4'], 'as-of R2-1: unflagged control with customer email on is not redirected' );
 
 // Static check: the tool's own methods name no charge, refund or Stripe path.
 $as_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/includes/class-creature-demo-loan.php' );
@@ -5334,6 +5354,7 @@ class Child_Order {
 	public $id; public $meta = array(); public $notes = array(); public $status = 'demo-closed';
 	public function __construct( $id ) { $this->id = $id; }
 	public function get_id() { return $this->id; }
+	public function get_date_created() { return new DateTimeImmutable( '2026-03-01 10:00:00' ); }
 	public function get_status() { return $this->status; }
 	public function get_meta( $k ) { return isset( $this->meta[ $k ] ) ? $this->meta[ $k ] : ''; }
 	public function update_meta_data( $k, $v ) { $this->meta[ $k ] = $v; }

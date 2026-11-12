@@ -209,7 +209,7 @@ final class Creature_Demo_Loan {
 	 * @return mixed
 	 */
 	public static function filter_customer_recipient( $recipient, $order = null, $email = null ) {
-		if ( self::customer_email_allowed() || ! self::redirects_customer_mail( $order, $email ) ) {
+		if ( ! self::woo_mail_is_flagged_test( $order ) && ( self::customer_email_allowed() || ! self::redirects_customer_mail( $order, $email ) ) ) {
 			return $recipient;
 		}
 		$redirect = Creature_Demo_Loan_Mail::redirect_address();
@@ -223,7 +223,7 @@ final class Creature_Demo_Loan {
 	 * @return mixed
 	 */
 	public static function filter_customer_subject( $subject, $order = null, $email = null ) {
-		if ( self::customer_email_allowed() || ! self::redirects_customer_mail( $order, $email ) ) {
+		if ( ! self::woo_mail_is_flagged_test( $order ) && ( self::customer_email_allowed() || ! self::redirects_customer_mail( $order, $email ) ) ) {
 			return $subject;
 		}
 		$subject = (string) $subject;
@@ -231,6 +231,18 @@ final class Creature_Demo_Loan {
 			return $subject;
 		}
 		return '[TEST] ' . $subject;
+	}
+
+	/**
+	 * True when a WooCommerce customer email is for an order that is a test
+	 * order or a charge order of a test loan. Such mail is always redirected,
+	 * even when CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL is true.
+	 *
+	 * @param mixed $order
+	 * @return bool
+	 */
+	private static function woo_mail_is_flagged_test( $order ) {
+		return is_object( $order ) && method_exists( $order, 'get_billing_email' ) && self::is_test_or_test_child( $order );
 	}
 
 	public static function on_init() {
@@ -4125,15 +4137,18 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		$created = method_exists( $order, 'get_date_created' ) ? $order->get_date_created() : null;
+		$created_ymd = '';
 		if ( is_object( $created ) && method_exists( $created, 'format' ) ) {
 			$created_ymd = (string) $created->format( 'Y-m-d' );
-			if ( Creature_Demo_Loan_Calendar::is_real_ymd( $created_ymd ) ) {
-				$latest = gmdate( 'Y-m-d', strtotime( $created_ymd . ' +1 year UTC' ) );
-				if ( $raw < $created_ymd || $raw > $latest ) {
-					self::note( $order, 'As-of run refused: the date must be between the order created date (' . $created_ymd . ') and ' . $latest . ' (one year later). Nothing was run.' );
-					return;
-				}
-			}
+		}
+		if ( ! Creature_Demo_Loan_Calendar::is_real_ymd( $created_ymd ) ) {
+			self::note( $order, 'As-of run refused: this order has no created date, so the date range cannot be checked. Nothing was run.' );
+			return;
+		}
+		$latest = gmdate( 'Y-m-d', strtotime( $created_ymd . ' +1 year UTC' ) );
+		if ( $raw < $created_ymd || $raw > $latest ) {
+			self::note( $order, 'As-of run refused: the date must be between the order created date (' . $created_ymd . ') and ' . $latest . ' (one year later). Nothing was run.' );
+			return;
 		}
 		self::run_asof( $order, $raw );
 	}
