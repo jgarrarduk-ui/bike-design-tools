@@ -29,6 +29,7 @@ final class Creature_Demo_Loan {
 
 	/** Order meta set to "yes" on a test order, which enables the as-of date tool. */
 	const TEST_META = '_creature_demo_test';
+	const TEST_AT_META = '_creature_demo_test_at';
 
 	/**
 	 * A pay-link lock older than this is not treated as in progress.
@@ -2560,6 +2561,11 @@ final class Creature_Demo_Loan {
 			self::note( $loan, self::refusal_message( 'no_notice' ) );
 			return array( 'ok' => false, 'code' => 'no_notice' );
 		}
+		// A test-flagged charge order (or one from a test-flagged loan) is never charged.
+		if ( self::is_test_or_test_child( $charge ) ) {
+			self::note( $loan, 'Saved card not charged: this is a test-flagged charge order. Test orders are never charged.' );
+			return array( 'ok' => false, 'code' => 'test_order' );
+		}
 		// A cancelled charge (for example an unpaid deemed purchase cancelled
 		// under terms 8.5(a)) is never taken from the saved card.
 		if ( method_exists( $charge, 'get_status' ) && in_array( (string) $charge->get_status(), array( 'cancelled', 'refunded', 'trash' ), true ) ) {
@@ -4112,6 +4118,23 @@ final class Creature_Demo_Loan {
 			self::note( $order, 'As-of run refused: this is not a demo loan order (the daily job only visits loan orders). Nothing was run.' );
 			return;
 		}
+		// The flag must have been saved by an earlier request (flag, Update, then run).
+		$stamp = self::meta_string( $order, self::TEST_AT_META );
+		if ( '' === $stamp || ! is_numeric( $stamp ) || (float) $stamp >= self::request_start() ) {
+			self::note( $order, 'As-of run refused: the Test order flag was not saved by an earlier update. Tick Test order, click Update, then run the action in a second update. Nothing was run.' );
+			return;
+		}
+		$created = method_exists( $order, 'get_date_created' ) ? $order->get_date_created() : null;
+		if ( is_object( $created ) && method_exists( $created, 'format' ) ) {
+			$created_ymd = (string) $created->format( 'Y-m-d' );
+			if ( Creature_Demo_Loan_Calendar::is_real_ymd( $created_ymd ) ) {
+				$latest = gmdate( 'Y-m-d', strtotime( $created_ymd . ' +1 year UTC' ) );
+				if ( $raw < $created_ymd || $raw > $latest ) {
+					self::note( $order, 'As-of run refused: the date must be between the order created date (' . $created_ymd . ') and ' . $latest . ' (one year later). Nothing was run.' );
+					return;
+				}
+			}
+		}
 		self::run_asof( $order, $raw );
 	}
 
@@ -4121,6 +4144,37 @@ final class Creature_Demo_Loan {
 	 */
 	private static function is_test_order( $order ) {
 		return is_object( $order ) && 'yes' === self::meta_string( $order, self::TEST_META );
+	}
+
+	/**
+	 * True when the order, or its parent loan, carries the test flag.
+	 *
+	 * @param object $order
+	 * @return bool
+	 */
+	public static function is_test_or_test_child( $order ) {
+		if ( ! is_object( $order ) ) {
+			return false;
+		}
+		if ( self::is_test_order( $order ) ) {
+			return true;
+		}
+		if ( '' !== self::meta_string( $order, '_creature_demo_parent_loan_id' ) ) {
+			return self::is_test_order( self::parent_loan( $order ) );
+		}
+		return false;
+	}
+
+	/**
+	 * Start of this request, as a float.
+	 *
+	 * @return float
+	 */
+	private static function request_start() {
+		if ( isset( $_SERVER['REQUEST_TIME_FLOAT'] ) && is_numeric( $_SERVER['REQUEST_TIME_FLOAT'] ) ) {
+			return (float) $_SERVER['REQUEST_TIME_FLOAT'];
+		}
+		return (float) microtime( true );
 	}
 
 	/**
@@ -4175,6 +4229,7 @@ final class Creature_Demo_Loan {
 		$text = 'As-of run (test order) for ' . $as_of . ' by ' . self::asof_user_label() . '. Status before: ' . $status_before . '; after: ' . $status_after . '. What fired: ' . ( $fired ? implode( ', ', $fired ) : 'nothing' ) . '.';
 
 		// Read-only look at the 7-day charge gate at this date. Nothing is charged.
+		$gate_shown = false;
 		foreach ( array( self::open_charge_order( $order ), $order ) as $candidate ) {
 			if ( ! is_object( $candidate ) ) {
 				continue;
@@ -4182,9 +4237,26 @@ final class Creature_Demo_Loan {
 			if ( 'yes' !== self::meta_string( $candidate, '_creature_demo_charge_notice_logged' ) && '' === self::meta_string( $candidate, '_creature_demo_charge_notice_at' ) ) {
 				continue;
 			}
+			$gate_shown = true;
+			// Display only: mirror the cancelled, netted and paid refusals of the saved-card gate.
+			if ( method_exists( $candidate, 'get_status' ) && in_array( (string) $candidate->get_status(), array( 'cancelled', 'refunded', 'trash' ), true ) ) {
+				$text .= ' Charge gate at ' . $as_of . ': the charge is cancelled, so the saved card would not be charged. This tool never charges the card.';
+				break;
+			}
+			if ( 'yes' === self::meta_string( $candidate, '_creature_demo_charge_netted' ) ) {
+				$text .= ' Charge gate at ' . $as_of . ': the charge is netted against the deemed refund, so the saved card would not be charged. This tool never charges the card.';
+				break;
+			}
+			if ( 'yes' === self::meta_string( $candidate, '_creature_demo_charge_paid' ) ) {
+				$text .= ' Charge gate at ' . $as_of . ': the charge is already paid, so the saved card would not be charged. This tool never charges the card.';
+				break;
+			}
 			$eval  = self::evaluate_charge( $order, $candidate, $as_of );
 			$text .= ' Charge gate at ' . $as_of . ': refusal code ' . ( '' !== $eval['code'] ? $eval['code'] : 'none (the gate would pass)' ) . '; days_since_notice ' . (int) $eval['state']['days_since_notice'] . '; required_days ' . (int) $eval['state']['required_days'] . '. This tool never charges the card.';
 			break;
+		}
+		if ( ! $gate_shown ) {
+			$text .= ' Charge gate at ' . $as_of . ': no charge notice yet. This tool never charges the card.';
 		}
 		self::note( $order, $text );
 	}
@@ -4242,14 +4314,20 @@ final class Creature_Demo_Loan {
 		if ( ! isset( $_POST['creature_demo_flags_present'] ) || ! self::asof_can() ) {
 			return;
 		}
+		// Only demo loan orders can be flagged.
+		if ( 'yes' !== self::meta_string( $order, '_creature_demo_loan' ) ) {
+			return;
+		}
 		$want = isset( $_POST['creature_demo_test_order'] ) && '1' === self::unslash_string( $_POST['creature_demo_test_order'] );
 		if ( $want === self::is_test_order( $order ) ) {
 			return;
 		}
 		if ( $want ) {
 			$order->update_meta_data( self::TEST_META, 'yes' );
+			$order->update_meta_data( self::TEST_AT_META, (string) microtime( true ) );
 		} else {
 			$order->delete_meta_data( self::TEST_META );
+			$order->delete_meta_data( self::TEST_AT_META );
 		}
 		$order->save();
 		self::note( $order, $want ? 'Marked as a TEST ORDER: the as-of date tool can run on this order.' : 'Test order mark cleared: the as-of date tool is off for this order.' );
@@ -4546,15 +4624,18 @@ final class Creature_Demo_Loan {
 		echo '<p><label><input type="checkbox" name="creature_demo_refunded_10411" value="1"' . ( self::fee_was_refunded( $order ) ? ' checked="checked"' : '' ) . ' /> Refunded under 10.4/11 (no £25 code)</label></p>';
 		echo '<p>Admin step for an 11.3 cancellation and for a 10.4 refund: tick &ldquo;Refunded under 10.4/11 (no £25 code)&rdquo; above and update the order. Without the tick the rider is sent a £25 code when the kit is inspected (terms 3A.4).</p>';
 		echo '<p><label><input type="checkbox" name="creature_demo_crash_reported" value="1"' . ( 'yes' === self::meta_string( $order, '_creature_demo_crash_reported' ) ? ' checked="checked"' : '' ) . ' /> Crash, impact or failure reported (terms 3A.3): the keep choice stays hidden until the inspection is recorded</label></p>';
-		if ( self::is_test_order( $order ) ) {
-			echo '<p class="creature-demo-test-marker" style="background:#fff3cd;border:2px solid #d63638;padding:6px 10px;"><strong>TEST ORDER</strong>: the as-of date tool below is on for this order.</p>';
+		$is_loan = 'yes' === self::meta_string( $order, '_creature_demo_loan' );
+		if ( $is_loan && self::is_test_order( $order ) ) {
+			echo '<p class="creature-demo-test-marker" style="background:#fff3cd;border:2px solid #d63638;padding:6px 10px;"><strong>TEST ORDER</strong>: the as-of date tool below is on for this order. Its emails always go to the test redirect address.</p>';
 		}
-		echo '<p><label><input type="checkbox" name="creature_demo_test_order" value="1"' . ( self::is_test_order( $order ) ? ' checked="checked"' : '' ) . ' /> Test order (turns on the as-of date tool for this order; leave off for real orders)</label></p>';
+		if ( $is_loan ) {
+			echo '<p><label><input type="checkbox" name="creature_demo_test_order" value="1"' . ( self::is_test_order( $order ) ? ' checked="checked"' : '' ) . ' /> Test order (turns on the as-of date tool for this order; leave off for real orders)</label></p>';
+		}
 		if ( function_exists( 'wp_nonce_field' ) ) {
 			wp_nonce_field( 'creature_demo_asof_run', 'creature_demo_asof_nonce', false );
 		}
 		self::date_input( 'creature_demo_asof_date', 'Run daily job as of (Y-m-d, test orders only)', '' );
-		echo '<p>To use it, tick Test order and update the order, enter a date, choose the order action &ldquo;Run daily job as of date (test orders only)&rdquo; and update. It runs the daily checks for this order only, as of that date, and adds an order note. It never charges the saved card and never sends a refund. Emails follow the normal test redirect. What it sets stays set on this order.</p>';
+		echo '<p>To use it, tick Test order and click Update, then in a second update enter a date, choose the order action &ldquo;Run daily job as of date (test orders only)&rdquo; and update. A run in the same update as the tick is refused. It runs the daily checks for this order only, as of that date, and adds an order note. It never charges the saved card and never sends a refund. Emails follow the normal test redirect. What it sets stays set on this order.</p>';
 		$express = self::express_answer( $order );
 		echo '<p>Send my kit now (terms 11.3, asked at checkout): ' . self::esc( '' !== $express ? $express : 'not asked' ) . '. ' . ( 'Yes' === $express ? 'The rider asked for the kit within the 14-day cancellation period. If they cancel after dispatch, the pro-rata refund is worked out by hand.' : '' ) . '</p>';
 		self::date_input( 'creature_demo_dispatch_date', 'Dispatch date', self::meta_string( $order, '_creature_demo_dispatch_date' ) );
@@ -5118,6 +5199,9 @@ final class Creature_Demo_Loan {
 			}
 		}
 		$created->update_meta_data( '_creature_demo_charge_late_pence', $late_pence );
+		if ( self::is_test_order( $loan ) ) {
+			$created->update_meta_data( self::TEST_META, 'yes' );
+		}
 		$refs = self::saved_card_refs( $loan );
 		if ( '' !== $refs['customer'] ) {
 			$created->update_meta_data( '_stripe_customer_id', $refs['customer'] );

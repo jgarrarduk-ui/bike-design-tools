@@ -583,9 +583,13 @@ class Creature_Demo_Test_Order {
 	public $transaction_id = '';
 	public $payment_completed = array();
 	public $refunded = 0.0;
+	public $created = null;
 
 	public function __construct( $id ) {
 		$this->id = (int) $id;
+	}
+	public function get_date_created() {
+		return null === $this->created ? null : new DateTimeImmutable( $this->created );
 	}
 	public function get_total_refunded() {
 		return (float) $this->refunded;
@@ -5033,8 +5037,10 @@ function creature_demo_asof_save_flag( $order, $ticked, $can = true, $nonce = 'c
 	$GLOBALS['creature_demo_can'] = false;
 }
 
+/** Flag an order as if an earlier request had saved the checkbox (the stamp predates this request). */
 function creature_demo_asof_flag( $order ) {
 	$order->update_meta_data( '_creature_demo_test', 'yes' );
+	$order->update_meta_data( '_creature_demo_test_at', (string) ( (float) $_SERVER['REQUEST_TIME_FLOAT'] - 60 ) );
 	return $order;
 }
 
@@ -5100,7 +5106,7 @@ $as_note = creature_demo_asof_last_note( $as_rem );
 creature_demo_expect( false !== strpos( $as_note, '2026-03-19' ) && false !== strpos( $as_note, 'user ID 7' ) && false !== strpos( $as_note, 'Status before: demo-loan; after: demo-loan' ) && false !== strpos( $as_note, 'email reminder_choices_due_minus_5' ), 'as-of: the note records the date, the user, the status before and after, and what fired' );
 $as_rem_ref = creature_demo_loan();
 Creature_Demo_Loan::tick( $as_rem_ref, '2026-03-19' );
-creature_demo_expect( $as_rem_ref->meta === array_diff_key( $as_rem->meta, array( '_creature_demo_test' => 1 ) ), 'as-of: the order ends up exactly as a plain tick() at that date leaves it' );
+creature_demo_expect( $as_rem_ref->meta === array_diff_key( $as_rem->meta, array( '_creature_demo_test' => 1, '_creature_demo_test_at' => 1 ) ), 'as-of: the order ends up exactly as a plain tick() at that date leaves it' );
 $as_rem_after_ref = creature_demo_mail_count( 'reminder_choices_due_minus_5' );
 creature_demo_asof_run( $as_rem, '2026-03-19' );
 creature_demo_expect( $as_rem_after_ref === creature_demo_mail_count( 'reminder_choices_due_minus_5' ) && false !== strpos( creature_demo_asof_last_note( $as_rem ), 'What fired: nothing' ), 'as-of: a second run at the same date sends nothing and says so' );
@@ -5171,10 +5177,143 @@ creature_demo_asof_run( $as_s, '2026-04-20' );
 creature_demo_expect( $as_s_alerts + 1 === creature_demo_mail_count( 'admin_deduction_settle_due' ), 'as-of: the settle alert goes at that date' );
 creature_demo_expect( $as_s_calls === count( WC_Stripe_API::$requests ) && 'yes' !== $as_s->get_meta( '_creature_demo_refund_done' ) && 'noticed' === $as_s->get_meta( '_creature_demo_deduction_state' ) && $as_s_status === $as_s->get_status() && $as_s_refund === $as_s->refunded, 'as-of: no refund is sent and no Stripe call is made, only the alert' );
 
+// ---- Round 2 (S2): the flag is for demo loan orders only, and needs an earlier request. ----
+$as_nd = wc_create_order( array( 'customer_id' => 5, 'status' => 'processing' ) );
+ob_start();
+Creature_Demo_Loan::render_meta_box( $as_nd );
+$as_nd_panel = ob_get_clean();
+creature_demo_expect( false === strpos( $as_nd_panel, 'creature_demo_test_order' ), 'as-of S2: the Test order checkbox is not rendered on a non-demo order' );
+creature_demo_asof_save_flag( $as_nd, true );
+creature_demo_expect( ! array_key_exists( '_creature_demo_test', $as_nd->meta ) && ! array_key_exists( '_creature_demo_test_at', $as_nd->meta ), 'as-of S2: ticking the box on a non-demo order saves nothing' );
+ob_start();
+Creature_Demo_Loan::render_meta_box( creature_demo_loan() );
+creature_demo_expect( false !== strpos( ob_get_clean(), 'name="creature_demo_test_order"' ), 'as-of S2: the checkbox is rendered on a demo loan order' );
+
+// Flag and run in one request: refused with a note.
+$as_one = creature_demo_loan();
+creature_demo_asof_save_flag( $as_one, true );
+creature_demo_expect( 'yes' === $as_one->get_meta( '_creature_demo_test' ) && is_numeric( $as_one->get_meta( '_creature_demo_test_at' ) ), 'as-of S2: ticking the box stamps _creature_demo_test_at' );
+$as_one_mails  = count( Creature_Demo_Loan_Mail::$sent );
+$as_one_status = $as_one->get_status();
+$as_one_notes  = count( $as_one->notes );
+creature_demo_asof_run( $as_one, '2026-03-19' );
+creature_demo_expect( $as_one_notes + 1 === count( $as_one->notes ) && false !== strpos( creature_demo_asof_last_note( $as_one ), 'refused' ) && false !== strpos( creature_demo_asof_last_note( $as_one ), 'earlier update' ), 'as-of S2: a flag saved in the same request is refused with a note' );
+creature_demo_expect( $as_one_mails === count( Creature_Demo_Loan_Mail::$sent ) && $as_one_status === $as_one->get_status(), 'as-of S2: the same-request run sends nothing and changes no status' );
+$as_one_nostamp = creature_demo_asof_flag( creature_demo_loan() );
+$as_one_nostamp->delete_meta_data( '_creature_demo_test_at' );
+creature_demo_asof_run( $as_one_nostamp, '2026-03-19' );
+creature_demo_expect( false !== strpos( creature_demo_asof_last_note( $as_one_nostamp ), 'earlier update' ), 'as-of S2: a flag with no stamp is refused' );
+// A later request: the stamp now predates the request start.
+$as_req_float = $_SERVER['REQUEST_TIME_FLOAT'];
+$_SERVER['REQUEST_TIME_FLOAT'] = microtime( true ) + 5;
+$as_one_before = creature_demo_mail_count( 'reminder_choices_due_minus_5' );
+creature_demo_asof_run( $as_one, '2026-03-19' );
+$_SERVER['REQUEST_TIME_FLOAT'] = $as_req_float;
+creature_demo_expect( $as_one_before + 1 === creature_demo_mail_count( 'reminder_choices_due_minus_5' ) && false !== strpos( creature_demo_asof_last_note( $as_one ), 'As-of run (test order)' ), 'as-of S2: a flag from an earlier request then run works' );
+
+// Small items: no notice, cancelled gate line, date range.
+$as_nn = creature_demo_asof_flag( creature_demo_loan() );
+creature_demo_asof_run( $as_nn, '2026-03-05' );
+creature_demo_expect( false !== strpos( creature_demo_asof_last_note( $as_nn ), 'no charge notice yet' ), 'as-of: with no charge notice the note says so' );
+$as_cx = creature_demo_asof_flag( creature_demo_loan() );
+Creature_Demo_Loan::record_return_scan( $as_cx, '2026-03-30', '2026-03-30' );
+$as_cx_charge = creature_demo_bill_charge( $as_cx );
+$as_cx_charge->update_status( 'cancelled' );
+creature_demo_asof_run( $as_cx, '2026-04-06' );
+creature_demo_expect( false !== strpos( creature_demo_asof_last_note( $as_cx ), 'cancelled, so the saved card would not be charged' ) && false === strpos( creature_demo_asof_last_note( $as_cx ), 'would pass' ), 'as-of: a cancelled charge reads cancelled in the gate line' );
+$as_cx_charge->update_status( 'pending' );
+$as_cx_charge->update_meta_data( '_creature_demo_charge_netted', 'yes' );
+creature_demo_asof_run( $as_cx, '2026-04-06' );
+creature_demo_expect( false !== strpos( creature_demo_asof_last_note( $as_cx ), 'netted' ), 'as-of: a netted charge reads netted in the gate line' );
+$as_cx_charge->delete_meta_data( '_creature_demo_charge_netted' );
+$as_cx_charge->update_meta_data( '_creature_demo_charge_paid', 'yes' );
+creature_demo_asof_run( $as_cx, '2026-04-06' );
+creature_demo_expect( false !== strpos( creature_demo_asof_last_note( $as_cx ), 'already paid' ), 'as-of: a paid charge reads paid in the gate line' );
+$as_dr = creature_demo_asof_flag( creature_demo_loan() );
+$as_dr->created = '2026-03-02 10:00:00';
+$as_dr_meta = $as_dr->meta;
+foreach ( array( '2026-03-01', '2027-03-03', '9999-12-31', '0001-01-01' ) as $as_dr_date ) {
+	$as_dr_notes = count( $as_dr->notes );
+	creature_demo_asof_run( $as_dr, $as_dr_date );
+	creature_demo_expect( $as_dr_notes + 1 === count( $as_dr->notes ) && false !== strpos( creature_demo_asof_last_note( $as_dr ), 'refused' ) && false !== strpos( creature_demo_asof_last_note( $as_dr ), 'created date' ), 'as-of: the date ' . $as_dr_date . ' is outside the order created date to one year later and is refused' );
+}
+creature_demo_expect( $as_dr_meta === $as_dr->meta, 'as-of: a refused out-of-range date changes nothing' );
+creature_demo_asof_run( $as_dr, '2027-03-02' );
+creature_demo_expect( false !== strpos( creature_demo_asof_last_note( $as_dr ), 'As-of run (test order)' ), 'as-of: exactly one year after the created date is allowed' );
+
+// ---- Round 2 (S3): charge orders created by a run carry the flag; a flagged charge is never charged. ----
+creature_demo_stripe_test();
+$as_f_loan = creature_demo_asof_flag( creature_demo_loan() );
+creature_demo_asof_run( $as_f_loan, '2026-04-07' );
+$as_f_charge = wc_get_order( (int) $as_f_loan->get_meta( '_creature_demo_deemed_order_id' ) );
+creature_demo_expect( $as_f_charge && 'yes' === $as_f_charge->get_meta( '_creature_demo_test' ), 'as-of S3: a charge order created by a run carries _creature_demo_test' );
+$as_f_calls = count( WC_Stripe_API::$requests );
+WC_Stripe_API::$response = (object) array( 'id' => 'pi_test_flagged', 'status' => 'succeeded' );
+$as_f_notes = count( $as_f_loan->notes );
+$as_f_res   = Creature_Demo_Loan::charge_saved_card( $as_f_charge, '2026-05-30' );
+$as_f_loan_res = Creature_Demo_Loan::charge_saved_card( $as_f_loan, '2026-05-30' );
+creature_demo_expect( empty( $as_f_res['ok'] ) && 'test_order' === $as_f_res['code'] && empty( $as_f_loan_res['ok'] ) && 'test_order' === $as_f_loan_res['code'], 'as-of S3: charge_saved_card refuses a test-flagged charge order, directly or from its loan' );
+creature_demo_expect( $as_f_calls === count( WC_Stripe_API::$requests ) && 'yes' !== $as_f_charge->get_meta( '_creature_demo_charge_paid' ) && false === creature_demo_lock_row( $as_f_charge ) && $as_f_notes < count( $as_f_loan->notes ), 'as-of S3: the refused flagged charge makes no Stripe call, takes no lock, and leaves an order note' );
+// A charge order whose parent loan is flagged but which lacks its own flag is refused too.
+$as_f_charge->delete_meta_data( '_creature_demo_test' );
+creature_demo_expect( 'test_order' === Creature_Demo_Loan::charge_saved_card( $as_f_charge, '2026-05-30' )['code'] && $as_f_calls === count( WC_Stripe_API::$requests ), 'as-of S3: a charge order of a flagged loan is refused even without its own flag' );
+// Unflagged behaviour is unchanged: the same flow charges, and its charge order has no flag.
+creature_demo_stripe_test();
+$as_u_loan = creature_demo_loan();
+Creature_Demo_Loan::record_return_scan( $as_u_loan, '2026-03-30', '2026-03-30' );
+$as_u_charge = creature_demo_bill_charge( $as_u_loan );
+creature_demo_expect( '' === (string) $as_u_charge->get_meta( '_creature_demo_test' ), 'as-of S3: a charge order of an unflagged loan carries no test flag' );
+$as_u_calls = count( WC_Stripe_API::$requests );
+WC_Stripe_API::$response = (object) array( 'id' => 'pi_test_unflagged', 'status' => 'succeeded' );
+$as_u_res = Creature_Demo_Loan::charge_saved_card( $as_u_loan, '2026-04-06' );
+creature_demo_expect( ! empty( $as_u_res['ok'] ) && $as_u_calls < count( WC_Stripe_API::$requests ), 'as-of S3: an unflagged charge still goes through exactly as before' );
+creature_demo_stripe_test();
+
+// ---- Round 2 (S1): a test-flagged order's mail always goes to the redirect (child process, ALLOW_CUSTOMER_EMAIL true). ----
+$as_mail_child = static function () {
+	$dir  = dirname( __DIR__, 2 ) . '/creature-demo-loan/includes/';
+	$code = <<<'PHPCODE'
+define("ABSPATH","/"); define("CREATURE_DEMO_LOAN_ALLOW_CUSTOMER_EMAIL", true); define("CREATURE_DEMO_LOAN_REDIRECT_EMAIL", "redirect@example.test");
+class M_Order {
+	public $id; public $meta = array(); public $email = "rider@example.test";
+	public function __construct( $id, $meta = array() ) { $this->id = $id; $this->meta = $meta; }
+	public function get_id() { return $this->id; }
+	public function get_billing_email() { return $this->email; }
+	public function get_meta( $k ) { return isset( $this->meta[ $k ] ) ? $this->meta[ $k ] : ""; }
+}
+$orders = array(
+	1 => new M_Order( 1, array( "_creature_demo_loan" => "yes", "_creature_demo_test" => "yes" ) ),
+	2 => new M_Order( 2, array( "_creature_demo_loan" => "yes" ) ),
+	3 => new M_Order( 3, array( "_creature_demo_parent_loan_id" => "1" ) ),
+	4 => new M_Order( 4, array( "_creature_demo_parent_loan_id" => "2" ) ),
+);
+function wc_get_order( $id ) { global $orders; return isset( $orders[ (int) $id ] ) ? $orders[ (int) $id ] : false; }
+foreach ( array( "calendar", "money", "copy", "mail", "stripe" ) as $f ) { require "__DIR__PLACEHOLDER__class-creature-demo-loan-" . $f . ".php"; }
+require "__DIR__PLACEHOLDER__class-creature-demo-loan.php";
+$out = array( "allow" => Creature_Demo_Loan::customer_email_allowed() );
+foreach ( $orders as $id => $o ) {
+	$row = Creature_Demo_Loan_Mail::send_customer( $o, "keep_choice_lapsed", array() );
+	$out[ "to" . $id ] = $row["to"];
+	$out[ "subject" . $id ] = $row["subject"];
+}
+$admin = Creature_Demo_Loan_Mail::send_admin( $orders[1], "admin_bill_due", array() );
+$out["admin"] = $admin["to"];
+echo json_encode( $out );
+PHPCODE;
+	$code = str_replace( '__DIR__PLACEHOLDER__', $dir, $code );
+	return json_decode( trim( (string) shell_exec( escapeshellarg( PHP_BINARY ) . ' -r ' . escapeshellarg( $code ) . ' 2>&1' ) ), true );
+};
+$as_mail = $as_mail_child();
+creature_demo_expect( is_array( $as_mail ) && true === $as_mail['allow'], 'as-of S1: the mail child process has ALLOW_CUSTOMER_EMAIL true' );
+creature_demo_expect( is_array( $as_mail ) && 'redirect@example.test' === $as_mail['to1'] && 0 === strpos( $as_mail['subject1'], '[TEST] ' ), 'as-of S1: with ALLOW_CUSTOMER_EMAIL true a test-flagged order still mails the redirect address, with the [TEST] prefix' );
+creature_demo_expect( is_array( $as_mail ) && 'redirect@example.test' === $as_mail['to3'], 'as-of S1: a charge order of a test-flagged loan mails the redirect address' );
+creature_demo_expect( is_array( $as_mail ) && 'rider@example.test' === $as_mail['to2'] && 'rider@example.test' === $as_mail['to4'] && 0 !== strpos( $as_mail['subject2'], '[TEST] ' ), 'as-of S1: a non-test order (and its charge order) mails the billing address exactly as before' );
+creature_demo_expect( is_array( $as_mail ) && 'info@creaturecycles.co.uk' === $as_mail['admin'], 'as-of S1: admin alerts still go to the admin address' );
+
 // Static check: the tool's own methods name no charge, refund or Stripe path.
 $as_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/includes/class-creature-demo-loan.php' );
 $as_src = explode( "\n", $as_src );
-foreach ( array( 'action_run_asof', 'is_test_order', 'asof_can', 'asof_nonce_ok', 'run_asof', 'demo_meta_snapshot', 'asof_user_label', 'save_test_flag_from_post' ) as $as_method ) {
+foreach ( array( 'action_run_asof', 'is_test_order', 'is_test_or_test_child', 'request_start', 'asof_can', 'asof_nonce_ok', 'run_asof', 'demo_meta_snapshot', 'asof_user_label', 'save_test_flag_from_post' ) as $as_method ) {
 	$as_ref  = new ReflectionMethod( 'Creature_Demo_Loan', $as_method );
 	$as_body = implode( "\n", array_slice( $as_src, $as_ref->getStartLine() - 1, $as_ref->getEndLine() - $as_ref->getStartLine() + 1 ) );
 	creature_demo_expect( 0 === preg_match( '/charge_saved_card|send_deemed_refund|advance_deduction|finish_deemed_refund|refund_deemed|action_charge|wc_create_refund|process_refund|Creature_Demo_Loan_Stripe|WC_Stripe_API|off_session_intent|run_daily|run_scheduled|add_filter|add_action/', $as_body ), 'as-of: ' . $as_method . ' has no route to a charge, a refund, Stripe or the daily job' );
@@ -5206,23 +5345,37 @@ class Child_Order {
 }
 $orders = array( 1 => new Child_Order( 1 ), 2 => new Child_Order( 2 ) );
 function wc_get_order( $id ) { global $orders; return isset( $orders[ (int) $id ] ) ? $orders[ (int) $id ] : false; }
+function wc_create_order( $args = array() ) { global $orders; $id = count( $orders ) + 1; $orders[ $id ] = new Child_Order( $id ); $orders[ $id ]->status = "pending"; return $orders[ $id ]; }
 function current_user_can( $c ) { return true; }
 function wp_verify_nonce( $n, $a = -1 ) { return $n === $a; }
 function get_current_user_id() { return 7; }
 foreach ( array( "calendar", "money", "copy", "mail", "stripe" ) as $f ) { require "__DIR__PLACEHOLDER__class-creature-demo-loan-" . $f . ".php"; }
 require "__DIR__PLACEHOLDER__class-creature-demo-loan.php";
 $loan = $orders[1]; $charge = $orders[2];
-$loan->meta = array( "_creature_demo_loan" => "yes", "_creature_demo_due_date" => "2026-03-24", "_creature_demo_test" => "yes", "_creature_demo_open_charge_id" => "2", "_creature_demo_consent" => "yes" );
+// A loan in demo-overdue, due and dispatched long before the deemed point, with an unpaid late-fee
+// charge order open: tick() runs maybe_raise_deemed, cancel_unpaid_charge and ensure_charge_order.
+$loan->status = "demo-overdue";
+$loan->meta = array( "_creature_demo_loan" => "yes", "_creature_demo_due_date" => "2026-03-24", "_creature_demo_dispatch_date" => "2026-03-02", "_creature_demo_test" => "yes", "_creature_demo_test_at" => "1", "_creature_demo_open_charge_id" => "2", "_creature_demo_late_fee_order_id" => "2", "_creature_demo_consent" => "yes", "_stripe_customer_id" => "cus_test_child", "_stripe_source_id" => "pm_test_child" );
 $charge->status = "pending";
-$charge->meta = array( "_creature_demo_parent_loan_id" => "1", "_creature_demo_charge_notice_logged" => "yes", "_creature_demo_charge_notice_at" => "2026-03-06" );
-$_POST = array( "creature_demo_asof_nonce" => "creature_demo_asof_run", "creature_demo_asof_date" => "2026-03-13" );
+$charge->meta = array( "_creature_demo_parent_loan_id" => "1", "_creature_demo_charge_order" => "yes", "_creature_demo_charge_kind" => "late_fee", "_creature_demo_charge_notice_logged" => "yes", "_creature_demo_charge_notice_at" => "2026-03-06" );
+$_POST = array( "creature_demo_asof_nonce" => "creature_demo_asof_run", "creature_demo_asof_date" => "2026-05-20" );
 Creature_Demo_Loan::action_run_asof( $loan );
+$deemed = wc_get_order( (int) $loan->get_meta( "_creature_demo_deemed_order_id" ) );
+$after_run = WC_Stripe_API::$requests;
+$direct = $deemed ? Creature_Demo_Loan::charge_saved_card( $deemed, "2026-06-30" ) : array( "code" => "no_deemed_order" );
+$from_loan = Creature_Demo_Loan::charge_saved_card( $loan, "2026-06-30" );
 echo json_encode( array(
-	"allow"    => Creature_Demo_Loan::live_charges_allowed(),
-	"requests" => WC_Stripe_API::$requests,
-	"paid"     => $charge->get_meta( "_creature_demo_charge_paid" ),
-	"status"   => $charge->get_status(),
-	"note"     => end( $loan->notes ),
+	"allow"        => Creature_Demo_Loan::live_charges_allowed(),
+	"requests"     => $after_run,
+	"requests_end" => WC_Stripe_API::$requests,
+	"paid"         => $deemed ? $deemed->get_meta( "_creature_demo_charge_paid" ) : "no deemed order",
+	"loan_status"  => $loan->get_status(),
+	"late_status"  => $charge->get_status(),
+	"deemed_flag"  => $deemed ? $deemed->get_meta( "_creature_demo_test" ) : "",
+	"direct"       => $direct["code"],
+	"from_loan"    => $from_loan["code"],
+	"note"         => $loan->notes ? $loan->notes[ count( $loan->notes ) - 1 ] : "",
+	"all_notes"    => implode( " | ", $loan->notes ),
 ) );
 PHPCODE;
 	$code = str_replace( '__DIR__PLACEHOLDER__', $dir, $code );
@@ -5230,8 +5383,10 @@ PHPCODE;
 };
 $as_live = $as_child();
 creature_demo_expect( is_array( $as_live ) && true === $as_live['allow'], 'as-of: the child process has ALLOW_LIVE_CHARGES true' );
-creature_demo_expect( is_array( $as_live ) && 0 === $as_live['requests'] && '' === $as_live['paid'] && 'pending' === $as_live['status'], 'as-of: with ALLOW_LIVE_CHARGES true there is still no Stripe call and no charge' );
-creature_demo_expect( is_array( $as_live ) && false !== strpos( $as_live['note'], 'Charge gate at 2026-03-13: refusal code none (the gate would pass); days_since_notice 7; required_days 7' ), 'as-of: with ALLOW_LIVE_CHARGES true the note shows the gate would pass, and nothing was charged' );
+creature_demo_expect( is_array( $as_live ) && 'demo-deemed' === $as_live['loan_status'] && 'cancelled' === $as_live['late_status'] && 'yes' === $as_live['deemed_flag'], 'as-of: with ALLOW_LIVE_CHARGES true the run really raised the deemed purchase, cancelled the unpaid late-fee charge and flagged the new charge order' );
+creature_demo_expect( is_array( $as_live ) && 0 === $as_live['requests'] && 'yes' !== $as_live['paid'],'as-of: with ALLOW_LIVE_CHARGES true the run makes no Stripe request and takes no payment' );
+creature_demo_expect( is_array( $as_live ) && 0 === $as_live['requests_end'] && 'test_order' === $as_live['direct'] && 'test_order' === $as_live['from_loan'], 'as-of: with ALLOW_LIVE_CHARGES true charge_saved_card refuses the flagged charge before any Stripe call' );
+creature_demo_expect( is_array( $as_live ) && false !== strpos( $as_live['all_notes'], 'Status before: demo-overdue; after: demo-deemed' ) && false === stripos( $as_live['all_notes'], 'refund' ), 'as-of: with ALLOW_LIVE_CHARGES true the note records the deemed raise and no refund' );
 
 $blob = creature_demo_sensitive_blob();
 creature_demo_absent( $blob, 'sk_live_', 'notes, mail, and Stripe bodies do not contain a live secret key' );
