@@ -100,6 +100,10 @@ final class Creature_Demo_Loan_Mail {
 			$billing = (string) $order->get_billing_email();
 		}
 		$allow = Creature_Demo_Loan::customer_email_allowed();
+		// A test-flagged order (or a charge order of a test-flagged loan) always goes to the redirect.
+		if ( Creature_Demo_Loan::is_test_or_test_child( $order ) ) {
+			$allow = false;
+		}
 		$route = self::route( $allow, $billing, self::redirect_address() );
 		return self::deliver( 'customer', $route, $order, $slot, $args );
 	}
