@@ -174,6 +174,9 @@ The final send of each of the plugin's own emails (customer and shop) goes throu
 
 ### Changelog
 
+- **1.3.3**:
+  - Account line: the sign-in block says "Your account was created at checkout..." with the "Reset it here" link only when checkout created the account in the same request as the order (order meta `_cc_demo_account_created_at_checkout` = `yes`, set from `woocommerce_created_customer` and stamped on `woocommerce_checkout_order_created` for classic checkout or `woocommerce_store_api_checkout_order_processed` for block checkout, demo orders only). A returning or signed-in customer, or an order placed before 1.3.3, gets "Sign in to your account to track this loan." with the same sign-in button and no lost-password line. Applies to the booking block and every rider email, HTML and plain text.
+  - Booking block (HTML only): `info@creaturecycles.co.uk`, the user-guide address and https URLs are links, using the mail class linkify helper. The plain-text email is unchanged.
 - **1.3.2** (review rounds 1 to 3):
   - Round 1: hide PayPal Payments buttons (v5 filters, v6 script dequeue) on the demo kit; `From:` header on the plugin's own emails; the steerer sentence removed from the delivery email's "Before you ride" paragraph; terms version 5.1 (`version-5.1`, version 5 still read back); deemed-warning subject names the last posting date (`{last_post_date}`).
   - Round 2: the pay-link `choice_url` is no longer double-escaped; the Pay Later message (`.ppcp-messages`) is hidden on demo pages by the same inline CSS (a `<style>` block, not a script); the consent fallback comment; a raw pay link in the plain text; a sign-in link (My account Demo loan tab, plus "Reset it here") in every rider email and in the WooCommerce booking email; rider emails go through WooCommerce's email template.

@@ -155,8 +155,8 @@ final class Creature_Demo_Loan_Mail {
 		// and never on a slot with no wording, which is not sent). The row's 'body'
 		// stays the copy as written; 'plain' is the plain text that is sent.
 		if ( 'customer' === $kind && ! $empty ) {
-			$plain .= "\n\n" . self::signin_text();
-			$html  .= self::signin_html();
+			$plain .= "\n\n" . self::signin_text( $order );
+			$html  .= self::signin_html( $order );
 		}
 		$headers = 'customer' === $kind ? self::customer_headers() : self::admin_headers();
 		$row     = array(
@@ -199,8 +199,28 @@ final class Creature_Demo_Loan_Mail {
 	/** Text under the sign-in link. "Reset it here" is a link to the lost-password page. */
 	const SIGNIN_NOTE_BEFORE = 'Your account was created at checkout. Sign in with the email you booked with. Forgot your password? ';
 
+	/** Text under the sign-in link for a returning or signed-in customer, and for orders placed before the flag existed. */
+	const SIGNIN_NOTE_NEUTRAL = 'Sign in to your account to track this loan.';
+
 	/** The words of the lost-password link. */
 	const SIGNIN_RESET_LABEL = 'Reset it here';
+
+	/** Order meta set when checkout created the rider's account in the same request as the order. */
+	const ACCOUNT_CREATED_META = '_cc_demo_account_created_at_checkout';
+
+	/**
+	 * Whether checkout created this rider's account. Missing flag (returning or
+	 * signed-in customer, old order, no order) is false.
+	 *
+	 * @param mixed $order
+	 * @return bool
+	 */
+	public static function account_created_at_checkout( $order ) {
+		if ( ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+			return false;
+		}
+		return 'yes' === $order->get_meta( self::ACCOUNT_CREATED_META, true );
+	}
 
 	/**
 	 * The My account Demo loan tab. Raw URL (escape at output).
@@ -242,21 +262,31 @@ final class Creature_Demo_Loan_Mail {
 	/**
 	 * The sign-in block as plain text, with full URLs.
 	 *
+	 * @param mixed $order The order; its account-created flag picks the wording.
 	 * @return string
 	 */
-	public static function signin_text() {
-		return self::SIGNIN_LABEL . ': ' . self::account_url() . "\n\n" . self::SIGNIN_NOTE_BEFORE . self::SIGNIN_RESET_LABEL . ': ' . self::lost_password_url();
+	public static function signin_text( $order = null ) {
+		$block = self::SIGNIN_LABEL . ': ' . self::account_url() . "\n\n";
+		if ( ! self::account_created_at_checkout( $order ) ) {
+			return $block . self::SIGNIN_NOTE_NEUTRAL;
+		}
+		return $block . self::SIGNIN_NOTE_BEFORE . self::SIGNIN_RESET_LABEL . ': ' . self::lost_password_url();
 	}
 
 	/**
 	 * The sign-in block as HTML: a button-style link, then the note with the
 	 * lost-password link. URLs are escaped here, once.
 	 *
+	 * @param mixed $order The order; its account-created flag picks the wording.
 	 * @return string
 	 */
-	public static function signin_html() {
-		$style = 'display:inline-block;padding:10px 18px;background-color:#222222;color:#ffffff;text-decoration:none;font-weight:bold;';
-		return '<p><a href="' . self::esc_url_attr( self::account_url() ) . '" style="' . $style . '">' . self::esc_text( self::SIGNIN_LABEL ) . '</a></p>'
+	public static function signin_html( $order = null ) {
+		$style  = 'display:inline-block;padding:10px 18px;background-color:#222222;color:#ffffff;text-decoration:none;font-weight:bold;';
+		$button = '<p><a href="' . self::esc_url_attr( self::account_url() ) . '" style="' . $style . '">' . self::esc_text( self::SIGNIN_LABEL ) . '</a></p>';
+		if ( ! self::account_created_at_checkout( $order ) ) {
+			return $button . '<p>' . self::esc_text( self::SIGNIN_NOTE_NEUTRAL ) . '</p>';
+		}
+		return $button
 			. '<p>' . self::esc_text( self::SIGNIN_NOTE_BEFORE ) . '<a href="' . self::esc_url_attr( self::lost_password_url() ) . '">' . self::esc_text( self::SIGNIN_RESET_LABEL ) . '</a>.</p>';
 	}
 
@@ -285,10 +315,14 @@ final class Creature_Demo_Loan_Mail {
 	}
 
 	/**
+	 * One line of RAW text to escaped HTML, with URLs, the guide address and
+	 * info@ made links. It escapes everything itself, so pass the raw text, not
+	 * text that was already escaped. Also used for the booking block.
+	 *
 	 * @param string $line
 	 * @return string
 	 */
-	private static function linkify_line( $line ) {
+	public static function linkify_line( $line ) {
 		// A full http(s) URL, the bare user-guide address, or the shop's info@ address.
 		// HTML only: the plain-text body is never changed.
 		$parts = preg_split( '~(https?://[^\s<>"\']+|(?<![\w./@-])creaturecycles\.co\.uk/de-reacher-user-guide/?|(?<![\w.@-])info@creaturecycles\.co\.uk(?![\w-]|\.\w))~iu', $line, -1, PREG_SPLIT_DELIM_CAPTURE );
