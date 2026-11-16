@@ -5739,6 +5739,229 @@ creature_demo_absent( $blob, 'sk_test_', 'notes, mail, and Stripe bodies do not 
 creature_demo_absent( $blob, $pan, 'notes, mail, and Stripe bodies do not contain the card number' );
 creature_demo_absent( $blob, 'placeholder', 'notes, mail, and Stripe bodies do not contain the placeholder key body' );
 
+// ---------------------------------------------------------------------------
+// Round 2: the sign-in link, and the WooCommerce email template for plugin mail.
+// ---------------------------------------------------------------------------
+if ( ! function_exists( 'wc_get_account_endpoint_url' ) ) {
+	function wc_get_account_endpoint_url( $endpoint ) {
+		return 'https://staging.example/my-account/' . $endpoint . '/';
+	}
+}
+if ( ! function_exists( 'wp_lostpassword_url' ) ) {
+	function wp_lostpassword_url( $redirect = '' ) {
+		unset( $redirect );
+		return 'https://staging.example/my-account/lost-password/';
+	}
+}
+class Creature_Demo_Test_WC_Mailer {
+	public $wrapped = array();
+	public $sent    = array();
+	public $throw   = false;
+	public function wrap_message( $heading, $message, $plain_text = false ) {
+		unset( $plain_text );
+		if ( $this->throw ) {
+			throw new RuntimeException( 'no template' );
+		}
+		$this->wrapped[] = array( $heading, $message );
+		return '<div class="wc-template"><h1>' . $heading . '</h1>' . $message . '</div>';
+	}
+	public function send( $to, $subject, $message, $headers = '', $attachments = '' ) {
+		$this->sent[] = array( $to, $subject, $message, $headers, $attachments );
+		return true;
+	}
+}
+class Creature_Demo_Test_WC {
+	public $mailer;
+	public function mailer() {
+		return $this->mailer;
+	}
+}
+if ( ! function_exists( 'WC' ) ) {
+	function WC() {
+		return isset( $GLOBALS['creature_demo_wc'] ) ? $GLOBALS['creature_demo_wc'] : null;
+	}
+}
+$GLOBALS['creature_demo_wc'] = null;
+
+$r2_account = 'https://staging.example/my-account/demo-loan/';
+$r2_lost    = 'https://staging.example/my-account/lost-password/';
+$GLOBALS['creature_demo_options']['woocommerce_email_from_name']    = 'Creature Cycles';
+$GLOBALS['creature_demo_options']['woocommerce_email_from_address'] = 'info@creaturecycles.co.uk';
+$r2_from   = 'From: "Creature Cycles" <info@creaturecycles.co.uk>';
+$r2_ct     = 'Content-Type: text/html; charset=UTF-8';
+$r2_order  = creature_demo_loan();
+$r2_slots  = array();
+foreach ( Creature_Demo_Loan_Copy::slots() as $r2_slot ) {
+	if ( '' !== trim( Creature_Demo_Loan_Copy::text( $r2_slot ) ) ) {
+		$r2_slots[] = $r2_slot;
+	}
+}
+creature_demo_expect( count( $r2_slots ) > 25, 'round 2: the slot sweep sees the whole copy catalogue' );
+creature_demo_expect( $r2_account === Creature_Demo_Loan_Mail::account_url() && $r2_lost === Creature_Demo_Loan_Mail::lost_password_url(), 'sign-in: the account URL is the demo-loan endpoint and the lost-password URL comes from wp_lostpassword_url' );
+
+// (1) Fallback path (no WC()): plain text through wp_mail, sign-in at the END of every customer slot.
+$r2_wp_before = count( $GLOBALS['creature_demo_wp_mail'] );
+$r2_sent_from = count( Creature_Demo_Loan_Mail::$sent );
+foreach ( $r2_slots as $r2_slot ) {
+	if ( 0 === strpos( $r2_slot, 'admin_' ) ) {
+		Creature_Demo_Loan_Mail::send_admin( $r2_order, $r2_slot, array( 'missing' => 'x' ) );
+	} else {
+		Creature_Demo_Loan_Mail::send_customer( $r2_order, $r2_slot, array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
+	}
+}
+$r2_rows = array_slice( Creature_Demo_Loan_Mail::$sent, $r2_sent_from );
+$r2_sig  = Creature_Demo_Loan_Mail::signin_text();
+creature_demo_expect( "Sign in to manage your demo loan: {$r2_account}\n\nYour account was created at checkout. Sign in with the email you booked with. Forgot your password? Reset it here: {$r2_lost}" === $r2_sig, 'sign-in: the plain-text block has the label, the note and both full URLs' );
+$r2_cust = 0;
+$r2_adm  = 0;
+foreach ( $r2_rows as $r2_row ) {
+	if ( $r2_row['empty'] ) {
+		continue;
+	}
+	if ( 'customer' === $r2_row['kind'] ) {
+		$r2_cust++;
+		creature_demo_expect( substr( $r2_row['plain'], -strlen( $r2_sig ) ) === $r2_sig && 0 === strpos( $r2_row['plain'], $r2_row['body'] ), 'sign-in: customer slot "' . $r2_row['slot'] . '" ends with the sign-in block (after the copy)' );
+		creature_demo_expect( false === strpos( $r2_row['body'], 'Sign in to manage' ), 'sign-in: the row body stays the copy as written for "' . $r2_row['slot'] . '"' );
+	} else {
+		$r2_adm++;
+		creature_demo_expect( false === strpos( $r2_row['plain'], 'Sign in to manage' ) && false === strpos( $r2_row['plain'], 'lost-password' ) && $r2_row['plain'] === $r2_row['body'], 'sign-in: admin slot "' . $r2_row['slot'] . '" has no sign-in link' );
+	}
+}
+creature_demo_expect( $r2_cust > 15 && $r2_adm > 3, 'sign-in: the sweep covered many customer and several admin slots' );
+$r2_wp = array_slice( $GLOBALS['creature_demo_wp_mail'], $r2_wp_before );
+creature_demo_expect( count( $r2_wp ) === $r2_cust + $r2_adm, 'fallback: with no WC() every send went through wp_mail' );
+foreach ( $r2_wp as $r2_call ) {
+	creature_demo_expect( false === strpos( $r2_call[2], '<p>' ) && ( 'info@creaturecycles.co.uk' === $r2_call[0] ? false === strpos( $r2_call[2], 'Sign in to manage' ) : substr( $r2_call[2], -strlen( $r2_sig ) ) === $r2_sig ) && ! in_array( $r2_ct, (array) $r2_call[3], true ), 'fallback: wp_mail gets the plain text with no markup and no Content-Type header' );
+}
+foreach ( $r2_rows as $r2_row ) {
+	creature_demo_expect( ! isset( $r2_row['sent_headers'] ) || $r2_row['sent_headers'] === $r2_row['headers'], 'fallback: the headers sent are the round-1 headers unchanged for "' . $r2_row['slot'] . '"' );
+}
+
+// (2) WooCommerce mailer path.
+$r2_mailer         = new Creature_Demo_Test_WC_Mailer();
+$r2_wc             = new Creature_Demo_Test_WC();
+$r2_wc->mailer     = $r2_mailer;
+$GLOBALS['creature_demo_wc'] = $r2_wc;
+$r2_wp_before      = count( $GLOBALS['creature_demo_wp_mail'] );
+$r2_sent_from      = count( Creature_Demo_Loan_Mail::$sent );
+foreach ( $r2_slots as $r2_slot ) {
+	if ( 0 === strpos( $r2_slot, 'admin_' ) ) {
+		Creature_Demo_Loan_Mail::send_admin( $r2_order, $r2_slot, array( 'missing' => 'x' ) );
+	} else {
+		Creature_Demo_Loan_Mail::send_customer( $r2_order, $r2_slot, array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
+	}
+}
+$r2_rows = array_slice( Creature_Demo_Loan_Mail::$sent, $r2_sent_from );
+creature_demo_expect( count( $GLOBALS['creature_demo_wp_mail'] ) === $r2_wp_before, 'template: with the WC mailer present wp_mail is not called directly' );
+creature_demo_expect( count( $r2_mailer->wrapped ) === $r2_cust + $r2_adm && count( $r2_mailer->sent ) === $r2_cust + $r2_adm, 'template: every customer and admin send went through wrap_message and then the mailer send' );
+$r2_i = 0;
+foreach ( $r2_rows as $r2_row ) {
+	if ( $r2_row['empty'] ) {
+		continue;
+	}
+	$r2_wrap = $r2_mailer->wrapped[ $r2_i ];
+	$r2_send = $r2_mailer->sent[ $r2_i ];
+	$r2_i++;
+	$r2_label = $r2_row['kind'] . ' "' . $r2_row['slot'] . '"';
+	creature_demo_expect( $r2_wrap[0] === $r2_row['heading'] && '' !== $r2_wrap[0] && 0 !== strpos( $r2_wrap[0], '[TEST]' ) && 0 !== stripos( $r2_wrap[0], 'De-Reacher demo:' ), 'template: ' . $r2_label . ' heading is the subject without [TEST] or the "De-Reacher demo:" prefix' );
+	creature_demo_expect( 0 === strpos( $r2_wrap[1], '<p>' ) && false === strpos( $r2_wrap[1], "\n" ), 'template: ' . $r2_label . ' body is HTML paragraphs with no raw newline' );
+	creature_demo_expect( $r2_send[0] === $r2_row['to'] && $r2_send[1] === $r2_row['subject'] && $r2_send[2] === $r2_row['html'] && '<div class="wc-template">' === substr( $r2_row['html'], 0, 25 ), 'template: ' . $r2_label . ' is sent with the wrapped message, the same recipient and subject' );
+	if ( 'customer' === $r2_row['kind'] ) {
+		creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === $r2_send[0] && 0 === strpos( $r2_send[1], '[TEST] ' ), 'template: ' . $r2_label . ' still goes to the [TEST] redirect with the [TEST] subject' );
+		creature_demo_expect( array( $r2_from, 'Reply-To: info@creaturecycles.co.uk', $r2_ct ) === $r2_send[3], 'template: ' . $r2_label . ' headers are From, Reply-To, Content-Type' );
+		$r2_pos_body  = strrpos( $r2_wrap[1], '</p>' );
+		$r2_pos_sign  = strpos( $r2_wrap[1], 'href="' . $r2_account . '"' );
+		creature_demo_expect( false !== $r2_pos_sign && $r2_pos_sign > 0 && substr( $r2_wrap[1], -strlen( Creature_Demo_Loan_Mail::signin_html() ) ) === Creature_Demo_Loan_Mail::signin_html() && false !== $r2_pos_body, 'sign-in: ' . $r2_label . ' HTML ends with the sign-in button and note' );
+		creature_demo_expect( false !== strpos( $r2_wrap[1], '>Sign in to manage your demo loan</a>' ) && false !== strpos( $r2_wrap[1], '<a href="' . $r2_lost . '">Reset it here</a>' ), 'sign-in: ' . $r2_label . ' HTML has the button and the Reset it here link' );
+	} else {
+		creature_demo_expect( 'info@creaturecycles.co.uk' === $r2_send[0] && 0 !== strpos( $r2_send[1], '[TEST]' ) && array( $r2_from, $r2_ct ) === $r2_send[3], 'template: ' . $r2_label . ' goes to the shop with From and Content-Type only' );
+		creature_demo_expect( false === strpos( $r2_wrap[1], 'Sign in to manage' ) && false === strpos( $r2_wrap[1], 'lost-password' ), 'sign-in: ' . $r2_label . ' HTML has no sign-in link' );
+	}
+	creature_demo_expect( array() === $r2_send[4], 'template: ' . $r2_label . ' passes no attachments from the plugin mailer (the booking files ride on WooCommerce own order email)' );
+	creature_demo_expect( ( 'customer' === $r2_row['kind'] ? $r2_row['plain'] !== $r2_row['body'] : true ) && '' === ( isset( $GLOBALS['creature_demo_filters']['wp_mail_content_type'] ) ? 'x' : '' ), 'template: ' . $r2_label . ' keeps a plain-text copy in the log and leaves no content-type filter' );
+}
+creature_demo_expect( empty( $GLOBALS['creature_demo_filters']['wp_mail_content_type'] ) && empty( $GLOBALS['creature_demo_filters']['wp_mail_from'] ), 'template: no global wp_mail_content_type or wp_mail_from filter is left registered after the sends' );
+creature_demo_expect( 0 === preg_match( '/add_filter\(\s*[\'"]wp_mail_content_type/', $mail_src ) && 0 === preg_match( '/add_filter\(\s*[\'"]wp_mail_content_type/', file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/includes/class-creature-demo-loan-mail.php' ) ), 'template: the plugin source never adds a wp_mail_content_type filter' );
+
+// Escaping and links.
+$r2_before = count( $r2_mailer->wrapped );
+Creature_Demo_Loan_Mail::send_admin( $r2_order, 'admin_attachments_missing', array( 'missing' => '<script>alert(1)</script> & "q"' ) );
+$r2_adm_html = $r2_mailer->wrapped[ $r2_before ][1];
+creature_demo_expect( false === strpos( $r2_adm_html, '<script' ) && false !== strpos( $r2_adm_html, '&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;q&quot;' ), 'escaping: a placeholder value with <script> is escaped in the admin HTML' );
+$r2_before = count( $r2_mailer->wrapped );
+$r2_cust_row = Creature_Demo_Loan_Mail::send_customer( $r2_order, 'charge_notice_damage', array( 'findings' => '<img src=x onerror=alert(1)>', 'link' => 'https://staging.example/pay/9/?pay_for_order=true&key=wc_order_abc', 'photos' => "https://staging.example/p1.jpg\nhttps://staging.example/p2.jpg", 'reason' => 'Chain <b>bold</b>', 'amount' => '£5.00' ) );
+$r2_cust_html = $r2_mailer->wrapped[ $r2_before ][1];
+creature_demo_expect( false === strpos( $r2_cust_html, '<img' ) && false === strpos( $r2_cust_html, '<b>' ) && false !== strpos( $r2_cust_html, '&lt;img src=x onerror=alert(1)&gt;' ), 'escaping: customer-supplied text (findings, reason) is escaped in the customer HTML' );
+creature_demo_expect( false !== strpos( $r2_cust_html, '<a href="https://staging.example/pay/9/?pay_for_order=true&#038;key=wc_order_abc">https://staging.example/pay/9/?pay_for_order=true&amp;key=wc_order_abc</a>' ), 'links: the pay link is a real link, href escaped once (&#038;), text escaped once (&amp;)' );
+creature_demo_expect( false !== strpos( $r2_cust_html, '<a href="https://staging.example/p1.jpg">https://staging.example/p1.jpg</a><br><a href="https://staging.example/p2.jpg">' ), 'links: bare photo URLs on separate lines become links joined by <br>' );
+creature_demo_expect( false !== strpos( $r2_cust_row['plain'], 'pay_for_order=true&key=wc_order_abc' ) && false === strpos( $r2_cust_row['plain'], '&amp;' ) && false === strpos( $r2_cust_row['plain'], '&#038;' ), 'links: the plain-text copy keeps the raw & in the pay URL' );
+// Unit checks on the converter.
+creature_demo_expect( '<p>One<br>two</p><p>Three</p>' === Creature_Demo_Loan_Mail::text_to_html( "One\ntwo\n\n\nThree\n" ), 'html: blank lines make paragraphs and single newlines make <br>' );
+creature_demo_expect( '<p>See <a href="https://example.com/a">https://example.com/a</a>.</p>' === Creature_Demo_Loan_Mail::text_to_html( 'See https://example.com/a.' ), 'html: a trailing full stop stays outside the link' );
+creature_demo_expect( '<p>a &lt; b &amp; c</p>' === Creature_Demo_Loan_Mail::text_to_html( 'a < b & c' ), 'html: text is escaped' );
+// [TEST] / suppression still behave, through the WC mailer.
+$r2_sent_n = count( $r2_mailer->sent );
+$r2_none   = static function () {
+	return '';
+};
+add_filter( 'creature_demo_loan_redirect_email', $r2_none );
+$r2_supp = Creature_Demo_Loan_Mail::send_customer( $r2_order, 'dates_on_delivery', array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
+remove_filter( 'creature_demo_loan_redirect_email', $r2_none );
+creature_demo_expect( count( $r2_mailer->sent ) === $r2_sent_n && '' === $r2_supp['mailer'] && '' === $r2_supp['to'], 'suppression: with no valid redirect nothing is sent, but the row is still recorded' );
+// WC present but the template fails: fall back to wp_mail so the email is not lost.
+$r2_mailer->throw = true;
+$r2_wp_before     = count( $GLOBALS['creature_demo_wp_mail'] );
+$r2_sent_n        = count( $r2_mailer->sent );
+$r2_fb            = Creature_Demo_Loan_Mail::send_customer( $r2_order, 'dates_on_delivery', array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
+creature_demo_expect( 'wp_mail' === $r2_fb['mailer'] && count( $GLOBALS['creature_demo_wp_mail'] ) === $r2_wp_before + 1 && count( $r2_mailer->sent ) === $r2_sent_n, 'fallback: if wrap_message throws the email goes by wp_mail as plain text instead' );
+$r2_mailer->throw = false;
+// WC() there but no mailer: fallback too.
+$r2_wc->mailer = null;
+$r2_wp_before  = count( $GLOBALS['creature_demo_wp_mail'] );
+$r2_fb2        = Creature_Demo_Loan_Mail::send_admin( $r2_order, 'admin_attachments_missing', array( 'missing' => 'x' ) );
+creature_demo_expect( 'wp_mail' === $r2_fb2['mailer'] && count( $GLOBALS['creature_demo_wp_mail'] ) === $r2_wp_before + 1, 'fallback: WC() with no mailer sends through wp_mail' );
+$GLOBALS['creature_demo_wc'] = null;
+creature_demo_expect( 'wp_mail' === Creature_Demo_Loan_Mail::send_admin( $r2_order, 'admin_attachments_missing', array( 'missing' => 'x' ) )['mailer'], 'fallback: with WC() returning null the send is wp_mail' );
+
+// Booking confirmation (WooCommerce own order email): the sign-in link is at the TOP of the block.
+$r2_old_override = isset( $GLOBALS['creature_demo_copy_override']['booking_confirmation'] ) ? $GLOBALS['creature_demo_copy_override']['booking_confirmation'] : null;
+$GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array( 'subject' => '', 'body' => "Booking text for order {order_id}.\n\nSecond paragraph." );
+$r2_bc = creature_demo_booked_loan( '249.00' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $r2_bc, false, false, $bc_email );
+$r2_bc_html = ob_get_clean();
+creature_demo_expect( 0 === strpos( $r2_bc_html, '<div class="creature-demo-loan-booking">' . Creature_Demo_Loan_Mail::signin_html() . '<p>Booking text' ), 'sign-in: the booking confirmation HTML starts with the sign-in block, then the booking text' );
+creature_demo_expect( false !== strpos( $r2_bc_html, 'href="' . $r2_account . '"' ) && false !== strpos( $r2_bc_html, '<a href="' . $r2_lost . '">Reset it here</a>' ), 'sign-in: the booking confirmation HTML links the account and lost-password URLs' );
+$r2_bc2 = creature_demo_booked_loan( '249.00' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $r2_bc2, false, true, $bc_email );
+$r2_bc_text = ob_get_clean();
+creature_demo_expect( "\n" . $r2_sig . "\n\nBooking text for order " . $r2_bc2->get_id() . ".\n\nSecond paragraph.\n" === $r2_bc_text, 'sign-in: the plain-text booking confirmation starts with the sign-in block (full URLs), then the booking text' );
+creature_demo_expect( false === strpos( $r2_bc_text, '<' ), 'sign-in: the plain-text booking confirmation has no markup' );
+$r2_bc3 = creature_demo_booked_loan( '249.00' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $r2_bc3, true, false, $bc_email );
+$r2_bc_admin = ob_get_clean();
+creature_demo_expect( '' === $r2_bc_admin, 'sign-in: the admin copy of the order email gets nothing, so no sign-in link' );
+if ( null === $r2_old_override ) {
+	unset( $GLOBALS['creature_demo_copy_override']['booking_confirmation'] );
+} else {
+	$GLOBALS['creature_demo_copy_override']['booking_confirmation'] = $r2_old_override;
+}
+unset( $GLOBALS['creature_demo_options']['woocommerce_email_from_name'], $GLOBALS['creature_demo_options']['woocommerce_email_from_address'] );
+
+// URL helpers without WooCommerce: home_url when there, else a site-relative path.
+$r2_child_a = 'define( "ABSPATH", "/" ); function add_action() {} require __DIR__PLACEHOLDER__ . "/creature-demo-loan/creature-demo-loan.php";'
+	. ' echo json_encode( array( Creature_Demo_Loan_Mail::account_url(), Creature_Demo_Loan_Mail::lost_password_url() ) );';
+$r2_child_b = 'define( "ABSPATH", "/" ); function add_action() {} function home_url( $p = "" ) { return "https://h.example" . $p; } require __DIR__PLACEHOLDER__ . "/creature-demo-loan/creature-demo-loan.php";'
+	. ' echo json_encode( array( Creature_Demo_Loan_Mail::account_url(), Creature_Demo_Loan_Mail::lost_password_url() ) );';
+foreach ( array( $r2_child_a, $r2_child_b ) as $r2_ci => $r2_code ) {
+	$r2_code = str_replace( '__DIR__PLACEHOLDER__', var_export( dirname( __DIR__, 2 ), true ), $r2_code );
+	$r2_out  = json_decode( trim( (string) shell_exec( escapeshellarg( PHP_BINARY ) . ' -r ' . escapeshellarg( $r2_code ) . ' 2>&1' ) ), true );
+	$r2_want = 0 === $r2_ci ? array( '/my-account/demo-loan/', '/my-account/lost-password/' ) : array( 'https://h.example/my-account/demo-loan/', 'https://h.example/my-account/lost-password/' );
+	creature_demo_expect( $r2_want === $r2_out, 'sign-in: the URL fallbacks without WooCommerce helpers (' . ( 0 === $r2_ci ? 'site-relative' : 'home_url' ) . ')' );
+}
+
 $passed = $checks - $failures;
 echo "{$passed} passed, {$failures} failed\n";
 if ( $failures > 0 ) {

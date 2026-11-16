@@ -162,7 +162,9 @@ Check on staging: view source of the demo product page (8946). There should be n
 
 ### Emails
 
-The plugin's own emails (customer and shop) carry a `From:` header built from WooCommerce's sender settings (`woocommerce_email_from_name` and `woocommerce_email_from_address`, each through the filter of the same name). If the address is empty or invalid there is no From header and WordPress's default applies. Only this plugin's own `wp_mail` calls are affected; there is no global `wp_mail_from` filter. The mail stays plain text. Subjects, bodies and the test redirect are unchanged.
+The plugin's own emails (customer and shop) carry a `From:` header built from WooCommerce's sender settings (`woocommerce_email_from_name` and `woocommerce_email_from_address`, each through the filter of the same name). If the address is empty or invalid there is no From header and WordPress's default applies. Only this plugin's own `wp_mail` calls are affected; there is no global `wp_mail_from` filter. Subjects, bodies and the test redirect are unchanged.
+
+The final send of each of the plugin's own emails (customer and shop) goes through WooCommerce's mailer: the body is turned into escaped HTML (blank lines make paragraphs, bare URLs become links), wrapped with `WC()->mailer()->wrap_message()` so it gets the header, base colour and footer from WooCommerce > Settings > Emails, and sent with `WC()->mailer()->send()` and a `Content-Type: text/html; charset=UTF-8` header. The recipient, `[TEST]` subject and redirect are decided before that and are unchanged. If `WC()` or its mailer is not available, the email goes by `wp_mail` as plain text, as before. No `wp_mail_content_type` filter is added by the plugin. There is no plain-text alternative part. Every rider email ends with a "Sign in to manage your demo loan" link (the My account Demo loan tab) and a "Reset it here" lost-password link; the booking confirmation, which is WooCommerce's own order email, carries them at the top of the booking block. Shop emails do not.
 
 ### Changelog
 

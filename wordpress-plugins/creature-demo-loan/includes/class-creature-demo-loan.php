@@ -3884,11 +3884,14 @@ final class Creature_Demo_Loan {
 		if ( method_exists( $order, 'save' ) ) {
 			$order->save();
 		}
+		// The sign-in link goes at the top of this block (the rider's account was
+		// created at checkout). WooCommerce's own order email carries it, not the
+		// plugin mailer.
 		if ( $plain_text ) {
-			echo "\n" . $text . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			echo "\n" . Creature_Demo_Loan_Mail::signin_text() . "\n\n" . $text . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			return;
 		}
-		echo '<div class="creature-demo-loan-booking"><p>' . nl2br( self::esc( $text ) ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		echo '<div class="creature-demo-loan-booking">' . Creature_Demo_Loan_Mail::signin_html() . '<p>' . nl2br( self::esc( $text ) ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 	}
 
 	/**
