@@ -37,6 +37,12 @@ final class Creature_Demo_Loan {
 	 */
 	const CHARGE_LOCK_STALE_SECONDS = 900;
 
+	/**
+	 * Store API cart extension namespace. The block checkout fields' hidden and
+	 * required rules read `cart.extensions.creature-demo-loan.demo_only`.
+	 */
+	const CART_EXTENSION_NAMESPACE = 'creature-demo-loan';
+
 	/** Terms 4.4 and 6.4(b): the one bill goes out within this many working days of the kit arriving. */
 	const BILL_WORKING_DAYS = 5;
 
@@ -75,6 +81,9 @@ final class Creature_Demo_Loan {
 
 	/** @var array<int, bool> */
 	private static $intent_lookup_noted = array();
+
+	/** @var bool Whether the block checkout fields carry hidden/required rules (WooCommerce 11.x rules and the cart extension). */
+	public static $block_rules_active = false;
 
 	/** @var array<int, string> */
 	private static $intent_status_cache = array();
@@ -152,6 +161,7 @@ final class Creature_Demo_Loan {
 		add_action( 'woocommerce_store_api_checkout_order_processed', array( __CLASS__, 'on_store_api_order' ), 10, 1 );
 		add_action( 'woocommerce_store_api_checkout_update_order_meta', array( __CLASS__, 'on_store_api_order' ), 10, 2 );
 		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'on_store_api_service_area' ), 10, 2 );
+		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'on_store_api_consent_gate' ), 10, 2 );
 
 		add_filter( 'woocommerce_order_actions', array( __CLASS__, 'filter_order_actions' ), 10, 2 );
 		add_action( 'woocommerce_order_action_creature_demo_start_loan', array( __CLASS__, 'action_start' ) );
@@ -1152,16 +1162,57 @@ final class Creature_Demo_Loan {
 	 * @param mixed  $request
 	 */
 	public static function on_store_api_order( $order, $request = null ) {
+		// The two checkout fields belong to demo-only baskets. On any other basket a
+		// value that arrives anyway (a stale tick, a hand-made request) is ignored
+		// and nothing is stored.
+		if ( ! self::cart_is_demo_only() && ! self::order_is_demo( $order ) ) {
+			return;
+		}
 		$value = self::block_consent_value( $order, $request );
 		if ( self::value_is_yes( $value ) ) {
 			self::store_consent( $order, true, gmdate( 'c' ) );
 		}
-		if ( self::cart_is_demo_only() || self::order_is_demo( $order ) ) {
-			self::capture_bundle_price( $order );
-			self::store_express_request( $order, self::value_is_yes( self::block_field_value( $order, $request, 'creature/demo-express-request' ) ) );
-			if ( method_exists( $order, 'save' ) ) {
-				$order->save();
-			}
+		self::capture_bundle_price( $order );
+		self::store_express_request( $order, self::value_is_yes( self::block_field_value( $order, $request, 'creature/demo-express-request' ) ) );
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
+	}
+
+	/**
+	 * Server-side backstop for the block checkout: a demo-only basket cannot be
+	 * placed without the consent answer in the request, whatever the hidden and
+	 * required rules on the field did in the browser. Checked on the order POST
+	 * only; the partial draft-order updates (PUT/PATCH) are left alone so a
+	 * rider is not blocked before they tick the box.
+	 *
+	 * @param object $order
+	 * @param mixed  $request
+	 */
+	public static function on_store_api_consent_gate( $order, $request = null ) {
+		unset( $order );
+		if ( ! self::cart_is_demo_only() ) {
+			return;
+		}
+		if ( is_object( $request ) && method_exists( $request, 'get_method' ) && 'POST' !== strtoupper( (string) $request->get_method() ) ) {
+			return;
+		}
+		$fields = array();
+		if ( is_object( $request ) && method_exists( $request, 'get_param' ) ) {
+			$fields = $request->get_param( 'additional_fields' );
+		} elseif ( is_array( $request ) && isset( $request['additional_fields'] ) ) {
+			$fields = $request['additional_fields'];
+		}
+		$value = is_array( $fields ) && isset( $fields['creature/demo-loan-consent'] ) ? $fields['creature/demo-loan-consent'] : null;
+		if ( self::value_is_yes( $value ) ) {
+			return;
+		}
+		$message = Creature_Demo_Loan_Copy::text( 'consent_error' );
+		if ( class_exists( 'Automattic\WooCommerce\StoreApi\Exceptions\RouteException' ) ) {
+			throw new Automattic\WooCommerce\StoreApi\Exceptions\RouteException( 'creature_demo_consent', $message, 400 );
+		}
+		if ( function_exists( 'wc_add_notice' ) ) {
+			wc_add_notice( $message, 'error' );
 		}
 	}
 
@@ -1187,7 +1238,7 @@ final class Creature_Demo_Loan {
 	 * @return array<string, mixed>
 	 */
 	public static function block_field_definition() {
-		return array(
+		$def = array(
 			'id'                => 'creature/demo-loan-consent',
 			'label'             => Creature_Demo_Loan_Copy::text( 'consent_checkbox' ),
 			'location'          => 'order',
@@ -1198,11 +1249,127 @@ final class Creature_Demo_Loan {
 				return Creature_Demo_Loan::validate_block_consent( $value );
 			},
 		);
+		if ( self::$block_rules_active ) {
+			// Shown and required only on a demo-only basket. Required is never true for a hidden field (WC 11.3.0 CheckoutFields.php:271-273).
+			$def['hidden']   = self::block_hidden_rule();
+			$def['required'] = self::block_demo_only_rule();
+		}
+		return $def;
+	}
+
+	/**
+	 * Whether this WooCommerce can run conditional hidden/required rules on an
+	 * additional checkout field AND expose a Store API cart extension: the
+	 * register function, the rule validator class (WC 11.3.0
+	 * src/Blocks/Domain/Services/CheckoutFieldsSchema/Validation.php) and the
+	 * cart endpoint extension function must all exist. The
+	 * creature_demo_loan_block_rules_supported filter can force it off.
+	 *
+	 * @return bool
+	 */
+	public static function block_rules_supported() {
+		$supported = function_exists( 'woocommerce_register_additional_checkout_field' )
+			&& function_exists( 'woocommerce_store_api_register_endpoint_data' )
+			&& class_exists( 'Automattic\WooCommerce\Blocks\Domain\Services\CheckoutFieldsSchema\Validation' );
+		if ( function_exists( 'apply_filters' ) ) {
+			$supported = (bool) apply_filters( 'creature_demo_loan_block_rules_supported', $supported );
+		}
+		return $supported;
+	}
+
+	/**
+	 * Store API cart extension data: one boolean. The product-id list in the
+	 * rule document (`cart.items`) holds the variation id for a variation (WC
+	 * 11.3.0 CartItemSchema.php:78), so "every item is a demo product" cannot
+	 * be written as a rule; the server answers it with the parent-aware check.
+	 *
+	 * @return array<string, bool>
+	 */
+	public static function cart_extension_data() {
+		return array( 'demo_only' => (bool) self::cart_is_demo_only() );
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public static function cart_extension_schema() {
+		return array(
+			'demo_only' => array(
+				'description' => 'Whether every item in the cart is a De-Reacher demo loan product.',
+				'type'        => 'boolean',
+				'context'     => array( 'view', 'edit' ),
+				'readonly'    => true,
+			),
+		);
+	}
+
+	/**
+	 * Registers the cart extension. False when WooCommerce refuses it.
+	 *
+	 * @return bool
+	 */
+	private static function register_cart_extension() {
+		$result = woocommerce_store_api_register_endpoint_data(
+			array(
+				'endpoint'        => 'cart',
+				'namespace'       => self::CART_EXTENSION_NAMESPACE,
+				'data_callback'   => array( __CLASS__, 'cart_extension_data' ),
+				'schema_callback' => array( __CLASS__, 'cart_extension_schema' ),
+				'schema_type'     => ARRAY_A,
+			)
+		);
+		return ! ( is_object( $result ) && is_a( $result, 'WP_Error' ) ) && false !== $result;
+	}
+
+	/**
+	 * JSON-schema rule: true only when the cart extension says demo_only is
+	 * exactly true. A missing extension is NOT demo-only. Rules are evaluated
+	 * against the document object (WC 11.3.0 DocumentObject.php:235-239, with
+	 * `extensions` at :170).
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function block_demo_only_rule() {
+		$ns = self::CART_EXTENSION_NAMESPACE;
+		return array(
+			'properties' => array(
+				'cart' => array(
+					'properties' => array(
+						'extensions' => array(
+							'properties' => array(
+								$ns => array(
+									'properties' => array(
+										'demo_only' => array( 'const' => true ),
+									),
+									'required'   => array( 'demo_only' ),
+								),
+							),
+							'required'   => array( $ns ),
+						),
+					),
+					'required'   => array( 'extensions' ),
+				),
+			),
+			'required'   => array( 'cart' ),
+		);
+	}
+
+	/**
+	 * Hidden unless demo-only: the negation of the demo-only rule.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function block_hidden_rule() {
+		return array( 'not' => self::block_demo_only_rule() );
 	}
 
 	public static function register_block_field() {
 		if ( is_array( self::$block_field ) ) {
 			return;
+		}
+		self::$block_rules_active = false;
+		if ( self::block_rules_supported() && function_exists( 'woocommerce_store_api_register_endpoint_data' ) ) {
+			self::$block_rules_active = self::register_cart_extension();
 		}
 		$def               = self::block_field_definition();
 		self::$block_field = $def;
@@ -1224,13 +1391,18 @@ final class Creature_Demo_Loan {
 		if ( '' === $label ) {
 			return null;
 		}
-		return array(
+		$def = array(
 			'id'       => 'creature/demo-express-request',
 			'label'    => $label,
 			'location' => 'order',
 			'type'     => 'checkbox',
 			'required' => false,
 		);
+		if ( self::$block_rules_active ) {
+			// Optional, and shown only on a demo-only basket.
+			$def['hidden'] = self::block_hidden_rule();
+		}
+		return $def;
 	}
 
 	/**
@@ -5229,11 +5401,25 @@ final class Creature_Demo_Loan {
 		if ( ! $on_checkout ) {
 			return;
 		}
-		$ids  = self::demo_product_ids();
-		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $ids ) : json_encode( $ids );
-		$flag = self::cart_is_demo_only() ? 'true' : 'false';
-		echo '<script>window.creatureDemoLoanIds=' . $json . ';window.creatureDemoLoanDemoCart=' . $flag . ';</script>';
-		echo '<script>(function(){var ids=window.creatureDemoLoanIds||[];function demoItem(item){var id=item.id||item.product_id||0;var parent=item.parent_id||item.parent||0;return ids.indexOf(id)!==-1||ids.indexOf(parent)!==-1;}function cartDemo(items){if(!items||!items.length)return false;for(var i=0;i<items.length;i++){if(!demoItem(items[i]))return false;}return true;}function toggle(on){var nodes=document.querySelectorAll("[id*=\'creature-demo-loan-consent\'],[for*=\'creature-demo-loan-consent\'],[id*=\'creature-demo-express-request\'],[for*=\'creature-demo-express-request\']");for(var i=0;i<nodes.length;i++){var row=nodes[i].closest? (nodes[i].closest(".wc-block-components-checkbox")||nodes[i].closest("p")||nodes[i].parentNode):nodes[i].parentNode;if(row&&row.style)row.style.display=on?"":"none";}}function read(){try{if(window.wp&&wp.data&&wp.data.select){var store=wp.data.select("wc/store/cart");if(store&&store.getCartData){var data=store.getCartData();if(data&&data.items)return data.items;}}}catch(e){}return null;}function tick(){var items=read();if(items)toggle(cartDemo(items));else toggle(!!window.creatureDemoLoanDemoCart);}tick();if(window.wp&&wp.data&&wp.data.subscribe)wp.data.subscribe(tick);})();</script>';
+		// With hidden/required rules on the fields (WooCommerce 11.x), WooCommerce
+		// itself shows, hides and validates them from the cart extension data, and
+		// no script is printed. The old inline toggle script is gone: it matched
+		// hyphenated ids, only re-ran on store changes (not when the field rows
+		// mounted) and recognised demo items by `id`/`parent_id`, which the Store
+		// API cart item does not carry for a variation.
+		if ( self::$block_rules_active ) {
+			return;
+		}
+		echo '<script>window.creatureDemoLoanDemoCart=' . ( self::cart_is_demo_only() ? 'true' : 'false' ) . ';</script>';
+		// Fallback for a WooCommerce without field rules: hide the two rows unless the
+		// basket is demo-only. Rows are found by id, for, name or label text, on every
+		// DOM change (the rows mount late), and the server ignores their values anyway.
+		$label_json = function_exists( 'wp_json_encode' ) ? wp_json_encode( array( Creature_Demo_Loan_Copy::text( 'consent_checkbox' ), self::express_label() ) ) : json_encode( array( Creature_Demo_Loan_Copy::text( 'consent_checkbox' ), self::express_label() ) );
+		echo '<script>window.creatureDemoLoanLabels=' . $label_json . ';</script>';
+		echo <<<'JS'
+<script>(function(){var re=/creature[\/_-]demo[-_](loan[-_]consent|express[-_]request)/i;var ns="creature-demo-loan";function demoOnly(){try{if(window.wp&&wp.data&&wp.data.select){var s=wp.data.select("wc/store/cart");var d=s&&s.getCartData?s.getCartData():null;var e=d&&d.extensions&&d.extensions[ns];if(e&&typeof e.demo_only==="boolean")return e.demo_only;}}catch(x){}return !!window.creatureDemoLoanDemoCart;}function row(el){return(el.closest&&(el.closest(".wc-block-components-checkbox")||el.closest(".wc-block-checkout__add-note")||el.closest("p")))||el.parentNode;}function labelHit(el){var labels=(window.creatureDemoLoanLabels||[]).filter(Boolean);if(!labels.length)return false;var t=(el.textContent||"").replace(/\s+/g," ").trim();for(var i=0;i<labels.length;i++){if(t&&t.indexOf(labels[i].replace(/\s+/g," ").trim().slice(0,40))===0)return true;}return false;}function apply(){var on=demoOnly();var seen=[];var q=document.querySelectorAll("[id],[for],[name]");for(var i=0;i<q.length;i++){var el=q[i];if(re.test((el.id||"")+" "+(el.getAttribute("for")||"")+" "+(el.getAttribute("name")||""))){seen.push(row(el));}}var cb=document.querySelectorAll(".wc-block-components-checkbox");for(var j=0;j<cb.length;j++){if(labelHit(cb[j]))seen.push(cb[j]);}for(var k=0;k<seen.length;k++){if(seen[k]&&seen[k].style)seen[k].style.display=on?"":"none";}}var queued=false;function queue(){if(queued)return;queued=true;(window.requestAnimationFrame||setTimeout)(function(){queued=false;apply();});}apply();if(window.MutationObserver&&document.body){new MutationObserver(queue).observe(document.body,{childList:true,subtree:true});}if(window.wp&&wp.data&&wp.data.subscribe)wp.data.subscribe(queue);})();</script>
+JS;
+		echo "\n";
 	}
 
 	/**

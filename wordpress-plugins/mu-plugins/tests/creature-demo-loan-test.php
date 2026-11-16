@@ -487,6 +487,17 @@ if ( ! function_exists( 'woocommerce_register_additional_checkout_field' ) ) {
 	}
 }
 
+if ( ! defined( 'ARRAY_A' ) ) {
+	define( 'ARRAY_A', 'ARRAY_A' );
+}
+
+if ( ! function_exists( 'woocommerce_store_api_register_endpoint_data' ) ) {
+	function woocommerce_store_api_register_endpoint_data( $args ) {
+		$GLOBALS['creature_demo_endpoint_data'][] = $args;
+		return ! empty( $GLOBALS['creature_demo_endpoint_fail'] ) ? new WP_Error( 'error', 'refused' ) : true;
+	}
+}
+
 if ( ! class_exists( 'WooCommerce' ) ) {
 	class WooCommerce {}
 }
@@ -3642,8 +3653,15 @@ creature_demo_expect( '' === $plain_order->get_meta( '_creature_demo_bundle_pric
 $plain_block = wc_create_order();
 Creature_Demo_Loan::on_store_api_order( $plain_block, array() );
 creature_demo_expect( '' === $plain_block->get_meta( '_creature_demo_bundle_price_source' ), 'a non-demo Store API order captures no bundle price' );
+// Round 3 A: a consent value posted with a non-demo basket is ignored, not stored and not turned into a demo order.
+$stray_consent = wc_create_order();
+Creature_Demo_Loan::on_store_api_order( $stray_consent, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '1' ) ) );
+creature_demo_expect( '' === $stray_consent->get_meta( '_creature_demo_consent' ) && '' === $stray_consent->get_meta( '_creature_demo_loan' ) && '' === $stray_consent->get_meta( '_creature_demo_bundle_price_source' ), 'a stray consent value on a non-demo Store API order stores nothing' );
+$GLOBALS['creature_demo_use_product'] = true;
+$GLOBALS['creature_demo_cart']        = array( array( 'product_id' => 9001, 'variation_id' => 0 ) );
 $block_demo = wc_create_order();
 Creature_Demo_Loan::on_store_api_order( $block_demo, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '1' ) ) );
+creature_demo_clear_cart();
 creature_demo_expect( 22900 === (int) $block_demo->get_meta( '_creature_demo_bundle_price_pence' ) && 'bundle' === $block_demo->get_meta( '_creature_demo_bundle_price_source' ), 'a demo Store API order captures the bundle price at booking' );
 
 // The cap is the lower of £212 and the loan's keep price, and the filter is clamped.
@@ -4537,6 +4555,182 @@ $GLOBALS['creature_demo_cart'] = array( array( 'product_id' => 50 ) );
 $ex_other = wc_create_order();
 Creature_Demo_Loan::on_store_api_order( $ex_other, array( 'additional_fields' => array( 'creature/demo-express-request' => '1' ) ) );
 creature_demo_expect( '' === $ex_other->get_meta( '_creature_demo_express_request' ), 'an order that is not a demo stores no answer' );
+creature_demo_clear_cart();
+$GLOBALS['creature_demo_use_product'] = false;
+
+// Round 3 A: the two block checkout fields show (and the consent is required) only on a demo-only basket.
+// Feature absent (this stub WooCommerce has no rule validator class): plain fields, no rules, no cart extension.
+creature_demo_expect( false === Creature_Demo_Loan::block_rules_supported() && false === Creature_Demo_Loan::$block_rules_active, 'without the rule validator class the field rules are not used' );
+$r3_plain = Creature_Demo_Loan::block_field_definition();
+creature_demo_expect( ! isset( $r3_plain['hidden'] ) && false === $r3_plain['required'], 'feature absent: the consent field has no hidden rule and is not required' );
+$r3_plain_ex = Creature_Demo_Loan::express_block_field_definition();
+creature_demo_expect( is_array( $r3_plain_ex ) && ! isset( $r3_plain_ex['hidden'] ), 'feature absent: the express field has no hidden rule' );
+
+/** Minimal JSON-schema evaluator for the keywords the field rules use: properties, required, const, not. */
+function creature_demo_rule_eval( $schema, $doc ) {
+	if ( isset( $schema['not'] ) && creature_demo_rule_eval( $schema['not'], $doc ) ) {
+		return false;
+	}
+	if ( array_key_exists( 'const', $schema ) && $doc !== $schema['const'] ) {
+		return false;
+	}
+	if ( isset( $schema['required'] ) ) {
+		if ( ! is_array( $doc ) ) {
+			return false;
+		}
+		foreach ( $schema['required'] as $key ) {
+			if ( ! array_key_exists( $key, $doc ) ) {
+				return false;
+			}
+		}
+	}
+	if ( isset( $schema['properties'] ) && is_array( $doc ) ) {
+		foreach ( $schema['properties'] as $key => $sub ) {
+			if ( array_key_exists( $key, $doc ) && ! creature_demo_rule_eval( $sub, $doc[ $key ] ) ) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// Feature present: register the cart extension and put the rules on both fields.
+$r3_support = static function () {
+	return true;
+};
+add_filter( 'creature_demo_loan_block_rules_supported', $r3_support );
+Creature_Demo_Loan::$block_field = null;
+$GLOBALS['creature_demo_block_fields'] = array();
+$GLOBALS['creature_demo_endpoint_data'] = array();
+Creature_Demo_Loan::register_block_field();
+creature_demo_expect( true === Creature_Demo_Loan::$block_rules_active, 'with the rule API present the field rules are active' );
+creature_demo_expect( 1 === count( $GLOBALS['creature_demo_endpoint_data'] ) && 'cart' === $GLOBALS['creature_demo_endpoint_data'][0]['endpoint'] && 'creature-demo-loan' === $GLOBALS['creature_demo_endpoint_data'][0]['namespace'], 'a Store API cart extension is registered under creature-demo-loan' );
+creature_demo_expect( 2 === count( $GLOBALS['creature_demo_block_fields'] ), 'both block fields are registered' );
+$r3_consent = $GLOBALS['creature_demo_block_fields'][0];
+$r3_express = $GLOBALS['creature_demo_block_fields'][1];
+creature_demo_expect( 'creature/demo-loan-consent' === $r3_consent['id'] && is_array( $r3_consent['hidden'] ) && is_array( $r3_consent['required'] ), 'the consent field carries hidden and required rules' );
+creature_demo_expect( 'creature/demo-express-request' === $r3_express['id'] && is_array( $r3_express['hidden'] ) && false === $r3_express['required'], 'the express field carries a hidden rule and stays optional' );
+creature_demo_expect( is_callable( $r3_consent['validate_callback'] ), 'the consent field keeps its server-side validate callback' );
+creature_demo_expect( array( 'demo_only' => true ) === ( function () {
+	$GLOBALS['creature_demo_use_product'] = true;
+	$GLOBALS['creature_demo_cart']        = array( array( 'product_id' => 9001, 'variation_id' => 0 ) );
+	return Creature_Demo_Loan::cart_extension_data();
+} )(), 'the cart extension reports demo_only true for a demo-only basket' );
+creature_demo_expect( isset( Creature_Demo_Loan::cart_extension_schema()['demo_only']['type'] ) && 'boolean' === Creature_Demo_Loan::cart_extension_schema()['demo_only']['type'], 'the cart extension schema declares a boolean' );
+
+// Evaluate the real rules against the real extension data for each basket.
+$r3_baskets = array(
+	'demo-only'           => array( array( array( 'product_id' => 9001, 'variation_id' => 0 ) ), true ),
+	'demo-only variation' => array( array( array( 'product_id' => 9001, 'variation_id' => 9100 ) ), true ),
+	'stem-only'           => array( array( array( 'product_id' => 50, 'variation_id' => 0 ) ), false ),
+	'mixed'               => array( array( array( 'product_id' => 9001 ), array( 'product_id' => 50 ) ), false ),
+	'empty'               => array( array(), false ),
+);
+foreach ( $r3_baskets as $r3_name => $r3_case ) {
+	$GLOBALS['creature_demo_cart'] = $r3_case[0];
+	$r3_doc     = array( 'cart' => array( 'extensions' => array( 'creature-demo-loan' => Creature_Demo_Loan::cart_extension_data() ) ) );
+	$r3_hidden  = creature_demo_rule_eval( $r3_consent['hidden'], $r3_doc );
+	$r3_req     = creature_demo_rule_eval( $r3_consent['required'], $r3_doc );
+	$r3_ex_hide = creature_demo_rule_eval( $r3_express['hidden'], $r3_doc );
+	creature_demo_expect( $r3_case[1] === ! $r3_hidden && $r3_case[1] === $r3_req && $r3_case[1] === ! $r3_ex_hide, 'rules: ' . $r3_name . ' basket ' . ( $r3_case[1] ? 'shows and requires' : 'hides and does not require' ) . ' the checkout fields' );
+}
+foreach ( array( 'no extensions' => array( 'cart' => array( 'extensions' => array() ) ), 'extension without the key' => array( 'cart' => array( 'extensions' => array( 'creature-demo-loan' => array() ) ) ), 'no cart' => array(), 'demo_only false' => array( 'cart' => array( 'extensions' => array( 'creature-demo-loan' => array( 'demo_only' => false ) ) ) ) ) as $r3_name => $r3_doc ) {
+	creature_demo_expect( true === creature_demo_rule_eval( $r3_consent['hidden'], $r3_doc ) && false === creature_demo_rule_eval( $r3_consent['required'], $r3_doc ), 'rules: ' . $r3_name . ' counts as not demo-only (hidden, not required)' );
+}
+creature_demo_expect( '' === ( function () {
+	ob_start();
+	Creature_Demo_Loan::print_checkout_script();
+	return ob_get_clean();
+} )(), 'with rules active no toggle script is printed' );
+
+// A cart extension WooCommerce refuses falls back to plain fields.
+$GLOBALS['creature_demo_endpoint_fail'] = true;
+Creature_Demo_Loan::$block_field        = null;
+$GLOBALS['creature_demo_block_fields']  = array();
+Creature_Demo_Loan::register_block_field();
+creature_demo_expect( false === Creature_Demo_Loan::$block_rules_active && ! isset( $GLOBALS['creature_demo_block_fields'][0]['hidden'] ), 'a refused cart extension leaves the plain fields' );
+$GLOBALS['creature_demo_endpoint_fail'] = false;
+
+// Server side, rules or not: the values of a non-demo basket are ignored, and a demo-only basket cannot skip the consent.
+$GLOBALS['creature_demo_use_product'] = true;
+foreach ( array( 'stem-only' => array( array( 'product_id' => 50 ) ), 'mixed' => array( array( 'product_id' => 9001 ), array( 'product_id' => 50 ) ) ) as $r3_name => $r3_cart ) {
+	$GLOBALS['creature_demo_cart']    = $r3_cart;
+	$GLOBALS['creature_demo_notices'] = array();
+	$r3_order                         = wc_create_order();
+	Creature_Demo_Loan::on_store_api_order( $r3_order, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '1', 'creature/demo-express-request' => '1' ) ) );
+	creature_demo_expect( '' === $r3_order->get_meta( '_creature_demo_consent' ) && '' === $r3_order->get_meta( '_creature_demo_express_request' ) && '' === $r3_order->get_meta( '_creature_demo_loan' ), 'a ' . $r3_name . ' order stores neither checkbox' );
+	creature_demo_expect( null === Creature_Demo_Loan::validate_block_consent( '' ), 'a ' . $r3_name . ' basket has no consent validation error' );
+	Creature_Demo_Loan::on_store_api_consent_gate( $r3_order, array( 'additional_fields' => array() ) );
+	creature_demo_expect( array() === $GLOBALS['creature_demo_notices'], 'a ' . $r3_name . ' basket is not refused for a missing consent' );
+}
+$GLOBALS['creature_demo_cart']    = array( array( 'product_id' => 9001, 'variation_id' => 0 ) );
+$GLOBALS['creature_demo_notices'] = array();
+Creature_Demo_Loan::on_store_api_consent_gate( null, array( 'additional_fields' => array() ) );
+creature_demo_expect( 1 === count( $GLOBALS['creature_demo_notices'] ) && 'error' === $GLOBALS['creature_demo_notices'][0][1], 'a demo-only order without the consent is refused server-side' );
+$GLOBALS['creature_demo_notices'] = array();
+Creature_Demo_Loan::on_store_api_consent_gate( null, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '0' ) ) );
+creature_demo_expect( 1 === count( $GLOBALS['creature_demo_notices'] ), 'a demo-only order with the consent unticked is refused server-side' );
+$GLOBALS['creature_demo_notices'] = array();
+Creature_Demo_Loan::on_store_api_consent_gate( null, array( 'additional_fields' => array( 'creature/demo-loan-consent' => true ) ) );
+creature_demo_expect( array() === $GLOBALS['creature_demo_notices'], 'a demo-only order with the consent ticked passes the server-side gate' );
+$r3_put = new class() {
+	public function get_method() {
+		return 'PUT';
+	}
+
+	public function get_param( $key ) {
+		return array();
+	}
+};
+$GLOBALS['creature_demo_notices'] = array();
+Creature_Demo_Loan::on_store_api_consent_gate( null, $r3_put );
+creature_demo_expect( array() === $GLOBALS['creature_demo_notices'], 'a partial draft-order update is not refused for a missing consent' );
+$r3_post = new class() {
+	public function get_method() {
+		return 'POST';
+	}
+
+	public function get_param( $key ) {
+		return array();
+	}
+};
+Creature_Demo_Loan::on_store_api_consent_gate( null, $r3_post );
+creature_demo_expect( 1 === count( $GLOBALS['creature_demo_notices'] ), 'a demo-only POST without the consent is refused through a request object too' );
+creature_demo_expect( is_object( Creature_Demo_Loan::validate_block_consent( '' ) ), 'the field validate callback still refuses an empty consent on a demo-only basket' );
+$r3_demo_order = wc_create_order();
+Creature_Demo_Loan::on_store_api_order( $r3_demo_order, array( 'additional_fields' => array( 'creature/demo-loan-consent' => '1', 'creature/demo-express-request' => '1' ) ) );
+creature_demo_expect( 'yes' === $r3_demo_order->get_meta( '_creature_demo_consent' ) && 'version-5.1' === $r3_demo_order->get_meta( '_creature_demo_consent_version' ) && '' !== $r3_demo_order->get_meta( '_creature_demo_consent_at' ) && 'yes' === $r3_demo_order->get_meta( '_creature_demo_express_request' ), 'a demo-only block order still stores consent (version-5.1, timestamp) and the express answer' );
+$hooked = false;
+foreach ( $GLOBALS['creature_demo_hooks'] as $r3_hook ) {
+	if ( 'woocommerce_store_api_checkout_update_order_from_request' === $r3_hook[0] && array( 'Creature_Demo_Loan', 'on_store_api_consent_gate' ) === $r3_hook[1] ) {
+		$hooked = true;
+	}
+}
+creature_demo_expect( $hooked, 'the server-side consent gate is hooked on the Store API order update' );
+// Classic checkout is unchanged.
+$GLOBALS['creature_demo_notices'] = array();
+$_POST = array( 'billing_country' => 'GB', 'billing_postcode' => 'SW1A 1AA' );
+Creature_Demo_Loan::on_checkout_process();
+creature_demo_expect( 1 === count( $GLOBALS['creature_demo_notices'] ), 'classic checkout still refuses a demo-only basket without the box' );
+ob_start();
+Creature_Demo_Loan::on_before_submit();
+creature_demo_expect( false !== strpos( ob_get_clean(), 'name="creature_demo_loan_consent"' ), 'classic checkout still shows the consent box on a demo-only basket' );
+$_POST = array();
+remove_filter( 'creature_demo_loan_block_rules_supported', $r3_support );
+Creature_Demo_Loan::$block_field = null;
+$GLOBALS['creature_demo_block_fields'] = array();
+Creature_Demo_Loan::$block_rules_active = false;
+// Fallback script (no rules): printed on the checkout page only, and keyed off the server flag, labels and the cart extension.
+$GLOBALS['creature_demo_is_checkout'] = true;
+ob_start();
+Creature_Demo_Loan::print_checkout_script();
+$r3_script = ob_get_clean();
+creature_demo_expect( false !== strpos( $r3_script, 'creatureDemoLoanDemoCart=true' ) && false !== strpos( $r3_script, 'MutationObserver' ) && false !== strpos( $r3_script, 'demo_only' ) && false === strpos( $r3_script, "[id*='creature-demo-loan-consent']" ), 'without rules the fallback script is printed, watches the DOM and reads the cart extension' );
+$GLOBALS['creature_demo_cart'] = array( array( 'product_id' => 50 ) );
+ob_start();
+Creature_Demo_Loan::print_checkout_script();
+creature_demo_expect( false !== strpos( ob_get_clean(), 'creatureDemoLoanDemoCart=false' ), 'the fallback script reports a stem-only basket as not demo-only' );
+$GLOBALS['creature_demo_is_checkout'] = false;
 creature_demo_clear_cart();
 $GLOBALS['creature_demo_use_product'] = false;
 $GLOBALS['creature_demo_copy_override'] = creature_demo_empty_copy_baseline();
