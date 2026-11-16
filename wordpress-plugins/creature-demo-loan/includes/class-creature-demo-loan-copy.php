@@ -10,9 +10,10 @@
  *
  * Placeholders: {amount} {price} {released} {reason} {link} {due} {coupon} {order_id}
  * {choice_links} {decision} {findings} {photos} {grace_end} {deemed_on}
+ * {last_post_date} {terms_version}
  * {consent} {consent_version} {consent_at} {express_answer} {late_runs} {kept} {decision_reasons}. {price} is the
  * loan's keep price. Dates that reach a customer ({due}, {grace_end},
- * {deemed_on}) are shown as "30 November 2026"; stored dates stay Y-m-d. Email
+ * {deemed_on}, {last_post_date}) are shown as "30 November 2026"; stored dates stay Y-m-d. Email
  * bodies are templates filled at send time and are edited in place; only the
  * consent wording is versioned.
  *
@@ -28,8 +29,8 @@ if ( ! defined( 'ABSPATH' ) && PHP_SAPI !== 'cli' ) {
  */
 final class Creature_Demo_Loan_Copy {
 
-	/** The consent version stored on new orders: the terms' "version 5". */
-	const CONSENT_CURRENT = 'version-5';
+	/** The consent version stored on new orders: the terms' "version 5.1" (clause 2.6 deleted; same Appendix A wording as version 5). */
+	const CONSENT_CURRENT = 'version-5.1';
 
 	/**
 	 * @return array<string, array{subject: string, body: string}>
@@ -141,7 +142,7 @@ final class Creature_Demo_Loan_Copy {
 				'body'    => $grace,
 			),
 			'reminder_deemed_warning'       => array(
-				'subject' => 'De-Reacher demo: it will be treated as bought unless it’s posted by day 13 (due date {due})',
+				'subject' => 'De-Reacher demo: it will be treated as bought unless it’s posted by {last_post_date}',
 				'body'    => 'Your De-Reacher demo (order {order_id}) was due back on {due}. If it hasn’t been posted back by the end of the 13th day after that date, it will be treated as bought on the 14th day, at your keep price of {price}. No late fees are added to that price. We’ll email you the amount and a payment link first. If it isn’t paid or disputed within 7 days, we’ll charge your saved card. To avoid this, book your return in My account, under Demo loan, and post the kit with the QR code we email you. If you’d rather keep it, you can choose that now for the same price.',
 			),
 			'charge_notice_keep'            => array(
@@ -200,12 +201,12 @@ final class Creature_Demo_Loan_Copy {
 			// Terms 3.2. Cadence v2.
 			'dates_on_delivery'             => array(
 				'subject' => 'Your De-Reacher demo dates: due back {due}',
-				'body'    => "Your De-Reacher demo kit (order {order_id}) has been delivered. The loan lasts 21 days, and the delivery day is day 1.\n\nDue date: {due}. Post the kit back by then, or choose to keep it.\nLast day of grace: {grace_end}. No fee if the kit is posted by the end of this day.\nLate fee: £3 a day from the day after {grace_end}, up to £24 in total.\nDeemed purchase date: {deemed_on}. If the kit hasn’t been posted back by the end of the day before, it’s treated as bought at your keep price of {price}.\n\nEach day ends at midnight, UK time. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. These dates are also in My account, under Demo loan. If you need longer, ask us before the due date.\n\nBefore you ride: fit it following our user guide (creaturecycles.co.uk/de-reacher-user-guide/), the inverted mount kit instructions and the torque card, using a calibrated torque wrench. Please don’t cut your steerer. Check the bolts before every ride. If you crash or have an impact, stop using it and tell us at info@creaturecycles.co.uk. Keep the original box, because the whole kit goes back in it.",
+				'body'    => "Your De-Reacher demo kit (order {order_id}) has been delivered. The loan lasts 21 days, and the delivery day is day 1.\n\nDue date: {due}. Post the kit back by then, or choose to keep it.\nLast day of grace: {grace_end}. No fee if the kit is posted by the end of this day.\nLate fee: £3 a day from the day after {grace_end}, up to £24 in total.\nDeemed purchase date: {deemed_on}. If the kit hasn’t been posted back by the end of the day before, it’s treated as bought at your keep price of {price}.\n\nEach day ends at midnight, UK time. The kit counts as posted on the date on your proof of posting or the date Royal Mail first scans it, whichever is earlier. Booking a return doesn’t count. These dates are also in My account, under Demo loan. If you need longer, ask us before the due date.\n\nBefore you ride: fit it following our user guide (creaturecycles.co.uk/de-reacher-user-guide/), the inverted mount kit instructions and the torque card, using a calibrated torque wrench. Check the bolts before every ride. If you crash or have an impact, stop using it and tell us at info@creaturecycles.co.uk. Keep the original box, because the whole kit goes back in it.",
 			),
 			// Terms 11.1 and Appendix B: body only, added to the end of the Woo order email. Cadence v2. The subject is not used.
 			'booking_confirmation'          => array(
 				'subject' => '',
-				'body'    => "De-Reacher demo booking (order {order_id})\n\nYour demo terms (version 5) and our model cancellation form are attached to this email. We’ll email your due date, the last day of your grace period and your deemed purchase date once the kit is delivered.\n\nYour keep price: {price}\n\nYour consent to later charges ({consent_version}, agreed on {consent_at}):\n“{consent}”\n\nYour answer to “Send my kit now”: {express_answer}. If you answered Yes, we’ll send the kit within your 14-day cancellation period. If you answered No, we’ll hold it until that period ends.\n\nCancelling: you can cancel this demo booking within 14 days of the day we confirm it, without giving a reason. Email info@creaturecycles.co.uk or use the attached model cancellation form. If you cancel before we’ve dispatched the kit, we’ll refund the full £25 within 14 days. If the kit has already been sent, book your return in My account, under Demo loan, and send it back. We’ll refund the £25 within 14 days of your cancellation, less £25 ÷ 21 for each day of the loan up to and including the day you post it.",
+				'body'    => "De-Reacher demo booking (order {order_id})\n\nYour demo terms (version {terms_version}) and our model cancellation form are attached to this email. We’ll email your due date, the last day of your grace period and your deemed purchase date once the kit is delivered.\n\nYour keep price: {price}\n\nYour consent to later charges ({consent_version}, agreed on {consent_at}):\n“{consent}”\n\nYour answer to “Send my kit now”: {express_answer}. If you answered Yes, we’ll send the kit within your 14-day cancellation period. If you answered No, we’ll hold it until that period ends.\n\nCancelling: you can cancel this demo booking within 14 days of the day we confirm it, without giving a reason. Email info@creaturecycles.co.uk or use the attached model cancellation form. If you cancel before we’ve dispatched the kit, we’ll refund the full £25 within 14 days. If the kit has already been sent, book your return in My account, under Demo loan, and send it back. We’ll refund the £25 within 14 days of your cancellation, less £25 ÷ 21 for each day of the loan up to and including the day you post it.",
 			),
 			'choice_return_recorded'        => array(
 				'subject' => 'Return booked for your De-Reacher demo: £25 code once it’s back',
@@ -294,15 +295,19 @@ final class Creature_Demo_Loan_Copy {
 	 * @return string[]
 	 */
 	public static function consent_versions() {
-		return array( self::CONSENT_CURRENT, 'v5b', 'v5', 'v4' );
+		return array( self::CONSENT_CURRENT, 'version-5', 'v5b', 'v5', 'v4' );
 	}
 
 	/**
-	 * Fixed wording for one terms version. `version-5` is terms v5 Appendix A,
-	 * character for character. `v5b`, `v5` and `v4` stay exactly as they were so
+	 * Fixed wording for one terms version. `version-5.1` and `version-5` are both
+	 * the terms' Appendix A, character for character (v5.1 only deleted clause 2.6,
+	 * which Appendix A does not quote, so the wording is the same). `v5b`, `v5` and `v4` stay exactly as they were so
 	 * an older order can still be read back as the text that version stored.
 	 * `v5` is an older draft (a fixed "£212") and is never used for a new order.
-	 * A version string that matches nothing falls back to `version-5`.
+	 * A version string that matches nothing gets the `version-5` / `version-5.1`
+	 * wording (the same text). Elsewhere an unknown version reads as the current
+	 * terms: consent_terms_number() gives 5.1 and Creature_Demo_Loan::consent_version()
+	 * falls back to `version-5.1`.
 	 *
 	 * @param string $version
 	 * @return string
@@ -322,7 +327,7 @@ final class Creature_Demo_Loan_Copy {
 		if ( 'v5b' === $version ) {
 			return $v5b;
 		}
-		// `version-5`, and any version string that matches nothing.
+		// `version-5.1`, `version-5`, and any version string that matches nothing.
 		return $version_5;
 	}
 
@@ -336,7 +341,10 @@ final class Creature_Demo_Loan_Copy {
 	 */
 	public static function consent_version_label( $version ) {
 		$version = (string) $version;
-		if ( self::CONSENT_CURRENT === $version || 'v5b' === $version ) {
+		if ( 'version-5.1' === $version ) {
+			return 'Terms version 5.1';
+		}
+		if ( 'version-5' === $version || 'v5b' === $version ) {
 			return 'Terms version 5';
 		}
 		if ( 'v5' === $version ) {
@@ -346,6 +354,26 @@ final class Creature_Demo_Loan_Copy {
 			return 'Terms version 4';
 		}
 		return '' === $version ? '' : $version;
+	}
+
+	/**
+	 * The terms version number a stored consent version names, for customer copy
+	 * such as "Your demo terms (version 5.1)". An order with no recorded version,
+	 * or one the plugin does not know, reads as the current terms.
+	 *
+	 * @param string $version
+	 * @return string
+	 */
+	public static function consent_terms_number( $version ) {
+		$map     = array(
+			'version-5.1' => '5.1',
+			'version-5'   => '5',
+			'v5b'         => '5',
+			'v5'          => '5',
+			'v4'          => '4',
+		);
+		$version = (string) $version;
+		return isset( $map[ $version ] ) ? $map[ $version ] : $map[ self::CONSENT_CURRENT ];
 	}
 
 	/**
@@ -458,6 +486,8 @@ final class Creature_Demo_Loan_Copy {
 			'{due}'             => $date( 'due' ),
 			'{grace_end}'       => $date( 'grace_end' ),
 			'{deemed_on}'       => $date( 'deemed_on' ),
+			'{last_post_date}'  => $date( 'last_post_date' ),
+			'{terms_version}'   => isset( $args['terms_version'] ) ? (string) $args['terms_version'] : '',
 			'{coupon}'          => isset( $args['coupon'] ) ? (string) $args['coupon'] : '',
 			'{order_id}'        => isset( $args['order_id'] ) ? (string) $args['order_id'] : '',
 			'{choice_links}'    => isset( $args['choice_links'] ) ? (string) $args['choice_links'] : '',

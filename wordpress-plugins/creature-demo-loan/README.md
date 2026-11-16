@@ -2,7 +2,7 @@
 
 Postal demo loan for the De-Reacher. The rider pays £25 at checkout, the card is saved with the WooCommerce Stripe Gateway, and later charges (the one bill for late fees, damage and missing parts, keep, deemed purchase) go through a payment link first. The saved card is charged only after the notice window, and only in Stripe test mode unless live charges are turned on in `wp-config.php`.
 
-This plugin follows the published demo terms, version 5 (dated 1 November 2026).
+This plugin follows the published demo terms, version 5.1 (version 5 of 1 November 2026 with clause 2.6 deleted and the old 2.7 renumbered 2.6). Orders that recorded version 5 keep reading as version 5.
 
 WooCommerce and WooCommerce Stripe Gateway 11.x must already be active. This is a normal plugin. It is not a must-use file.
 
@@ -111,7 +111,7 @@ Before any saved-card charge the plugin emails the amount, the reason, and the p
 
 ## Consent
 
-New orders store the consent version `version-5`: the wording is the terms' Appendix A, and the admin screen and the booking confirmation read it back as "Terms version 5". `v5b` also reads back as "Terms version 5". `v5` (an older draft with a fixed "£212") and `v4` read back as the text they stored. A version string the plugin does not know falls back to `version-5`.
+New orders store the consent version `version-5.1`: the wording is the terms' Appendix A (identical to version 5, because Appendix A quotes clause 4 only and not the deleted 2.6), and the admin screen and the booking confirmation read it back as "Terms version 5.1". Orders that stored `version-5` or `v5b` still read back as "Terms version 5" with the wording they stored. `v5` (an older draft with a fixed "£212") and `v4` read back as the text they stored. A version string the plugin does not know falls back to `version-5.1`. The booking confirmation's "Your demo terms (version N)" and the missing-attachment notice follow the version recorded on the order (the notice names the current terms PDF, version 5.1).
 
 ## James’s flags
 
@@ -151,8 +151,33 @@ What a run sets (a reminder sent, the deemed raise) stays set on that order.
 
 Not covered: the 60-day coupon expiry. It is set when the kit is returned or inspected, not by the daily job, so this tool does not move it.
 
+### PayPal buttons on the demo kit (1.3.2)
+
+Targets WooCommerce PayPal Payments **4.2.2**, which uses the v6 Web SDK by default. On the demo product page (any product in the demo product ids, 8946 by default), and anywhere while the cart holds ANY demo item, demo-only or mixed (cart, checkout, block cart and checkout, mini-cart), the PayPal Express buttons and the Pay Later message (`.ppcp-messages`) are hidden. Ordinary products and carts with no demo item keep PayPal exactly as before. No PayPal setting is changed. A mixed cart is still refused at checkout by the mixed-basket check (`woocommerce_check_cart_items`), whichever gateway is chosen; that server-side check is the backstop and is unchanged.
+
+- v5: the plugin hooks `woocommerce_paypal_payments_product_buttons_disabled` (accepts a product object, a product id, or the context array) and `woocommerce_paypal_payments_buttons_disabled`.
+- v6: 4.2.2 has no filter for it, so on those pages only, the plugin dequeues `wc-ppcp-sdk-v6-boot` and `wc-ppcp-sdk-v6-gateway` after PayPal enqueues them (`wp_enqueue_scripts`, priority 999), prints a small `<style id="creature-demo-loan-hide-paypal">` hiding the PayPal wrappers (`#ppc-button-ppcp-gateway-v6`, `#ppc-button-minicart-v6`, `#ppc-button-ppcp-gateway`, `#ppc-button-minicart`, `.ppc-button-wrapper`), and sets `buttons_enabled` to false in `woocommerce_paypal_payments_blocks_payment_method_data`. Everything is guarded and does nothing if PayPal Payments is absent or a different version.
+
+Check on staging: view source of the demo product page (8946). There should be no `wc-ppcp-sdk-v6-boot` script, no `wc_ppcp_sdk_v6` data, and the `creature-demo-loan-hide-paypal` style is present. On a normal product page `wc-ppcp-sdk-v6-boot` is still there and the style is not. Re-check after any PayPal Payments update.
+
+### Block checkout fields (1.3.2)
+
+The two block checkout checkboxes, the consent ("charge this card later...") and "Send my kit now...", show only on a demo-only basket. They are registered with WooCommerce's conditional field rules (`hidden` and `required`, WooCommerce 11.x, checked against 11.3.0) keyed off a Store API cart extension, `creature-demo-loan` with `demo_only` (a boolean). The server works out `demo_only` from the cart (parent-aware, so a variation of a demo product counts), because the rule document's `cart.items` holds the variation id, not the parent. On a stem-only or mixed basket both rows are hidden, the consent is not required, and nothing is stored. On a demo-only basket the consent is required, and is stored with its version (`version-5.1`) and timestamp, and the express answer is stored.
+
+The server does not trust the browser: a demo-only order placed through the Store API without the consent is refused, whatever the rules did. If the WooCommerce in use has no field rules or no cart extension API the fields stay plain and a small fallback script hides them off a demo-only basket.
+
+### Emails
+
+The plugin's own emails (customer and shop) go through WooCommerce's mailer, which sets the sender from WooCommerce > Settings > Emails. Only when the plugin falls back to a plain `wp_mail` call (no WooCommerce mailer) does it add a `From:` header, built from `woocommerce_email_from_name` and `woocommerce_email_from_address` (each through the filter of the same name). If the address is empty or invalid there is no From header and WordPress's default applies. There is no global `wp_mail_from` filter. Subjects, bodies and the test redirect are unchanged.
+
+The final send of each of the plugin's own emails (customer and shop) goes through WooCommerce's mailer: the body is turned into escaped HTML (blank lines make paragraphs; bare URLs, the user-guide address `creaturecycles.co.uk/de-reacher-user-guide/` and `info@creaturecycles.co.uk` become links, in the HTML only; the plain text is unchanged), wrapped with `WC()->mailer()->wrap_message()` so it gets the header, base colour and footer from WooCommerce > Settings > Emails, and sent with `WC()->mailer()->send()` and a `Content-Type: text/html; charset=UTF-8` header. The recipient, `[TEST]` subject and redirect are decided before that and are unchanged. If `WC()` or its mailer is not available, the email goes by `wp_mail` as plain text, as before. No `wp_mail_content_type` filter is added by the plugin. There is no plain-text alternative part. Every rider email ends with a "Sign in to manage your demo loan" link (the My account Demo loan tab) and a "Reset it here" lost-password link; the booking confirmation, which is WooCommerce's own order email, carries them at the top of the booking block. Shop emails do not.
+
 ### Changelog
 
+- **1.3.2** (review rounds 1 to 3):
+  - Round 1: hide PayPal Payments buttons (v5 filters, v6 script dequeue) on the demo kit; `From:` header on the plugin's own emails; the steerer sentence removed from the delivery email's "Before you ride" paragraph; terms version 5.1 (`version-5.1`, version 5 still read back); deemed-warning subject names the last posting date (`{last_post_date}`).
+  - Round 2: the pay-link `choice_url` is no longer double-escaped; the Pay Later message (`.ppcp-messages`) is hidden on demo pages by the same inline CSS (a `<style>` block, not a script); the consent fallback comment; a raw pay link in the plain text; a sign-in link (My account Demo loan tab, plus "Reset it here") in every rider email and in the WooCommerce booking email; rider emails go through WooCommerce's email template.
+  - Round 3: the block checkout consent and "Send my kit now" checkboxes show only on a demo-only basket (WooCommerce hidden/required rules from a Store API cart extension; the old inline toggle script is gone when rules are available; the server ignores both values on other baskets and refuses a demo-only order with no consent); PayPal Express and Pay Later are hidden when the cart holds any demo item, mixed carts included (a mixed cart is still refused at checkout); the plugin adds its own `From:` header only on the plain `wp_mail` fallback, and WooCommerce sets the sender otherwise; the user-guide address and `info@creaturecycles.co.uk` are links in the HTML emails (plain text unchanged).
 - **1.3.1**: as-of test tool (test orders only), described above. Review fixes: test flag forces the email redirect; flag only on demo loan orders and must be saved by an earlier update than the run; charge orders from a test loan are flagged and cannot be charged; date limited to the order date plus one year; clearer gate line.
 
 ## Checks
