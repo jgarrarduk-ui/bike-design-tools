@@ -2,7 +2,7 @@
 
 Postal demo loan for the De-Reacher. The rider pays £25 at checkout, the card is saved with the WooCommerce Stripe Gateway, and later charges (the one bill for late fees, damage and missing parts, keep, deemed purchase) go through a payment link first. The saved card is charged only after the notice window, and only in Stripe test mode unless live charges are turned on in `wp-config.php`.
 
-This plugin follows the published demo terms, version 5 (dated 1 November 2026).
+This plugin follows the published demo terms, version 5.1 (version 5 of 1 November 2026 with clause 2.6 deleted and the old 2.7 renumbered 2.6). Orders that recorded version 5 keep reading as version 5.
 
 WooCommerce and WooCommerce Stripe Gateway 11.x must already be active. This is a normal plugin. It is not a must-use file.
 
@@ -111,7 +111,7 @@ Before any saved-card charge the plugin emails the amount, the reason, and the p
 
 ## Consent
 
-New orders store the consent version `version-5`: the wording is the terms' Appendix A, and the admin screen and the booking confirmation read it back as "Terms version 5". `v5b` also reads back as "Terms version 5". `v5` (an older draft with a fixed "£212") and `v4` read back as the text they stored. A version string the plugin does not know falls back to `version-5`.
+New orders store the consent version `version-5.1`: the wording is the terms' Appendix A (identical to version 5, because Appendix A quotes clause 4 only and not the deleted 2.6), and the admin screen and the booking confirmation read it back as "Terms version 5.1". Orders that stored `version-5` or `v5b` still read back as "Terms version 5" with the wording they stored. `v5` (an older draft with a fixed "£212") and `v4` read back as the text they stored. A version string the plugin does not know falls back to `version-5.1`. The booking confirmation's "Your demo terms (version N)" and the missing-attachment notice follow the version recorded on the order (the notice names the current terms PDF, version 5.1).
 
 ## James’s flags
 
@@ -151,8 +151,22 @@ What a run sets (a reminder sent, the deemed raise) stays set on that order.
 
 Not covered: the 60-day coupon expiry. It is set when the kit is returned or inspected, not by the daily job, so this tool does not move it.
 
+### PayPal buttons on the demo kit (1.3.2)
+
+Targets WooCommerce PayPal Payments **4.2.2**, which uses the v6 Web SDK by default. On the demo product page (any product in the demo product ids, 8946 by default), and anywhere while the cart is demo-only (cart, checkout, block cart and checkout, mini-cart), the PayPal buttons are hidden. Ordinary products and mixed or normal carts keep PayPal exactly as before. No PayPal setting is changed.
+
+- v5: the plugin hooks `woocommerce_paypal_payments_product_buttons_disabled` (accepts a product object, a product id, or the context array) and `woocommerce_paypal_payments_buttons_disabled`.
+- v6: 4.2.2 has no filter for it, so on those pages only, the plugin dequeues `wc-ppcp-sdk-v6-boot` and `wc-ppcp-sdk-v6-gateway` after PayPal enqueues them (`wp_enqueue_scripts`, priority 999), prints a small `<style id="creature-demo-loan-hide-paypal">` hiding the PayPal wrappers (`#ppc-button-ppcp-gateway-v6`, `#ppc-button-minicart-v6`, `#ppc-button-ppcp-gateway`, `#ppc-button-minicart`, `.ppc-button-wrapper`), and sets `buttons_enabled` to false in `woocommerce_paypal_payments_blocks_payment_method_data`. Everything is guarded and does nothing if PayPal Payments is absent or a different version.
+
+Check on staging: view source of the demo product page (8946). There should be no `wc-ppcp-sdk-v6-boot` script, no `wc_ppcp_sdk_v6` data, and the `creature-demo-loan-hide-paypal` style is present. On a normal product page `wc-ppcp-sdk-v6-boot` is still there and the style is not. Re-check after any PayPal Payments update.
+
+### Emails
+
+The plugin's own emails (customer and shop) carry a `From:` header built from WooCommerce's sender settings (`woocommerce_email_from_name` and `woocommerce_email_from_address`, each through the filter of the same name). If the address is empty or invalid there is no From header and WordPress's default applies. Only this plugin's own `wp_mail` calls are affected; there is no global `wp_mail_from` filter. The mail stays plain text. Subjects, bodies and the test redirect are unchanged.
+
 ### Changelog
 
+- **1.3.2**: hide PayPal Payments buttons (v5 and v6) on the demo kit; `From:` header on the plugin's own emails; the steerer sentence removed from the delivery email's "Before you ride" paragraph; terms version 5.1 (`version-5.1`, version 5 still read back); deemed-warning subject names the last posting date (`{last_post_date}`).
 - **1.3.1**: as-of test tool (test orders only), described above. Review fixes: test flag forces the email redirect; flag only on demo loan orders and must be saved by an earlier update than the run; charge orders from a test loan are flagged and cannot be charged; date limited to the order date plus one year; clearer gate line.
 
 ## Checks

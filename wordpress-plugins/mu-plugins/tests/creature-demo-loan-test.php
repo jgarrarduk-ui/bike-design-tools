@@ -1519,7 +1519,7 @@ creature_demo_expect( false === Creature_Demo_Loan::store_consent( $consent_orde
 creature_demo_expect( true === Creature_Demo_Loan::store_consent( $consent_order, true, '2026-03-02T12:00:00+00:00' ), 'a ticked box is stored' );
 creature_demo_expect( 'yes' === $consent_order->get_meta( '_creature_demo_consent' ), 'consent is recorded as yes' );
 creature_demo_expect( $consent === $consent_order->get_meta( '_creature_demo_consent_wording' ), 'the agreed wording is stored' );
-creature_demo_expect( 'version-5' === $consent_order->get_meta( '_creature_demo_consent_version' ), 'the consent version stored for a new order is version-5' );
+creature_demo_expect( 'version-5.1' === $consent_order->get_meta( '_creature_demo_consent_version' ), 'the consent version stored for a new order is version-5.1' );
 creature_demo_expect( false !== strpos( (string) $consent_order->get_meta( '_creature_demo_consent_wording' ), 'never be more than £212' ), 'the stored version-5 wording includes the overall cap' );
 $v4_order = wc_create_order();
 $GLOBALS['creature_demo_consent_version'] = 'v4';
@@ -1533,7 +1533,7 @@ creature_demo_expect( '2026-03-02T12:00:00+00:00' === $consent_order->get_meta( 
 $_POST['creature_demo_loan_consent'] = '1';
 $checkout_order = wc_create_order();
 Creature_Demo_Loan::on_checkout_create_order( $checkout_order );
-creature_demo_expect( 'version-5' === $checkout_order->get_meta( '_creature_demo_consent_version' ), 'classic checkout stores version-5' );
+creature_demo_expect( 'version-5.1' === $checkout_order->get_meta( '_creature_demo_consent_version' ), 'classic checkout stores version-5.1' );
 $block_order = wc_create_order();
 Creature_Demo_Loan::on_store_api_order(
 	$block_order,
@@ -4185,7 +4185,15 @@ creature_demo_expect( $v5b_text === str_replace( array( '’' ), array( "'" ), $
 creature_demo_expect( $fixture === Creature_Demo_Loan_Copy::consent_wording( 'v9-unknown' ), 'a version that matches nothing falls back to version-5' );
 creature_demo_expect( $fixture === Creature_Demo_Loan_Copy::consent_wording( '' ), 'an empty version falls back to version-5' );
 creature_demo_expect( $v4_text !== Creature_Demo_Loan_Copy::consent_wording( 'v5b' ) && $v4_text !== $v5_text && $v4_text !== $fixture && $v5_text !== $fixture, 'the four versions are four different texts' );
-creature_demo_expect( array( 'version-5', 'v5b', 'v5', 'v4' ) === Creature_Demo_Loan_Copy::consent_versions(), 'the plugin knows version-5, v5b, v5 and v4' );
+creature_demo_expect( array( 'version-5.1', 'version-5', 'v5b', 'v5', 'v4' ) === Creature_Demo_Loan_Copy::consent_versions(), 'the plugin knows version-5.1, version-5, v5b, v5 and v4' );
+creature_demo_expect( 'version-5.1' === Creature_Demo_Loan_Copy::CONSENT_CURRENT, 'the current consent version is version-5.1' );
+creature_demo_expect( $fixture === Creature_Demo_Loan_Copy::consent_wording( 'version-5.1' ) && Creature_Demo_Loan_Copy::consent_wording( 'version-5' ) === Creature_Demo_Loan_Copy::consent_wording( 'version-5.1' ), 'version-5.1 wording is the Appendix A fixture, identical to version-5' );
+creature_demo_expect( 'Terms version 5.1' === Creature_Demo_Loan_Copy::consent_version_label( 'version-5.1' ), 'version-5.1 reads back as Terms version 5.1' );
+foreach ( array( 'version-5.1', 'version-5' ) as $allow_v ) {
+	$GLOBALS['creature_demo_consent_version'] = $allow_v;
+	creature_demo_expect( $allow_v === Creature_Demo_Loan::consent_version(), "the consent-version filter allow-list accepts {$allow_v}" );
+}
+$GLOBALS['creature_demo_consent_version'] = null;
 foreach ( array( 'version-5', 'v5b' ) as $v5_key ) {
 	creature_demo_expect( 'Terms version 5' === Creature_Demo_Loan_Copy::consent_version_label( $v5_key ), "{$v5_key} reads back as Terms version 5" );
 }
@@ -4193,10 +4201,10 @@ creature_demo_expect( 'Terms version 4' === Creature_Demo_Loan_Copy::consent_ver
 creature_demo_expect( 'Terms version 5' !== Creature_Demo_Loan_Copy::consent_version_label( 'v5' ) && false !== strpos( Creature_Demo_Loan_Copy::consent_version_label( 'v5' ), 'earlier draft' ), 'the old v5 draft is not passed off as Terms version 5' );
 // A filter naming a version the plugin does not know stores version-5, so the stored version matches the wording.
 $GLOBALS['creature_demo_consent_version'] = 'v9-unknown';
-creature_demo_expect( 'version-5' === Creature_Demo_Loan::consent_version(), 'an unknown version string from the filter falls back to version-5' );
+creature_demo_expect( 'version-5.1' === Creature_Demo_Loan::consent_version(), 'an unknown version string from the filter falls back to version-5.1' );
 $odd_order = wc_create_order();
 Creature_Demo_Loan::store_consent( $odd_order, true, '2026-03-02T12:00:00+00:00' );
-creature_demo_expect( 'version-5' === $odd_order->get_meta( '_creature_demo_consent_version' ) && $fixture === $odd_order->get_meta( '_creature_demo_consent_wording' ), 'an unknown version stores version-5 and its wording' );
+creature_demo_expect( 'version-5.1' === $odd_order->get_meta( '_creature_demo_consent_version' ) && $fixture === $odd_order->get_meta( '_creature_demo_consent_wording' ), 'an unknown version stores version-5.1 and its wording' );
 $GLOBALS['creature_demo_consent_version'] = 'v5b';
 creature_demo_expect( 'v5b' === Creature_Demo_Loan::consent_version(), 'the filter can still name v5b' );
 $GLOBALS['creature_demo_consent_version'] = null;
@@ -4209,9 +4217,10 @@ foreach ( array( 'v4' => $v4_text, 'v5' => $v5_text ) as $ver => $text ) {
 }
 $GLOBALS['creature_demo_consent_version'] = null;
 $new_order = creature_demo_booked_loan( '249.00' );
-creature_demo_expect( 'version-5' === $new_order->get_meta( '_creature_demo_consent_version' ), 'a new order reads back version-5' );
+creature_demo_expect( 'version-5.1' === $new_order->get_meta( '_creature_demo_consent_version' ), 'a new order reads back version-5.1' );
 // Orders that stored v5b, v5 or v4 read back exactly as they stored them. The admin record says Terms version 5 for version-5 and v5b.
 foreach ( array(
+	'version-5.1' => array( 'Terms version 5.1', $fixture ),
 	'version-5' => array( 'Terms version 5', $fixture ),
 	'v5b'       => array( 'Terms version 5', $v5b_text ),
 	'v5'        => array( 'Terms version 5 (earlier draft, stored as v5)', $v5_text ),
@@ -4394,7 +4403,7 @@ $bc_order->update_meta_data( '_creature_demo_booking_block_sent', '' );
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $bc_order, false, false, $bc_email );
 $bc_html = ob_get_clean();
-creature_demo_expect( false !== strpos( $bc_html, 'Consent: Terms version 5 on ' . Creature_Demo_Loan::consent_record( $bc_order )['date'] . '.' ) && '' !== Creature_Demo_Loan::consent_record( $bc_order )['date'], 'the confirmation names the consent version and the date' );
+creature_demo_expect( false !== strpos( $bc_html, 'Consent: Terms version 5.1 on ' . Creature_Demo_Loan::consent_record( $bc_order )['date'] . '.' ) && '' !== Creature_Demo_Loan::consent_record( $bc_order )['date'], 'the confirmation names the consent version and the date' );
 creature_demo_expect( false !== strpos( $bc_html, str_replace( '&#039;', '’', htmlspecialchars( $fixture, ENT_QUOTES, 'UTF-8' ) ) ) || false !== strpos( $bc_html, $fixture ), 'the confirmation carries the consent wording the rider agreed to' );
 creature_demo_expect( false !== strpos( $bc_html, 'Express request: Yes.' ), 'the confirmation gives the rider’s answer to the express request' );
 $bc_order->update_meta_data( '_creature_demo_booking_block_sent', '' );
@@ -4602,7 +4611,7 @@ foreach ( array( 'one set (terms only)' => array( 'terms_pdf' => '77' ), 'one se
 	creature_demo_expect( 1 === $f_r[1] && false !== strpos( implode( "\n", $f_r[2]->notes ), 'without the attachment wording' ), "{$f_label}: the shop gets one notice and the order a note" );
 }
 $f_mail = creature_demo_last_mail( 'admin_attachments_missing' );
-creature_demo_expect( 'info@creaturecycles.co.uk' === $f_mail['to'] && false !== strpos( $f_mail['body'], 'Terms PDF (version 5), Model cancellation form' ), 'the notice goes to the shop and names what is missing' );
+creature_demo_expect( 'info@creaturecycles.co.uk' === $f_mail['to'] && false !== strpos( $f_mail['body'], 'Terms PDF (version 5.1), Model cancellation form' ), 'the notice goes to the shop and names what is missing' );
 $f_set_bad = $f_render( array( 'terms_pdf' => '77', 'cancellation_form' => $outside ) );
 creature_demo_expect( false === stripos( $f_set_bad[0], 'attached' ) && 1 === $f_set_bad[1], 'a file that is set but cannot be attached counts as missing' );
 $GLOBALS['creature_demo_conf_files'] = array();
@@ -4612,7 +4621,7 @@ $GLOBALS['creature_demo_can']        = true;
 ob_start();
 Creature_Demo_Loan::render_attachment_notice();
 $notice_none = ob_get_clean();
-creature_demo_expect( false !== strpos( $notice_none, 'notice-warning' ) && false !== strpos( $notice_none, 'No file is set for: Terms PDF (version 5), Model cancellation form' ), 'with no file set there is an admin notice naming both' );
+creature_demo_expect( false !== strpos( $notice_none, 'notice-warning' ) && false !== strpos( $notice_none, 'No file is set for: Terms PDF (version 5.1), Model cancellation form' ), 'with no file set there is an admin notice naming both' );
 $GLOBALS['creature_demo_conf_files'] = array( 'terms_pdf' => '77' );
 ob_start();
 Creature_Demo_Loan::render_attachment_notice();
@@ -5408,6 +5417,275 @@ creature_demo_expect( is_array( $as_live ) && 'demo-deemed' === $as_live['loan_s
 creature_demo_expect( is_array( $as_live ) && 0 === $as_live['requests'] && 'yes' !== $as_live['paid'],'as-of: with ALLOW_LIVE_CHARGES true the run makes no Stripe request and takes no payment' );
 creature_demo_expect( is_array( $as_live ) && 0 === $as_live['requests_end'] && 'test_order' === $as_live['direct'] && 'test_order' === $as_live['from_loan'], 'as-of: with ALLOW_LIVE_CHARGES true charge_saved_card refuses the flagged charge before any Stripe call' );
 creature_demo_expect( is_array( $as_live ) && false !== strpos( $as_live['all_notes'], 'Status before: demo-overdue; after: demo-deemed' ) && false === stripos( $as_live['all_notes'], 'refund' ), 'as-of: with ALLOW_LIVE_CHARGES true the note records the deemed raise and no refund' );
+
+// ---------------------------------------------------------------------------
+// 1.3.2: PayPal Payments buttons hidden on the demo kit (v5 filters, v6 assets).
+// ---------------------------------------------------------------------------
+$GLOBALS['creature_demo_pp'] = array(
+	'is_product'   => false,
+	'queried'      => 0,
+	'dequeued'     => array(),
+	'deregistered' => array(),
+	'styles'       => array(),
+);
+if ( ! function_exists( 'is_product' ) ) {
+	function is_product() {
+		return ! empty( $GLOBALS['creature_demo_pp']['is_product'] );
+	}
+}
+if ( ! function_exists( 'get_queried_object_id' ) ) {
+	function get_queried_object_id() {
+		return (int) $GLOBALS['creature_demo_pp']['queried'];
+	}
+}
+if ( ! function_exists( 'wp_dequeue_script' ) ) {
+	function wp_dequeue_script( $handle ) {
+		$GLOBALS['creature_demo_pp']['dequeued'][] = $handle;
+	}
+}
+if ( ! function_exists( 'wp_deregister_script' ) ) {
+	function wp_deregister_script( $handle ) {
+		$GLOBALS['creature_demo_pp']['deregistered'][] = $handle;
+	}
+}
+if ( ! function_exists( 'wp_dequeue_style' ) ) {
+	function wp_dequeue_style( $handle ) {
+		$GLOBALS['creature_demo_pp']['styles'][] = $handle;
+	}
+}
+$pp_reset = static function ( $is_product, $queried, $cart ) {
+	$GLOBALS['creature_demo_pp']   = array(
+		'is_product'   => $is_product,
+		'queried'      => $queried,
+		'dequeued'     => array(),
+		'deregistered' => array(),
+		'styles'       => array(),
+	);
+	$GLOBALS['creature_demo_cart'] = $cart;
+};
+$pp_css = static function () {
+	ob_start();
+	Creature_Demo_Loan::print_paypal_hide_css();
+	return ob_get_clean();
+};
+$GLOBALS['creature_demo_use_product'] = false; // the default demo product, 8946
+$demo_item   = array( 'product_id' => 8946, 'variation_id' => 0 );
+$normal_item = array( 'product_id' => 50, 'variation_id' => 0 );
+
+// The hooks are registered.
+$pp_hooks = array();
+foreach ( $GLOBALS['creature_demo_hooks'] as $pp_h ) {
+	if ( is_array( $pp_h[1] ) && 'Creature_Demo_Loan' === $pp_h[1][0] ) {
+		$pp_hooks[ $pp_h[0] . '|' . $pp_h[1][1] . '|' . $pp_h[2] ] = true;
+	}
+}
+creature_demo_expect( isset( $pp_hooks['woocommerce_paypal_payments_product_buttons_disabled|filter_paypal_buttons_disabled|10'] ), 'PayPal 1.3.2: the v5 product filter is hooked' );
+creature_demo_expect( isset( $pp_hooks['woocommerce_paypal_payments_buttons_disabled|filter_paypal_buttons_disabled|10'] ), 'PayPal 1.3.2: the v5 cart and checkout filter is hooked' );
+creature_demo_expect( isset( $pp_hooks['wp_enqueue_scripts|hide_paypal_v6_assets|999'] ), 'PayPal 1.3.2: the v6 dequeue runs at wp_enqueue_scripts priority 999, after PayPal' );
+
+// Demo product page, empty cart.
+$pp_reset( true, 8946, null );
+creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, array( 'product' => new Creature_Demo_Test_Product( 8946 ) ) ), 'PayPal 1.3.2: v5 product filter is true for a context array with a demo WC_Product' );
+creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, new Creature_Demo_Test_Product( 8946 ) ), 'PayPal 1.3.2: v5 product filter is true for a demo WC_Product' );
+creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, new Creature_Demo_Test_Product( 77, 8946 ) ), 'PayPal 1.3.2: v5 product filter is true for a variation of the demo product' );
+creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, 8946 ), 'PayPal 1.3.2: v5 product filter is true for a demo product id' );
+creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, '8946' ), 'PayPal 1.3.2: v5 product filter is true for a demo product id string' );
+creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, array( 'product_id' => 8946 ) ), 'PayPal 1.3.2: v5 product filter is true for a context array with a product id' );
+creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, array() ), 'PayPal 1.3.2: v5 product filter is true for an empty context on the demo product page' );
+Creature_Demo_Loan::hide_paypal_v6_assets();
+creature_demo_expect( array( 'wc-ppcp-sdk-v6-boot' ) === $GLOBALS['creature_demo_pp']['dequeued'] && array( 'wc-ppcp-sdk-v6-boot' ) === $GLOBALS['creature_demo_pp']['deregistered'], 'PayPal 1.3.2: on the demo product page the v6 boot script is dequeued and deregistered' );
+creature_demo_expect( array( 'wc-ppcp-sdk-v6-gateway' ) === $GLOBALS['creature_demo_pp']['styles'], 'PayPal 1.3.2: and only the v6 gateway style is dequeued with it' );
+$demo_css = $pp_css();
+creature_demo_expect( false !== strpos( $demo_css, '<style id="creature-demo-loan-hide-paypal">' ) && false !== strpos( $demo_css, '#ppc-button-ppcp-gateway-v6' ) && false !== strpos( $demo_css, '#ppc-button-ppcp-gateway' ) && false !== strpos( $demo_css, 'display:none!important' ), 'PayPal 1.3.2: on the demo product page the hiding CSS is printed for the v6 and v5 wrappers' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, array( 'product' => new Creature_Demo_Test_Product( 50 ) ) ), 'PayPal 1.3.2: a normal product in the context array is not disabled even on a demo page' );
+$demo_block = Creature_Demo_Loan::filter_paypal_v6_block_data( array( 'buttons_enabled' => true, 'page_context' => 'product' ) );
+creature_demo_expect( false === $demo_block['buttons_enabled'] && 'product' === $demo_block['page_context'], 'PayPal 1.3.2: the v6 block data has buttons_enabled false on a demo page, other keys kept' );
+
+// Normal product page, empty cart: nothing changes.
+$pp_reset( true, 50, null );
+creature_demo_expect( false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, array( 'product' => new Creature_Demo_Test_Product( 50 ) ) ), 'PayPal 1.3.2: normal product, context array: input returned unchanged (false)' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, new Creature_Demo_Test_Product( 50 ) ) && false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, 50 ), 'PayPal 1.3.2: normal product object and id: unchanged' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, array() ), 'PayPal 1.3.2: normal product page with an empty context: unchanged' );
+creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( true, array( 'product' => new Creature_Demo_Test_Product( 50 ) ) ), 'PayPal 1.3.2: an input of true (another plugin disabled PayPal) stays true' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, 'cart' ) && false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, 'checkout' ), 'PayPal 1.3.2: a normal basket on the cart and checkout contexts: unchanged' );
+Creature_Demo_Loan::hide_paypal_v6_assets();
+creature_demo_expect( array() === $GLOBALS['creature_demo_pp']['dequeued'] && array() === $GLOBALS['creature_demo_pp']['deregistered'] && array() === $GLOBALS['creature_demo_pp']['styles'], 'PayPal 1.3.2: on a normal product page nothing is dequeued' );
+creature_demo_expect( '' === $pp_css(), 'PayPal 1.3.2: on a normal product page no CSS is printed' );
+$normal_data = array( 'buttons_enabled' => true );
+creature_demo_expect( $normal_data === Creature_Demo_Loan::filter_paypal_v6_block_data( $normal_data ) && 'not-array' === Creature_Demo_Loan::filter_paypal_v6_block_data( 'not-array' ), 'PayPal 1.3.2: the v6 block data is returned unchanged on a normal page' );
+
+// Shop page (not a product page), normal cart: untouched.
+$pp_reset( false, 0, array( $normal_item ) );
+Creature_Demo_Loan::hide_paypal_v6_assets();
+creature_demo_expect( array() === $GLOBALS['creature_demo_pp']['dequeued'] && '' === $pp_css() && false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, 'mini-cart' ), 'PayPal 1.3.2: a normal cart on an ordinary page is untouched' );
+
+// Demo-only cart: cart, checkout, mini-cart, blocks.
+$pp_reset( false, 0, array( $demo_item ) );
+foreach ( array( 'cart', 'checkout', 'mini-cart', 'block-cart', 'block-checkout' ) as $pp_ctx ) {
+	creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, $pp_ctx ), "PayPal 1.3.2: demo-only cart, v5 buttons_disabled filter is true for {$pp_ctx}" );
+}
+creature_demo_expect( true === apply_filters( 'woocommerce_paypal_payments_buttons_disabled', false, 'cart' ) && true === apply_filters( 'woocommerce_paypal_payments_product_buttons_disabled', false, array() ), 'PayPal 1.3.2: through apply_filters both v5 filters give true for a demo-only cart' );
+Creature_Demo_Loan::hide_paypal_v6_assets();
+creature_demo_expect( array( 'wc-ppcp-sdk-v6-boot' ) === $GLOBALS['creature_demo_pp']['dequeued'], 'PayPal 1.3.2: demo-only cart: v6 boot script dequeued (cart, checkout and mini-cart pages)' );
+creature_demo_expect( false !== strpos( $pp_css(), '#ppc-button-minicart-v6' ) && false !== strpos( $pp_css(), '#ppc-button-ppcp-gateway-v6' ), 'PayPal 1.3.2: demo-only cart: the hiding CSS covers the v6 express and mini-cart wrappers' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_paypal_v6_block_data( array( 'buttons_enabled' => true ) )['buttons_enabled'], 'PayPal 1.3.2: demo-only cart: v6 block cart and checkout data has buttons off' );
+
+// Mixed cart: the plugin's mixed-basket error handles it; PayPal is untouched.
+$pp_reset( false, 0, array( $demo_item, $normal_item ) );
+Creature_Demo_Loan::hide_paypal_v6_assets();
+creature_demo_expect( array() === $GLOBALS['creature_demo_pp']['dequeued'] && '' === $pp_css() && false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, 'cart' ) && $normal_data === Creature_Demo_Loan::filter_paypal_v6_block_data( $normal_data ), 'PayPal 1.3.2: a mixed cart leaves PayPal untouched' );
+$pp_reset( false, 0, null );
+
+// PayPal Payments (and the WordPress script functions) absent: no error, nothing changes.
+$pp_child_code = 'define( "ABSPATH", "/" ); function add_action() {} require __DIR__PLACEHOLDER__ . "/creature-demo-loan/creature-demo-loan.php";'
+	. ' Creature_Demo_Loan::hide_paypal_v6_assets(); ob_start(); Creature_Demo_Loan::print_paypal_hide_css(); $o = ob_get_clean();'
+	. ' echo json_encode( array( $o, Creature_Demo_Loan::filter_paypal_buttons_disabled( false, array() ), Creature_Demo_Loan::filter_paypal_buttons_disabled( false, "cart" ), Creature_Demo_Loan::filter_paypal_buttons_disabled( false, 8946 ), Creature_Demo_Loan::filter_paypal_v6_block_data( array( "a" => 1 ) ) ) );';
+$pp_child_code = str_replace( '__DIR__PLACEHOLDER__', var_export( dirname( __DIR__, 2 ), true ), $pp_child_code );
+$pp_child      = json_decode( trim( (string) shell_exec( escapeshellarg( PHP_BINARY ) . ' -r ' . escapeshellarg( $pp_child_code ) . ' 2>&1' ) ), true );
+creature_demo_expect( is_array( $pp_child ) && '' === $pp_child[0] && false === $pp_child[1] && false === $pp_child[2] && true === $pp_child[3] && array( 'a' => 1 ) === $pp_child[4], 'PayPal 1.3.2: with no WordPress script functions and no PayPal Payments the hooks run without a fatal and change nothing outside a demo product id' );
+
+// ---------------------------------------------------------------------------
+// 1.3.2: From header on the plugin's own emails.
+// ---------------------------------------------------------------------------
+$from_order = creature_demo_loan();
+$GLOBALS['creature_demo_options']['woocommerce_email_from_name']    = 'Creature Cycles';
+$GLOBALS['creature_demo_options']['woocommerce_email_from_address'] = 'info@creaturecycles.co.uk';
+$from_hdr = 'From: "Creature Cycles" <info@creaturecycles.co.uk>';
+$from_args = array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' );
+$wp_before = count( $GLOBALS['creature_demo_wp_mail'] );
+$from_cust = Creature_Demo_Loan_Mail::send_customer( $from_order, 'dates_on_delivery', $from_args );
+$from_adm  = Creature_Demo_Loan_Mail::send_admin( $from_order, 'admin_attachments_missing', array( 'missing' => 'x' ) );
+creature_demo_expect( array( $from_hdr, $reply ) === $from_cust['headers'], 'From: customer send carries From from the Woo settings, then Reply-To' );
+creature_demo_expect( array( $from_hdr ) === $from_adm['headers'], 'From: admin send carries From and no Reply-To' );
+$from_wp = array_slice( $GLOBALS['creature_demo_wp_mail'], $wp_before );
+creature_demo_expect( 2 === count( $from_wp ) && array( $from_hdr, $reply ) === $from_wp[0][3] && array( $from_hdr ) === $from_wp[1][3], 'From: wp_mail itself is called with the From header on customer and admin sends' );
+creature_demo_expect( 0 === strpos( $from_cust['subject'], '[TEST] ' ) && 'demo-loan-test@creaturecycles.co.uk' === $from_cust['to'], 'From: a redirected [TEST] customer mail still goes to the redirect address' );
+creature_demo_expect( $from_cust['subject'] === '[TEST] ' . Creature_Demo_Loan::redact( Creature_Demo_Loan_Copy::subject( 'dates_on_delivery', array_merge( $from_args, array( 'order_id' => (string) $from_order->get_id() ) ) ) ) && $from_cust['body'] === Creature_Demo_Loan::redact( Creature_Demo_Loan_Copy::text( 'dates_on_delivery', array_merge( $from_args, array( 'order_id' => (string) $from_order->get_id() ) ) ) ), 'From: the subject and body are exactly the copy (only the header was added)' );
+// The filters are respected, with the same names WC_Email uses.
+$from_name_filter = static function () {
+	return 'Filtered Name';
+};
+$from_addr_filter = static function () {
+	return 'filtered@example.com';
+};
+add_filter( 'woocommerce_email_from_name', $from_name_filter, 10, 3 );
+add_filter( 'woocommerce_email_from_address', $from_addr_filter, 10, 3 );
+creature_demo_expect( array( 'From: "Filtered Name" <filtered@example.com>' ) === Creature_Demo_Loan_Mail::from_headers(), 'From: the woocommerce_email_from_name and _address filters are respected' );
+remove_filter( 'woocommerce_email_from_name', $from_name_filter, 10 );
+remove_filter( 'woocommerce_email_from_address', $from_addr_filter, 10 );
+creature_demo_expect( array( $from_hdr ) === Creature_Demo_Loan_Mail::from_headers(), 'From: with the filters removed the option values are back' );
+// Entities in the name are decoded; the name is quoted.
+$GLOBALS['creature_demo_options']['woocommerce_email_from_name'] = 'Creature &amp; Co &quot;Bikes&quot;';
+creature_demo_expect( array( 'From: "Creature & Co \\"Bikes\\"" <info@creaturecycles.co.uk>' ) === Creature_Demo_Loan_Mail::from_headers(), 'From: entities in the name are decoded and the name is quoted safely' );
+// CR/LF in the name cannot start another header.
+$GLOBALS['creature_demo_options']['woocommerce_email_from_name'] = "Creature\r\nBcc: attacker@example.com";
+$inj = Creature_Demo_Loan_Mail::from_headers();
+creature_demo_expect( 1 === count( $inj ) && false === strpos( $inj[0], "\r" ) && false === strpos( $inj[0], "\n" ) && 0 === strpos( $inj[0], 'From: "' ) && '>' === substr( $inj[0], -1 ), 'From: CR/LF in the name are stripped and the header stays one line' );
+$GLOBALS['creature_demo_options']['woocommerce_email_from_address'] = "info@creaturecycles.co.uk\r\nBcc: attacker@example.com";
+creature_demo_expect( array() === Creature_Demo_Loan_Mail::from_headers(), 'From: an address with a line break is refused, so no From header' );
+// Empty or invalid address: no From header, the current behaviour.
+$GLOBALS['creature_demo_options']['woocommerce_email_from_name'] = 'Creature Cycles';
+foreach ( array( '', 'not-an-email', 'a@b', 'x y@example.com', 'Name <a@example.com>' ) as $bad_addr ) {
+	$GLOBALS['creature_demo_options']['woocommerce_email_from_address'] = $bad_addr;
+	creature_demo_expect( array() === Creature_Demo_Loan_Mail::from_headers() && array( $reply ) === Creature_Demo_Loan_Mail::customer_headers() && array() === Creature_Demo_Loan_Mail::admin_headers(), 'From: address "' . $bad_addr . '" gives no From header; Reply-To kept on customer mail' );
+}
+unset( $GLOBALS['creature_demo_options']['woocommerce_email_from_address'] );
+creature_demo_expect( array() === Creature_Demo_Loan_Mail::from_headers(), 'From: no Woo address option at all gives no From header' );
+// An address with no name gives a bare From.
+$GLOBALS['creature_demo_options']['woocommerce_email_from_address'] = 'info@creaturecycles.co.uk';
+$GLOBALS['creature_demo_options']['woocommerce_email_from_name']    = '';
+creature_demo_expect( array( 'From: info@creaturecycles.co.uk' ) === Creature_Demo_Loan_Mail::from_headers(), 'From: an address with no name gives a bare From' );
+unset( $GLOBALS['creature_demo_options']['woocommerce_email_from_name'], $GLOBALS['creature_demo_options']['woocommerce_email_from_address'] );
+creature_demo_expect( ! isset( $GLOBALS['creature_demo_filters']['wp_mail_from'] ) && ! isset( $GLOBALS['creature_demo_filters']['wp_mail_from_name'] ), 'From: no global wp_mail_from or wp_mail_from_name filter is registered' );
+$mail_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/includes/class-creature-demo-loan-mail.php' ) . file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan/includes/class-creature-demo-loan.php' );
+creature_demo_expect( 0 === preg_match( '/add_filter\(\s*[\'"]wp_mail_from/', $mail_src ), 'From: the plugin source never adds a wp_mail_from filter' );
+
+// ---------------------------------------------------------------------------
+// 1.3.2: the steerer sentence is gone.
+// ---------------------------------------------------------------------------
+$cut_hits = array();
+foreach ( Creature_Demo_Loan_Copy::catalogue() as $cut_slot => $cut_row ) {
+	foreach ( array( 'subject', 'body' ) as $cut_part ) {
+		if ( preg_match( '/\bcut\b[^.]{0,80}steerer|steerer[^.]{0,80}\bcut\b/iu', $cut_row[ $cut_part ] ) ) {
+			$cut_hits[] = $cut_slot . '.' . $cut_part;
+		}
+	}
+}
+creature_demo_expect( array() === $cut_hits, 'steerer: no copy slot tells the rider to cut or not cut the steerer' . ( $cut_hits ? ': ' . implode( ', ', $cut_hits ) : '' ) );
+$cut_files = array();
+$cut_tree  = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( dirname( __DIR__, 2 ) . '/creature-demo-loan', FilesystemIterator::SKIP_DOTS ) );
+foreach ( $cut_tree as $cut_file ) {
+	if ( $cut_file->isFile() && preg_match( '/\bcut\b[^.\n]{0,80}steerer|steerer[^.\n]{0,80}\bcut\b/iu', (string) file_get_contents( $cut_file->getPathname() ) ) ) {
+		$cut_files[] = $cut_file->getFilename();
+	}
+}
+creature_demo_expect( array() === $cut_files, 'steerer: no plugin file (copy, README, mail, walkthrough) has cut and steerer wording' . ( $cut_files ? ': ' . implode( ', ', $cut_files ) : '' ) );
+$dod_body = Creature_Demo_Loan_Copy::text( 'dates_on_delivery', array( 'order_id' => '1', 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
+creature_demo_expect( false !== strpos( $dod_body, 'using a calibrated torque wrench. Check the bolts before every ride.' ) && false === strpos( $dod_body, '  ' ), 'steerer: the "Before you ride" paragraph reads cleanly without the sentence' );
+
+// ---------------------------------------------------------------------------
+// 1.3.2: terms v5.1, v5 still accepted.
+// ---------------------------------------------------------------------------
+$GLOBALS['creature_demo_consent_version'] = null;
+$t51 = wc_create_order();
+Creature_Demo_Loan::store_consent( $t51, true, '2026-11-17T10:00:00+00:00' );
+$t51_rec = Creature_Demo_Loan::consent_record( $t51 );
+creature_demo_expect( 'version-5.1' === $t51_rec['version'] && 'Terms version 5.1' === $t51_rec['label'] && $fixture === $t51_rec['wording'], 'terms v5.1: a new order records version-5.1, reads "Terms version 5.1", with the Appendix A wording' );
+$GLOBALS['creature_demo_consent_version'] = 'version-5';
+$t5 = wc_create_order();
+Creature_Demo_Loan::store_consent( $t5, true, '2026-11-10T10:00:00+00:00' );
+$GLOBALS['creature_demo_consent_version'] = null;
+$t5_rec = Creature_Demo_Loan::consent_record( $t5 );
+creature_demo_expect( 'version-5' === $t5_rec['version'] && 'Terms version 5' === $t5_rec['label'] && $fixture === $t5_rec['wording'], 'terms v5.1: an order that recorded version-5 still reads "Terms version 5" with its own wording' );
+$t5_legacy = wc_create_order();
+$t5_legacy->update_meta_data( '_creature_demo_consent', 'yes' );
+$t5_legacy->update_meta_data( '_creature_demo_consent_version', 'version-5' );
+$t5_legacy->update_meta_data( '_creature_demo_consent_at', '2026-11-10T10:00:00+00:00' );
+$t5_legacy_rec = Creature_Demo_Loan::consent_record( $t5_legacy );
+creature_demo_expect( 'Terms version 5' === $t5_legacy_rec['label'] && $fixture === $t5_legacy_rec['wording'], 'terms v5.1: a stored version-5 order with no stored wording still validates and reads back as version 5' );
+creature_demo_expect( '5.1' === Creature_Demo_Loan_Copy::consent_terms_number( 'version-5.1' ) && '5' === Creature_Demo_Loan_Copy::consent_terms_number( 'version-5' ) && '5' === Creature_Demo_Loan_Copy::consent_terms_number( 'v5b' ) && '4' === Creature_Demo_Loan_Copy::consent_terms_number( 'v4' ) && '5.1' === Creature_Demo_Loan_Copy::consent_terms_number( '' ), 'terms v5.1: the terms number for the booking email follows the recorded version, and a blank one reads as current' );
+// The booking email names the recorded version. With no files attached the attachment sentence is dropped
+// for both versions, so check the wording slot and the dropped-sentence path separately.
+$bc_default_override = isset( $GLOBALS['creature_demo_copy_override']['booking_confirmation'] ) ? $GLOBALS['creature_demo_copy_override']['booking_confirmation'] : null;
+unset( $GLOBALS['creature_demo_copy_override']['booking_confirmation'] );
+$bc_new = Creature_Demo_Loan_Copy::text( 'booking_confirmation', array( 'terms_version' => '5.1', 'order_id' => '1' ) );
+$bc_old = Creature_Demo_Loan_Copy::text( 'booking_confirmation', array( 'terms_version' => '5', 'order_id' => '1' ) );
+creature_demo_expect( false !== strpos( $bc_new, 'Your demo terms (version 5.1) and our model cancellation form' ) && false !== strpos( $bc_old, 'Your demo terms (version 5) and our model cancellation form' ) && false === strpos( $bc_new, '{terms_version}' ), 'terms v5.1: the booking email says "Your demo terms (version N)" from the recorded version' );
+foreach ( array( 'version-5.1' => $t51, 'version-5' => $t5 ) as $bc_ver => $bc_o ) {
+	$bc_o->update_meta_data( '_creature_demo_booking_block_sent', '' );
+	ob_start();
+	Creature_Demo_Loan::render_booking_confirmation( $bc_o, false, true, $bc_email );
+	$bc_out = ob_get_clean();
+	creature_demo_expect( false !== strpos( $bc_out, 'De-Reacher demo booking' ) && false === strpos( $bc_out, 'Your demo terms (version' ) && false === strpos( $bc_out, '{terms_version}' ), "terms v5.1: with no files attached the {$bc_ver} booking email drops the attachment sentence, leaving no placeholder" );
+}
+if ( null !== $bc_default_override ) {
+	$GLOBALS['creature_demo_copy_override']['booking_confirmation'] = $bc_default_override;
+}
+creature_demo_expect( 'Terms PDF (version 5.1)' === Creature_Demo_Loan::confirmation_file_report()['terms_pdf']['label'], 'terms v5.1: the terms PDF label names version 5.1' );
+$cfg_src = file_get_contents( dirname( __DIR__, 2 ) . '/creature-demo-loan-config/creature-demo-loan-config.php' );
+creature_demo_expect( 0 === preg_match( '/version-5|consent_version|CONSENT_CURRENT/', $cfg_src ), 'terms v5.1: the config plugin does not pin a consent version' );
+$clauses_in_a = array();
+preg_match_all( '/clause (\d+(?:\.\d+)?)/', $fixture, $clauses_in_a );
+creature_demo_expect( array( '4' ) === $clauses_in_a[1], 'terms v5.1: Appendix A quotes clause 4 only, so deleting 2.6 and renumbering 2.7 does not touch it' );
+
+// ---------------------------------------------------------------------------
+// 1.3.2: the deemed-warning subject names the last posting date.
+// ---------------------------------------------------------------------------
+creature_demo_expect( 'De-Reacher demo: it will be treated as bought unless it’s posted by {last_post_date}' === Creature_Demo_Loan_Copy::catalogue()['reminder_deemed_warning']['subject'], 'subject: the deemed warning subject uses {last_post_date}' );
+$lp_normal = creature_demo_loan(); // delivered 2026-03-04, due 2026-03-24, deemed purchase date 2026-04-07
+Creature_Demo_Loan::tick( $lp_normal, '2026-04-03' );
+$lp_n = creature_demo_last_mail( 'reminder_deemed_warning' );
+creature_demo_expect( is_array( $lp_n ) && '[TEST] De-Reacher demo: it will be treated as bought unless it’s posted by 6 April 2026' === $lp_n['subject'], 'subject: a normal loan says it must be posted by 6 April 2026, the day before the 7 April deemed date' . ( is_array( $lp_n ) ? ' (got ' . $lp_n['subject'] . ')' : '' ) );
+// A due date moved later (a return-QR delay pushes the dates back a day at a time): the subject moves with {deemed_on}.
+$lp_shift = creature_demo_loan();
+$lp_shift->update_meta_data( '_creature_demo_due_date', '2026-03-27' );
+Creature_Demo_Loan::tick( $lp_shift, '2026-04-06' );
+$lp_s = creature_demo_last_mail( 'reminder_deemed_warning' );
+creature_demo_expect( is_array( $lp_s ) && '[TEST] De-Reacher demo: it will be treated as bought unless it’s posted by 9 April 2026' === $lp_s['subject'], 'subject: a loan whose due date moved three days later says 9 April 2026' . ( is_array( $lp_s ) ? ' (got ' . $lp_s['subject'] . ')' : '' ) );
+creature_demo_expect( is_array( $lp_n ) && is_array( $lp_s ) && false === strpos( $lp_n['subject'] . $lp_s['subject'], 'day 13' ) && false === strpos( $lp_n['subject'] . $lp_s['subject'], '(due date' ) && false === strpos( $lp_n['subject'] . $lp_s['subject'], '{' ), 'subject: no "day 13", no "(due date" and no placeholder is left' );
+creature_demo_expect( false !== strpos( $lp_n['body'], 'treated as bought on the 14th day' ), 'subject: the body is unchanged' );
+$deemed_check = Creature_Demo_Loan_Calendar::deemed_on( '2026-03-24', 14 );
+creature_demo_expect( '2026-04-07' === $deemed_check && '2026-04-06' === Creature_Demo_Loan_Calendar::add_days( $deemed_check, -1 ), 'subject: the last posting date is the day before Calendar::deemed_on, which is unchanged' );
 
 $blob = creature_demo_sensitive_blob();
 creature_demo_absent( $blob, 'sk_live_', 'notes, mail, and Stripe bodies do not contain a live secret key' );

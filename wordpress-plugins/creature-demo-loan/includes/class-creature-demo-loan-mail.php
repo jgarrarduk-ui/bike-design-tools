@@ -148,7 +148,7 @@ final class Creature_Demo_Loan_Mail {
 		}
 		$subject = Creature_Demo_Loan::redact( $subject );
 		$body    = Creature_Demo_Loan::redact( $body );
-		$headers = 'customer' === $kind ? self::customer_headers() : array();
+		$headers = 'customer' === $kind ? self::customer_headers() : self::admin_headers();
 		$row     = array(
 			'kind'    => (string) $kind,
 			'slot'    => (string) $slot,
@@ -182,6 +182,52 @@ final class Creature_Demo_Loan_Mail {
 	 * @return string[]
 	 */
 	public static function customer_headers() {
-		return array( 'Reply-To: ' . self::REPLY_TO );
+		return array_merge( self::from_headers(), array( 'Reply-To: ' . self::REPLY_TO ) );
+	}
+
+	/**
+	 * Headers for a shop alert: the From header only.
+	 *
+	 * @return string[]
+	 */
+	public static function admin_headers() {
+		return self::from_headers();
+	}
+
+	/**
+	 * A From header for this plugin's own sends, built from the WooCommerce
+	 * sender settings the way WC_Email builds it: the options
+	 * woocommerce_email_from_name and woocommerce_email_from_address, each passed
+	 * through the filter of the same name. There is no WC_Email object here, so
+	 * the filters get null as their second argument. An empty or invalid address
+	 * gives no From header, so WordPress's own default applies. This is not a
+	 * global wp_mail_from filter: only the plugin's own wp_mail calls carry it.
+	 *
+	 * @return string[] Zero or one header line.
+	 */
+	public static function from_headers() {
+		$name    = function_exists( 'get_option' ) ? get_option( 'woocommerce_email_from_name', '' ) : '';
+		$address = function_exists( 'get_option' ) ? get_option( 'woocommerce_email_from_address', '' ) : '';
+		if ( function_exists( 'apply_filters' ) ) {
+			$name    = apply_filters( 'woocommerce_email_from_name', $name, null, $name );
+			$address = apply_filters( 'woocommerce_email_from_address', $address, null, $address );
+		}
+		$address = is_string( $address ) ? trim( preg_replace( '/[\r\n\0]+/', '', $address ) ) : '';
+		if ( function_exists( 'sanitize_email' ) ) {
+			$address = sanitize_email( $address );
+		}
+		$valid = function_exists( 'is_email' ) ? (bool) is_email( $address ) : (bool) preg_match( '/^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/', $address );
+		if ( '' === $address || ! $valid || preg_match( '/[\s<>",;]/', $address ) ) {
+			return array();
+		}
+		$name = is_scalar( $name ) ? (string) $name : '';
+		$name = html_entity_decode( $name, ENT_QUOTES, 'UTF-8' );
+		// No line break or control character can end the header and start another.
+		$name = trim( preg_replace( '/[\x00-\x1F\x7F]+/', ' ', $name ) );
+		if ( '' === $name ) {
+			return array( 'From: ' . $address );
+		}
+		$name = str_replace( array( '\\', '"' ), array( '\\\\', '\\"' ), $name );
+		return array( 'From: "' . $name . '" <' . $address . '>' );
 	}
 }

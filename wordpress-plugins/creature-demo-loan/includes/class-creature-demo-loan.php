@@ -132,7 +132,16 @@ final class Creature_Demo_Loan {
 		add_filter( 'wcpay_payment_request_is_product_supported', array( __CLASS__, 'filter_express_supported' ), 10, 2 );
 		add_filter( 'wcpay_woopay_button_is_product_supported', array( __CLASS__, 'filter_express_supported' ), 10, 2 );
 		add_filter( 'woocommerce_paypal_payments_product_supports_payment_request_button', array( __CLASS__, 'filter_express_supported' ), 10, 2 );
+		// PayPal Payments v5 (SmartButton::is_button_disabled): the product filter
+		// gets an array context, the cart/checkout filter gets a string context.
 		add_filter( 'woocommerce_paypal_payments_product_buttons_disabled', array( __CLASS__, 'filter_paypal_buttons_disabled' ), 10, 2 );
+		add_filter( 'woocommerce_paypal_payments_buttons_disabled', array( __CLASS__, 'filter_paypal_buttons_disabled' ), 10, 2 );
+		// PayPal Payments 4.2.x v6 Web SDK has no disable filter, so on demo pages
+		// only the boot script is dequeued late, its wrappers are hidden, and the
+		// block data says buttons are off. See hide_paypal_v6_assets().
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'hide_paypal_v6_assets' ), 999 );
+		add_action( 'wp_head', array( __CLASS__, 'print_paypal_hide_css' ), 99 );
+		add_filter( 'woocommerce_paypal_payments_blocks_payment_method_data', array( __CLASS__, 'filter_paypal_v6_block_data' ) );
 		add_filter( 'wc_stripe_show_payment_request_on_checkout', array( __CLASS__, 'filter_payment_request_off' ) );
 		add_filter( 'wc_stripe_show_payment_request_on_cart', array( __CLASS__, 'filter_payment_request_off' ) );
 
@@ -775,10 +784,102 @@ final class Creature_Demo_Loan {
 		if ( self::cart_is_demo_only() ) {
 			return true;
 		}
-		if ( is_array( $context ) && isset( $context['product'] ) && self::product_is_demo( $context['product'] ) ) {
-			return true;
+		// The product filter passes an array with a `product` (a WC_Product), and
+		// an id or a product object is accepted too.
+		if ( is_object( $context ) || is_int( $context ) || ( is_string( $context ) && ctype_digit( $context ) ) ) {
+			return self::product_is_demo( $context ) ? true : $disabled;
+		}
+		if ( is_array( $context ) ) {
+			foreach ( array( 'product', 'product_id' ) as $key ) {
+				if ( isset( $context[ $key ] ) && self::product_is_demo( $context[ $key ] ) ) {
+					return true;
+				}
+			}
+			// PayPal sends an empty array when it has no product to name.
+			if ( ! $context && self::current_page_is_demo_product() ) {
+				return true;
+			}
 		}
 		return $disabled;
+	}
+
+	/**
+	 * Whether this request is the single product page of a demo product.
+	 *
+	 * @return bool
+	 */
+	private static function current_page_is_demo_product() {
+		if ( ! function_exists( 'is_product' ) || ! is_product() || ! function_exists( 'get_queried_object_id' ) ) {
+			return false;
+		}
+		$id = (int) get_queried_object_id();
+		return $id > 0 && self::product_is_demo( $id );
+	}
+
+	/**
+	 * PayPal buttons are hidden on a demo product page, and anywhere while the
+	 * cart is demo-only (cart, checkout, block cart and checkout, mini-cart).
+	 * Everything else is left alone.
+	 *
+	 * @return bool
+	 */
+	public static function paypal_should_hide() {
+		return self::cart_is_demo_only() || self::current_page_is_demo_product();
+	}
+
+	/**
+	 * PayPal Payments 4.2.2 v6: SdkV6Manager has no filter on its script data,
+	 * its render places or its location settings (determine_render_places() and
+	 * script_data() read settings only; the disable filters are consulted by the
+	 * v5 SmartButton alone). So on a demo page this runs after the plugin's own
+	 * wp_enqueue_scripts callback (priority 10) and removes the v6 boot script,
+	 * with the localized wc_ppcp_sdk_v6 data attached to it, and the v6 gateway
+	 * style. Nothing is done elsewhere, or if PayPal Payments is absent.
+	 */
+	public static function hide_paypal_v6_assets() {
+		if ( ! self::paypal_should_hide() ) {
+			return;
+		}
+		if ( function_exists( 'wp_dequeue_script' ) ) {
+			wp_dequeue_script( 'wc-ppcp-sdk-v6-boot' );
+		}
+		if ( function_exists( 'wp_deregister_script' ) ) {
+			wp_deregister_script( 'wc-ppcp-sdk-v6-boot' );
+		}
+		if ( function_exists( 'wp_dequeue_style' ) ) {
+			wp_dequeue_style( 'wc-ppcp-sdk-v6-gateway' );
+		}
+	}
+
+	/**
+	 * Belt and braces: hide the PayPal button wrappers (v6 and v5, express and
+	 * mini-cart) on a demo page. Print nothing elsewhere.
+	 */
+	public static function print_paypal_hide_css() {
+		if ( ! self::paypal_should_hide() ) {
+			return;
+		}
+		echo '<style id="creature-demo-loan-hide-paypal">' . self::paypal_hide_css() . '</style>' . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	}
+
+	/**
+	 * @return string
+	 */
+	public static function paypal_hide_css() {
+		return '#ppc-button-ppcp-gateway-v6,#ppc-button-minicart-v6,#ppc-button-ppcp-gateway,#ppc-button-minicart,.ppc-button-wrapper{display:none!important}';
+	}
+
+	/**
+	 * v6 block checkout data: switch the express buttons off on a demo page.
+	 *
+	 * @param mixed $data
+	 * @return mixed
+	 */
+	public static function filter_paypal_v6_block_data( $data ) {
+		if ( is_array( $data ) && self::paypal_should_hide() ) {
+			$data['buttons_enabled'] = false;
+		}
+		return $data;
 	}
 
 	/**
@@ -1158,10 +1259,10 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * The consent version stored on a new order. `version-5` reads as the
-	 * terms' "version 5". The filter can name an older version, and a string
-	 * the plugin does not know falls back to `version-5`, so a stored version
-	 * always matches the wording that was shown.
+	 * The consent version stored on a new order. `version-5.1` reads as the
+	 * terms' "version 5.1". The filter can name an older version (`version-5`,
+	 * `v5b`, `v5`, `v4`), and a string the plugin does not know falls back to
+	 * `version-5.1`, so a stored version always matches the wording that was shown.
 	 *
 	 * @return string
 	 */
@@ -3735,10 +3836,13 @@ final class Creature_Demo_Loan {
 			return;
 		}
 		$record = self::consent_record( $order );
+		// "Your demo terms (version N)" follows the version recorded on the order.
+		$terms_number = Creature_Demo_Loan_Copy::consent_terms_number( $record['version'] );
 		$text   = Creature_Demo_Loan_Copy::text(
 			'booking_confirmation',
 			array(
 				'order_id'        => (string) $order->get_id(),
+				'terms_version'   => $terms_number,
 				// Terms: "Your keep price is on your booking confirmation". Formatted like the other emails.
 				'price'           => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $order ) ),
 				'consent'         => $record['wording'],
@@ -3764,7 +3868,7 @@ final class Creature_Demo_Loan {
 		$missing = self::missing_confirmation_files();
 		if ( $missing ) {
 			$text = str_replace(
-				array( 'Your demo terms (version 5) and our model cancellation form are attached to this email. ', ' or use the attached model cancellation form' ),
+				array( 'Your demo terms (version ' . $terms_number . ') and our model cancellation form are attached to this email. ', ' or use the attached model cancellation form' ),
 				'',
 				$text
 			);
@@ -3903,7 +4007,7 @@ final class Creature_Demo_Loan {
 			$raw = array();
 		}
 		$labels = array(
-			'terms_pdf'         => 'Terms PDF (version 5)',
+			'terms_pdf'         => 'Terms PDF (version 5.1)',
 			'cancellation_form' => 'Model cancellation form',
 		);
 		$report = array();
@@ -5375,9 +5479,15 @@ final class Creature_Demo_Loan {
 		}
 		foreach ( $due_now as $item ) {
 			if ( $item['key'] === $latest['key'] ) {
-				$args = array(
-					'due'   => $due,
-					'price' => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $order ) ),
+				$deemed_on = self::deemed_on_for( $order );
+				$args      = array(
+					'due'            => $due,
+					'price'          => Creature_Demo_Loan_Money::format_gbp( self::loan_keep_price_pence( $order ) ),
+					'deemed_on'      => $deemed_on,
+					// The last posting date is the end of day 13: the day before the
+					// deemed purchase date. It comes from deemed_on_for(), so it moves
+					// with the due date exactly as {deemed_on} does.
+					'last_post_date' => Creature_Demo_Loan_Calendar::add_days( $deemed_on, -1 ),
 				);
 				if ( ! empty( $item['row']['includes_choices'] ) ) {
 					$args['choice_links'] = self::choice_links_plain( $order, $as_of );
