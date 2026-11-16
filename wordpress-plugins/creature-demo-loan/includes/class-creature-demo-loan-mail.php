@@ -289,7 +289,9 @@ final class Creature_Demo_Loan_Mail {
 	 * @return string
 	 */
 	private static function linkify_line( $line ) {
-		$parts = preg_split( '~(https?://[^\s<>"\']+)~iu', $line, -1, PREG_SPLIT_DELIM_CAPTURE );
+		// A full http(s) URL, the bare user-guide address, or the shop's info@ address.
+		// HTML only: the plain-text body is never changed.
+		$parts = preg_split( '~(https?://[^\s<>"\']+|(?<![\w./@-])creaturecycles\.co\.uk/de-reacher-user-guide/?|(?<![\w.@-])info@creaturecycles\.co\.uk(?![\w-]|\.\w))~iu', $line, -1, PREG_SPLIT_DELIM_CAPTURE );
 		if ( ! is_array( $parts ) ) {
 			return self::esc_text( $line );
 		}
@@ -300,11 +302,19 @@ final class Creature_Demo_Loan_Mail {
 				continue;
 			}
 			$trail = '';
-			if ( preg_match( '~[.,;:!?)\]]+$~', $part, $m ) ) {
-				$trail = $m[0];
-				$part  = substr( $part, 0, -strlen( $trail ) );
+			if ( preg_match( '~^https?://~i', $part ) ) {
+				if ( preg_match( '~[.,;:!?)\]]+$~', $part, $m ) ) {
+					$trail = $m[0];
+					$part  = substr( $part, 0, -strlen( $trail ) );
+				}
+				$target = $part;
+			} elseif ( false !== strpos( $part, '@' ) ) {
+				$target = 'mailto:' . $part;
+			} else {
+				$target = 'https://' . $part;
 			}
-			$href  = self::esc_url_attr( $part );
+			// The href is escaped once, here; the visible text is the words as written.
+			$href  = 'mailto:' === substr( $target, 0, 7 ) ? self::esc_attr_mailto( $target ) : self::esc_url_attr( $target );
 			$html .= ( '' === $href ? self::esc_text( $part ) : '<a href="' . $href . '">' . self::esc_text( $part ) . '</a>' ) . self::esc_text( $trail );
 		}
 		return $html;
@@ -319,6 +329,20 @@ final class Creature_Demo_Loan_Mail {
 			return esc_html( $text );
 		}
 		return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
+	}
+
+	/**
+	 * A mailto: href. esc_url() allows the mailto protocol; the fallback escapes
+	 * for an attribute.
+	 *
+	 * @param string $url
+	 * @return string
+	 */
+	private static function esc_attr_mailto( $url ) {
+		if ( function_exists( 'esc_url' ) ) {
+			return esc_url( $url, array( 'mailto' ) );
+		}
+		return htmlspecialchars( (string) $url, ENT_QUOTES, 'UTF-8' );
 	}
 
 	/**
@@ -396,6 +420,10 @@ final class Creature_Demo_Loan_Mail {
 			return array( 'mailer' => 'woocommerce', 'html' => $wrapped, 'headers' => $sent_headers );
 		}
 		if ( function_exists( 'wp_mail' ) ) {
+			// The plain wp_mail path has no WC_Email to set the sender, so the From
+			// header is built here and only here. On the WooCommerce path Woo sets its
+			// own sender (and its From filters get a WC_Email, not null).
+			$headers = array_merge( self::from_headers(), $headers );
 			wp_mail( $to, $subject, $plain, $headers );
 			return array( 'mailer' => 'wp_mail', 'html' => '', 'headers' => $headers );
 		}
@@ -403,31 +431,35 @@ final class Creature_Demo_Loan_Mail {
 	}
 
 	/**
-	 * Headers for a customer email.
+	 * Headers for a customer email: Reply-To. The From header is added by
+	 * dispatch() on the plain wp_mail path only.
 	 *
 	 * @return string[]
 	 */
 	public static function customer_headers() {
-		return array_merge( self::from_headers(), array( 'Reply-To: ' . self::REPLY_TO ) );
+		return array( 'Reply-To: ' . self::REPLY_TO );
 	}
 
 	/**
-	 * Headers for a shop alert: the From header only.
+	 * Headers for a shop alert: none (the From header is added by dispatch() on
+	 * the plain wp_mail path only).
 	 *
 	 * @return string[]
 	 */
 	public static function admin_headers() {
-		return self::from_headers();
+		return array();
 	}
 
 	/**
-	 * A From header for this plugin's own sends, built from the WooCommerce
+	 * A From header for the plain wp_mail fallback, built from the WooCommerce
 	 * sender settings the way WC_Email builds it: the options
 	 * woocommerce_email_from_name and woocommerce_email_from_address, each passed
-	 * through the filter of the same name. There is no WC_Email object here, so
-	 * the filters get null as their second argument. An empty or invalid address
-	 * gives no From header, so WordPress's own default applies. This is not a
-	 * global wp_mail_from filter: only the plugin's own wp_mail calls carry it.
+	 * through the filter of the same name. Only called when there is no WooCommerce
+	 * mailer, so there is no WC_Email object and the filters get null as their
+	 * second argument (the WooCommerce path never calls them from here). An empty
+	 * or invalid address gives no From header, so WordPress's own default applies.
+	 * This is not a global wp_mail_from filter: only the plugin's own wp_mail
+	 * calls carry it.
 	 *
 	 * @return string[] Zero or one header line.
 	 */

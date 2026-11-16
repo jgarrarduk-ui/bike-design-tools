@@ -5820,8 +5820,8 @@ $from_args = array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_
 $wp_before = count( $GLOBALS['creature_demo_wp_mail'] );
 $from_cust = Creature_Demo_Loan_Mail::send_customer( $from_order, 'dates_on_delivery', $from_args );
 $from_adm  = Creature_Demo_Loan_Mail::send_admin( $from_order, 'admin_attachments_missing', array( 'missing' => 'x' ) );
-creature_demo_expect( array( $from_hdr, $reply ) === $from_cust['headers'], 'From: customer send carries From from the Woo settings, then Reply-To' );
-creature_demo_expect( array( $from_hdr ) === $from_adm['headers'], 'From: admin send carries From and no Reply-To' );
+creature_demo_expect( array( $reply ) === $from_cust['headers'] && array( $from_hdr, $reply ) === $from_cust['sent_headers'], 'From: customer send on the wp_mail fallback adds From (from the Woo settings) in front of Reply-To' );
+creature_demo_expect( array() === $from_adm['headers'] && array( $from_hdr ) === $from_adm['sent_headers'], 'From: admin send on the wp_mail fallback carries From and no Reply-To' );
 $from_wp = array_slice( $GLOBALS['creature_demo_wp_mail'], $wp_before );
 creature_demo_expect( 2 === count( $from_wp ) && array( $from_hdr, $reply ) === $from_wp[0][3] && array( $from_hdr ) === $from_wp[1][3], 'From: wp_mail itself is called with the From header on customer and admin sends' );
 creature_demo_expect( 0 === strpos( $from_cust['subject'], '[TEST] ' ) && 'demo-loan-test@creaturecycles.co.uk' === $from_cust['to'], 'From: a redirected [TEST] customer mail still goes to the redirect address' );
@@ -6053,7 +6053,7 @@ foreach ( $r2_wp as $r2_call ) {
 	creature_demo_expect( false === strpos( $r2_call[2], '<p>' ) && ( 'info@creaturecycles.co.uk' === $r2_call[0] ? false === strpos( $r2_call[2], 'Sign in to manage' ) : substr( $r2_call[2], -strlen( $r2_sig ) ) === $r2_sig ) && ! in_array( $r2_ct, (array) $r2_call[3], true ), 'fallback: wp_mail gets the plain text with no markup and no Content-Type header' );
 }
 foreach ( $r2_rows as $r2_row ) {
-	creature_demo_expect( ! isset( $r2_row['sent_headers'] ) || $r2_row['sent_headers'] === $r2_row['headers'], 'fallback: the headers sent are the round-1 headers unchanged for "' . $r2_row['slot'] . '"' );
+	creature_demo_expect( ! isset( $r2_row['sent_headers'] ) || $r2_row['sent_headers'] === array_merge( Creature_Demo_Loan_Mail::from_headers(), $r2_row['headers'] ), 'fallback: the headers sent are From (fallback only) then the row headers for "' . $r2_row['slot'] . '"' );
 }
 
 // (2) WooCommerce mailer path.
@@ -6063,6 +6063,14 @@ $r2_wc->mailer     = $r2_mailer;
 $GLOBALS['creature_demo_wc'] = $r2_wc;
 $r2_wp_before      = count( $GLOBALS['creature_demo_wp_mail'] );
 $r2_sent_from      = count( Creature_Demo_Loan_Mail::$sent );
+// B1: on the WooCommerce path the plugin never calls the Woo From filters (they would get null instead of a WC_Email).
+$r2_from_calls  = array();
+$r2_from_count  = static function ( $value, $email = null ) use ( &$r2_from_calls ) {
+	$r2_from_calls[] = $email;
+	return $value;
+};
+add_filter( 'woocommerce_email_from_name', $r2_from_count, 10, 2 );
+add_filter( 'woocommerce_email_from_address', $r2_from_count, 10, 2 );
 foreach ( $r2_slots as $r2_slot ) {
 	if ( 0 === strpos( $r2_slot, 'admin_' ) ) {
 		Creature_Demo_Loan_Mail::send_admin( $r2_order, $r2_slot, array( 'missing' => 'x' ) );
@@ -6070,6 +6078,9 @@ foreach ( $r2_slots as $r2_slot ) {
 		Creature_Demo_Loan_Mail::send_customer( $r2_order, $r2_slot, array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
 	}
 }
+creature_demo_expect( array() === $r2_from_calls, 'From: on the WooCommerce mailer path the Woo From filters are not called by the plugin (so never with null)' );
+remove_filter( 'woocommerce_email_from_name', $r2_from_count, 10 );
+remove_filter( 'woocommerce_email_from_address', $r2_from_count, 10 );
 $r2_rows = array_slice( Creature_Demo_Loan_Mail::$sent, $r2_sent_from );
 creature_demo_expect( count( $GLOBALS['creature_demo_wp_mail'] ) === $r2_wp_before, 'template: with the WC mailer present wp_mail is not called directly' );
 creature_demo_expect( count( $r2_mailer->wrapped ) === $r2_cust + $r2_adm && count( $r2_mailer->sent ) === $r2_cust + $r2_adm, 'template: every customer and admin send went through wrap_message and then the mailer send' );
@@ -6087,13 +6098,13 @@ foreach ( $r2_rows as $r2_row ) {
 	creature_demo_expect( $r2_send[0] === $r2_row['to'] && $r2_send[1] === $r2_row['subject'] && $r2_send[2] === $r2_row['html'] && '<div class="wc-template">' === substr( $r2_row['html'], 0, 25 ), 'template: ' . $r2_label . ' is sent with the wrapped message, the same recipient and subject' );
 	if ( 'customer' === $r2_row['kind'] ) {
 		creature_demo_expect( 'demo-loan-test@creaturecycles.co.uk' === $r2_send[0] && 0 === strpos( $r2_send[1], '[TEST] ' ), 'template: ' . $r2_label . ' still goes to the [TEST] redirect with the [TEST] subject' );
-		creature_demo_expect( array( $r2_from, 'Reply-To: info@creaturecycles.co.uk', $r2_ct ) === $r2_send[3], 'template: ' . $r2_label . ' headers are From, Reply-To, Content-Type' );
+		creature_demo_expect( array( 'Reply-To: info@creaturecycles.co.uk', $r2_ct ) === $r2_send[3], 'template: ' . $r2_label . ' headers are Reply-To, Content-Type (no plugin From: Woo sets the sender)' );
 		$r2_pos_body  = strrpos( $r2_wrap[1], '</p>' );
 		$r2_pos_sign  = strpos( $r2_wrap[1], 'href="' . $r2_account . '"' );
 		creature_demo_expect( false !== $r2_pos_sign && $r2_pos_sign > 0 && substr( $r2_wrap[1], -strlen( Creature_Demo_Loan_Mail::signin_html() ) ) === Creature_Demo_Loan_Mail::signin_html() && false !== $r2_pos_body, 'sign-in: ' . $r2_label . ' HTML ends with the sign-in button and note' );
 		creature_demo_expect( false !== strpos( $r2_wrap[1], '>Sign in to manage your demo loan</a>' ) && false !== strpos( $r2_wrap[1], '<a href="' . $r2_lost . '">Reset it here</a>' ), 'sign-in: ' . $r2_label . ' HTML has the button and the Reset it here link' );
 	} else {
-		creature_demo_expect( 'info@creaturecycles.co.uk' === $r2_send[0] && 0 !== strpos( $r2_send[1], '[TEST]' ) && array( $r2_from, $r2_ct ) === $r2_send[3], 'template: ' . $r2_label . ' goes to the shop with From and Content-Type only' );
+		creature_demo_expect( 'info@creaturecycles.co.uk' === $r2_send[0] && 0 !== strpos( $r2_send[1], '[TEST]' ) && array( $r2_ct ) === $r2_send[3], 'template: ' . $r2_label . ' goes to the shop with Content-Type only (no plugin From, no Reply-To)' );
 		creature_demo_expect( false === strpos( $r2_wrap[1], 'Sign in to manage' ) && false === strpos( $r2_wrap[1], 'lost-password' ), 'sign-in: ' . $r2_label . ' HTML has no sign-in link' );
 	}
 	creature_demo_expect( array() === $r2_send[4], 'template: ' . $r2_label . ' passes no attachments from the plugin mailer (the booking files ride on WooCommerce own order email)' );
@@ -6118,6 +6129,14 @@ creature_demo_expect( false !== strpos( $r2_cust_row['plain'], 'pay_for_order=tr
 creature_demo_expect( '<p>One<br>two</p><p>Three</p>' === Creature_Demo_Loan_Mail::text_to_html( "One\ntwo\n\n\nThree\n" ), 'html: blank lines make paragraphs and single newlines make <br>' );
 creature_demo_expect( '<p>See <a href="https://example.com/a">https://example.com/a</a>.</p>' === Creature_Demo_Loan_Mail::text_to_html( 'See https://example.com/a.' ), 'html: a trailing full stop stays outside the link' );
 creature_demo_expect( '<p>a &lt; b &amp; c</p>' === Creature_Demo_Loan_Mail::text_to_html( 'a < b & c' ), 'html: text is escaped' );
+// B2: the user-guide address and info@ become links in the HTML only.
+creature_demo_expect( '<p>See the guide (<a href="https://creaturecycles.co.uk/de-reacher-user-guide/">creaturecycles.co.uk/de-reacher-user-guide/</a>), then ask.</p>' === Creature_Demo_Loan_Mail::text_to_html( 'See the guide (creaturecycles.co.uk/de-reacher-user-guide/), then ask.' ), 'links: the bare user-guide address becomes an https link, the closing bracket and comma stay outside' );
+creature_demo_expect( '<p>Email <a href="mailto:info@creaturecycles.co.uk">info@creaturecycles.co.uk</a>.</p>' === Creature_Demo_Loan_Mail::text_to_html( 'Email info@creaturecycles.co.uk.' ), 'links: info@creaturecycles.co.uk becomes a mailto link and the full stop stays outside' );
+creature_demo_expect( '<p><a href="https://creaturecycles.co.uk/de-reacher-user-guide/">https://creaturecycles.co.uk/de-reacher-user-guide/</a></p>' === Creature_Demo_Loan_Mail::text_to_html( 'https://creaturecycles.co.uk/de-reacher-user-guide/' ), 'links: a full guide URL is linked once, not twice' );
+creature_demo_expect( '<p>x@info@creaturecycles.co.uk and notinfo@creaturecycles.co.uk and info@creaturecycles.co.uk.au</p>' === Creature_Demo_Loan_Mail::text_to_html( 'x@info@creaturecycles.co.uk and notinfo@creaturecycles.co.uk and info@creaturecycles.co.uk.au' ), 'links: other addresses that merely contain info@creaturecycles.co.uk are not linked' );
+creature_demo_expect( '<p>a &amp; <a href="mailto:info@creaturecycles.co.uk">info@creaturecycles.co.uk</a> &lt;b&gt;</p>' === Creature_Demo_Loan_Mail::text_to_html( 'a & info@creaturecycles.co.uk <b>' ), 'links: text around a mailto link is still escaped' );
+$r2_guide_plain = Creature_Demo_Loan_Copy::text( 'booking_confirmation', array( 'terms_version' => '5.1', 'order_id' => '1' ) );
+creature_demo_expect( false === strpos( $r2_guide_plain, '<a ' ) && false === strpos( $r2_guide_plain, 'mailto:' ) && false === strpos( $r2_guide_plain, 'https://creaturecycles.co.uk/de-reacher-user-guide/' ), 'links: the plain-text copy is unchanged (no markup, no added https://)' );
 // [TEST] / suppression still behave, through the WC mailer.
 $r2_sent_n = count( $r2_mailer->sent );
 $r2_none   = static function () {
