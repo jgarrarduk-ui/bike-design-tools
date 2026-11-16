@@ -791,7 +791,9 @@ final class Creature_Demo_Loan {
 	 * @return mixed
 	 */
 	public static function filter_paypal_buttons_disabled( $disabled, $context = null ) {
-		if ( self::cart_is_demo_only() ) {
+		// Any demo item in the cart (demo-only or mixed). A mixed basket is refused at
+		// checkout anyway (on_check_cart_items), so PayPal Express must not offer it.
+		if ( self::cart_contains_demo() ) {
 			return true;
 		}
 		// The product filter passes an array with a `product` (a WC_Product), and
@@ -827,14 +829,16 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
-	 * PayPal buttons are hidden on a demo product page, and anywhere while the
-	 * cart is demo-only (cart, checkout, block cart and checkout, mini-cart).
-	 * Everything else is left alone.
+	 * PayPal buttons (and the Pay Later message) are hidden on a demo product
+	 * page, and anywhere while the cart holds ANY demo item, demo-only or mixed
+	 * (cart, checkout, block cart and checkout, mini-cart). A cart with no demo
+	 * item is left alone. Cart state is read-only here; the server-side gate
+	 * (filter_gateways, on_check_cart_items, on_checkout_process) is unchanged.
 	 *
 	 * @return bool
 	 */
 	public static function paypal_should_hide() {
-		return self::cart_is_demo_only() || self::current_page_is_demo_product();
+		return self::cart_contains_demo() || self::current_page_is_demo_product();
 	}
 
 	/**

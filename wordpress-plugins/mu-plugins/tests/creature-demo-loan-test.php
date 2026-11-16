@@ -5770,10 +5770,35 @@ creature_demo_expect( false !== strpos( $pp_css(), '#ppc-button-minicart-v6' ) &
 creature_demo_expect( false === Creature_Demo_Loan::filter_paypal_v6_block_data( array( 'buttons_enabled' => true ) )['buttons_enabled'], 'PayPal 1.3.2: demo-only cart: v6 block cart and checkout data has buttons off' );
 creature_demo_expect( false !== strpos( $pp_css(), '.ppcp-messages{display:none!important}' ), 'PayPal round 2 F2: the demo-context CSS hides the Pay Later messaging (.ppcp-messages)' );
 
-// Mixed cart: the plugin's mixed-basket error handles it; PayPal is untouched.
+// Round 3 C: a mixed cart (any demo item) hides PayPal Express and Pay Later too, by the same filters, dequeue and CSS.
 $pp_reset( false, 0, array( $demo_item, $normal_item ) );
+foreach ( array( 'cart', 'checkout', 'mini-cart', 'block-cart', 'block-checkout' ) as $pp_ctx ) {
+	creature_demo_expect( true === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, $pp_ctx ), "PayPal round 3 C: mixed cart, v5 buttons_disabled filter is true for {$pp_ctx}" );
+}
+creature_demo_expect( true === apply_filters( 'woocommerce_paypal_payments_buttons_disabled', false, 'cart' ), 'PayPal round 3 C: through apply_filters the v5 filter gives true for a mixed cart' );
 Creature_Demo_Loan::hide_paypal_v6_assets();
-creature_demo_expect( array() === $GLOBALS['creature_demo_pp']['dequeued'] && '' === $pp_css() && false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, 'cart' ) && $normal_data === Creature_Demo_Loan::filter_paypal_v6_block_data( $normal_data ), 'PayPal 1.3.2: a mixed cart leaves PayPal untouched' );
+creature_demo_expect( array( 'wc-ppcp-sdk-v6-boot' ) === $GLOBALS['creature_demo_pp']['dequeued'], 'PayPal round 3 C: mixed cart: the v6 boot script is dequeued' );
+creature_demo_expect( false !== strpos( $pp_css(), '#ppc-button-ppcp-gateway-v6' ) && false !== strpos( $pp_css(), '.ppcp-messages{display:none!important}' ), 'PayPal round 3 C: mixed cart: the hiding CSS covers the buttons and the Pay Later message' );
+creature_demo_expect( false === Creature_Demo_Loan::filter_paypal_v6_block_data( array( 'buttons_enabled' => true ) )['buttons_enabled'], 'PayPal round 3 C: mixed cart: v6 block data has buttons off' );
+// The same cart, normal items only, stays untouched.
+$pp_reset( false, 0, array( $normal_item, $normal_item ) );
+Creature_Demo_Loan::hide_paypal_v6_assets();
+creature_demo_expect( array() === $GLOBALS['creature_demo_pp']['dequeued'] && '' === $pp_css() && false === Creature_Demo_Loan::filter_paypal_buttons_disabled( false, 'cart' ) && $normal_data === Creature_Demo_Loan::filter_paypal_v6_block_data( $normal_data ), 'PayPal round 3 C: a cart with no demo item leaves PayPal untouched' );
+// Server-side backstop: a mixed cart cannot be ordered through ppcp-gateway. The gateway list is not trimmed for a mixed
+// cart (filter_gateways acts on demo-only carts), but woocommerce_check_cart_items refuses the cart whatever the gateway:
+// classic checkout runs it in WC_Checkout (class-wc-checkout.php:1024) and the Store API order POST runs it through
+// CartController::validate_cart (CartController.php:531, Checkout.php:603) and turns the error into a 409.
+$pp_reset( false, 0, array( $demo_item, $normal_item ) );
+$_POST['payment_method'] = 'ppcp-gateway';
+$GLOBALS['creature_demo_notices'] = array();
+do_action( 'woocommerce_check_cart_items' );
+creature_demo_expect( 1 === count( $GLOBALS['creature_demo_notices'] ) && 'error' === $GLOBALS['creature_demo_notices'][0][1] && Creature_Demo_Loan_Copy::text( 'mixed_basket_error' ) === $GLOBALS['creature_demo_notices'][0][0], 'PayPal round 3 C: a mixed-cart order via ppcp-gateway is refused server-side with the mixed basket error' );
+creature_demo_expect( array( 'ppcp-gateway', 'stripe' ) === array_keys( Creature_Demo_Loan::filter_gateways( array( 'ppcp-gateway' => 'p', 'stripe' => 's' ) ) ), 'PayPal round 3 C: the gateway list itself is unchanged for a mixed cart (the cart check is the gate)' );
+$pp_reset( false, 0, array( $normal_item ) );
+$GLOBALS['creature_demo_notices'] = array();
+do_action( 'woocommerce_check_cart_items' );
+creature_demo_expect( array() === $GLOBALS['creature_demo_notices'], 'PayPal round 3 C: a normal cart via ppcp-gateway is not refused by the demo gate' );
+unset( $_POST['payment_method'] );
 $pp_reset( false, 0, null );
 
 // PayPal Payments (and the WordPress script functions) absent: no error, nothing changes.
