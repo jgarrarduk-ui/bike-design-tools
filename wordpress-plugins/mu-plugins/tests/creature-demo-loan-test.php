@@ -2972,6 +2972,14 @@ $f1_html = ob_get_clean();
 creature_demo_expect( 1 === preg_match( '/href="([^"]*creature_demo_choice=return[^"]*)"/', $f1_html, $f1_m ), 'F1: the HTML has a return link' );
 creature_demo_expect( false !== strpos( $f1_m[1], '&#038;' ) && false === strpos( $f1_m[1], '&#038;#038;' ) && false === strpos( $f1_m[1], '&amp;' ), 'F1: the HTML href is escaped exactly once' );
 creature_demo_expect( html_entity_decode( $f1_m[1], ENT_QUOTES, 'UTF-8' ) === $f1_raw, 'F1: the HTML href decodes to the same URL as the plain text' );
+// F1: the {link} (pay URL) placeholder is raw too, even if a filter hands back an escaped URL.
+$f1_pay_order = new class() {
+	public function get_checkout_payment_url() {
+		return 'https://staging.example/checkout/order-pay/9/?pay_for_order=true&amp;key=wc_order_abc&#038;x=1';
+	}
+};
+$f1_pay_ref = new ReflectionMethod( 'Creature_Demo_Loan', 'payment_link' );
+creature_demo_expect( 'https://staging.example/checkout/order-pay/9/?pay_for_order=true&key=wc_order_abc&x=1' === $f1_pay_ref->invoke( null, $f1_pay_order ), 'F1: the {link} pay URL placeholder is raw (no &amp; or &#038;)' );
 $_GET = array(
 	'creature_demo_choice' => 'keep',
 	'creature_demo_order'  => (string) $choices->get_id(),
@@ -5566,6 +5574,7 @@ Creature_Demo_Loan::hide_paypal_v6_assets();
 creature_demo_expect( array( 'wc-ppcp-sdk-v6-boot' ) === $GLOBALS['creature_demo_pp']['dequeued'], 'PayPal 1.3.2: demo-only cart: v6 boot script dequeued (cart, checkout and mini-cart pages)' );
 creature_demo_expect( false !== strpos( $pp_css(), '#ppc-button-minicart-v6' ) && false !== strpos( $pp_css(), '#ppc-button-ppcp-gateway-v6' ), 'PayPal 1.3.2: demo-only cart: the hiding CSS covers the v6 express and mini-cart wrappers' );
 creature_demo_expect( false === Creature_Demo_Loan::filter_paypal_v6_block_data( array( 'buttons_enabled' => true ) )['buttons_enabled'], 'PayPal 1.3.2: demo-only cart: v6 block cart and checkout data has buttons off' );
+creature_demo_expect( false !== strpos( $pp_css(), '.ppcp-messages{display:none!important}' ), 'PayPal round 2 F2: the demo-context CSS hides the Pay Later messaging (.ppcp-messages)' );
 
 // Mixed cart: the plugin's mixed-basket error handles it; PayPal is untouched.
 $pp_reset( false, 0, array( $demo_item, $normal_item ) );

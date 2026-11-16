@@ -853,7 +853,8 @@ final class Creature_Demo_Loan {
 
 	/**
 	 * Belt and braces: hide the PayPal button wrappers (v6 and v5, express and
-	 * mini-cart) on a demo page. Print nothing elsewhere.
+	 * mini-cart) and the Pay Later messaging (.ppcp-messages, which the Pay Later
+	 * block prints on its own) on a demo page. Print nothing elsewhere.
 	 */
 	public static function print_paypal_hide_css() {
 		if ( ! self::paypal_should_hide() ) {
@@ -866,7 +867,7 @@ final class Creature_Demo_Loan {
 	 * @return string
 	 */
 	public static function paypal_hide_css() {
-		return '#ppc-button-ppcp-gateway-v6,#ppc-button-minicart-v6,#ppc-button-ppcp-gateway,#ppc-button-minicart,.ppc-button-wrapper{display:none!important}';
+		return '#ppc-button-ppcp-gateway-v6,#ppc-button-minicart-v6,#ppc-button-ppcp-gateway,#ppc-button-minicart,.ppc-button-wrapper,.ppcp-messages{display:none!important}';
 	}
 
 	/**
@@ -5785,7 +5786,10 @@ final class Creature_Demo_Loan {
 		if ( is_object( $order ) && method_exists( $order, 'get_checkout_payment_url' ) ) {
 			$url = $order->get_checkout_payment_url();
 			if ( is_string( $url ) ) {
-				return $url;
+				// Raw URL for the {link} tag: a filter on the pay URL may hand back an
+				// HTML-escaped one, which would show "&amp;" in plain text and be
+				// escaped a second time in the HTML email.
+				return str_replace( array( '&amp;', '&#038;', '&#38;' ), '&', $url );
 			}
 		}
 		return '';

@@ -304,7 +304,10 @@ final class Creature_Demo_Loan_Copy {
 	 * which Appendix A does not quote, so the wording is the same). `v5b`, `v5` and `v4` stay exactly as they were so
 	 * an older order can still be read back as the text that version stored.
 	 * `v5` is an older draft (a fixed "£212") and is never used for a new order.
-	 * A version string that matches nothing falls back to `version-5`.
+	 * A version string that matches nothing gets the `version-5` / `version-5.1`
+	 * wording (the same text). Elsewhere an unknown version reads as the current
+	 * terms: consent_terms_number() gives 5.1 and Creature_Demo_Loan::consent_version()
+	 * falls back to `version-5.1`.
 	 *
 	 * @param string $version
 	 * @return string
