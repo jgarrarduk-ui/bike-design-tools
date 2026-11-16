@@ -94,6 +94,9 @@ final class Creature_Demo_Loan {
 	/** @var array<string, mixed>|null */
 	public static $block_field = null;
 
+	/** @var int Customer id created by this request's checkout (woocommerce_created_customer), 0 if none. */
+	private static $new_customer_id = 0;
+
 	/**
 	 * @return array<string, string>
 	 */
@@ -159,6 +162,11 @@ final class Creature_Demo_Loan {
 		add_action( 'woocommerce_review_order_before_submit', array( __CLASS__, 'on_before_submit' ) );
 		add_action( 'woocommerce_checkout_create_order', array( __CLASS__, 'on_checkout_create_order' ), 10, 2 );
 		add_action( 'woocommerce_store_api_checkout_order_processed', array( __CLASS__, 'on_store_api_order' ), 10, 1 );
+		// Account line: remember a customer created in this request, then stamp the
+		// order once it exists (classic: order_created; block: order_processed).
+		add_action( 'woocommerce_created_customer', array( __CLASS__, 'on_created_customer' ), 10, 1 );
+		add_action( 'woocommerce_checkout_order_created', array( __CLASS__, 'stamp_account_created' ), 10, 1 );
+		add_action( 'woocommerce_store_api_checkout_order_processed', array( __CLASS__, 'stamp_account_created' ), 20, 1 );
 		add_action( 'woocommerce_store_api_checkout_update_order_meta', array( __CLASS__, 'on_store_api_order' ), 10, 2 );
 		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'on_store_api_service_area' ), 10, 2 );
 		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'on_store_api_consent_gate' ), 10, 2 );
@@ -1159,6 +1167,39 @@ final class Creature_Demo_Loan {
 			self::store_consent( $order, true, gmdate( 'c' ) );
 		}
 		self::store_express_request( $order, self::posted_express() );
+	}
+
+	/**
+	 * woocommerce_created_customer: remember the new account for the rest of
+	 * this request. Nothing is stored yet.
+	 *
+	 * @param mixed $customer_id
+	 */
+	public static function on_created_customer( $customer_id ) {
+		self::$new_customer_id = (int) $customer_id;
+	}
+
+	/**
+	 * Save _cc_demo_account_created_at_checkout = yes on a demo order whose
+	 * customer is the account this same request just created. A signed-in or
+	 * returning customer never matches, so the flag is not set. Non-demo orders
+	 * are not touched. The remembered id is cleared either way.
+	 *
+	 * @param object $order
+	 */
+	public static function stamp_account_created( $order ) {
+		$new_id                = self::$new_customer_id;
+		self::$new_customer_id = 0;
+		if ( $new_id <= 0 || ! is_object( $order ) || ! method_exists( $order, 'get_customer_id' ) || (int) $order->get_customer_id() !== $new_id ) {
+			return;
+		}
+		if ( ! self::order_is_demo( $order ) && ! self::cart_is_demo_only() ) {
+			return;
+		}
+		$order->update_meta_data( Creature_Demo_Loan_Mail::ACCOUNT_CREATED_META, 'yes' );
+		if ( method_exists( $order, 'save' ) ) {
+			$order->save();
+		}
 	}
 
 	/**
@@ -4060,14 +4101,17 @@ final class Creature_Demo_Loan {
 		if ( method_exists( $order, 'save' ) ) {
 			$order->save();
 		}
-		// The sign-in link goes at the top of this block (the rider's account was
-		// created at checkout). WooCommerce's own order email carries it, not the
-		// plugin mailer.
+		// The sign-in link goes at the top of this block. Its note depends on
+		// whether checkout created the account. WooCommerce's own order email
+		// carries it, not the plugin mailer.
 		if ( $plain_text ) {
-			echo "\n" . Creature_Demo_Loan_Mail::signin_text() . "\n\n" . $text . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			echo "\n" . Creature_Demo_Loan_Mail::signin_text( $order ) . "\n\n" . $text . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			return;
 		}
-		echo '<div class="creature-demo-loan-booking">' . Creature_Demo_Loan_Mail::signin_html() . '<p>' . nl2br( self::esc( $text ) ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		// HTML only: the mail helper escapes each piece once and links URLs, the
+		// guide address and info@. Newlines become <br /> as nl2br did.
+		$lines = array_map( array( 'Creature_Demo_Loan_Mail', 'linkify_line' ), explode( "\n", str_replace( array( "\r\n", "\r" ), "\n", $text ) ) );
+		echo '<div class="creature-demo-loan-booking">' . Creature_Demo_Loan_Mail::signin_html( $order ) . '<p>' . implode( "<br />\n", $lines ) . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 	}
 
 	/**

@@ -665,6 +665,9 @@ class Creature_Demo_Test_Order {
 	public function get_user_id() {
 		return (int) $this->user_id;
 	}
+	public function get_customer_id() {
+		return (int) $this->user_id;
+	}
 	public function get_billing_email() {
 		return (string) $this->billing_email;
 	}
@@ -6009,6 +6012,8 @@ $GLOBALS['creature_demo_options']['woocommerce_email_from_address'] = 'info@crea
 $r2_from   = 'From: "Creature Cycles" <info@creaturecycles.co.uk>';
 $r2_ct     = 'Content-Type: text/html; charset=UTF-8';
 $r2_order  = creature_demo_loan();
+// 1.3.3: the account-created wording needs the flag, so this order is a new-account order.
+$r2_order->update_meta_data( '_cc_demo_account_created_at_checkout', 'yes' );
 $r2_slots  = array();
 foreach ( Creature_Demo_Loan_Copy::slots() as $r2_slot ) {
 	if ( '' !== trim( Creature_Demo_Loan_Copy::text( $r2_slot ) ) ) {
@@ -6029,7 +6034,7 @@ foreach ( $r2_slots as $r2_slot ) {
 	}
 }
 $r2_rows = array_slice( Creature_Demo_Loan_Mail::$sent, $r2_sent_from );
-$r2_sig  = Creature_Demo_Loan_Mail::signin_text();
+$r2_sig = Creature_Demo_Loan_Mail::signin_text( $r2_order );
 creature_demo_expect( "Sign in to manage your demo loan: {$r2_account}\n\nYour account was created at checkout. Sign in with the email you booked with. Forgot your password? Reset it here: {$r2_lost}" === $r2_sig, 'sign-in: the plain-text block has the label, the note and both full URLs' );
 $r2_cust = 0;
 $r2_adm  = 0;
@@ -6101,7 +6106,7 @@ foreach ( $r2_rows as $r2_row ) {
 		creature_demo_expect( array( 'Reply-To: info@creaturecycles.co.uk', $r2_ct ) === $r2_send[3], 'template: ' . $r2_label . ' headers are Reply-To, Content-Type (no plugin From: Woo sets the sender)' );
 		$r2_pos_body  = strrpos( $r2_wrap[1], '</p>' );
 		$r2_pos_sign  = strpos( $r2_wrap[1], 'href="' . $r2_account . '"' );
-		creature_demo_expect( false !== $r2_pos_sign && $r2_pos_sign > 0 && substr( $r2_wrap[1], -strlen( Creature_Demo_Loan_Mail::signin_html() ) ) === Creature_Demo_Loan_Mail::signin_html() && false !== $r2_pos_body, 'sign-in: ' . $r2_label . ' HTML ends with the sign-in button and note' );
+		creature_demo_expect( false !== $r2_pos_sign && $r2_pos_sign > 0 && substr( $r2_wrap[1], -strlen( Creature_Demo_Loan_Mail::signin_html( $r2_order ) ) ) === Creature_Demo_Loan_Mail::signin_html( $r2_order ) && false !== $r2_pos_body, 'sign-in: ' . $r2_label . ' HTML ends with the sign-in button and note' );
 		creature_demo_expect( false !== strpos( $r2_wrap[1], '>Sign in to manage your demo loan</a>' ) && false !== strpos( $r2_wrap[1], '<a href="' . $r2_lost . '">Reset it here</a>' ), 'sign-in: ' . $r2_label . ' HTML has the button and the Reset it here link' );
 	} else {
 		creature_demo_expect( 'info@creaturecycles.co.uk' === $r2_send[0] && 0 !== strpos( $r2_send[1], '[TEST]' ) && array( $r2_ct ) === $r2_send[3], 'template: ' . $r2_label . ' goes to the shop with Content-Type only (no plugin From, no Reply-To)' );
@@ -6165,12 +6170,14 @@ creature_demo_expect( 'wp_mail' === Creature_Demo_Loan_Mail::send_admin( $r2_ord
 $r2_old_override = isset( $GLOBALS['creature_demo_copy_override']['booking_confirmation'] ) ? $GLOBALS['creature_demo_copy_override']['booking_confirmation'] : null;
 $GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array( 'subject' => '', 'body' => "Booking text for order {order_id}.\n\nSecond paragraph." );
 $r2_bc = creature_demo_booked_loan( '249.00' );
+$r2_bc->update_meta_data( '_cc_demo_account_created_at_checkout', 'yes' );
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $r2_bc, false, false, $bc_email );
 $r2_bc_html = ob_get_clean();
-creature_demo_expect( 0 === strpos( $r2_bc_html, '<div class="creature-demo-loan-booking">' . Creature_Demo_Loan_Mail::signin_html() . '<p>Booking text' ), 'sign-in: the booking confirmation HTML starts with the sign-in block, then the booking text' );
+creature_demo_expect( 0 === strpos( $r2_bc_html, '<div class="creature-demo-loan-booking">' . Creature_Demo_Loan_Mail::signin_html( $r2_bc ) . '<p>Booking text' ),'sign-in: the booking confirmation HTML starts with the sign-in block, then the booking text' );
 creature_demo_expect( false !== strpos( $r2_bc_html, 'href="' . $r2_account . '"' ) && false !== strpos( $r2_bc_html, '<a href="' . $r2_lost . '">Reset it here</a>' ), 'sign-in: the booking confirmation HTML links the account and lost-password URLs' );
 $r2_bc2 = creature_demo_booked_loan( '249.00' );
+$r2_bc2->update_meta_data( '_cc_demo_account_created_at_checkout', 'yes' );
 ob_start();
 Creature_Demo_Loan::render_booking_confirmation( $r2_bc2, false, true, $bc_email );
 $r2_bc_text = ob_get_clean();
@@ -6187,6 +6194,141 @@ if ( null === $r2_old_override ) {
 	$GLOBALS['creature_demo_copy_override']['booking_confirmation'] = $r2_old_override;
 }
 unset( $GLOBALS['creature_demo_options']['woocommerce_email_from_name'], $GLOBALS['creature_demo_options']['woocommerce_email_from_address'] );
+
+// 1.3.3: account line. Flag present = created-at-checkout wording; absent = neutral line.
+$ac_flag = '_cc_demo_account_created_at_checkout';
+$ac_new  = creature_demo_booked_loan( '249.00' );
+$ac_new->update_meta_data( $ac_flag, 'yes' );
+$ac_ret  = creature_demo_booked_loan( '249.00' );
+$ac_neutral = 'Sign in to your account to track this loan.';
+$ac_html_new = Creature_Demo_Loan_Mail::signin_html( $ac_new );
+$ac_html_ret = Creature_Demo_Loan_Mail::signin_html( $ac_ret );
+creature_demo_expect( false !== strpos( $ac_html_new, 'Your account was created at checkout.' ) && false !== strpos( $ac_html_new, '<a href="' . $r2_lost . '">Reset it here</a>' ) && false !== strpos( $ac_html_new, 'href="' . $r2_account . '"' ), 'account line: flag set, HTML has the created-at-checkout wording, the lost-password link and the sign-in button' );
+creature_demo_expect( false !== strpos( $ac_html_ret, 'href="' . $r2_account . '"' ) && false !== strpos( $ac_html_ret, '>Sign in to manage your demo loan</a>' ) && false !== strpos( $ac_html_ret, '<p>' . $ac_neutral . '</p>' ), 'account line: no flag, HTML keeps the sign-in button and has the neutral line' );
+creature_demo_expect( false === strpos( $ac_html_ret, 'created at checkout' ) && false === strpos( $ac_html_ret, 'lost-password' ) && false === strpos( $ac_html_ret, 'Reset it here' ), 'account line: no flag, HTML has no created-at-checkout wording and no lost-password link' );
+$ac_text_ret = Creature_Demo_Loan_Mail::signin_text( $ac_ret );
+creature_demo_expect( "Sign in to manage your demo loan: {$r2_account}\n\n{$ac_neutral}" === $ac_text_ret, 'account line: no flag, plain text is the button URL and the neutral line only' );
+creature_demo_expect( Creature_Demo_Loan_Mail::signin_text( $ac_new ) === $r2_sig && Creature_Demo_Loan_Mail::signin_text() === $ac_text_ret && Creature_Demo_Loan_Mail::signin_html() === $ac_html_ret, 'account line: flag set gives the old plain wording, and no order at all gives the neutral line' );
+$ac_wrong = creature_demo_booked_loan( '249.00' );
+$ac_wrong->update_meta_data( $ac_flag, 'no' );
+creature_demo_expect( false === Creature_Demo_Loan_Mail::account_created_at_checkout( $ac_wrong ) && false === Creature_Demo_Loan_Mail::account_created_at_checkout( null ) && true === Creature_Demo_Loan_Mail::account_created_at_checkout( $ac_new ), 'account line: only the value yes counts as the flag' );
+
+// Rider emails (plugin mailer, plain-text fallback path) follow the order.
+$GLOBALS['creature_demo_wc'] = null;
+$ac_row_new = Creature_Demo_Loan_Mail::send_customer( $ac_new, 'dates_on_delivery', array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
+$ac_row_ret = Creature_Demo_Loan_Mail::send_customer( $ac_ret, 'dates_on_delivery', array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
+creature_demo_expect( substr( $ac_row_new['plain'], -strlen( Creature_Demo_Loan_Mail::signin_text( $ac_new ) ) ) === Creature_Demo_Loan_Mail::signin_text( $ac_new ) && false !== strpos( $ac_row_new['plain'], 'Your account was created at checkout.' ) && false !== strpos( $ac_row_new['plain'], 'Reset it here: ' . $r2_lost ), 'account line: a rider email for a new-account order ends with the created-at-checkout wording and the lost-password link (plain text)' );
+creature_demo_expect( substr( $ac_row_ret['plain'], -strlen( $ac_text_ret ) ) === $ac_text_ret && false === strpos( $ac_row_ret['plain'], 'created at checkout' ) && false === strpos( $ac_row_ret['plain'], 'lost-password' ), 'account line: a rider email for a returning customer ends with the neutral line, no created-at-checkout wording, no lost-password link (plain text)' );
+$ac_mailer     = new Creature_Demo_Test_WC_Mailer();
+$ac_wc         = new Creature_Demo_Test_WC();
+$ac_wc->mailer = $ac_mailer;
+$GLOBALS['creature_demo_wc'] = $ac_wc;
+Creature_Demo_Loan_Mail::send_customer( $ac_new, 'dates_on_delivery', array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
+Creature_Demo_Loan_Mail::send_customer( $ac_ret, 'dates_on_delivery', array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00' ) );
+$ac_wrapped = $ac_mailer->wrapped;
+creature_demo_expect( 2 === count( $ac_wrapped ) && substr( $ac_wrapped[0][1], -strlen( $ac_html_new ) ) === $ac_html_new && substr( $ac_wrapped[1][1], -strlen( $ac_html_ret ) ) === $ac_html_ret, 'account line: rider email HTML ends with the flagged or neutral sign-in block to match its order' );
+$GLOBALS['creature_demo_wc'] = null;
+
+// Addendum: LATER rider emails (reminder and keep/return slots, not the booking confirmation or dates_on_delivery).
+$ac_args = array( 'due' => '2026-03-24', 'grace_end' => '2026-03-29', 'deemed_on' => '2026-04-07', 'price' => '£212.00', 'last_post_date' => '2026-04-03' );
+foreach ( array( 'reminder_due_day', 'reminder_deemed_warning', 'keep_choice_lapsed' ) as $ac_slot ) {
+	$GLOBALS['creature_demo_wc'] = null;
+	$ac_p_new = Creature_Demo_Loan_Mail::send_customer( $ac_new, $ac_slot, $ac_args );
+	$ac_p_ret = Creature_Demo_Loan_Mail::send_customer( $ac_ret, $ac_slot, $ac_args );
+	creature_demo_expect( ! $ac_p_new['empty'] && ! $ac_p_ret['empty'], "account line later email {$ac_slot}: the slot has wording and is sent" );
+	creature_demo_expect( false !== strpos( $ac_p_new['plain'], 'Your account was created at checkout.' ) && false !== strpos( $ac_p_new['plain'], 'Reset it here: ' . $r2_lost ) && substr( $ac_p_new['plain'], -strlen( $r2_sig ) ) === $r2_sig, "account line later email {$ac_slot}: flagged order, plain text has the created-at-checkout wording and the lost-password link" );
+	creature_demo_expect( substr( $ac_p_ret['plain'], -strlen( $ac_text_ret ) ) === $ac_text_ret && false === strpos( $ac_p_ret['plain'], 'created at checkout' ) && false === strpos( $ac_p_ret['plain'], 'lost-password' ) && false === strpos( $ac_p_ret['plain'], 'Reset it here' ), "account line later email {$ac_slot}: returning customer with no flag, plain text has the neutral line only (no created-at-checkout, no lost-password)" );
+	$ac_m = new Creature_Demo_Test_WC_Mailer();
+	$ac_w = new Creature_Demo_Test_WC();
+	$ac_w->mailer = $ac_m;
+	$GLOBALS['creature_demo_wc'] = $ac_w;
+	Creature_Demo_Loan_Mail::send_customer( $ac_new, $ac_slot, $ac_args );
+	Creature_Demo_Loan_Mail::send_customer( $ac_ret, $ac_slot, $ac_args );
+	creature_demo_expect( 2 === count( $ac_m->wrapped ) && substr( $ac_m->wrapped[0][1], -strlen( $ac_html_new ) ) === $ac_html_new && false !== strpos( $ac_m->wrapped[0][1], 'Your account was created at checkout.' ) && false !== strpos( $ac_m->wrapped[0][1], '<a href="' . $r2_lost . '">Reset it here</a>' ), "account line later email {$ac_slot}: flagged order, HTML has the created-at-checkout wording and the lost-password link" );
+	creature_demo_expect( substr( $ac_m->wrapped[1][1], -strlen( $ac_html_ret ) ) === $ac_html_ret && false !== strpos( $ac_m->wrapped[1][1], '<p>' . $ac_neutral . '</p>' ) && false !== strpos( $ac_m->wrapped[1][1], 'href="' . $r2_account . '"' ) && false === strpos( $ac_m->wrapped[1][1], 'created at checkout' ) && false === strpos( $ac_m->wrapped[1][1], 'lost-password' ), "account line later email {$ac_slot}: returning customer with no flag, HTML has the button and neutral line only" );
+	$GLOBALS['creature_demo_wc'] = null;
+}
+
+// Booking block: flag present vs absent, HTML and plain.
+$GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array( 'subject' => '', 'body' => 'Order {order_id}.' );
+$ac_bc_new = creature_demo_booked_loan( '249.00' );
+$ac_bc_new->update_meta_data( $ac_flag, 'yes' );
+$ac_bc_ret = creature_demo_booked_loan( '249.00' );
+$ac_bc_plain_new = creature_demo_booked_loan( '249.00' );
+$ac_bc_plain_new->update_meta_data( $ac_flag, 'yes' );
+$ac_bc_plain_ret = creature_demo_booked_loan( '249.00' );
+$ac_out = array();
+foreach ( array( 'html_new' => array( $ac_bc_new, false ), 'html_ret' => array( $ac_bc_ret, false ), 'plain_new' => array( $ac_bc_plain_new, true ), 'plain_ret' => array( $ac_bc_plain_ret, true ) ) as $ac_k => $ac_c ) {
+	ob_start();
+	Creature_Demo_Loan::render_booking_confirmation( $ac_c[0], false, $ac_c[1], $bc_email );
+	$ac_out[ $ac_k ] = ob_get_clean();
+}
+creature_demo_expect( false !== strpos( $ac_out['html_new'], 'Your account was created at checkout.' ) && false !== strpos( $ac_out['html_new'], '<a href="' . $r2_lost . '">Reset it here</a>' ), 'account line: booking block HTML with the flag has the created-at-checkout wording and the lost-password link' );
+creature_demo_expect( false !== strpos( $ac_out['html_ret'], '<p>' . $ac_neutral . '</p>' ) && false !== strpos( $ac_out['html_ret'], 'href="' . $r2_account . '"' ) && false === strpos( $ac_out['html_ret'], 'created at checkout' ) && false === strpos( $ac_out['html_ret'], 'lost-password' ), 'account line: booking block HTML without the flag has the neutral line and the button only' );
+creature_demo_expect( false !== strpos( $ac_out['plain_new'], 'Your account was created at checkout.' ) && false !== strpos( $ac_out['plain_new'], 'Reset it here: ' . $r2_lost ), 'account line: booking block plain text with the flag has the created-at-checkout wording and the lost-password URL' );
+creature_demo_expect( false !== strpos( $ac_out['plain_ret'], $ac_neutral ) && false !== strpos( $ac_out['plain_ret'], $r2_account ) && false === strpos( $ac_out['plain_ret'], 'created at checkout' ) && false === strpos( $ac_out['plain_ret'], 'lost-password' ), 'account line: booking block plain text without the flag has the neutral line and no lost-password URL' );
+
+// The hooks: flag only when this request created the customer the order belongs to.
+$ac_hooks = array();
+foreach ( $GLOBALS['creature_demo_hooks'] as $ac_h ) {
+	if ( is_array( $ac_h[1] ) && 'Creature_Demo_Loan' === $ac_h[1][0] ) {
+		$ac_hooks[ $ac_h[0] . '|' . $ac_h[1][1] ] = true;
+	}
+}
+creature_demo_expect( isset( $ac_hooks['woocommerce_created_customer|on_created_customer'], $ac_hooks['woocommerce_checkout_order_created|stamp_account_created'], $ac_hooks['woocommerce_store_api_checkout_order_processed|stamp_account_created'] ), 'account line: the plugin hooks woocommerce_created_customer, woocommerce_checkout_order_created and woocommerce_store_api_checkout_order_processed' );
+// New account in the same request.
+$ac_o1          = creature_demo_booked_loan( '249.00' );
+$ac_o1->user_id = 77;
+Creature_Demo_Loan::on_created_customer( 77 );
+Creature_Demo_Loan::stamp_account_created( $ac_o1 );
+creature_demo_expect( 'yes' === $ac_o1->get_meta( $ac_flag ), 'account line: customer created in the request and attached to the demo order stamps the flag' );
+// Signed-in or returning: no woocommerce_created_customer fired.
+$ac_o2          = creature_demo_booked_loan( '249.00' );
+$ac_o2->user_id = 88;
+Creature_Demo_Loan::stamp_account_created( $ac_o2 );
+creature_demo_expect( '' === $ac_o2->get_meta( $ac_flag ), 'account line: a signed-in checkout (no customer created) does not stamp the flag' );
+// Created id is used once: a later order in the same process is not stamped.
+Creature_Demo_Loan::on_created_customer( 91 );
+$ac_o3          = creature_demo_booked_loan( '249.00' );
+$ac_o3->user_id = 91;
+Creature_Demo_Loan::stamp_account_created( $ac_o3 );
+$ac_o4          = creature_demo_booked_loan( '249.00' );
+$ac_o4->user_id = 91;
+Creature_Demo_Loan::stamp_account_created( $ac_o4 );
+creature_demo_expect( 'yes' === $ac_o3->get_meta( $ac_flag ) && '' === $ac_o4->get_meta( $ac_flag ), 'account line: the remembered customer id is cleared after one order' );
+// A different customer on the order than the one created: no stamp.
+Creature_Demo_Loan::on_created_customer( 92 );
+$ac_o5          = creature_demo_booked_loan( '249.00' );
+$ac_o5->user_id = 93;
+Creature_Demo_Loan::stamp_account_created( $ac_o5 );
+creature_demo_expect( '' === $ac_o5->get_meta( $ac_flag ), 'account line: an order whose customer is not the one just created is not stamped' );
+// Guest order (customer 0) and a non-demo order are never stamped.
+Creature_Demo_Loan::on_created_customer( 0 );
+$ac_o6 = creature_demo_booked_loan( '249.00' );
+Creature_Demo_Loan::stamp_account_created( $ac_o6 );
+Creature_Demo_Loan::on_created_customer( 95 );
+$ac_o7          = new Creature_Demo_Test_Order( 99095 );
+$ac_o7->user_id = 95;
+Creature_Demo_Loan::stamp_account_created( $ac_o7 );
+creature_demo_expect( '' === $ac_o6->get_meta( $ac_flag ) && array() === $ac_o7->meta, 'account line: a guest order and a non-demo order are not stamped or touched' );
+
+// 1.3.3: booking block HTML links info@, the guide and https URLs, still escaped.
+$GLOBALS['creature_demo_copy_override']['booking_confirmation'] = array( 'subject' => '', 'body' => "Email info@creaturecycles.co.uk or see https://example.com/guide?a=1&b=2.\n\nA <script>alert(\"x\")</script> & 'q' here." );
+$ac_lk = creature_demo_booked_loan( '249.00' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $ac_lk, false, false, $bc_email );
+$ac_lk_html = ob_get_clean();
+creature_demo_expect( false !== strpos( $ac_lk_html, '<a href="mailto:info@creaturecycles.co.uk">info@creaturecycles.co.uk</a>' ), 'booking links: info@creaturecycles.co.uk becomes a mailto link in the HTML block' );
+creature_demo_expect( false !== strpos( $ac_lk_html, '<a href="https://example.com/guide?a=1&#038;b=2">https://example.com/guide?a=1&amp;b=2</a>.' ), 'booking links: an https URL becomes a link, href escaped once, text escaped once, full stop outside' );
+creature_demo_expect( false === strpos( $ac_lk_html, '<script' ) && false !== strpos( $ac_lk_html, '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#039;q&#039; here.' ), 'booking links: <script>, quotes and & stay escaped in the HTML block' );
+creature_demo_expect( false === strpos( $ac_lk_html, '&amp;amp;' ) && false === strpos( $ac_lk_html, '&amp;#' ), 'booking links: nothing is double-escaped' );
+creature_demo_expect( false !== strpos( $ac_lk_html, "</a>.<br />\n<br />\n" ) || false !== strpos( $ac_lk_html, "<br />\n<br />\nA &lt;script" ), 'booking links: the blank line between paragraphs is still kept as line breaks' );
+$ac_lk2 = creature_demo_booked_loan( '249.00' );
+ob_start();
+Creature_Demo_Loan::render_booking_confirmation( $ac_lk2, false, true, $bc_email );
+$ac_lk_text = ob_get_clean();
+creature_demo_expect( false !== strpos( $ac_lk_text, "Email info@creaturecycles.co.uk or see https://example.com/guide?a=1&b=2.\n\nA <script>alert(\"x\")</script> & 'q' here.\n" ) && false === strpos( $ac_lk_text, 'mailto:' ) && false === strpos( $ac_lk_text, '<a ' ), 'booking links: the plain-text block is unchanged (raw text, no links, no escaping)' );
+unset( $GLOBALS['creature_demo_copy_override']['booking_confirmation'] );
 
 // URL helpers without WooCommerce: home_url when there, else a site-relative path.
 $r2_child_a = 'define( "ABSPATH", "/" ); function add_action() {} require __DIR__PLACEHOLDER__ . "/creature-demo-loan/creature-demo-loan.php";'
