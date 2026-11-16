@@ -3440,6 +3440,8 @@ final class Creature_Demo_Loan {
 	}
 
 	/**
+	 * The raw (unescaped) choice URL. Escape at output: esc_url() in HTML, as-is in plain text.
+	 *
 	 * @param object $order
 	 * @return string
 	 */
@@ -3454,11 +3456,13 @@ final class Creature_Demo_Loan {
 		if ( function_exists( 'wc_get_endpoint_url' ) && function_exists( 'wc_get_page_permalink' ) ) {
 			$base = wc_get_endpoint_url( 'view-order', $order->get_id(), wc_get_page_permalink( 'myaccount' ) );
 		}
-		$url = function_exists( 'add_query_arg' ) ? add_query_arg( $args, $base ) : $base;
-		if ( function_exists( 'wp_nonce_url' ) ) {
-			$url = wp_nonce_url( $url, 'creature_demo_choice_' . (int) $order->get_id() );
+		// Raw URL: no esc_url here, and not wp_nonce_url(), which returns an
+		// esc_html()'d string (& as &amp;) and so breaks the query in plain text
+		// and again once esc_url() runs at output. Callers escape at output only.
+		if ( function_exists( 'wp_create_nonce' ) ) {
+			$args['_wpnonce'] = wp_create_nonce( 'creature_demo_choice_' . (int) $order->get_id() );
 		}
-		return $url;
+		return function_exists( 'add_query_arg' ) ? add_query_arg( $args, $base ) : $base;
 	}
 
 	/**

@@ -230,9 +230,25 @@ if ( ! function_exists( 'add_query_arg' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_create_nonce' ) ) {
+	// Stub nonce is the action itself, which the wp_verify_nonce stub compares.
+	function wp_create_nonce( $action = -1 ) {
+		return (string) $action;
+	}
+}
+
 if ( ! function_exists( 'wp_nonce_url' ) ) {
+	// Like core: the result is esc_html()'d, so & becomes &amp;.
 	function wp_nonce_url( $url, $action ) {
-		return add_query_arg( array( '_wpnonce' => (string) $action ), $url );
+		$url = str_replace( '&amp;', '&', (string) $url );
+		return htmlspecialchars( add_query_arg( array( '_wpnonce' => (string) $action ), $url ), ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'esc_url' ) ) {
+	// Like core: & becomes &#038; (and ' becomes &#039;).
+	function esc_url( $url ) {
+		return str_replace( array( '&amp;', '&', "'" ), array( '&', '&#038;', '&#039;' ), (string) $url );
 	}
 }
 
@@ -2935,6 +2951,27 @@ ob_start();
 Creature_Demo_Loan::render_my_account_choices( $choices );
 $account = ob_get_clean();
 creature_demo_expect( false !== strpos( $account, 'creature_demo_choice=keep' ), 'My Account shows the keep choice' );
+
+// F1: the choice URL is raw (a real, readable query string) and is escaped only at output.
+$choices->update_meta_data( '_creature_demo_action_token', 'tok123abc' );
+$f1_raw = Creature_Demo_Loan::choice_url( $choices, 'return' );
+creature_demo_expect( false === strpos( $f1_raw, '&amp;' ) && false === strpos( $f1_raw, '&#038;' ), 'F1: choice_url has no HTML entities' );
+creature_demo_expect( false !== strpos( $f1_raw, '&' ), 'F1: choice_url joins its params with a raw &' );
+$f1_query = array();
+parse_str( (string) parse_url( $f1_raw, PHP_URL_QUERY ), $f1_query );
+creature_demo_expect( (string) $choices->get_id() === ( isset( $f1_query['creature_demo_order'] ) ? $f1_query['creature_demo_order'] : null ), 'F1: the order id parses back out of the raw URL' );
+creature_demo_expect( 'tok123abc' === ( isset( $f1_query['creature_demo_token'] ) ? $f1_query['creature_demo_token'] : null ), 'F1: the token parses back out of the raw URL' );
+creature_demo_expect( 'return' === ( isset( $f1_query['creature_demo_choice'] ) ? $f1_query['creature_demo_choice'] : null ), 'F1: the choice parses back out of the raw URL' );
+creature_demo_expect( 'creature_demo_choice_' . $choices->get_id() === ( isset( $f1_query['_wpnonce'] ) ? $f1_query['_wpnonce'] : null ), 'F1: the nonce is in the raw URL' );
+$f1_ref = new ReflectionMethod( 'Creature_Demo_Loan', 'choice_links_plain' );
+$f1_plain = $f1_ref->invoke( null, $choices, '2026-10-27' );
+creature_demo_expect( false !== strpos( $f1_plain, $f1_raw ) && false === strpos( $f1_plain, '&amp;' ) && false === strpos( $f1_plain, '&#038;' ), 'F1: the plain-text links carry the raw URL' );
+ob_start();
+Creature_Demo_Loan::render_my_account_choices( $choices );
+$f1_html = ob_get_clean();
+creature_demo_expect( 1 === preg_match( '/href="([^"]*creature_demo_choice=return[^"]*)"/', $f1_html, $f1_m ), 'F1: the HTML has a return link' );
+creature_demo_expect( false !== strpos( $f1_m[1], '&#038;' ) && false === strpos( $f1_m[1], '&#038;#038;' ) && false === strpos( $f1_m[1], '&amp;' ), 'F1: the HTML href is escaped exactly once' );
+creature_demo_expect( html_entity_decode( $f1_m[1], ENT_QUOTES, 'UTF-8' ) === $f1_raw, 'F1: the HTML href decodes to the same URL as the plain text' );
 $_GET = array(
 	'creature_demo_choice' => 'keep',
 	'creature_demo_order'  => (string) $choices->get_id(),
