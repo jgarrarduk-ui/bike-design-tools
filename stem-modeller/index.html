@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stem Modeller — Bar Position, Reach and Stack | Creature Cycles</title>
+<meta name="description" content="Compare two stems on a mountain bike: bar reach, bar stack and the bottom bracket to bar distance, static and at sag.">
+<!-- Not linked from the tools landing page yet. Remove noindex when it is. -->
+<meta name="robots" content="noindex">
+<style>
+/* Theme tokens are the suspension designer's, so the two tools read as one
+   family. --stemA/--stemB are new: the whole point of this page is telling
+   two stems apart, so they get a contrasting pair in both themes rather than
+   two shades of the same green. */
+:root, [data-theme="light"]{
+  --paper:#eef1f3; --grid:#dbe2e7; --grid2:#cbd6dd;
+  --ink:#16202a; --ink-soft:#5c6b78;
+  --rear:#1f5f8b; --link:#0f766e; --flex:#b32c1e; --shock:#8a5a00; --front:#7a4fb5;
+  --anim:#bf5700;
+  --ok:#2f7d32; --rule:#c3ccd3; --panel:#f7f9fa;
+  --on-accent:#fff; --accent:#1f5f8b; --accent-hi:#2a7ab0;
+  --btn:#fff; --btn-hover:#e9eef1; --field:#fff; --field-disabled:#eef1f3;
+  --msg-bg:#fbeceb;
+  --art-ground:#e2e7ea; --art-ground-line:#aab6bd;
+  --art-stanchion-fill:#cfd5da; --art-stanchion-stroke:#7b848c;
+  --art-hardware-fill:#b9c0c6; --art-hardware-stroke:#7b848c;
+  --art-frame-fill:#ded4bd; --art-frame-stroke:#8a8069;
+  --art-stay-stroke:#134463; --art-stay-fill:#8fb6cf;
+  --stemA:#1f5f8b; --stemB:#c2410c; --dim:#5c6b78; --hl:rgba(31,95,139,.07);
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+[data-theme="dark"]{
+  --paper:#28272a; --grid:#313035; --grid2:#3a453d;
+  --ink:#dcfce7; --ink-soft:#8fbf9a;
+  --rear:#4ade80; --link:#22c55e; --flex:#d9f99d; --shock:#86efac; --front:#166534;
+  --anim:#bbf7d0;
+  --ok:#4ade80; --rule:#1a3d20; --panel:#222124;
+  --on-accent:#052e16; --accent:#166534; --accent-hi:#16a34a;
+  --btn:#2e2d31; --btn-hover:#3a393e; --field:#28272a; --field-disabled:#1a191c;
+  --msg-bg:#1a2820;
+  --art-ground:#1c1b1e; --art-ground-line:#3f5c48;
+  --art-stanchion-fill:#143326; --art-stanchion-stroke:#6ee7a0;
+  --art-hardware-fill:#0f4a28; --art-hardware-stroke:#4ade80;
+  --art-frame-fill:#0f4a20; --art-frame-stroke:#4ade80;
+  --art-stay-stroke:#14532d; --art-stay-fill:#86efac;
+  --stemA:#4ade80; --stemB:#fbbf24; --dim:#8fbf9a; --hl:rgba(74,222,128,.06);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.45 var(--sans)}
+#app{display:grid;grid-template-columns:357px minmax(560px,1fr) 308px;grid-template-rows:auto minmax(0,1fr);height:100vh}
+.rail{overflow-y:auto;background:var(--panel);padding:14px 14px 40px}
+.rail.left{border-right:1px solid var(--rule);scrollbar-gutter:stable}
+.rail.right{border-left:1px solid var(--rule)}
+#stage{display:flex;flex-direction:column;min-width:0;min-height:0}
+#canvas{flex:1;min-height:260px;position:relative;min-width:0}
+#draw{position:absolute;inset:0;width:100%;height:100%;display:block;
+  background:var(--paper);touch-action:none;user-select:none}
+#draw.panning{cursor:grabbing}
+#zoomctl{position:absolute;bottom:10px;right:10px;display:flex;flex-direction:column;gap:4px;z-index:6}
+#zoomctl button{width:26px;height:26px;padding:0;font-size:14px;line-height:1;
+  background:#fffc;color:#16202a;backdrop-filter:blur(2px)}
+[data-theme="dark"] #zoomctl button{background:var(--anim);color:var(--on-accent);border-color:var(--shock)}
+[data-theme="dark"] #zoomctl button:hover{background:var(--ink);border-color:var(--ink)}
+#canvas-btns{position:absolute;top:10px;left:10px;z-index:9;display:flex;gap:4px;align-items:flex-start}
+#options-btn{background:var(--accent);border:none;color:#fff;
+  font-family:var(--sans);font-size:10px;font-weight:700;
+  padding:5px 12px;border-radius:11px;letter-spacing:.5px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent}
+#options-btn.active{background:var(--accent-hi)}
+#ov-backdrop{display:none;position:absolute;inset:0;z-index:7}
+#ov-backdrop.open{display:block}
+#ov-panel{display:none;position:absolute;top:44px;left:10px;z-index:8;
+  width:max-content;max-width:calc(100% - 56px);max-height:calc(100% - 56px);
+  overflow-y:auto;flex-wrap:wrap;gap:4px;align-items:flex-start;
+  background:var(--panel);border:1px solid var(--rule);
+  border-bottom:2px solid var(--accent);
+  box-shadow:0 8px 32px rgba(0,0,0,.22);padding:10px 12px 12px}
+#ov-panel.open{display:flex}
+#ov-panel button{background:var(--btn);color:var(--ink);backdrop-filter:none}
+#ov-panel button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:var(--on-accent)}
+#ov-panel .partbtn[aria-pressed=true]{background:var(--link);border-color:var(--link);color:var(--on-accent)}
+#tools-nav{grid-column:1 / -1;display:flex;align-items:center;flex-wrap:nowrap;
+  gap:8px 10px;min-height:32px;height:auto;padding:5px 10px 6px;min-width:0;
+  background:var(--panel);border-bottom:1px solid var(--rule)}
+#tools-nav h1{margin:0;font-size:13px;font-weight:650;letter-spacing:.2px;
+  white-space:nowrap;min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}
+#tools-nav .brand-logo{height:16px;width:auto;flex:none;filter:url(#creature-logo-blue)}
+[data-theme="dark"] #tools-nav .brand-logo{filter:url(#creature-logo-green)}
+a.all-tools{color:var(--ink);text-decoration:none;font:12px var(--sans);
+  letter-spacing:.2px;white-space:nowrap;padding:4px 8px;border-radius:3px;
+  flex:none;margin-left:auto}
+a.all-tools:hover{background:var(--btn-hover)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
+h2{font-size:11px;font-weight:650;color:var(--ink-soft);margin:18px 0 7px;
+   padding-bottom:4px;border-bottom:1px solid var(--rule);
+   display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+h2:first-of-type{margin-top:4px}
+h2 button{flex:none;font-weight:500}
+h2 .sw{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:-1px}
+h3{font-size:10px;font-weight:650;color:var(--ink-soft);text-transform:uppercase;
+   letter-spacing:.7px;margin:15px 0 4px}
+.tabs{margin-top:14px;padding-top:2px;border-top:1px solid var(--rule)}
+.tabbar{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 10px}
+.tabbtn{flex:1 1 auto;min-width:58px}
+.tabbtn[aria-selected=true]{background:var(--rear);border-color:var(--rear);color:var(--on-accent)}
+.tabpanel[hidden]{display:none}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 2px}
+.btnrow button{flex:1;min-width:70px}
+label{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:5px 0}
+label[hidden]{display:none}
+label span{flex:1;min-width:0}
+input[type=number],input[type=text],select{width:64px;font:12px var(--mono);padding:3px 5px;
+  border:1px solid var(--rule);border-radius:3px;background:var(--field);color:var(--ink)}
+input[type=text]{width:140px;font-family:var(--sans)}
+input[type=number]:focus,input[type=text]:focus,select:focus{outline:2px solid var(--rear);outline-offset:-1px}
+input[type=number]:disabled{background:var(--field-disabled);color:var(--ink-soft)}
+select{width:auto}
+.readout{display:flex;justify-content:space-between;gap:8px;padding:3px 0;
+  border-bottom:1px dotted var(--rule);font-size:12px}
+.readout b{font:12px/1.4 var(--mono);font-weight:600}
+/* Label, static, sag: the right rail's frame block is two numbers per row. */
+.r3{display:grid;grid-template-columns:1fr 62px 62px;gap:8px;padding:3px 0;
+  border-bottom:1px dotted var(--rule);font-size:12px;align-items:baseline}
+.r3 b{font:12px/1.4 var(--mono);font-weight:600;text-align:right}
+.r3.hd{font-size:10px;font-weight:650;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--rule)}
+.r3.hd span:not(:first-child){text-align:right}
+.note{font-size:11px;color:var(--ink-soft);margin:6px 0 0}
+#bar{display:flex;flex-direction:column;gap:7px;padding:7px 14px;
+  border-bottom:1px solid var(--rule);background:var(--panel)}
+.barrow{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex-wrap:nowrap}
+.bargroup{display:flex;gap:4px;flex:none}
+.barsep{width:1px;align-self:stretch;background:var(--rule);flex:none}
+#poslabel{font:12px var(--mono);color:var(--ink-soft);white-space:nowrap;
+  min-width:0;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
+#theme-switch{margin-left:auto;display:flex;gap:6px;flex:none}
+button{font:11.5px var(--sans);padding:4px 6px;border:1px solid var(--rule);border-radius:3px;
+  background:var(--btn);color:var(--ink);cursor:pointer;white-space:nowrap}
+.barrow button{flex-shrink:0}
+button:hover{background:var(--btn-hover)}
+button[aria-pressed=true]{background:var(--rear);border-color:var(--rear);color:var(--on-accent)}
+#staticPos[aria-pressed=true],#sagPos[aria-pressed=true]
+  {background:var(--anim);border-color:var(--anim);color:var(--on-accent)}
+/* The comparison sits where the suspension designer keeps its chart strip:
+   full stage width, because it is the main output and has seven columns. */
+#compare{flex:none;max-height:46vh;overflow:auto;border-top:1px solid var(--rule);
+  background:var(--panel);padding:10px 14px 14px}
+#compare table{border-collapse:collapse;width:100%;min-width:620px;font-size:12px}
+#compare th,#compare td{padding:4px 8px;text-align:right;white-space:nowrap}
+#compare th:first-child,#compare td:first-child{text-align:left;white-space:normal}
+#compare thead th{font-size:10px;font-weight:650;color:var(--ink-soft);
+  text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--rule)}
+#compare thead tr:first-child th{border-bottom:none;padding-bottom:0;text-align:center}
+#compare td{font-family:var(--mono);border-bottom:1px dotted var(--rule)}
+#compare td:first-child{font-family:var(--sans)}
+#compare td.d{font-weight:650}
+#compare td.sep,#compare th.sep{border-left:1px solid var(--rule)}
+#compare .on{background:var(--hl)}
+#compare tr.grp td{font:10px var(--sans);font-weight:650;color:var(--ink-soft);
+  text-transform:uppercase;letter-spacing:.6px;padding-top:12px;border-bottom:1px solid var(--rule)}
+#compare .hint{color:var(--ink-soft);font:11px var(--sans);display:block}
+.ca{color:var(--stemA)} .cb{color:var(--stemB)}
+svg text{font-family:var(--mono)}
+#msg{padding:6px 14px;font-size:12px;color:var(--flex);background:var(--msg-bg);
+  border-top:1px solid var(--rule);display:none}
+#msg.on{display:block}
+@media (max-width:900px){
+  #app{grid-template-columns:1fr;grid-template-rows:auto;height:auto;min-height:100vh}
+  #tools-nav{order:-2}
+  #stage{order:-1}
+  .rail{overflow-y:visible;max-height:none}
+  .rail.left{border-right:none;border-top:1px solid var(--rule)}
+  .rail.right{border-left:none;border-top:1px solid var(--rule)}
+  #canvas{height:min(56vh,80vw);min-height:240px;flex:none}
+  #compare{max-height:none}
+  .barrow{gap:8px 10px;flex-wrap:wrap}
+  #ov-panel{left:8px;right:8px;width:auto;top:40px}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="creature-logo-blue" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">
+    <feFlood flood-color="#1f5f8b" result="flood"/>
+    <feComposite in="flood" in2="SourceAlpha" operator="in"/>
+  </filter>
+  <filter id="creature-logo-green" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">
+    <feFlood flood-color="#4ade80" result="flood"/>
+    <feComposite in="flood" in2="SourceAlpha" operator="in"/>
+  </filter>
+</svg>
+<div id="app">
+
+<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles"><h1>Stem Modeller</h1><p class="sr-only">Compare two stems on a mountain bike: bar reach, bar stack and the bottom bracket to bar distance, static and at sag.</p><a class="all-tools" href="https://creaturecycles.co.uk/apps/">&#9664; all tools</a></div>
+
+<div class="rail left">
+  <!-- The two stems are what you change while watching the table; the bike
+       is set once, first, and lives in the tabs below. Stem rows are built
+       from STEM_FIELDS so A and B can never drift apart. -->
+  <h2><span><i class="sw" style="background:var(--stemA)"></i>Stem A</span><button id="swapStems" title="Swap stem A and stem B">swap A ⇄ B</button></h2>
+  <div id="stemA"></div>
+  <h2><span><i class="sw" style="background:var(--stemB)"></i>Stem B</span><button id="copyAB" title="Copy every stem A value into stem B">copy A → B</button></h2>
+  <div id="stemB"></div>
+  <p class="note">Rise runs along the steerer from the centre of the stem's steerer
+     clamp to the bar centre. Length runs square to the steerer.</p>
+
+  <div class="tabs">
+    <div class="tabbar" role="tablist">
+      <button class="tabbtn" role="tab" aria-selected="true"  data-tab="frame">Frame</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="fork">Fork and wheels</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="sag">Sag</button>
+      <button class="tabbtn" role="tab" aria-selected="false" data-tab="design">Design file</button>
+    </div>
+
+    <div class="tabpanel" data-panel="frame">
+      <div class="btnrow"><button id="resetGeom">Reset frame, fork and wheels</button></div>
+      <label><span>Reach</span><input type="number" id="reach" step="5"></label>
+      <label><span>Stack</span><input type="number" id="stack" step="5"></label>
+      <label><span>Head tube angle</span><input type="number" id="ha" step="0.5"></label>
+      <label><span>Head tube length</span><input type="number" id="htl" step="5"></label>
+      <label><span>Bottom bracket height</span><input type="number" id="bbh" step="1"></label>
+      <label><span>Rear centre, horizontal</span><input type="number" id="rc" step="5"></label>
+      <h3>For reference</h3>
+      <label><span>Seat tube angle</span><input type="number" id="sa" step="0.5"></label>
+      <label><span>Seat tube length</span><input type="number" id="st" step="5"></label>
+    </div>
+
+    <div class="tabpanel" data-panel="fork" hidden>
+      <h3>Headset</h3>
+      <label><span>Upper headset stack</span><input type="number" id="hsUpper" step="0.5"></label>
+      <label><span>Lower headset stack</span><input type="number" id="hsLower" step="0.5"></label>
+      <h3>Fork</h3>
+      <label><span>Travel</span><input type="number" id="forkTravel" step="10"></label>
+      <label><span>Standard axle to crown</span><input type="checkbox" id="a2cAuto"></label>
+      <label><span>Axle to crown, extended</span><input type="number" id="a2c" step="5"></label>
+      <label><span>Offset</span><input type="number" id="offset" step="1"></label>
+      <h3>Wheels</h3>
+      <label><span>Front wheel</span><select id="fw"><option value="559">26 in</option><option value="584">27.5 in</option><option value="622">29 in</option><option value="686">32 in</option></select></label>
+      <label><span>Rear wheel</span><select id="rw"><option value="559">26 in</option><option value="584">27.5 in</option><option value="622">29 in</option><option value="686">32 in</option></select></label>
+      <label><span>Front tyre width</span><select id="tyreFWidth"></select></label>
+      <label><span>Rear tyre width</span><select id="tyreRWidth"></select></label>
+    </div>
+
+    <div class="tabpanel" data-panel="sag" hidden>
+      <label><span>Rear wheel travel</span><input type="number" id="rearTravel" step="5"></label>
+      <label><span>Rear sag, % of travel</span><input type="number" id="sag" step="1"></label>
+      <label><span>Fork sag, % of travel</span><input type="number" id="fsag" step="1"></label>
+      <p class="note">At sag the fork shortens along its own axis and the rear axle
+         rises straight up relative to the frame by travel × sag. Then the whole
+         bike pitches until both tyres sit on the ground again. A real rear axle
+         moves on an arc, so this is a close approximation, not a linkage solve.</p>
+    </div>
+
+    <div class="tabpanel" data-panel="design" hidden>
+      <label><span>Design name</span><input type="text" id="designName" placeholder="untitled"></label>
+      <label><span>Designer</span><input type="text" id="designer" placeholder="your name"></label>
+      <div class="btnrow">
+        <button id="exportJson">Export</button>
+        <button id="importJson">Import</button>
+        <button id="reset">Reset</button>
+      </div>
+      <p class="note">Import also reads a Suspension Designer file and takes its
+         frame, fork, wheel and sag numbers.</p>
+      <p class="note" id="build">build 0.1</p>
+    </div>
+  </div>
+</div>
+
+<div id="stage">
+  <div id="bar">
+    <div class="barrow">
+      <span class="bargroup" role="group" aria-label="Suspension position">
+        <button id="staticPos" aria-pressed="true">static</button>
+        <button id="sagPos" aria-pressed="false">sag</button>
+      </span>
+      <span class="barsep"></span>
+      <span class="bargroup" role="group" aria-label="View">
+        <button id="viewCockpit" aria-pressed="true">cockpit</button>
+        <button id="viewFront" aria-pressed="false">BB to bar</button>
+        <button id="viewBike" aria-pressed="false">whole bike</button>
+      </span>
+      <span id="poslabel"></span>
+      <div id="theme-switch" role="group" aria-label="Theme">
+        <button type="button" id="theme-light" aria-pressed="false">light</button>
+        <button type="button" id="theme-dark" aria-pressed="true">dark</button>
+      </div>
+    </div>
+  </div>
+  <div id="canvas">
+    <svg id="draw" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="canvas-btns">
+      <button type="button" id="options-btn" aria-expanded="false">options</button>
+    </div>
+    <div id="ov-backdrop"></div>
+    <div id="ov-panel">
+      <button id="tglBC"     aria-pressed="true">B and C</button>
+      <button id="tglRS"     aria-pressed="true">reach and stack</button>
+      <button class="partbtn" id="tglA"      aria-pressed="true">stem A</button>
+      <button class="partbtn" id="tglB"      aria-pressed="true">stem B</button>
+      <button class="partbtn" id="tglWheels" aria-pressed="true">wheels</button>
+      <button class="partbtn" id="tglFork"   aria-pressed="true">fork</button>
+      <button class="partbtn" id="tglSaddle" aria-pressed="true">saddle</button>
+    </div>
+    <div id="zoomctl">
+      <button id="zin"  title="Zoom in"       aria-label="Zoom in">+</button>
+      <button id="zout" title="Zoom out"      aria-label="Zoom out">&minus;</button>
+      <button id="zfit" title="Fit to window" aria-label="Fit to window">&#9974;</button>
+    </div>
+  </div>
+  <div id="msg"></div>
+  <div id="compare"></div>
+</div>
+
+<div class="rail right">
+  <h2>Frame</h2>
+  <div id="out-frame"></div>
+  <h2>Steerer above head tube</h2>
+  <div id="out-steerer"></div>
+  <p class="note">Upper headset, spacers and stem clamp. The steerer is usually cut
+     about 3mm below the top of the stem.</p>
+</div>
+</div>
+
+<script>
+// ==ENGINE-START==  no DOM below this line until ENGINE-END
+/* Millimetres and degrees. Origin at the bottom bracket, x forward, y up.
+   The geometry chain is the suspension designer's: both wheels sit on the
+   ground, the bottom bracket is bbh above it, and the head tube follows from
+   head angle, fork offset, axle to crown, lower headset stack and reach, so
+   stack is an output unless you type it. */
+const D2R=Math.PI/180;
+const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y});
+const add=(a,b)=>({x:a.x+b.x,y:a.y+b.y});
+const mul=(a,s)=>({x:a.x*s,y:a.y*s});
+const len=a=>Math.hypot(a.x,a.y);
+const rot=(p,c,t)=>{const d=sub(p,c),C=Math.cos(t),S=Math.sin(t);
+  return{x:c.x+d.x*C-d.y*S, y:c.y+d.x*S+d.y*C}};
+const A2C_REF={travel:160, a2c:571};           // a 160mm 29er fork, Fox 36 / Lyrik
+
+function radii(c){ return {Rf:c.fw/2+c.tyreF, Rr:c.rw/2+c.tyreR}; }
+
+/* Mutates c. `driver` names the box just typed: stack and head tube length
+   solve each other, as they do in the suspension designer. */
+function syncGeom(c, driver){
+  if(c.a2cAuto) c.a2c=A2C_REF.a2c+(c.forkTravel-A2C_REF.travel);
+  const ha=c.ha*D2R, s=Math.sin(ha), cs=Math.cos(ha);
+  const {Rf,Rr}=radii(c);
+  const along=Math.sqrt(Math.max(0,c.a2c*c.a2c-c.offset*c.offset));
+  const faY=Rf-c.bbh;
+  if(driver==='stack')
+    c.htl=Math.max(40,(c.stack-faY+cs*c.offset)/s-c.hsLower-along);
+  c.stack=faY+s*(c.htl+c.hsLower+along)-cs*c.offset;
+  c.drop=Rr-c.bbh;
+  c.csl=Math.hypot(c.rc, c.drop);
+  return c;
+}
+
+/* The head tube and fork in frame coordinates. `comp` shortens the fork
+   along its own axis (sag), which moves the axle, never the head tube. */
+function frontEnd(c, comp){
+  const ha=c.ha*D2R;
+  const htTop={x:c.reach, y:c.stack};
+  const axis={x:Math.cos(ha), y:-Math.sin(ha)};      // down the steerer
+  const up=mul(axis,-1);
+  const perp={x:-axis.y, y:axis.x};                   // square to the steerer, forward
+  const htBot=add(htTop, mul(axis,c.htl));
+  const raceSeat=add(htBot, mul(axis,c.hsLower));
+  const a2c=Math.max(60, c.a2c-(comp||0));
+  const along=Math.sqrt(Math.max(0,a2c*a2c-c.offset*c.offset));
+  const FA=add(add(raceSeat, mul(axis,along)), mul(perp,c.offset));
+  return {htTop, htBot, raceSeat, axis, up, perp, FA};
+}
+
+/* A stem on the steerer. The stack runs up from the head tube top: upper
+   headset, spacers, then the stem's steerer clamp. Rise is measured along the
+   steerer from the clamp's centre to the bar centre and length square to the
+   steerer, so a zero-rise stem puts the bar level with the middle of its
+   clamp. */
+function stemPoints(c, F, s){
+  const cup=add(F.htTop, mul(F.up, c.hsUpper));
+  const base=add(cup, mul(F.up, s.spacers));
+  const top=add(base, mul(F.up, s.clamp));
+  const clampC=add(base, mul(F.up, s.clamp/2));
+  const bar=add(add(clampC, mul(F.up, s.rise)), mul(F.perp, s.length));
+  return {cup, base, top, clampC, bar};
+}
+
+/* Where the bike sits. Static, both axles are already a radius above the
+   ground and beta is zero by construction. At sag the fork shortens and the
+   rear axle rises relative to the frame, then the bike pitches by beta (about
+   the bottom bracket) until the ground is tangent to both tyres again.
+   T() takes a frame point into ground-level coordinates. */
+function pose(c, sagged){
+  const {Rf,Rr}=radii(c);
+  const fc=sagged ? c.forkTravel*c.fsag/100 : 0;
+  const rr=sagged ? c.rearTravel*c.sag/100 : 0;
+  const F=frontEnd(c, fc);
+  const RA={x:-c.rc, y:Rr-c.bbh+rr};
+  const D=sub(F.FA,RA), d=len(D);
+  const alpha=Math.atan2(D.y,D.x);
+  const beta=alpha-Math.asin(Math.max(-1,Math.min(1,(Rf-Rr)/d)));
+  const n={x:-Math.sin(beta), y:Math.cos(beta)};     // ground normal, frame coords
+  const bbh=Rr-(n.x*RA.x+n.y*RA.y);
+  const T=p=>rot(p,{x:0,y:0},-beta);
+  return {F, RA, FA:F.FA, beta, bbh, T, Rf, Rr, fc, rr};
+}
+
+/* Everything the comparison reports, for one stem in one position. B and C
+   are distances on the rigid frame and cockpit, so pitching the bike cannot
+   change them; only the horizontal and vertical splits move at sag. */
+function measure(c, s, sagged){
+  const P=pose(c, sagged);
+  const sp=stemPoints(c, P.F, s);
+  const ht=P.T(P.F.htTop), bar=P.T(sp.bar), fa=P.T(P.FA), ra=P.T(P.RA);
+  const st={x:-Math.cos(c.sa*D2R), y:Math.sin(c.sa*D2R)};
+  const stG=P.T(st);
+  return {
+    reach:ht.x, stack:ht.y, C:len(P.F.htTop),
+    barReach:bar.x, barStack:bar.y, B:len(sp.bar), barGround:bar.y+P.bbh,
+    ha:c.ha+P.beta/D2R, sa:180-Math.atan2(stG.y,stG.x)/D2R,
+    bbh:P.bbh, wb:fa.x-ra.x, pitch:P.beta/D2R,
+    steerAbove:c.hsUpper+s.spacers+s.clamp
+  };
+}
+// ==ENGINE-END==
+
+/* ---------- state ---------- */
+const DEF={
+  cfg:{ reach:485, stack:654.5, ha:63.3, htl:130, bbh:334, rc:450, drop:0, csl:0,
+        sa:76, st:430,
+        rw:584, fw:622, tyreR:60.96, tyreF:60.96,
+        a2c:571, a2cAuto:1, hsLower:13, hsUpper:8, offset:44, forkTravel:160,
+        rearTravel:150, sag:30, fsag:20 },
+  stems:{
+    A:{name:'', spacers:10, clamp:40, rise:0,  length:35, barDia:35},
+    B:{name:'', spacers:10, clamp:40, rise:60, length:10, barDia:35}
+  }
+};
+let C=structuredClone(DEF.cfg), S=structuredClone(DEF.stems);
+let META={name:'', designer:''};
+let sagView=false, viewMode='cockpit';   // 'cockpit' | 'front' | 'bike'
+let showBC=true, showRS=true, showA=true, showB=true, showWheels=true, showFork=true, showSaddle=true;
+
+const STEM_FIELDS=[
+  ['name','Name','text'],
+  ['length','Length (offset)',5],
+  ['rise','Rise',5],
+  ['spacers','Spacers under stem',5],
+  ['clamp','Steerer clamp height',1],
+  ['barDia','Bar diameter','bar']
+];
+const stemLabel=k=>{const s=S[k]; return s.name.trim()||`${k} · ${s.rise}/${s.length}`;};
+
+const $=id=>document.getElementById(id);
+const SVG='http://www.w3.org/2000/svg';
+function el(tag,attrs,parent){
+  const n=document.createElementNS(SVG,tag);
+  for(const k in attrs) n.setAttribute(k,attrs[k]);
+  if(parent) parent.appendChild(n);
+  return n;
+}
+
+/* Artwork is borrowed from the suspension designer, not copied, so a redraw
+   there lands here too. Same calibration constants as that file. */
+const ART='../suspension-designer/img/';
+const FORKART={ w:200, h:987, axle:[154.40,895.80], top:[74.50,171.50], mmPerPx:0.49013, src:'' };
+const WHEELART={ w:1390, h:1372, hub:[695,686], nativeR:690, src:'' };
+const SADDLEART={ w:904, h:278, mount:[550,245], mmPerPx:0.3097, src:'' };
+function applyArtTheme(){
+  const dark=document.documentElement.getAttribute('data-theme')==='dark';
+  const src=name=>ART+(dark?'dark/':'')+name;
+  FORKART.src=src('fork-lowers.png')+'?v=1';
+  WHEELART.src=src('wheel.png')+(dark?'?v=4':'?v=1');
+  SADDLEART.src=src('saddle.png')+'?v=1';
+}
+
+/* ---------- view ---------- */
+let VIEW={x0:-400,y0:-200,w:1200,h:800};
+let zoomK=1, panX=0, panY=0, lastBox=null, mmPerPx=1, canvasRect=null;
+function fitView(svg,box){
+  const r=canvasRect||(canvasRect=svg.getBoundingClientRect());
+  const W=r.width, H=r.height;
+  if(!(W>4&&H>4)){
+    const aspect=1.9, h=Math.max(box.h, box.w/aspect)*1.14/zoomK, w=h*aspect;
+    mmPerPx=1;
+    return {x0:box.cx+panX-w/2, y0:box.cy+panY-h/2, w, h};
+  }
+  const padX=Math.min(96, Math.max(24, W*0.06));
+  const padY=Math.min(72, Math.max(20, H*0.07));
+  const availW=Math.max(40, W-padX*2), availH=Math.max(40, H-padY*2);
+  const mm=Math.max(box.w/availW, box.h/availH)/zoomK;
+  mmPerPx=mm;
+  return {x0:box.cx+panX-W*mm/2, y0:box.cy+panY-H*mm/2, w:W*mm, h:H*mm};
+}
+function zoomBy(factor,at){
+  const k=Math.min(8,Math.max(0.3,zoomK*factor));
+  if(k===zoomK) return;
+  if(at&&lastBox){
+    const u=(at.x-VIEW.x0)/VIEW.w, v=(at.y-VIEW.y0)/VIEW.h;
+    const w2=VIEW.w*zoomK/k, h2=VIEW.h*zoomK/k;
+    panX=(at.x-u*w2+w2/2)-lastBox.cx;
+    panY=(at.y-v*h2+h2/2)-lastBox.cy;
+  }
+  zoomK=k; draw();
+}
+function toMM(evt,svg){
+  const p=svg.createSVGPoint(); p.x=evt.clientX; p.y=evt.clientY;
+  const q=p.matrixTransform(svg.getScreenCTM().inverse());
+  return {x:q.x, y:-q.y};
+}
+
+/* The framing comes from the static pose, with both stems, so switching to
+   sag or between stems does not make the view jump. Cockpit is a close-up of
+   the head tube and both bars; BB to bar frames everything the sketch
+   measures; whole bike is the context. */
+function viewBox(){
+  const P0=pose(C,false), F0=P0.F;
+  const sps=['A','B'].map(k=>stemPoints(C,F0,S[k]));
+  const tops=sps.map(p=>Math.max(p.bar.y,p.top.y));
+  let xs, ys;
+  if(viewMode==='cockpit'){
+    const ends=sps.map((p,i)=>p.bar.x+S['AB'[i]].barDia/2);
+    xs=[F0.htBot.x-60, F0.htTop.x-90, ...ends.map(x=>x+110)];
+    ys=[F0.htBot.y-30, ...tops.map(y=>y+40)];
+  } else if(viewMode==='front'){
+    xs=[-90, F0.htBot.x+70, ...sps.map((p,i)=>p.bar.x+S['AB'[i]].barDia/2+60)];
+    ys=[-60, ...tops.map(y=>y+60)];
+  } else {
+    const seatTop={x:-Math.cos(C.sa*D2R)*C.st, y:Math.sin(C.sa*D2R)*C.st};
+    const post=add(seatTop, mul(seatTop,150/C.st));
+    xs=[P0.RA.x-P0.Rr, P0.FA.x+P0.Rf, ...sps.map(p=>p.bar.x+40)];
+    ys=[-C.bbh, post.y+80, ...tops.map(y=>y+40)];
+  }
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  return {cx:(x0+x1)/2, cy:(y0+y1)/2, w:x1-x0, h:y1-y0};
+}
+
+function draw(){
+  const svg=$('draw');
+  const P=pose(C,sagView), F=P.F;
+  lastBox=viewBox();
+  VIEW=fitView(svg,lastBox);
+  svg.setAttribute('viewBox',`${VIEW.x0} ${-(VIEW.y0+VIEW.h)} ${VIEW.w} ${VIEW.h}`);
+  svg.innerHTML='';
+  const root=el('g',{transform:'scale(1,-1)'},svg);   // y up, millimetres
+  const grid=el('g',{},root), groundG=el('g',{},root);
+  // The bike pitches about the bottom bracket at sag; the ground stays level.
+  const g=el('g',{transform:`rotate(${(-P.beta/D2R).toFixed(5)})`},root);
+  const dims=el('g',{},root);
+  const ground=-P.bbh;
+  const px=mmPerPx;
+
+  const gx0=Math.floor((VIEW.x0-VIEW.w)/100)*100, gx1=Math.ceil((VIEW.x0+2*VIEW.w)/100)*100;
+  const gy0=Math.floor((VIEW.y0-VIEW.h)/100)*100, gy1=Math.ceil((VIEW.y0+2*VIEW.h)/100)*100;
+  for(let x=gx0;x<=gx1;x+=100)
+    el('line',{x1:x,y1:gy0,x2:x,y2:gy1,stroke:'var(--grid)','stroke-width':px},grid);
+  for(let y=gy0;y<=gy1;y+=100)
+    el('line',{x1:gx0,y1:y,x2:gx1,y2:y,stroke:'var(--grid)','stroke-width':px},grid);
+  el('rect',{x:gx0,y:gy0,width:gx1-gx0,height:Math.max(0,ground-gy0),fill:'var(--art-ground)'},groundG);
+  el('line',{x1:gx0,y1:ground,x2:gx1,y2:ground,stroke:'var(--art-ground-line)','stroke-width':3},groundG);
+
+  const line=(a,b,col,w,cap,parent,extra)=>el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:col,
+      'stroke-width':w,'stroke-linecap':cap||'round',fill:'none',...(extra||{})},parent||g);
+  const tubes=(segs,fill,edge)=>{
+    segs.forEach(([a,b,w,cap])=>line(a,b,edge,w,cap));
+    segs.forEach(([a,b,w,cap])=>line(a,b,fill,Math.max(1,w-7),cap));
+  };
+  const art=(m,A)=>{
+    const ag=el('g',{transform:`matrix(${m.map(v=>v.toFixed(6)).join(' ')})`},g);
+    el('image',{href:A.src,x:0,y:0,width:A.w,height:A.h},ag);
+  };
+  const wheel=(c,R)=>{const s=R/WHEELART.nativeR;
+    art([s,0,0,s,c.x-s*WHEELART.hub[0],c.y-s*WHEELART.hub[1]],WHEELART);};
+
+  const BB={x:0,y:0};
+  const seatTop={x:-Math.cos(C.sa*D2R)*C.st, y:Math.sin(C.sa*D2R)*C.st};
+  const stU=mul(seatTop,1/C.st);
+  const post=add(seatTop, mul(stU,150));
+
+  // ---- wheels
+  if(showWheels){ wheel(P.RA,P.Rr); wheel(F.FA,P.Rf); }
+
+  // ---- rear end: a plain swingarm outline. This tool is about the front.
+  tubes([[BB,P.RA,30],[mul(stU,Math.max(120,C.st-140)),P.RA,20]],'var(--art-stay-fill)','var(--art-stay-stroke)');
+
+  // ---- fork: same placement as the suspension designer
+  if(showFork){
+    const K=FORKART, ks=K.mmPerPx, fu=F.axis, fp=F.perp;
+    const fm=[ks*fp.x, ks*fp.y, ks*fu.x, ks*fu.y,
+              F.FA.x-ks*(K.axle[0]*fp.x + K.axle[1]*fu.x),
+              F.FA.y-ks*(K.axle[0]*fp.y + K.axle[1]*fu.y)];
+    const jog=ks*(K.top[0]-K.axle[0]);
+    const topW=add(F.FA, add(mul(fp,jog), mul(fu, ks*(K.top[1]-K.axle[1]))));
+    const crown=add(add(F.raceSeat, mul(fp, C.offset+jog)), mul(fu,21));
+    tubes([[crown,add(topW,mul(fu,26)),36]],'var(--art-stanchion-fill)','var(--art-stanchion-stroke)');
+    tubes([[sub(crown,mul(fu,21)),add(crown,mul(fu,21)),48,'butt']],'var(--art-hardware-fill)','var(--art-hardware-stroke)');
+    art(fm,K);
+  }
+  // lower headset
+  tubes([[F.htBot,F.raceSeat,46.5,'butt']],'var(--art-hardware-fill)','var(--art-hardware-stroke)');
+
+  // ---- front triangle. Tube ends stop on the head tube centreline and are
+  // buried by the head tube, drawn last, which gives the mitre for free.
+  const dtEnd=add(F.htBot, mul(F.up, Math.min(45, C.htl*0.4)));
+  const ttEnd=add(F.htTop, mul(F.axis, Math.min(25, C.htl*0.25)));
+  const ttStart=mul(stU, Math.max(150, C.st-90));
+  tubes([[BB,dtEnd,38.1,'butt'],[ttStart,ttEnd,32,'butt'],[BB,seatTop,34.95,'butt'],
+         [F.htBot,F.htTop,46.5,'butt']],'var(--art-frame-fill)','var(--art-frame-stroke)');
+  el('circle',{cx:0,cy:0,r:19.05,fill:'var(--art-frame-stroke)'},g);
+  el('circle',{cx:0,cy:0,r:15.55,fill:'var(--art-frame-fill)'},g);
+
+  // ---- seatpost and saddle, for reference
+  if(showSaddle){
+    tubes([[seatTop,post,26,'butt']],'var(--art-hardware-fill)','var(--art-hardware-stroke)');
+    const SD=SADDLEART, sds=SD.mmPerPx, nudge=0.15*SD.w*sds;
+    art([sds,0,0,-sds, post.x-sds*SD.mount[0]+nudge, post.y+sds*SD.mount[1]],SD);
+  }
+
+  // ---- upper headset cup, shared by both stems
+  tubes([[F.htTop,add(F.htTop,mul(F.up,C.hsUpper)),46.5,'butt']],'var(--art-hardware-fill)','var(--art-hardware-stroke)');
+
+  /* ---- stems. Drawn procedurally, not from the stem artwork, because rise
+     and length have to read true. Each stem is its spacer stack, steerer
+     clamp, body and bar, outlined in its own colour with a see-through fill
+     so the other stem still shows where they overlap. A is drawn first. */
+  const stemSeg=(a,b,w,col,cap)=>{
+    line(a,b,col,w,cap);
+    line(a,b,'var(--panel)',Math.max(1,w-5),cap,null,{'stroke-opacity':0.82});
+  };
+  const stemsOn=[['A','var(--stemA)',showA],['B','var(--stemB)',showB]];
+  const SP={};
+  stemsOn.forEach(([k,col,on])=>{
+    const s=S[k], sp=stemPoints(C,F,s); SP[k]=sp;
+    if(!on) return;
+    if(s.spacers>0) stemSeg(sp.cup,sp.base,36,col,'butt');
+    stemSeg(sp.clampC,sp.bar,30,col,'round');
+    stemSeg(sp.base,sp.top,44,col,'butt');
+    el('circle',{cx:sp.bar.x,cy:sp.bar.y,r:s.barDia/2,fill:'var(--panel)','fill-opacity':0.82,
+      stroke:col,'stroke-width':3.5},g);
+    el('circle',{cx:sp.bar.x,cy:sp.bar.y,r:2.5,fill:col},g);
+  });
+
+  /* ---- dimensions, in ground coordinates so reach and stack are truly
+     horizontal and vertical at sag too. Widths and text are in screen pixels. */
+  const T=P.T, ht=T(F.htTop);
+  const dimLine=(a,b,col,dash,w)=>line(a,b,col,(w||1.5)*px,'round',dims,
+      dash?{'stroke-dasharray':`${6*px} ${4*px}`}:{});
+  const label=(p,txt,col,anchor,dx,dy)=>{
+    const t=el('text',{transform:`translate(${p.x+(dx||0)*px},${p.y+(dy||0)*px}) scale(1,-1)`,
+      'font-size':12*px,fill:col,'text-anchor':anchor||'middle','dominant-baseline':'middle',
+      stroke:'var(--paper)','stroke-width':3.5*px,'paint-order':'stroke','font-weight':600},dims);
+    t.textContent=txt;
+  };
+  const tick=(p,col)=>el('circle',{cx:p.x,cy:p.y,r:3*px,fill:col},dims);
+  const far=viewMode!=='cockpit';
+  const near=(p,k)=>sub(p,mul(p,k*px/len(p)));            // k screen px back from p towards BB
+  const perpL=p=>mul({x:-p.y,y:p.x},1/len(p));             // left of the BB->p direction
+  if(showRS){
+    // frame reach and stack, to the head tube top centre
+    dimLine({x:0,y:ht.y},ht,'var(--dim)',true);
+    dimLine(BB,{x:0,y:ht.y},'var(--dim)',true);
+    if(far){
+      label({x:ht.x/2,y:ht.y},`reach ${ht.x.toFixed(0)}`,'var(--dim)','middle',0,10);
+      label({x:0,y:ht.y/2},`stack ${ht.y.toFixed(0)}`,'var(--dim)','end',-8,0);
+    }
+    label(ht,`${ht.x.toFixed(0)} / ${ht.y.toFixed(0)}`,'var(--dim)','end',-16,-12);
+    // bar reach to each bar centre, the sketch's "reach stem"
+    stemsOn.forEach(([k,col,on],i)=>{
+      if(!on) return;
+      const b=T(SP[k].bar);
+      dimLine({x:0,y:b.y},b,col,true,1.2);
+      label(b,`${b.x.toFixed(0)} / ${b.y.toFixed(0)}`,col,'start',S[k].barDia/2/px+8,0);
+    });
+  }
+  if(showBC){
+    dimLine(BB,ht,'var(--dim)',false,2);
+    tick(ht,'var(--dim)');
+    label(add(near(ht,far?160:110),mul(perpL(ht),-12*px)),`C ${len(ht).toFixed(1)}`,'var(--dim)','start');
+    stemsOn.forEach(([k,col,on],i)=>{
+      if(!on) return;
+      const b=T(SP[k].bar);
+      dimLine(BB,b,col,false,2);
+      label(add(near(b,(far?120:70)+i*70),mul(perpL(b),12*px)),`B ${len(b).toFixed(1)}`,col,'end');
+    });
+  }
+}
+
+/* ---------- readouts ---------- */
+const f1=v=>Number.isFinite(v)?v.toFixed(1):'—';
+const signed=d=>!Number.isFinite(d)?'—':Math.abs(d)<0.05?'0.0':(d>0?'+':'−')+Math.abs(d).toFixed(1);
+const pitchTxt=v=>Math.abs(v)<0.05?'level':Math.abs(v).toFixed(1)+'° '+(v>0?'down':'up');
+const r3=(k,a,b)=>`<div class="r3"><span>${k}</span><b>${a}</b><b>${b}</b></div>`;
+
+function readouts(){
+  const mA0=measure(C,S.A,false), mA1=measure(C,S.A,true);
+  const deg=v=>f1(v)+'°';
+  $('out-frame').innerHTML=
+    `<div class="r3 hd"><span></span><span>static</span><span>sag</span></div>`+
+    r3('Reach',f1(mA0.reach),f1(mA1.reach))+
+    r3('Stack',f1(mA0.stack),f1(mA1.stack))+
+    r3('C, bottom bracket to head tube top',f1(mA0.C),f1(mA1.C))+
+    r3('Head angle',deg(mA0.ha),deg(mA1.ha))+
+    r3('Seat angle',deg(mA0.sa),deg(mA1.sa))+
+    r3('Bottom bracket height',f1(mA0.bbh),f1(mA1.bbh))+
+    r3('Wheelbase',f1(mA0.wb),f1(mA1.wb))+
+    r3('Pitch',pitchTxt(mA0.pitch),pitchTxt(mA1.pitch))+
+    r3('Head tube length',f1(C.htl),'')+
+    r3('Bottom bracket drop',f1(C.drop),'')+
+    r3('Chainstay',f1(C.csl),'')+
+    r3('Axle to crown',f1(C.a2c),f1(C.a2c-C.forkTravel*C.fsag/100));
+  const row=(k,v)=>`<div class="readout"><span>${k}</span><b>${v}</b></div>`;
+  $('out-steerer').innerHTML=
+    row(`<span class="ca">●</span> ${esc(stemLabel('A'))}`,f1(mA0.steerAbove))+
+    row(`<span class="cb">●</span> ${esc(stemLabel('B'))}`,f1(measure(C,S.B,false).steerAbove));
+  $('poslabel').textContent=sagView
+    ? `rear ${C.sag}% · fork ${C.fsag}% sag · nose ${pitchTxt(mA1.pitch)}`
+    : 'static, unsagged';
+}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* The comparison: stem rows show A, B and the change B − A, static and at
+   sag. Frame rows are the same for both stems, so they span both columns. */
+function compare(){
+  const m={A:[measure(C,S.A,false),measure(C,S.A,true)], B:[measure(C,S.B,false),measure(C,S.B,true)]};
+  const on=i=>(sagView?1:0)===i?' on':'';
+  const nA=esc(stemLabel('A')), nB=esc(stemLabel('B'));
+  let h=`<table><thead>
+    <tr><th></th><th colspan="3" class="sep${on(0)}">Static</th><th colspan="3" class="sep${on(1)}">At sag</th></tr>
+    <tr><th>mm</th>${[0,1].map(i=>`<th class="sep${on(i)} ca">${nA}</th><th class="cb${on(i)}">${nB}</th><th class="${on(i).trim()}">B − A</th>`).join('')}</tr>
+    </thead><tbody>`;
+  const stemRow=(name,hint,key,fmt)=>{
+    h+=`<tr><td>${name}${hint?`<span class="hint">${hint}</span>`:''}</td>`;
+    [0,1].forEach(i=>{
+      const a=m.A[i][key], b=m.B[i][key];
+      h+=`<td class="sep${on(i)}">${fmt(a)}</td><td class="${on(i).trim()}">${fmt(b)}</td><td class="d${on(i)}">${signed(b-a)}</td>`;
+    });
+    h+='</tr>';
+  };
+  const frameRow=(name,hint,key,fmt)=>{
+    h+=`<tr><td>${name}${hint?`<span class="hint">${hint}</span>`:''}</td>`;
+    [0,1].forEach(i=>{ h+=`<td colspan="2" class="sep${on(i)}">${fmt(m.A[i][key])}</td><td class="${on(i).trim()}"></td>`; });
+    h+='</tr>';
+  };
+  h+=`<tr class="grp"><td colspan="7">Bar</td></tr>`;
+  stemRow('B','bottom bracket to bar centre','B',f1);
+  stemRow('Bar reach','horizontal, bottom bracket to bar centre','barReach',f1);
+  stemRow('Bar stack','vertical, bottom bracket to bar centre','barStack',f1);
+  stemRow('Bar height','ground to bar centre','barGround',f1);
+  h+=`<tr class="grp"><td colspan="7">Frame</td></tr>`;
+  frameRow('C','bottom bracket to head tube top centre','C',f1);
+  frameRow('Reach','to head tube top centre','reach',f1);
+  frameRow('Stack','to head tube top centre','stack',f1);
+  frameRow('Head angle','','ha',v=>f1(v)+'°');
+  h+='</tbody></table>';
+  $('compare').innerHTML=h;
+}
+
+function render(){
+  for(const [fn,name] of [[draw,'Drawing'],[readouts,'Readouts'],[compare,'Comparison']]){
+    try{ fn(); }catch(err){
+      const msg=$('msg'); msg.textContent=name+' failed: '+err.message; msg.className='on';
+      console.error(err);
+    }
+  }
+}
+
+/* ---------- inputs ---------- */
+const TYRE_WIDTHS=[1.95,2.1,2.2,2.25,2.3,2.35,2.4,2.5,2.6,2.8,3.0];
+function fillTyreWidths(){
+  [['tyreFWidth','tyreF'],['tyreRWidth','tyreR']].forEach(([id,key])=>{
+    const sel=$(id), w=+(C[key]/25.4).toFixed(2);
+    const opts=TYRE_WIDTHS.includes(w)?TYRE_WIDTHS:[...TYRE_WIDTHS,w].sort((a,b)=>a-b);
+    sel.innerHTML=opts.map(v=>`<option value="${v}">${v.toFixed(2)} in</option>`).join('');
+    sel.value=String(w);
+  });
+}
+const CFG_KEYS=['reach','stack','ha','htl','bbh','rc','sa','st','hsUpper','hsLower','forkTravel',
+                'a2c','offset','rearTravel','sag','fsag'];
+function refreshDerived(skip){
+  CFG_KEYS.forEach(k=>{ const i=$(k); if(i&&k!==skip) i.value=+(+C[k]).toFixed(2); });
+  $('a2cAuto').checked=!!C.a2cAuto;
+  $('a2c').disabled=!!C.a2cAuto;
+  $('fw').value=String(C.fw); $('rw').value=String(C.rw);
+}
+function fillStems(){
+  ['A','B'].forEach(k=>{
+    const box=$('stem'+k);
+    box.innerHTML=STEM_FIELDS.map(([f,lab,step])=>{
+      const id=`${k}_${f}`;
+      if(step==='text') return `<label><span>${lab}</span><input type="text" id="${id}" placeholder="${k}"></label>`;
+      if(step==='bar') return `<label><span>${lab}</span><select id="${id}"><option value="31.8">31.8</option><option value="35">35</option></select></label>`;
+      return `<label><span>${lab}</span><input type="number" id="${id}" step="${step}"></label>`;
+    }).join('');
+    STEM_FIELDS.forEach(([f,,step])=>{
+      const inp=$(`${k}_${f}`);
+      inp.value=S[k][f];
+      if(step==='text'){ inp.oninput=()=>{ S[k][f]=inp.value; readouts(); compare(); }; return; }
+      inp.oninput=inp.onchange=()=>{
+        const v=parseFloat(inp.value); if(!Number.isFinite(v)) return;
+        S[k][f]=v; render();
+      };
+    });
+  });
+}
+function wireCfg(){
+  CFG_KEYS.forEach(k=>{
+    const inp=$(k);
+    inp.oninput=()=>{
+      const v=parseFloat(inp.value); if(!Number.isFinite(v)) return;
+      C[k]=v; syncGeom(C,k); refreshDerived(k); render();
+    };
+    inp.onchange=()=>refreshDerived();
+  });
+  $('a2cAuto').onchange=()=>{ C.a2cAuto=$('a2cAuto').checked?1:0; syncGeom(C); refreshDerived(); render(); };
+  ['fw','rw'].forEach(k=>$(k).onchange=()=>{ C[k]=+$(k).value; syncGeom(C); refreshDerived(); render(); });
+  [['tyreFWidth','tyreF'],['tyreRWidth','tyreR']].forEach(([id,key])=>
+    $(id).onchange=()=>{ C[key]=+$(id).value*25.4; syncGeom(C); refreshDerived(); render(); });
+  $('designName').oninput=()=>META.name=$('designName').value;
+  $('designer').oninput=()=>META.designer=$('designer').value;
+}
+function refillAll(){
+  syncGeom(C); refreshDerived(); fillTyreWidths(); fillStems();
+  $('designName').value=META.name; $('designer').value=META.designer;
+}
+
+/* ---------- file ---------- */
+const GEOM_KEYS=['reach','ha','htl','bbh','rc','sa','st','rw','fw','tyreR','tyreF',
+                 'a2c','a2cAuto','hsLower','hsUpper','offset','forkTravel'];
+function exportJSON(){
+  const out={_meta:{tool:'stem-modeller', name:META.name, designer:META.designer,
+             date:new Date().toISOString(), version:1}, cfg:C, stems:S};
+  const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=(META.name.trim()||'stem-comparison').replace(/[^\w.-]+/g,'-')+'.json';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+/* Layered over the defaults, as the suspension designer does, so an older or
+   partial file keeps the defaults for anything it lacks. A Suspension
+   Designer file has a cfg with the same frame, fork and wheel keys and no
+   stems, so only the keys this tool knows are taken from it. */
+function importJSON(){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='.json,application/json';
+  inp.onchange=()=>{
+    const file=inp.files[0]; if(!file) return;
+    file.text().then(txt=>{
+      const d=JSON.parse(txt);
+      if(!d||typeof d.cfg!=='object') throw new Error('no cfg block in that file');
+      const nc=structuredClone(DEF.cfg);
+      for(const k of Object.keys(nc)) if(typeof d.cfg[k]==='number') nc[k]=d.cfg[k];
+      C=nc;
+      if(d.stems&&d.stems.A&&d.stems.B){
+        S=structuredClone(DEF.stems);
+        ['A','B'].forEach(k=>Object.assign(S[k], d.stems[k]));
+      }
+      META={name:(d._meta&&d._meta.name)||'', designer:(d._meta&&d._meta.designer)||''};
+      refillAll(); render();
+    }).catch(err=>{ const m=$('msg'); m.textContent='Import failed: '+err.message; m.className='on'; });
+  };
+  inp.click();
+}
+
+/* ---------- controls ---------- */
+function syncButtons(){
+  $('staticPos').setAttribute('aria-pressed',String(!sagView));
+  $('sagPos').setAttribute('aria-pressed',String(sagView));
+  $('viewCockpit').setAttribute('aria-pressed',String(viewMode==='cockpit'));
+  $('viewFront').setAttribute('aria-pressed',String(viewMode==='front'));
+  $('viewBike').setAttribute('aria-pressed',String(viewMode==='bike'));
+}
+$('staticPos').onclick=()=>{ sagView=false; syncButtons(); render(); };
+$('sagPos').onclick=()=>{ sagView=true; syncButtons(); render(); };
+[['viewCockpit','cockpit'],['viewFront','front'],['viewBike','bike']].forEach(([id,m])=>
+  $(id).onclick=()=>{ viewMode=m; zoomK=1; panX=panY=0; syncButtons(); draw(); });
+$('swapStems').onclick=()=>{ S={A:S.B,B:S.A}; fillStems(); render(); };
+$('copyAB').onclick=()=>{ S.B=structuredClone(S.A); fillStems(); render(); };
+$('resetGeom').onclick=()=>{ GEOM_KEYS.forEach(k=>C[k]=DEF.cfg[k]); refillAll(); render(); };
+$('reset').onclick=()=>{
+  if(!confirm('Reset both stems and the whole bike to the defaults?')) return;
+  C=structuredClone(DEF.cfg); S=structuredClone(DEF.stems); META={name:'',designer:''};
+  refillAll(); render();
+};
+$('exportJson').onclick=exportJSON;
+$('importJson').onclick=importJSON;
+[['tglBC',()=>showBC=!showBC,()=>showBC],
+ ['tglRS',()=>showRS=!showRS,()=>showRS],
+ ['tglA',()=>showA=!showA,()=>showA],
+ ['tglB',()=>showB=!showB,()=>showB],
+ ['tglWheels',()=>showWheels=!showWheels,()=>showWheels],
+ ['tglFork',()=>showFork=!showFork,()=>showFork],
+ ['tglSaddle',()=>showSaddle=!showSaddle,()=>showSaddle]].forEach(([id,flip,read])=>{
+  const b=$(id); b.onclick=()=>{ flip(); b.setAttribute('aria-pressed',read()); draw(); };
+});
+document.querySelectorAll('.tabs').forEach(tabs=>{
+  const btns=[...tabs.querySelectorAll('.tabbtn')], panels=[...tabs.querySelectorAll('.tabpanel')];
+  tabs.querySelector('.tabbar').addEventListener('click',e=>{
+    const b=e.target.closest('.tabbtn'); if(!b) return;
+    btns.forEach(x=>x.setAttribute('aria-selected',String(x===b)));
+    panels.forEach(p=>p.hidden=p.dataset.panel!==b.dataset.tab);
+  });
+});
+function setOptionsOpen(open){
+  $('ov-panel').classList.toggle('open',open);
+  $('ov-backdrop').classList.toggle('open',open);
+  $('options-btn').classList.toggle('active',open);
+  $('options-btn').setAttribute('aria-expanded',open?'true':'false');
+}
+$('options-btn').onclick=()=>setOptionsOpen(!$('ov-panel').classList.contains('open'));
+$('ov-backdrop').onclick=()=>setOptionsOpen(false);
+function setUiTheme(name){
+  document.documentElement.setAttribute('data-theme',name);
+  $('theme-light').setAttribute('aria-pressed',name==='light');
+  $('theme-dark').setAttribute('aria-pressed',name==='dark');
+  applyArtTheme(); draw();
+}
+$('theme-light').onclick=()=>setUiTheme('light');
+$('theme-dark').onclick=()=>setUiTheme('dark');
+
+// Pan by dragging the canvas, zoom with the wheel or the buttons.
+(function initPan(){
+  const svg=$('draw'); let from=null;
+  svg.addEventListener('pointerdown',e=>{
+    from=toMM(e,svg); svg.setPointerCapture(e.pointerId); svg.classList.add('panning'); e.preventDefault();
+  });
+  svg.addEventListener('pointermove',e=>{
+    if(!from) return;
+    const p=toMM(e,svg); panX-=p.x-from.x; panY-=p.y-from.y; draw();
+  });
+  const stop=()=>{ from=null; svg.classList.remove('panning'); };
+  svg.addEventListener('pointerup',stop); svg.addEventListener('pointercancel',stop);
+  svg.addEventListener('wheel',e=>{ e.preventDefault(); zoomBy(e.deltaY<0?1.12:1/1.12,toMM(e,svg)); },{passive:false});
+  $('zin').onclick=()=>zoomBy(1.25);
+  $('zout').onclick=()=>zoomBy(1/1.25);
+  $('zfit').onclick=()=>{ zoomK=1; panX=panY=0; draw(); };
+})();
+// A wheel over a focused number box silently edits it in most browsers.
+document.addEventListener('wheel',e=>{
+  if(e.target.matches&&e.target.matches('input[type=number]:focus')) e.target.blur();
+},{passive:true});
+window.addEventListener('resize',()=>{ canvasRect=null; draw(); });
+if(window.ResizeObserver){
+  let ro=null;
+  new ResizeObserver(()=>{ if(ro) return; ro=requestAnimationFrame(()=>{ ro=null; canvasRect=null; draw(); }); })
+    .observe($('canvas'));
+}
+
+try{
+  applyArtTheme(); wireCfg(); refillAll(); syncButtons(); render();
+}catch(err){
+  const m=$('msg'); m.textContent='Start-up failed: '+err.message; m.className='on';
+  console.error(err);
+}
+</script>
+</body>
+</html>

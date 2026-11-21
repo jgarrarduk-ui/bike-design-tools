@@ -16,6 +16,7 @@ James runs Claude Code locally against this repo. Four static browser tools live
 | `spring-calculator.html` | Rear coil spring rate. No tests |
 | `suspension-designer/` | Flex-stay kinematics. Engine is `// ==ENGINE-START==` … `// ==ENGINE-END==` in `index.html` |
 | `flexstay/` | Redirect to `suspension-designer/` |
+| `stem-modeller/` | Compares two stems: bar reach, bar stack, B and C, static and at sag. Engine is `// ==ENGINE-START==` … `// ==ENGINE-END==` in `index.html`. Borrows artwork from `suspension-designer/img/`. Not linked from `index.html` yet and carries `noindex` |
 | `test/` | Notch and frame-shop checks |
 | `fusion-import/` | Fusion 360 scripts. They run only inside Fusion |
 | `server/` | Designs, WooCommerce checkout, `GET /api/prices`, Resend email, SQLite, `/admin` |
@@ -53,6 +54,7 @@ cd server && npm test
 node test/frame-shop.test.mjs
 node test/notch-tests.mjs
 node suspension-designer/test/flexstay-tests.mjs
+node stem-modeller/test/stem-tests.mjs
 php wordpress-plugins/mu-plugins/tests/creature-fd-only-purchase-test.php
 php wordpress-plugins/mu-plugins/tests/creature-fd-order-experience-test.php
 php wordpress-plugins/mu-plugins/tests/creature-demo-loan-test.php
