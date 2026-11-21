@@ -73,11 +73,16 @@ function check(command, shouldBlock, options) {
   }
 }
 
+// Claude Code gets the same push rules as a terminal. Every spelling in
+// `blocked` is caught; with the branch pinned to main each push is refused
+// as a push to main, which proves the spelling was recognised as a push.
+const pinnedMain = { currentBranch: 'main', remotes: ['origin'] };
 const previousClaude = process.env.CLAUDECODE;
 process.env.CLAUDECODE = '1';
-for (const command of blocked) check(command, true);
+for (const command of blocked) check(command, true, pinnedMain);
 for (const command of allowed) check(command, false);
-check('git push -u origin cursor/hook-allow-cloud-push', true);
+check('git push -u origin cursor/hook-allow-cloud-push', false);
+check('git push -u origin cursor/hook-allow-cloud-push --force', true);
 
 const hook = fileURLToPath(new URL('./block-secrets.mjs', import.meta.url));
 function hookExit(command) {
@@ -88,9 +93,9 @@ function hookExit(command) {
   });
   return result.status;
 }
-if (hookExit('env git push') !== 2) {
+if (hookExit('env git push origin main') !== 2) {
   failed += 1;
-  console.log('stdin hook did not exit 2 for env git push');
+  console.log('stdin hook did not exit 2 for env git push origin main');
 }
 if (hookExit('npm test') !== 0) {
   failed += 1;
@@ -100,14 +105,15 @@ if (hookExit('cat .envrc') !== 0) {
   failed += 1;
   console.log('stdin hook did not exit 0 for cat .envrc');
 }
-if (hookExit('nice git push') !== 2) {
+if (hookExit('nice git push --force origin feature') !== 2) {
   failed += 1;
-  console.log('stdin hook did not exit 2 for nice git push');
+  console.log('stdin hook did not exit 2 for nice git push --force');
 }
 checks += 4;
 
-if (previousClaude === undefined) delete process.env.CLAUDECODE;
-else process.env.CLAUDECODE = previousClaude;
+// Outside Claude Code. Cleared outright rather than restored, so these checks
+// mean the same thing when this file is itself run from a Claude Code session.
+delete process.env.CLAUDECODE;
 
 const outside = [
   ['git push -u origin cursor/hook-allow-cloud-push', false],
@@ -248,11 +254,19 @@ if (hookExit('git push origin main') !== 2) {
 checks += 3;
 
 process.env.CLAUDECODE = '1';
-if (hookExit('git push -u origin feature') !== 2) {
+if (hookExit('git push -u origin feature') !== 0) {
   failed += 1;
-  console.log('stdin hook allowed a push while CLAUDECODE=1');
+  console.log('stdin hook blocked a normal branch push while CLAUDECODE=1');
 }
-checks += 1;
+if (hookExit('git push origin main') !== 2) {
+  failed += 1;
+  console.log('stdin hook allowed a push to main while CLAUDECODE=1');
+}
+if (hookExit('git push --force origin feature') !== 2) {
+  failed += 1;
+  console.log('stdin hook allowed a force push while CLAUDECODE=1');
+}
+checks += 3;
 if (previousClaude === undefined) delete process.env.CLAUDECODE;
 else process.env.CLAUDECODE = previousClaude;
 

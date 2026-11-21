@@ -19,9 +19,7 @@
       "Read(!.env.example)",
       "Edit(.env)",
       "Edit(.env.*)",
-      "Edit(!.env.example)",
-      "Bash(git push)",
-      "Bash(git push *)"
+      "Edit(!.env.example)"
     ]
   },
   "hooks": {

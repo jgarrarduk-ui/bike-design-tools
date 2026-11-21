@@ -5,10 +5,7 @@
 // and a program that opens the file itself (dotenv) are not covered.
 //
 // Blocks:
-//   - git push while CLAUDECODE is set (Claude Code). The same spellings as
-//     before: flags (git -C … push), an absolute binary (/usr/bin/git push),
-//     and the command after env, exec, eval, npx, npm exec, nice, nohup, or time.
-//   - outside Claude Code, a force push (--force, -f, --force-with-lease,
+//   - a force push (--force, -f, --force-with-lease,
 //     +refspec), a mirror or all-branch push, or a push whose destination
 //     is main or master. A destination of heads/main or refs/heads/main
 //     counts. A push with no explicit non-main destination resolves
@@ -16,7 +13,10 @@
 //     branch is not), and falls back to the current branch when there is
 //     no upstream. A preceding cd is the directory that resolution uses.
 //     The push is refused if that destination is main or master or cannot
-//     be resolved.
+//     be resolved. The same rules apply inside and outside Claude Code, and
+//     catch the same spellings: flags (git -C … push), an absolute binary
+//     (/usr/bin/git push), and the command after env, exec, eval, npx,
+//     npm exec, nice, nohup, or time. A push to a feature branch is allowed.
 //   - a command that names .env or .env.<suffix>, other than .env.example.
 //     .envrc, .env_backup and .env-old are not secret files.
 //
@@ -149,11 +149,6 @@ function commandPushes(words) {
     if (words[j] === '-c') return commandPushes(words.slice(j + 1));
   }
   return false;
-}
-
-function insideClaudeCode() {
-  const value = process.env.CLAUDECODE;
-  return typeof value === 'string' && value !== '';
 }
 
 function pushContext(words) {
@@ -476,9 +471,6 @@ export function blockReason(command, options = {}) {
     if (cd !== undefined) workDir = cd;
     const words = wordsOf(segment);
     if (commandPushes(words)) {
-      if (insideClaudeCode()) {
-        return 'Blocked: git push is not allowed from Claude Code. Push from your own terminal.';
-      }
       const context = pushContext(words) || { args: [], gitWords: words };
       let gitWords = context.gitWords;
       if (workDir === null) gitWords = null;
