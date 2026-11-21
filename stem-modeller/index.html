@@ -203,8 +203,10 @@ svg text{font-family:var(--mono)}
   <div id="stemA"></div>
   <h2><span><i class="sw" style="background:var(--stemB)"></i>Stem B</span><button id="copyAB" title="Copy every stem A value into stem B">copy A → B</button></h2>
   <div id="stemB"></div>
-  <p class="note">Rise runs along the steerer from the centre of the stem's steerer
-     clamp to the bar centre. Length runs square to the steerer.</p>
+  <p class="note">Stem rise runs along the steering axis from the base of the stem
+     (top of the spacers) to the bar centre. Length runs square to the steerer.
+     Bar rise, sweeps and width are saved with the design but do not change the
+     numbers yet.</p>
 
   <div class="tabs">
     <div class="tabbar" role="tablist">
@@ -375,16 +377,18 @@ function frontEnd(c, comp){
 
 /* A stem on the steerer. The stack runs up from the head tube top: upper
    headset, spacers, then the stem's steerer clamp. Rise is measured along the
-   steerer from the clamp's centre to the bar centre and length square to the
-   steerer, so a zero-rise stem puts the bar level with the middle of its
-   clamp. */
+   steering axis from the base of the stem (the top of the spacers) to the bar
+   centre, and length square to the steerer, so a zero-rise stem puts the bar
+   centre level with the bottom of its clamp. Clamp height only sets how much
+   steerer the stem covers; it never moves the bar.
+   `neck` is where the stem body leaves the clamp, for the drawing only. */
 function stemPoints(c, F, s){
   const cup=add(F.htTop, mul(F.up, c.hsUpper));
   const base=add(cup, mul(F.up, s.spacers));
   const top=add(base, mul(F.up, s.clamp));
-  const clampC=add(base, mul(F.up, s.clamp/2));
-  const bar=add(add(clampC, mul(F.up, s.rise)), mul(F.perp, s.length));
-  return {cup, base, top, clampC, bar};
+  const neck=add(base, mul(F.up, Math.min(Math.max(s.rise,0), s.clamp)));
+  const bar=add(add(base, mul(F.up, s.rise)), mul(F.perp, s.length));
+  return {cup, base, top, neck, bar};
 }
 
 /* Where the bike sits. Static, both axles are already a radius above the
@@ -434,8 +438,11 @@ const DEF={
         a2c:571, a2cAuto:1, hsLower:13, hsUpper:8, offset:44, forkTravel:160,
         rearTravel:150, sag:30, fsag:20 },
   stems:{
-    A:{name:'', spacers:10, clamp:40, rise:0,  length:35, barDia:35},
-    B:{name:'', spacers:10, clamp:40, rise:60, length:10, barDia:35}
+    // barRise..barWidth are recorded and exported but not used in any number yet
+    A:{name:'', spacers:10, clamp:40, rise:0,  length:35,
+       barDia:35, barRise:20, backsweep:9, upsweep:5, barWidth:800},
+    B:{name:'', spacers:10, clamp:40, rise:60, length:10,
+       barDia:35, barRise:20, backsweep:9, upsweep:5, barWidth:800}
   }
 };
 let C=structuredClone(DEF.cfg), S=structuredClone(DEF.stems);
@@ -449,7 +456,12 @@ const STEM_FIELDS=[
   ['rise','Rise',5],
   ['spacers','Spacers under stem',5],
   ['clamp','Steerer clamp height',1],
-  ['barDia','Bar diameter','bar']
+  ['-','Bar'],
+  ['barDia','Clamp diameter','bar'],
+  ['barRise','Rise',5],
+  ['backsweep','Backsweep, °',1],
+  ['upsweep','Upsweep, °',1],
+  ['barWidth','Width',10]
 ];
 const stemLabel=k=>{const s=S[k]; return s.name.trim()||`${k} · ${s.rise}/${s.length}`;};
 
@@ -635,7 +647,7 @@ function draw(){
     const s=S[k], sp=stemPoints(C,F,s); SP[k]=sp;
     if(!on) return;
     if(s.spacers>0) stemSeg(sp.cup,sp.base,36,col,'butt');
-    stemSeg(sp.clampC,sp.bar,30,col,'round');
+    stemSeg(sp.neck,sp.bar,30,col,'round');
     stemSeg(sp.base,sp.top,44,col,'butt');
     el('circle',{cx:sp.bar.x,cy:sp.bar.y,r:s.barDia/2,fill:'var(--panel)','fill-opacity':0.82,
       stroke:col,'stroke-width':3.5},g);
@@ -665,7 +677,7 @@ function draw(){
       label({x:ht.x/2,y:ht.y},`reach ${ht.x.toFixed(0)}`,'var(--dim)','middle',0,10);
       label({x:0,y:ht.y/2},`stack ${ht.y.toFixed(0)}`,'var(--dim)','end',-8,0);
     }
-    label(ht,`${ht.x.toFixed(0)} / ${ht.y.toFixed(0)}`,'var(--dim)','end',-16,-12);
+    label(ht,`${ht.x.toFixed(0)} / ${ht.y.toFixed(0)}`,'var(--dim)','end',-16,-30);
     // bar reach to each bar centre, the sketch's "reach stem"
     stemsOn.forEach(([k,col,on],i)=>{
       if(!on) return;
@@ -789,11 +801,13 @@ function fillStems(){
     const box=$('stem'+k);
     box.innerHTML=STEM_FIELDS.map(([f,lab,step])=>{
       const id=`${k}_${f}`;
+      if(f==='-') return `<h3>${lab}</h3>`;
       if(step==='text') return `<label><span>${lab}</span><input type="text" id="${id}" placeholder="${k}"></label>`;
       if(step==='bar') return `<label><span>${lab}</span><select id="${id}"><option value="31.8">31.8</option><option value="35">35</option></select></label>`;
       return `<label><span>${lab}</span><input type="number" id="${id}" step="${step}"></label>`;
     }).join('');
     STEM_FIELDS.forEach(([f,,step])=>{
+      if(f==='-') return;
       const inp=$(`${k}_${f}`);
       inp.value=S[k][f];
       if(step==='text'){ inp.oninput=()=>{ S[k][f]=inp.value; readouts(); compare(); }; return; }

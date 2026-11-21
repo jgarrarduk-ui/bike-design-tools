@@ -62,12 +62,20 @@ console.log('stem placement');
   ok(near(l.barReach - m0.barReach, 50 * Math.sin(ha), 1e-9), 'length is square to the steerer: reach');
   ok(near(l.barStack - m0.barStack, 50 * Math.cos(ha), 1e-9), 'length is square to the steerer: stack');
 
-  // spacers, upper cup and half the clamp all sit on the same axis as rise
+  // rise starts at the base of the stem: upper cup and spacers sit on the same axis
   const a = E.measure(cfg({ hsUpper: 8 }), stem({ spacers: 10, clamp: 40, rise: 0 }), false);
-  const b = E.measure(cfg({ hsUpper: 0 }), stem({ spacers: 0, clamp: 0, rise: 38 }), false);
+  const b = E.measure(cfg({ hsUpper: 0 }), stem({ spacers: 0, clamp: 0, rise: 18 }), false);
   ok(near(a.barReach, b.barReach, 1e-9) && near(a.barStack, b.barStack, 1e-9),
-     'zero rise sits at the clamp centre: 8 cup + 10 spacers + 20 = 38 of rise');
+     'zero rise sits at the top of the spacers: 8 cup + 10 spacers = 18 of rise');
   ok(near(a.steerAbove, 58), 'steerer above head tube is cup + spacers + clamp');
+  const tall = E.measure(cfg({ hsUpper: 8 }), stem({ spacers: 10, clamp: 55, rise: 0 }), false);
+  ok(near(tall.barReach, a.barReach, 1e-9) && near(tall.barStack, a.barStack, 1e-9),
+     'clamp height does not move the bar');
+
+  // bar shape is recorded only, it must not move the bar centre yet
+  const shaped = E.measure(c, stem({ rise: 30, length: 40, barRise: 38, backsweep: 9, upsweep: 5, barWidth: 800 }), false);
+  const plain = E.measure(c, stem({ rise: 30, length: 40 }), false);
+  ok(near(shaped.B, plain.B, 1e-12), 'bar rise and sweeps do not change the numbers yet');
 }
 
 console.log('the sketch: 0 rise x 35 against 60 rise x 10');
