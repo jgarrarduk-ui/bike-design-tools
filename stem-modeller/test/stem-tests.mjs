@@ -83,11 +83,13 @@ console.log('stem presets');
   const pSrc = src.split('const STEM_PRESETS=')[1].split('\n];')[0] + '\n]';
   const PRESETS = new Function('return ' + pSrc)();
   const by = id => PRESETS.find(p => p.id === id);
-  ok(PRESETS.length >= 7 && new Set(PRESETS.map(p => p.id)).size === PRESETS.length, 'preset ids are unique');
+  ok(PRESETS.length >= 8 && new Set(PRESETS.map(p => p.id)).size === PRESETS.length, 'preset ids are unique');
   ok(PRESETS.every(p => p.name && Number.isFinite(p.rise) && Number.isFinite(p.length)), 'every preset has a name, rise and length');
   ok(by('dereacher').rise === 60 && by('dereacher').length === 10, 'De-Reacher is 60 rise, 10 forward');
-  ok(by('dmorv2').rise === 90 && by('dmorv2').length === -15, 'DMOR V2 is 90 rise, 15 back');
-  ok(by('dmorv1').rise === 150 && by('dmorv1').length === -15, 'DMOR V1 is 150 rise, 15 back');
+  ok(by('bmbv2').rise === 90 && by('bmbv2').length === -15, 'Be More Bikes V2 is 90 rise, 15 back');
+  ok(by('bmbv1').rise === 150 && by('bmbv1').length === -15, 'Be More Bikes V1 is 150 rise, 15 back');
+  ok(by('rulezman').rise === 50 && by('rulezman').length === 15, 'Rulezman is 50 rise, 15 forward');
+  ok(by('hope').rise === 50 && by('hope').length === 20, 'Hope stem is 50 rise, 20 forward');
   for (const k of ['A', 'B']) {
     const p = by(DEF.stems[k].preset);
     ok(p && p.rise === DEF.stems[k].rise && p.length === DEF.stems[k].length && p.name === DEF.stems[k].name,
