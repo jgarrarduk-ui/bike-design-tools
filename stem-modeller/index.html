@@ -439,18 +439,44 @@ const DEF={
         rearTravel:150, sag:30, fsag:20 },
   stems:{
     // barRise..barWidth are recorded and exported but not used in any number yet
-    A:{name:'', spacers:10, clamp:40, rise:0,  length:35,
+    // `preset` is a STEM_PRESETS id, or 'custom' once rise or length is typed
+    A:{preset:'std35', name:'Standard 35', spacers:10, clamp:40, rise:20, length:35,
        barDia:35, barRise:20, backsweep:9, upsweep:5, barWidth:800},
-    B:{name:'', spacers:10, clamp:40, rise:60, length:10,
+    B:{preset:'dereacher', name:'Creature De-Reacher', spacers:10, clamp:40, rise:60, length:10,
        barDia:35, barRise:20, backsweep:9, upsweep:5, barWidth:800}
   }
 };
+/* Stem models. Rise is along the steering axis from the base of the stem to
+   the bar centre; length is square to the steerer, negative behind it.
+   Choosing one sets name, rise and length only — spacers, clamp height and the
+   bar stay as they were.
+
+   `art` is reserved for a side-view drawing of each stem, to be placed by two
+   anchors (stem base on the steering axis, and bar centre) the way the
+   suspension designer places its artwork. Null means the stem is drawn
+   procedurally, as now.
+
+   The standard stems' 20mm rise assumes a 0° stem with a 40mm steerer clamp,
+   bar centre at the middle of the clamp. Rulezman rise is unconfirmed.
+
+   Declared after DEF so the test's DEF extractor cannot see it. */
+const STEM_PRESETS=[
+  {id:'dereacher', name:'Creature De-Reacher', rise:60,  length:10,  art:null},
+  {id:'rulezman',  name:'Rulezman',            rise:15,  length:15,  art:null},
+  {id:'dmorv2',    name:'DMOR stem V2',        rise:90,  length:-15, art:null},
+  {id:'dmorv1',    name:'DMOR stem V1',        rise:150, length:-15, art:null},
+  {id:'std35',     name:'Standard 35',         rise:20,  length:35,  art:null},
+  {id:'std40',     name:'Standard 40',         rise:20,  length:40,  art:null},
+  {id:'std50',     name:'Standard 50',         rise:20,  length:50,  art:null}
+];
+const presetById=id=>STEM_PRESETS.find(p=>p.id===id);
 let C=structuredClone(DEF.cfg), S=structuredClone(DEF.stems);
 let META={name:'', designer:''};
 let sagView=false, viewMode='cockpit';   // 'cockpit' | 'front' | 'bike'
 let showBC=true, showRS=true, showA=true, showB=true, showWheels=true, showFork=true, showSaddle=true;
 
 const STEM_FIELDS=[
+  ['preset','Model','preset'],
   ['name','Name','text'],
   ['length','Length (offset)',5],
   ['rise','Rise',5],
@@ -802,6 +828,9 @@ function fillStems(){
     box.innerHTML=STEM_FIELDS.map(([f,lab,step])=>{
       const id=`${k}_${f}`;
       if(f==='-') return `<h3>${lab}</h3>`;
+      if(step==='preset') return `<label><span>${lab}</span><select id="${id}">`+
+        STEM_PRESETS.map(p=>`<option value="${p.id}">${esc(p.name)} · ${p.rise}/${p.length}</option>`).join('')+
+        `<option value="custom">Custom</option></select></label>`;
       if(step==='text') return `<label><span>${lab}</span><input type="text" id="${id}" placeholder="${k}"></label>`;
       if(step==='bar') return `<label><span>${lab}</span><select id="${id}"><option value="31.8">31.8</option><option value="35">35</option></select></label>`;
       return `<label><span>${lab}</span><input type="number" id="${id}" step="${step}"></label>`;
@@ -810,10 +839,30 @@ function fillStems(){
       if(f==='-') return;
       const inp=$(`${k}_${f}`);
       inp.value=S[k][f];
+      if(step==='preset'){
+        if(!presetById(S[k].preset)) inp.value='custom';
+        inp.onchange=()=>{
+          const p=presetById(inp.value);
+          if(p) Object.assign(S[k],{preset:p.id, name:p.name, rise:p.rise, length:p.length});
+          else S[k].preset='custom';
+          fillStems(); render();
+        };
+        return;
+      }
       if(step==='text'){ inp.oninput=()=>{ S[k][f]=inp.value; readouts(); compare(); }; return; }
       inp.oninput=inp.onchange=()=>{
         const v=parseFloat(inp.value); if(!Number.isFinite(v)) return;
-        S[k][f]=v; render();
+        S[k][f]=v;
+        // typing a rise or length that no longer matches the model makes it custom;
+        // the model's own name goes with it so the table cannot mislabel the stem
+        const p=presetById(S[k].preset);
+        if(p&&(f==='rise'||f==='length')&&(S[k].rise!==p.rise||S[k].length!==p.length)){
+          S[k].preset='custom';
+          if(S[k].name===p.name) S[k].name='';
+          $(`${k}_preset`).value='custom';
+          $(`${k}_name`).value=S[k].name;
+        }
+        render();
       };
     });
   });
@@ -868,7 +917,12 @@ function importJSON(){
       C=nc;
       if(d.stems&&d.stems.A&&d.stems.B){
         S=structuredClone(DEF.stems);
-        ['A','B'].forEach(k=>Object.assign(S[k], d.stems[k]));
+        ['A','B'].forEach(k=>{
+          Object.assign(S[k], d.stems[k]);
+          // a file from before presets, or edited by hand, is custom unless it still matches
+          const p=presetById(d.stems[k].preset);
+          if(!p||S[k].rise!==p.rise||S[k].length!==p.length) S[k].preset='custom';
+        });
       }
       META={name:(d._meta&&d._meta.name)||'', designer:(d._meta&&d._meta.designer)||''};
       refillAll(); render();

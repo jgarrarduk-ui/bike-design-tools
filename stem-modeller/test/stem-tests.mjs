@@ -78,7 +78,28 @@ console.log('stem placement');
   ok(near(shaped.B, plain.B, 1e-12), 'bar rise and sweeps do not change the numbers yet');
 }
 
-console.log('the sketch: 0 rise x 35 against 60 rise x 10');
+console.log('stem presets');
+{
+  const pSrc = src.split('const STEM_PRESETS=')[1].split('\n];')[0] + '\n]';
+  const PRESETS = new Function('return ' + pSrc)();
+  const by = id => PRESETS.find(p => p.id === id);
+  ok(PRESETS.length >= 7 && new Set(PRESETS.map(p => p.id)).size === PRESETS.length, 'preset ids are unique');
+  ok(PRESETS.every(p => p.name && Number.isFinite(p.rise) && Number.isFinite(p.length)), 'every preset has a name, rise and length');
+  ok(by('dereacher').rise === 60 && by('dereacher').length === 10, 'De-Reacher is 60 rise, 10 forward');
+  ok(by('dmorv2').rise === 90 && by('dmorv2').length === -15, 'DMOR V2 is 90 rise, 15 back');
+  ok(by('dmorv1').rise === 150 && by('dmorv1').length === -15, 'DMOR V1 is 150 rise, 15 back');
+  for (const k of ['A', 'B']) {
+    const p = by(DEF.stems[k].preset);
+    ok(p && p.rise === DEF.stems[k].rise && p.length === DEF.stems[k].length && p.name === DEF.stems[k].name,
+       `default stem ${k} matches its preset`);
+  }
+  const c = cfg();
+  const back = E.measure(c, stem({ rise: 90, length: -15 }), false);
+  const plumb = E.measure(c, stem({ rise: 90, length: 0 }), false);
+  ok(back.barReach < plumb.barReach, 'a negative length puts the bar behind the steerer');
+}
+
+console.log('the sketch: standard stem against 60 rise x 10');
 {
   const c = cfg();
   const A = E.measure(c, { ...DEF.stems.A }, false), B = E.measure(c, { ...DEF.stems.B }, false);
