@@ -440,7 +440,7 @@ const DEF={
   stems:{
     // barRise..barWidth are recorded and exported but not used in any number yet
     // `preset` is a STEM_PRESETS id, or 'custom' once rise or length is typed
-    A:{preset:'std35', name:'Standard 35', spacers:10, clamp:40, rise:20, length:35,
+    A:{preset:'std35', name:'Standard 35', spacers:10, clamp:40, rise:0,  length:35,
        barDia:35, barRise:20, backsweep:9, upsweep:5, barWidth:800},
     B:{preset:'dereacher', name:'Creature De-Reacher', spacers:10, clamp:40, rise:60, length:10,
        barDia:35, barRise:20, backsweep:9, upsweep:5, barWidth:800}
@@ -456,8 +456,8 @@ const DEF={
    suspension designer places its artwork. Null means the stem is drawn
    procedurally, as now.
 
-   The standard stems' 20mm rise assumes a 0° stem with a 40mm steerer clamp,
-   bar centre at the middle of the clamp. The Hope stem name is a placeholder.
+   Standard stems are zero rise: bar centre level with the base of the stem.
+   The Hope stem name is a placeholder.
 
    Declared after DEF so the test's DEF extractor cannot see it. */
 const STEM_PRESETS=[
@@ -466,9 +466,11 @@ const STEM_PRESETS=[
   {id:'bmbv2',     name:'Be More Bikes V2',    rise:90,  length:-15, art:null},
   {id:'bmbv1',     name:'Be More Bikes V1',    rise:150, length:-15, art:null},
   {id:'hope',      name:'Hope stem',           rise:50,  length:20,  art:null},   // exact name tbd
-  {id:'std35',     name:'Standard 35',         rise:20,  length:35,  art:null},
-  {id:'std40',     name:'Standard 40',         rise:20,  length:40,  art:null},
-  {id:'std50',     name:'Standard 50',         rise:20,  length:50,  art:null}
+  {id:'std31',     name:'Standard 31',         rise:0,   length:31,  art:null},
+  {id:'std32',     name:'Standard 32',         rise:0,   length:32,  art:null},
+  {id:'std35',     name:'Standard 35',         rise:0,   length:35,  art:null},
+  {id:'std40',     name:'Standard 40',         rise:0,   length:40,  art:null},
+  {id:'std50',     name:'Standard 50',         rise:0,   length:50,  art:null}
 ];
 const presetById=id=>STEM_PRESETS.find(p=>p.id===id);
 let C=structuredClone(DEF.cfg), S=structuredClone(DEF.stems);
