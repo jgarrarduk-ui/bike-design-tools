@@ -1,6 +1,6 @@
 # Creature Cycles bike design tools
 
-James runs Claude Code locally against this repo. Four static browser tools live at `https://creaturecycles.co.uk/apps/`. `server/` is the tools-api (Express on Railway). `config.js` is the public API origin (`CREATURE_TOOLS_API_BASE`), not a secret.
+James runs Claude Code locally against this repo. Five static browser tools live at `https://creaturecycles.co.uk/apps/`. `server/` is the tools-api (Express on Railway). `config.js` is the public API origin (`CREATURE_TOOLS_API_BASE`), not a secret.
 
 `suspension-designer/CLAUDE.md` is the architecture note for that tool. Read it before changing the solver or the drawing.
 
@@ -8,13 +8,14 @@ James runs Claude Code locally against this repo. Four static browser tools live
 
 | Path | Role |
 |---|---|
-| `index.html` | Landing page for the four tools |
+| `index.html` | Landing page for the tools |
 | `frame-designer.html` | Parametric frame geometry, plus notch templates between `// ==NOTCH-START==` and `// ==NOTCH-END==` |
 | `frame-shop.js` | Save, part picker, checkout. The page loads `frame-shop.js?v=…` |
 | `config.js` | Public tools-api origin |
 | `spoke-calculator.html` | J-bend spoke lengths. No tests |
 | `spring-calculator.html` | Rear coil spring rate. No tests |
 | `suspension-designer/` | Flex-stay kinematics. Engine is `// ==ENGINE-START==` … `// ==ENGINE-END==` in `index.html` |
+| `pump-track-designer/` | Pump track and dirt jump layout. Engine is `// ==ENGINE-START==` … `// ==ENGINE-END==` in `index.html`; see its `CLAUDE.md` |
 | `flexstay/` | Redirect to `suspension-designer/` |
 | `test/` | Notch and frame-shop checks |
 | `fusion-import/` | Fusion 360 scripts. They run only inside Fusion |
@@ -53,13 +54,14 @@ cd server && npm test
 node test/frame-shop.test.mjs
 node test/notch-tests.mjs
 node suspension-designer/test/flexstay-tests.mjs
+node pump-track-designer/test/pumptrack-tests.mjs
 php wordpress-plugins/mu-plugins/tests/creature-fd-only-purchase-test.php
 php wordpress-plugins/mu-plugins/tests/creature-fd-order-experience-test.php
 php wordpress-plugins/mu-plugins/tests/creature-demo-loan-test.php
 node .claude/hooks/block-secrets.test.mjs
 ```
 
-`npm test` is `node --test test/*.test.mjs` and must be run from `server/`. `server/test/retention-case.mjs` is a worker, not its own suite. Frame shop uses `node:test`. Notch and flex-stay use an `ok()` counter and exit 1 on failure; a clean flex-stay run ends `all checks pass`. Do not edit the frozen `REF` geometry in `suspension-designer/test/flexstay-tests.mjs` to make a check pass.
+`npm test` is `node --test test/*.test.mjs` and must be run from `server/`. `server/test/retention-case.mjs` is a worker, not its own suite. Frame shop uses `node:test`. Notch, flex-stay and pump-track use an `ok()` counter and exit 1 on failure; a clean flex-stay or pump-track run ends `all checks pass`. Do not edit the frozen `REF` geometry in `suspension-designer/test/flexstay-tests.mjs` to make a check pass.
 
 PHP tests are plain scripts, not PHPUnit. There is no `composer.json`. `creature-unpaid-design-orders.php` and `creature-rear-end-discount.php` have no test file of their own; the only-purchase test loads the discount class. Needs the `php` CLI.
 
@@ -71,7 +73,7 @@ Run the suites the change can affect, and report the counts before finishing. `/
 
 - Server code is CommonJS and `'use strict'`. Routes are `server/routes/`, services are `server/services/`.
 - `frame-shop.js` is an IIFE that also sets `module.exports`. `/apps/frame-shop.js` is cached for a year, so bump the `?v=` query in `frame-designer.html` when that script changes.
-- Keep the notch block and the suspension engine free of page globals and the DOM. Tests extract them with `new Function`.
+- Keep the notch block, the suspension engine and the pump track engine free of page globals and the DOM. Tests extract them with `new Function`.
 - PHP uses WordPress style (tabs, space inside parentheses). Plugins are GPL-2.0-or-later, prefixed `creature_` / `Creature_`.
 - The phrase `5 working days` is copied in `frame-shop.js` (`FD_LEAD_TIME`), the filter `creature_fd_lead_time`, and the API env `FD_LEAD_TIME`. The API cannot read the filter. Leave the three in step.
 
