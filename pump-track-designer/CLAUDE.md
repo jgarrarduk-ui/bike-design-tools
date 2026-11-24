@@ -75,7 +75,9 @@ All read by the one **Open** button (by extension, then by first character).
 ## Layers
 
 A small Illustrator-style panel on the plan, top of the list draws on top:
-**GPX trace**, **Design**, **Photo**. Each has an eye toggle; visibility is
+**Labels**, **GPX trace**, **Design**, **Photo**. **Labels** is the corner
+numbers, start/end tags and + handles; hidden, they are neither drawn nor
+hit-tested (a corner can still be dragged by its berm). Each has an eye toggle; visibility is
 saved in `cfg.layers` and respected by the build sheet.
 
 - **GPX trace** (`cfg.gpx = {name, pts:[{lat,lon}]}`) is a reference line,
@@ -89,6 +91,18 @@ saved in `cfg.layers` and respected by the build sheet.
   and below handles and labels (so editing is never blocked).
 - Hiding **Design** also stops it being edited: no hit tests, no drops.
 - **Photo** is the old site-photo feature; its toolbar button moved here.
+
+## Problems and deleting corners
+
+- `issuesOf` results show as a badge in the plan's top-right: red when any
+  is an error (a feature that overflows or overlaps), amber when all are
+  warnings (a corner shrunk to fit). It opens a floating log; an entry
+  selects the item. There is no list in the side panel any more.
+- Hold a corner (550 ms, 9 px tolerance on touch) and a red X appears next
+  to it (`delCorner`). Tapping the X deletes the corner; any other tap, on
+  or off the plan, clears it. Undo restores. A drag cancels the hold.
+- The phone selection sheet has `overscroll-behavior: contain` so scrolling
+  it never hands the gesture to the page.
 - All file pickers go through `fileInput()`. On iPhone/iPad it drops the
   `accept` filter (except images): iOS greys out `.gpx` and `.csv` in Files
   because they have no system file type. Files are checked after reading.
