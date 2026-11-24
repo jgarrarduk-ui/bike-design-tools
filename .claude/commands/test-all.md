@@ -12,12 +12,13 @@ cd server && npm test
 node test/frame-shop.test.mjs
 node test/notch-tests.mjs
 node suspension-designer/test/flexstay-tests.mjs
+node pump-track-designer/test/pumptrack-tests.mjs
 php wordpress-plugins/mu-plugins/tests/creature-fd-only-purchase-test.php
 php wordpress-plugins/mu-plugins/tests/creature-fd-order-experience-test.php
 php wordpress-plugins/mu-plugins/tests/creature-demo-loan-test.php
 node .claude/hooks/block-secrets.test.mjs
 ```
 
-`npm test` must run in `server/`. Server and frame-shop print a `node:test` summary (`# tests`, `# pass`, `# fail`). Notch prints `all passed` or `N failed`. Flex-stay prints `all checks pass` or `N FAILURES`. The PHP scripts print `N checks passed` and `N passed, N failed`. The hook check prints `N hook checks passed`.
+`npm test` must run in `server/`. Server and frame-shop print a `node:test` summary (`# tests`, `# pass`, `# fail`). Notch prints `all passed` or `N failed`. Flex-stay and pump-track print `all checks pass` or `N FAILURES`. The PHP scripts print `N checks passed` and `N passed, N failed`. The hook check prints `N hook checks passed`.
 
 Report those counts. If a suite fails, stop and quote the failing names. Do not change code unless you were already asked to fix a failure.

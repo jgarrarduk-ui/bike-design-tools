@@ -1,6 +1,6 @@
 # bike design tools
 
-Creature Cycles' bike design tools. Four static, single-file browser tools
+Creature Cycles' bike design tools. Five static, single-file browser tools
 plus a small backend that turns a finished design into a paid order.
 
 Self-hosted at `https://creaturecycles.co.uk/apps/`. The same static files
@@ -14,11 +14,12 @@ during the dual-host period.
 | Frame Designer | `frame-designer.html` | Parametric bicycle frame geometry: angles, lengths, stack/reach, drawn live. |
 | Spoke Length Calculator | `spoke-calculator.html` | J-bend spoke lengths for 1×, 2× and 3× lacing, with rim and hub presets. |
 | Spring Rate Calculator | `spring-calculator.html` | Rear coil spring rate from sag target, rider weight and shock travel. |
+| Pump Track Designer | `pump-track-designer/index.html` | Pump track and dirt jump layout: drag rollers, berms, tables, doubles, step ups/downs, drops, whale tails and boner logs onto a track; trace a site photo; save JSON, export a build sheet PNG, dimensions CSV and GPX. |
 | Suspension Designer | `suspension-designer/index.html` | Four-bar suspension kinematics solver. Currently the flex-stay variant — leverage ratio, anti-squat/anti-rise, pedal kickback, stay bending stress, derailleur cage take-up, validated against Linkage X3 — with other linkage types planned. |
 
 Each tool is a static page: no build step, open it directly or serve the
 folder. `index.html` at the repo root is the landing page that links to all
-four. Frame Designer also loads `config.js` (the tools-api origin) and
+five. Frame Designer also loads `config.js` (the tools-api origin) and
 `frame-shop.js` (save and checkout).
 
 Frame Designer's export screen also writes **notch templates**: a 1:1 A4 PDF
@@ -52,6 +53,7 @@ frame-shop.js            Frame Designer save / part picker / checkout
 spoke-calculator.html    spoke length tool
 spring-calculator.html   spring rate tool
 suspension-designer/     suspension kinematics tool, its docs and tests
+pump-track-designer/     pump track / dirt jump layout tool, its notes and tests
 flexstay/                redirect to suspension-designer/ (old URL)
 test/                    frame-designer notch template checks (node)
 fusion-import/           Fusion 360 scripts: import a design JSON as parameters
@@ -359,8 +361,8 @@ are allowed only when `NODE_ENV` is `development` or `dev`.
 
 The frontend tools are static files. On Creature Cycles they are served
 under `/apps/`: the landing page, `frame-designer.html`,
-`spoke-calculator.html`, `spring-calculator.html`, and
-`suspension-designer/`. Each in-app "all tools" link is an absolute URL to
+`spoke-calculator.html`, `spring-calculator.html`,
+`suspension-designer/` and `pump-track-designer/`. Each in-app "all tools" link is an absolute URL to
 `https://creaturecycles.co.uk/apps/`, so it returns to that hub from either
 host. GitHub Pages can keep serving the same tree from the repo root during
 the dual-host window — copy the repo (minus `server/`, which doesn't belong

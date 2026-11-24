@@ -1,0 +1,2072 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Pump Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles</title>
+<meta name="description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.">
+<link rel="canonical" href="https://creaturecycles.co.uk/apps/pump-track-designer/">
+<meta property="og:site_name" content="Creature Cycles">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Pump Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles">
+<meta property="og:description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.">
+<meta property="og:url" content="https://creaturecycles.co.uk/apps/pump-track-designer/">
+<meta property="og:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
+<meta property="og:image:alt" content="Creature Cycles">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Pump Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles">
+<meta name="twitter:description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.">
+<meta name="twitter:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebApplication",
+      "@id": "https://creaturecycles.co.uk/apps/pump-track-designer/#app",
+      "name": "Pump Track Designer",
+      "url": "https://creaturecycles.co.uk/apps/pump-track-designer/",
+      "description": "Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.",
+      "applicationCategory": "DesignApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires a modern browser with JavaScript",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "GBP" },
+      "provider": { "@type": "Organization", "name": "Creature Cycles", "url": "https://creaturecycles.co.uk/" }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://creaturecycles.co.uk/apps/pump-track-designer/#breadcrumb",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Creature Cycles", "item": "https://creaturecycles.co.uk/" },
+        { "@type": "ListItem", "position": 2, "name": "Bike Design Tools", "item": "https://creaturecycles.co.uk/apps/" },
+        { "@type": "ListItem", "position": 3, "name": "Pump Track Designer", "item": "https://creaturecycles.co.uk/apps/pump-track-designer/" }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+/* Same two themes as the suspension designer: dark is the frame designer's
+   green, light is the blue. The track colours are extra tokens on top. Each
+   feature colour means one thing everywhere it appears (plan, profile,
+   palette icons, build sheet): amber goes up, green comes down, pale is a
+   deck, near-black is air, brown is timber. */
+:root, [data-theme="light"]{
+  --paper:#eef1f3; --grid:#dfe5e9; --grid2:#cad4db;
+  --ink:#16202a; --ink-soft:#5c6b78; --rule:#c3ccd3; --panel:#f7f9fa;
+  --accent:#1f5f8b; --accent-hi:#2a7ab0; --on-accent:#fff; --press:#1f5f8b;
+  --btn:#fff; --btn-hover:#e9eef1; --field:#fff;
+  --trk:#d3d8dc; --trk-edge:#1f5f8b; --chev:rgba(31,95,139,.35);
+  --up:#e08a00; --down:#0f8a6e; --flat:#a9cde6; --gap:#3c4650; --wood:#c58b4c; --wood-line:#7a5020;
+  --berm:#8fb6cf; --berm-tick:#134463; --berm-face:rgba(31,95,139,.30);
+  --sel:#c026a3; --bad:#c0261a; --handle:#fff; --handle-berm:#1f5f8b; --handle-ink:#16202a;
+  --label-bg:rgba(255,255,255,.94); --label-ink:#16202a;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+[data-theme="dark"]{
+  --paper:#28272a; --grid:#2f2e33; --grid2:#3a453d;
+  --ink:#dcfce7; --ink-soft:#8fbf9a; --rule:#1a3d20; --panel:#222124;
+  --accent:#166534; --accent-hi:#16a34a; --on-accent:#052e16; --press:#4ade80;
+  --btn:#2e2d31; --btn-hover:#3a393e; --field:#28272a;
+  --trk:#46454c; --trk-edge:#86efac; --chev:rgba(134,239,172,.35);
+  --up:#fbbf24; --down:#4ade80; --flat:#d9f99d; --gap:#141316; --wood:#d4a15a; --wood-line:#7a4f1c;
+  --berm:#166534; --berm-tick:#86efac; --berm-face:rgba(74,222,128,.30);
+  --sel:#f0abfc; --bad:#f87171; --handle:#1a191c; --handle-berm:#16a34a; --handle-ink:#dcfce7;
+  --label-bg:rgba(20,20,22,.9); --label-ink:#dcfce7;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.45 var(--sans);
+  -webkit-text-size-adjust:100%}
+#app{display:grid;grid-template-columns:236px minmax(420px,1fr) 320px;
+  grid-template-rows:auto minmax(0,1fr);height:100vh;height:100dvh}
+.rail{overflow-y:auto;background:var(--panel);padding:12px 14px 40px}
+.rail.left{border-right:1px solid var(--rule)}
+.rail.right{border-left:1px solid var(--rule)}
+#stage{display:flex;flex-direction:column;min-width:0;min-height:0}
+
+/* ---- page chrome, as the suspension designer ---- */
+#tools-nav{grid-column:1 / -1;display:flex;align-items:center;gap:8px 10px;
+  min-height:34px;padding:5px 10px 6px;background:var(--panel);border-bottom:1px solid var(--rule)}
+#tools-nav h1{margin:0;font-size:14px;font-weight:700;letter-spacing:.2px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+#tools-nav .brand-logo{height:16px;width:auto;flex:none;filter:url(#creature-logo-blue)}
+[data-theme="dark"] #tools-nav .brand-logo{filter:url(#creature-logo-green)}
+a.all-tools{color:var(--ink);text-decoration:none;font-size:13px;white-space:nowrap;
+  padding:4px 8px;border-radius:3px;flex:none;margin-left:auto}
+a.all-tools:hover{background:var(--btn-hover)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
+
+/* ---- controls ---- */
+button{font:600 13px var(--sans);padding:6px 10px;border:1px solid var(--rule);border-radius:4px;
+  background:var(--btn);color:var(--ink);cursor:pointer;white-space:nowrap;
+  -webkit-tap-highlight-color:transparent}
+button:hover{background:var(--btn-hover)}
+button:disabled{opacity:.4;cursor:default;background:var(--btn)}
+button[aria-pressed=true]{background:var(--press);border-color:var(--press);color:var(--on-accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover{background:var(--accent-hi)}
+button.danger{color:var(--bad)}
+input[type=number],input[type=text],select{font:600 13px var(--mono);padding:5px 6px;
+  border:1px solid var(--rule);border-radius:4px;background:var(--field);color:var(--ink);width:72px}
+input[type=text]{font-family:var(--sans);width:100%}
+input:focus,select:focus{outline:2px solid var(--press);outline-offset:-1px}
+input[type=range]{accent-color:var(--press);width:100%;margin:0;height:22px}
+h2{font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.8px;
+  margin:16px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--rule);
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+h2:first-child{margin-top:2px}
+.note{font-size:12px;color:var(--ink-soft);margin:8px 0 0}
+.seg{display:flex;gap:0}
+.seg button{flex:1;border-radius:0;margin-left:-1px}
+.seg button:first-child{border-radius:4px 0 0 4px;margin-left:0}
+.seg button:last-child{border-radius:0 4px 4px 0}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 2px}
+.btnrow button{flex:1;min-width:84px}
+
+/* ---- toolbar above the plan ---- */
+#bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;
+  border-bottom:1px solid var(--rule);background:var(--panel)}
+#bar .sep{width:1px;height:22px;background:var(--rule);margin:0 4px}
+#bar .grow{flex:1}
+#bar .ic{min-width:36px;font-size:16px;line-height:1;padding:5px 8px}
+#theme-switch{display:flex;gap:4px}
+
+/* ---- plan ---- */
+#canvas{flex:1;position:relative;min-height:240px}
+#plan{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;
+  user-select:none;-webkit-user-select:none;cursor:default}
+#plan.grab{cursor:grab} #plan.grabbing{cursor:grabbing} #plan.place{cursor:copy}
+#plan.cross{cursor:crosshair}
+#zoomctl{position:absolute;bottom:12px;right:12px;display:flex;flex-direction:column;gap:6px;z-index:5}
+#zoomctl button{width:38px;height:38px;padding:0;font-size:18px;line-height:1;
+  box-shadow:0 2px 8px rgba(0,0,0,.25)}
+#hint{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;
+  display:none;align-items:center;gap:8px;max-width:calc(100% - 24px);
+  background:var(--label-bg);color:var(--label-ink);border:1px solid var(--rule);
+  border-left:4px solid var(--press);border-radius:6px;padding:8px 10px 8px 12px;
+  font-weight:600;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+#hint.on{display:flex}
+#hint input{width:80px}
+#hint button{padding:4px 9px}
+
+/* ---- profile strip ---- */
+#profile-wrap{height:156px;flex:none;position:relative;border-top:1px solid var(--rule);background:var(--panel)}
+#profile{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y}
+
+/* ---- palette ---- */
+#palette{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px 7px;
+  border:1px solid var(--rule);border-radius:6px;background:var(--btn);cursor:grab;
+  font:700 12px var(--sans);color:var(--ink);text-align:center;touch-action:pan-y;
+  user-select:none;-webkit-user-select:none;transition:border-color .12s,background .12s}
+.tile:hover{border-color:var(--press);background:var(--btn-hover)}
+.tile.armed{border-color:var(--press);box-shadow:0 0 0 2px var(--press) inset}
+.tile canvas{width:88px;height:34px;display:block;pointer-events:none}
+.tile span{pointer-events:none;line-height:1.15}
+#ghost{position:fixed;z-index:50;pointer-events:none;display:none;transform:translate(-50%,-115%);
+  background:var(--label-bg);border:2px solid var(--press);border-radius:8px;padding:6px 8px;
+  font:700 13px var(--sans);color:var(--label-ink);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+#ghost canvas{width:88px;height:34px;display:block}
+
+/* ---- inspector ---- */
+.prm{display:grid;grid-template-columns:1fr 74px 18px;gap:4px 8px;align-items:center;margin:9px 0}
+.prm>span{font-size:13px;font-weight:600}
+.prm input[type=range]{grid-column:1 / -1}
+.prm i{font-style:normal;font-size:12px;color:var(--ink-soft)}
+.stat{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dotted var(--rule);font-size:14px}
+.stat b{font:700 15px var(--mono)}
+.stat.bad b,.bad{color:var(--bad)}
+#issues button{display:block;width:100%;text-align:left;white-space:normal;margin:6px 0 0;
+  color:var(--bad);font-weight:600;border-color:var(--bad)}
+.sel-hdr{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.sel-hdr canvas{width:72px;height:28px;flex:none}
+.sel-hdr h3{margin:0;font-size:17px;font-weight:800;flex:1;min-width:0}
+.sel-hdr .x{padding:2px 10px;font-size:18px}
+#diagram{width:100%;height:150px;display:block;margin:10px 0 4px;border:1px solid var(--rule);
+  border-radius:6px;background:var(--paper)}
+.fitmsg{font-size:13px;font-weight:600;margin:6px 0}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row2 label{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:var(--ink-soft)}
+.row2 input{width:100%}
+.lbl{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:var(--ink-soft);margin:8px 0}
+.check{display:flex;align-items:center;gap:8px;font-weight:600;margin:10px 0 0;cursor:pointer}
+.check input{width:18px;height:18px;accent-color:var(--press)}
+
+/* ---- dialogs ---- */
+dialog{border:1px solid var(--rule);border-radius:8px;padding:0;background:var(--panel);color:var(--ink);
+  width:min(560px,94vw);max-height:88vh;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+dialog::backdrop{background:rgba(10,12,14,.5)}
+.dlg-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px;
+  border-bottom:1px solid var(--rule);font-size:16px;font-weight:800;position:sticky;top:0;
+  background:var(--panel);z-index:1}
+.dlg-body{padding:4px 16px 18px}
+#tpl-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding-top:12px}
+.tpl{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:8px;text-align:left;white-space:normal}
+.tpl canvas{width:100%;height:96px;display:block;border-radius:4px;background:var(--paper)}
+.tpl b{font-size:14px}
+.tpl small{font-weight:500;color:var(--ink-soft);font-size:12px;line-height:1.3}
+
+#msg{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:7;display:none;text-align:center;
+  background:var(--label-bg);color:var(--label-ink);border:1px solid var(--rule);border-left:4px solid var(--bad);
+  border-radius:6px;padding:9px 14px;font-weight:600;box-shadow:0 8px 28px rgba(0,0,0,.35);max-width:calc(100% - 120px)}
+#msg.on{display:block}
+#msg.ok{border-left-color:var(--press)}
+
+@media (max-width:900px){
+  /* minmax(0,…) so the palette strip's full width can't widen the page */
+  #app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;height:auto;min-height:100vh}
+  .rail,#stage{min-width:0}
+  #stage{order:-1}
+  #tools-nav{order:-2}
+  .rail{overflow:visible}
+  .rail.left{border-right:none;border-top:1px solid var(--rule);padding:10px 0 10px 10px;
+    position:sticky;bottom:0;z-index:8;box-shadow:0 -6px 18px rgba(0,0,0,.18)}
+  .rail.left h2{display:none}
+  .rail.right{border-left:none;border-top:1px solid var(--rule);padding-bottom:30vh}
+  #palette{display:flex;gap:8px;overflow-x:auto;padding-right:10px;scrollbar-width:none}
+  #palette::-webkit-scrollbar{display:none}
+  .tile{flex:none;width:96px;touch-action:pan-x}
+  #canvas{height:56vh;height:56svh;min-height:300px;flex:none}
+  #profile-wrap{height:112px}
+  #bar{gap:5px;padding:6px 8px}
+  #bar .sep{display:none}
+  /* A selection opens as a sheet over the bottom of the screen, so the
+     plan stays in view while you size the thing you just tapped. */
+  body.has-sel #sel-panel{position:fixed;left:0;right:0;bottom:0;z-index:30;max-height:52vh;overflow-y:auto;
+    background:var(--panel);border-top:2px solid var(--press);padding:12px 14px 28px;
+    box-shadow:0 -12px 36px rgba(0,0,0,.4);border-radius:14px 14px 0 0}
+}
+@media (min-width:901px){
+  body.has-sel #track-panel{display:none}
+}
+@media print{ #app{display:none} }
+</style>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="creature-logo-blue" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">
+    <feFlood flood-color="#1f5f8b" result="flood"/><feComposite in="flood" in2="SourceAlpha" operator="in"/>
+  </filter>
+  <filter id="creature-logo-green" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">
+    <feFlood flood-color="#4ade80" result="flood"/><feComposite in="flood" in2="SourceAlpha" operator="in"/>
+  </filter>
+</svg>
+<div id="app">
+
+<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles" onerror="this.remove()"><h1>Pump Track Designer</h1><p class="sr-only">Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.</p><a class="all-tools" href="https://creaturecycles.co.uk/apps/">&#9664; all tools</a></div>
+
+<div class="rail left">
+  <h2>Drag onto the track</h2>
+  <div id="palette"></div>
+</div>
+
+<div id="stage">
+  <div id="bar">
+    <button id="b-tpl">Templates</button>
+    <button id="b-open">Open</button>
+    <button id="b-save">Save</button>
+    <button id="b-export">Export</button>
+    <button id="b-image">Photo</button>
+    <span class="sep"></span>
+    <button id="b-undo" class="ic" title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;</button>
+    <button id="b-redo" class="ic" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">&#8631;</button>
+    <span class="sep"></span>
+    <button id="b-dims" aria-pressed="false" title="Show dimensions on the plan">Dims</button>
+    <span class="grow"></span>
+    <div id="theme-switch" role="group" aria-label="Theme">
+      <button type="button" id="theme-light" aria-pressed="false">light</button>
+      <button type="button" id="theme-dark" aria-pressed="true">dark</button>
+    </div>
+  </div>
+  <div id="canvas">
+    <canvas id="plan" aria-label="Track plan"></canvas>
+    <div id="hint" role="status"><span id="hint-text"></span><span id="hint-extra"></span><button id="hint-x" aria-label="Cancel">&times;</button></div>
+    <div id="zoomctl">
+      <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
+      <button id="zout" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <button id="zfit" title="Fit the track" aria-label="Fit the track">&#9974;</button>
+    </div>
+    <div id="msg" role="alert"></div>
+  </div>
+  <div id="profile-wrap"><canvas id="profile" aria-label="Track profile"></canvas></div>
+</div>
+
+<div class="rail right">
+  <div id="sel-panel"></div>
+  <div id="track-panel">
+    <h2>Track</h2>
+    <div class="seg" role="group" aria-label="Layout">
+      <button id="t-loop" aria-pressed="true">Loop</button>
+      <button id="t-line" aria-pressed="false">Line</button>
+    </div>
+    <div class="prm"><span>Track width</span><input type="number" id="t-width" step="0.1" min="0.6" max="6"><i>m</i>
+      <input type="range" id="t-width-r" min="0.6" max="4" step="0.1" aria-label="Track width"></div>
+    <div id="stats"></div>
+    <div id="issues"></div>
+    <h2>Design</h2>
+    <label class="lbl">Name<input type="text" id="d-name" placeholder="Untitled track" autocomplete="off"></label>
+    <label class="lbl">Designer<input type="text" id="d-designer" autocomplete="off"></label>
+    <p class="note">Drag elements onto the track. Drag a numbered corner to reshape; tap it to change the berm. <b>+</b> adds a corner, double-click a straight does the same.</p>
+  </div>
+</div>
+
+</div>
+
+<div id="ghost"></div>
+
+<dialog id="dlg-tpl">
+  <div class="dlg-hdr">Templates<button class="x" data-close>&times;</button></div>
+  <div class="dlg-body"><p class="note">Starting points modelled on common tracks. Loading one replaces the track; Undo brings it back.</p><div id="tpl-list"></div></div>
+</dialog>
+
+<dialog id="dlg-export">
+  <div class="dlg-hdr">Export<button class="x" data-close>&times;</button></div>
+  <div class="dlg-body">
+    <h2>Build sheet</h2>
+    <div class="btnrow"><button id="x-png" class="primary">Build sheet (PNG)</button></div>
+    <h2>Dimensions</h2>
+    <div class="btnrow"><button id="x-csv">Dimensions (CSV)</button><button id="x-prof">Profile (CSV)</button></div>
+    <p class="note">Dimensions CSV opens in a spreadsheet: one row per corner and per feature. Edit it and Open it back in.</p>
+    <h2>GPS</h2>
+    <div class="row2">
+      <label>Site latitude<input type="number" id="g-lat" step="0.000001" placeholder="51.50000"></label>
+      <label>Site longitude<input type="number" id="g-lon" step="0.000001" placeholder="-0.12000"></label>
+      <label>Plan up faces (° from north)<input type="number" id="g-rot" step="1"></label>
+      <label>Ground level (m)<input type="number" id="g-ele" step="0.1"></label>
+    </div>
+    <div class="btnrow"><button id="g-here">Use my location</button><button id="x-gpx" class="primary">GPX</button></div>
+    <p class="note">The site location is the plan's 0,0. GPX carries the centreline with heights and a waypoint per feature.</p>
+  </div>
+</dialog>
+
+<dialog id="dlg-image">
+  <div class="dlg-hdr">Site photo<button class="x" data-close>&times;</button></div>
+  <div class="dlg-body">
+    <p class="note">Load an aerial photo or site plan, set its scale from a known distance, then draw the track over it.</p>
+    <div class="btnrow"><button id="i-load" class="primary">Load image</button><button id="i-remove" class="danger">Remove</button></div>
+    <div id="i-controls">
+      <div class="btnrow"><button id="i-cal">Set scale</button><button id="i-move">Move image</button></div>
+      <div class="prm"><span>Image width</span><input type="number" id="i-w" step="0.5" min="1"><i>m</i></div>
+      <div class="prm"><span>Rotation</span><input type="number" id="i-rot" step="1"><i>°</i>
+        <input type="range" id="i-rot-r" min="-180" max="180" step="1" aria-label="Rotation"></div>
+      <div class="prm"><span>Opacity</span><input type="number" id="i-op" step="5" min="5" max="100"><i>%</i>
+        <input type="range" id="i-op-r" min="5" max="100" step="1" aria-label="Opacity"></div>
+    </div>
+  </div>
+</dialog>
+<script>
+'use strict';
+// ==ENGINE-START==
+/* Pump track engine. No DOM and no page globals: the tests lift this block
+   out with new Function and run it in Node. Units are metres and degrees.
+   Plan x is east, plan y is north (up the screen).
+
+   The centreline is a polygon of corner nodes. Every corner is filleted with
+   a true circular arc of the node's radius, so the track is straights joined
+   by arcs. A berm is a property of a corner, not a separate object: change
+   its radius and the plan changes with it. Features sit on the straights
+   ("legs"); a feature's position is the fraction t of its leg at which its
+   centre sits, so stretching a straight spaces its features out with it. */
+const DEG=Math.PI/180, EARTH_R=6371008.8;
+const V=(x,y)=>({x,y});
+const sub=(a,b)=>V(a.x-b.x,a.y-b.y);
+const addv=(a,b)=>V(a.x+b.x,a.y+b.y);
+const mulv=(a,k)=>V(a.x*k,a.y*k);
+const dot=(a,b)=>a.x*b.x+a.y*b.y;
+const cross=(a,b)=>a.x*b.y-a.y*b.x;
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const unit=a=>{const l=Math.hypot(a.x,a.y)||1;return V(a.x/l,a.y/l)};
+const leftOf=a=>V(-a.y,a.x);
+const clamp=(v,lo,hi)=>Math.min(hi,Math.max(lo,v));
+const rnd=(v,d=2)=>{const k=10**d;return Math.round(v*k)/k};
+
+/* ---------- feature profiles ----------
+   Each build() returns segments along the feature's own axis u (0 at its
+   start). A segment has a kind, which is what the plan and the profile colour
+   it by: up (takeoff faces), down (landings and backsides you ride), flat
+   (decks and tables), gap (faces you fly over) and wood (built features). */
+function arcUp(h,ang){        // concave transition from level ground to `ang` at height h
+  const R=h/(1-Math.cos(ang));
+  return {len:R*Math.sin(ang), z:u=>R-Math.sqrt(Math.max(0,R*R-u*u))};
+}
+function cosRamp(h,ang){      // smooth ramp of height h whose steepest point is `ang`
+  const L=h*Math.PI/(2*Math.tan(ang));
+  return {len:L, z:u=>h*(1-Math.cos(Math.PI*clamp(u/L,0,1)))/2};
+}
+function seq(){
+  const segs=[]; let u=0;
+  const o={segs, flare:null,
+    add(kind,len,zf){ if(!(len>1e-6)) return o; const u0=u;
+      segs.push({u0,u1:u0+len,kind,z:x=>zf(x-u0)}); u+=len; return o; },
+    get len(){return u}};
+  return o;
+}
+/* Between a lip at height h and a landing knuckle at lh, `gap` apart. The
+   backside of the takeoff and the face of the landing are the faces you fly
+   over; where they would cross below ground the pit is level ground. */
+function gapZone(S,h,gap,lh,backDeg,frontDeg){
+  const tb=Math.tan(Math.min(89.9,backDeg)*DEG), tf=Math.tan(Math.min(89.9,frontDeg)*DEG);
+  return S.add('gap',gap,x=>Math.max(0,h-x*tb,lh-(gap-x)*tf));
+}
+const P=(k,label,unit,min,max,step,def)=>({k,label,unit,min,max,step,def});
+const FEATURES={
+  roller:{name:'Roller',short:'R',
+    params:[P('h','Height','m',.15,1.2,.05,.45),P('L','Length each','m',1.5,10,.1,4),P('n','Count','',1,10,1,1)],
+    build(p){const S=seq(),w=2*Math.PI/p.L;
+      for(let i=0;i<p.n;i++){
+        S.add('up',p.L/2,x=>p.h*(1-Math.cos(w*x))/2);
+        S.add('down',p.L/2,x=>p.h*(1+Math.cos(w*x))/2);
+      } return S;}},
+  tabletop:{name:'Table top',short:'TT',
+    params:[P('h','Height','m',.3,3,.05,1),P('deck','Table length','m',.5,10,.1,3),
+            P('lip','Lip angle','°',10,70,1,35),P('land','Landing angle','°',10,45,1,25)],
+    build(p){const S=seq(),u=arcUp(p.h,p.lip*DEG),d=cosRamp(p.h,p.land*DEG);
+      return S.add('up',u.len,u.z).add('flat',p.deck,()=>p.h).add('down',d.len,x=>p.h-d.z(x));}},
+  double:{name:'Double',short:'DB',
+    params:[P('h','Takeoff height','m',.3,3,.05,1.1),P('gap','Gap','m',.5,8,.1,3),
+            P('lh','Landing height','m',.3,3,.05,1.1),P('lip','Lip angle','°',10,70,1,40),
+            P('land','Landing angle','°',10,50,1,30)],
+    build(p){const S=seq(),u=arcUp(p.h,p.lip*DEG),d=cosRamp(p.lh,p.land*DEG);
+      S.add('up',u.len,u.z); gapZone(S,p.h,p.gap,p.lh,55,55);
+      return S.add('down',d.len,x=>p.lh-d.z(x));}},
+  stepup:{name:'Step up',short:'SU',
+    params:[P('h','Takeoff height','m',.3,2.5,.05,.8),P('gap','Gap','m',.3,6,.1,1.8),
+            P('lh','Landing height','m',.4,3,.05,1.4),P('deck','Landing deck','m',.5,8,.1,2.5),
+            P('lip','Lip angle','°',15,70,1,45),P('land','Roll-down angle','°',10,45,1,25)],
+    build(p){const S=seq(),u=arcUp(p.h,p.lip*DEG),d=cosRamp(p.lh,p.land*DEG);
+      S.add('up',u.len,u.z); gapZone(S,p.h,p.gap,p.lh,55,60);
+      return S.add('flat',p.deck,()=>p.lh).add('down',d.len,x=>p.lh-d.z(x));}},
+  stepdown:{name:'Step down',short:'SD',
+    params:[P('h','Takeoff height','m',.4,3,.05,1.4),P('deck','Takeoff deck','m',.3,6,.1,2),
+            P('gap','Gap','m',.3,6,.1,1.6),P('lh','Landing height','m',.2,2.5,.05,.7),
+            P('app','Run-up angle','°',8,40,1,18),P('land','Landing angle','°',10,45,1,25)],
+    build(p){const S=seq(),a=cosRamp(p.h,p.app*DEG),d=cosRamp(p.lh,p.land*DEG);
+      S.add('up',a.len,a.z).add('flat',p.deck,()=>p.h); gapZone(S,p.h,p.gap,p.lh,60,55);
+      return S.add('down',d.len,x=>p.lh-d.z(x));}},
+  whaletail:{name:'Whale tail',short:'WT',
+    params:[P('h','Height','m',.4,3,.05,1.2),P('lip','Lip angle','°',15,65,1,35),
+            P('top','Top','m',.2,2,.05,.4),P('flare','Flare','×',1,4,.1,2.5),
+            P('back','Back angle','°',30,80,1,55)],
+    build(p){const S=seq(),u=arcUp(p.h,p.lip*DEG),tb=Math.tan(p.back*DEG);
+      S.add('wood',u.len,u.z).add('wood',p.top,()=>p.h).add('gap',p.h/tb,x=>p.h-x*tb);
+      const a=u.len;
+      // fans from track width at the foot to `flare` times it at the lip
+      S.flare=x=>x>=a?p.flare:1+(p.flare-1)*Math.pow(clamp(x/a,0,1),1.4);
+      return S;}},
+  bonerlog:{name:'Boner log',short:'BL',
+    params:[P('h','Deck height','m',.4,3,.05,1),P('deck','Log length','m',.8,6,.1,2.4),
+            P('kick','Log kick','°',0,15,.5,4),P('gap','Gap','m',.3,6,.1,1.8),
+            P('lh','Landing height','m',.2,2.5,.05,.6),P('app','Run-up angle','°',8,40,1,20),
+            P('land','Landing angle','°',10,45,1,28)],
+    build(p){const S=seq(),a=cosRamp(p.h,p.app*DEG),d=cosRamp(p.lh,p.land*DEG),tk=Math.tan(p.kick*DEG);
+      const he=p.h+p.deck*tk;
+      S.add('up',a.len,a.z).add('wood',p.deck,x=>p.h+x*tk); gapZone(S,he,p.gap,p.lh,90,55);
+      return S.add('down',d.len,x=>p.lh-d.z(x));}},
+  drop:{name:'Drop',short:'DR',
+    params:[P('h','Drop height','m',.3,3,.05,1.2),P('deck','Deck','m',.3,5,.1,1.5),
+            P('gap','Landing gap','m',0,4,.1,.6),P('lh','Landing height','m',.1,2,.05,.5),
+            P('app','Run-up angle','°',8,40,1,18),P('land','Landing angle','°',15,50,1,35)],
+    build(p){const S=seq(),a=cosRamp(p.h,p.app*DEG),d=cosRamp(p.lh,p.land*DEG);
+      S.add('up',a.len,a.z).add('flat',p.deck,()=>p.h); gapZone(S,p.h,p.gap,p.lh,90,60);
+      return S.add('down',d.len,x=>p.lh-d.z(x));}},
+  starthill:{name:'Start hill',short:'SH',
+    params:[P('h','Height','m',.8,5,.1,2.2),P('deck','Top deck','m',1,6,.1,2),
+            P('ang','Roll-in angle','°',15,50,1,28)],
+    build(p){const S=seq(),d=cosRamp(p.h,p.ang*DEG),tb=Math.tan(50*DEG);
+      return S.add('gap',p.h/tb,x=>x*tb).add('flat',p.deck,()=>p.h).add('down',d.len,x=>p.h-d.z(x));}}
+};
+/* Quick sizes scale every length and height of the default; angles, counts
+   and the whale tail's flare stay. */
+const SIZES={S:.65,M:1,L:1.35,XL:1.7};
+const SCALED=new Set(['h','L','deck','gap','lh','top']);
+const BERM_SIZES={S:{r:2.5,bh:.9},M:{r:3.5,bh:1.2},L:{r:5,bh:1.6},XL:{r:7,bh:2}};
+
+function defaultParams(type){
+  const o={}; for(const q of FEATURES[type].params) o[q.k]=q.def; return o;
+}
+function sizedParams(type,size){
+  const k=SIZES[size]||1, o=defaultParams(type), F=FEATURES[type];
+  for(const q of F.params) if(SCALED.has(q.k)) o[q.k]=clamp(rnd(q.def*k,2),q.min,q.max);
+  return o;
+}
+function normParams(type,p){
+  const o=defaultParams(type);
+  for(const q of FEATURES[type].params){
+    const v=+((p||{})[q.k]);
+    if(Number.isFinite(v)) o[q.k]=clamp(q.step===1&&q.unit===''?Math.round(v):v,q.min,q.max);
+  }
+  return o;
+}
+const _profCache=new Map();
+function profileOf(f){
+  const p=normParams(f.type,f.p), key=f.type+JSON.stringify(p);
+  let pr=_profCache.get(key);
+  if(!pr){ pr=FEATURES[f.type].build(p); pr.p=p; pr.type=f.type;
+    if(_profCache.size>400) _profCache.clear(); _profCache.set(key,pr); }
+  return pr;
+}
+function profZ(pr,u){
+  if(u<0||u>pr.len) return 0;
+  for(const s of pr.segs) if(u<=s.u1+1e-9) return Math.max(0,s.z(Math.max(u,s.u0)));
+  return 0;
+}
+function profKind(pr,u){ for(const s of pr.segs) if(u<=s.u1) return s.kind; return null; }
+function flareAt(pr,u){ return pr.flare?pr.flare(u):1; }
+function profHeight(pr){ let m=0; for(let u=0;u<=pr.len;u+=pr.len/200) m=Math.max(m,profZ(pr,u)); return m; }
+
+/* ---------- track geometry ---------- */
+const AUTO_BERM_DEG=35;   // an "auto" corner is banked once it turns more than this
+function cornerIsBerm(node,deflDeg){
+  if(node.berm==='berm'||node.berm===true) return true;
+  if(node.berm==='flat'||node.berm===false) return false;
+  return Math.abs(deflDeg)>AUTO_BERM_DEG;
+}
+function buildTrack(geom){
+  const N=geom.nodes||[], n=N.length, closed=!!geom.closed&&n>=3;
+  const out={closed,width:+geom.width||1.5,legs:[],arcs:[],els:[],length:0,corners:[],ok:n>=2};
+  if(n<2) return out;
+  const cor=N.map((p,i)=>{
+    if(!closed&&(i===0||i===n-1)) return {i,end:true,T:0,r:0,defl:0,P:V(p.x,p.y)};
+    const a=N[(i-1+n)%n], c=N[(i+1)%n];
+    const din=unit(sub(p,a)), dout=unit(sub(c,p));
+    let defl=Math.atan2(cross(din,dout),dot(din,dout));
+    // a reversal has no fillet; keep it just short of one so tan() stays finite
+    defl=clamp(defl,-179*DEG,179*DEG);
+    const r=Math.max(0,+p.r||0);
+    return {i,end:false,din,dout,defl,r,T:r*Math.tan(Math.abs(defl)/2),P:V(p.x,p.y)};
+  });
+  const legsN=closed?n:n-1, scale=cor.map(()=>1);
+  for(let k=0;k<legsN;k++){
+    const a=cor[k], b=cor[(k+1)%n], L=dist(N[k],N[(k+1)%n]), need=a.T+b.T;
+    if(need>L&&need>1e-9){ const f=L/need; scale[a.i]=Math.min(scale[a.i],f); scale[b.i]=Math.min(scale[b.i],f); }
+  }
+  for(const c of cor){
+    c.tight=scale[c.i]<0.999; c.reff=c.r*scale[c.i]; c.T*=scale[c.i];
+    if(c.end){ c.A=c.B=c.P; continue; }
+    c.A=sub(c.P,mulv(c.din,c.T)); c.B=addv(c.P,mulv(c.dout,c.T));
+  }
+  out.corners=cor;
+  let s=0;
+  const pushArc=c=>{
+    if(c.end) return;
+    const node=N[c.i], sg=c.defl>=0?1:-1, berm=cornerIsBerm(node,c.defl/DEG);
+    const arc={kind:'arc',i:c.i,r:c.reff,sg,sweepAbs:Math.abs(c.defl),defl:c.defl,s0:s,len:c.reff*Math.abs(c.defl),
+      A:c.A,B:c.B,P:c.P,tight:c.tight,berm,bh:berm?(+node.bh||0):0,rh:+node.rh||0};
+    if(arc.len>1e-9){
+      arc.C=addv(c.A,mulv(leftOf(c.din),c.reff*sg));
+      arc.a0=Math.atan2(c.A.y-arc.C.y,c.A.x-arc.C.x);
+      const am=arc.a0+sg*arc.sweepAbs/2;
+      arc.M=V(arc.C.x+arc.r*Math.cos(am),arc.C.y+arc.r*Math.sin(am));
+    } else { arc.C=c.P; arc.a0=0; arc.M=c.P; }
+    out.arcs.push(arc); out.els.push(arc); s+=arc.len;
+  };
+  for(let k=0;k<legsN;k++){
+    const a=cor[k], b=cor[(k+1)%n];
+    const pa=a.end?a.P:a.B, pb=b.end?b.P:b.A, L=dist(pa,pb);
+    const dir=L>1e-9?unit(sub(pb,pa)):unit(sub(N[(k+1)%n],N[k]));
+    const leg={kind:'leg',k,a:pa,b:pb,dir,len:L,s0:s};
+    out.legs.push(leg); out.els.push(leg); s+=L;
+    if(closed||k+1<n-1) pushArc(b);
+  }
+  out.length=s;
+  return out;
+}
+function elPoint(e,d){
+  if(e.kind==='leg') return {x:e.a.x+e.dir.x*d,y:e.a.y+e.dir.y*d,dir:e.dir};
+  if(e.len<1e-9) return {x:e.M.x,y:e.M.y,dir:unit(sub(e.B,e.A))};
+  const a=e.a0+e.sg*d/e.r;
+  return {x:e.C.x+e.r*Math.cos(a),y:e.C.y+e.r*Math.sin(a),dir:V(-Math.sin(a)*e.sg,Math.cos(a)*e.sg)};
+}
+function wrapS(T,s){ return T.closed?((s%T.length)+T.length)%T.length:clamp(s,0,T.length); }
+function pointAt(T,s){
+  s=wrapS(T,s);
+  for(const e of T.els) if(s<=e.s0+e.len+1e-9) return elPoint(e,s-e.s0);
+  const e=T.els[T.els.length-1]; return elPoint(e,e.len);
+}
+/* Centreline points: arcs never coarser than `ds` metres and 4 degrees.
+   Straights are one segment for drawing; `dense` splits them every `ds` too,
+   which exports need so the heights along a straight are carried. */
+function polyline(T,ds=0.25,dense=false){
+  const pts=[];
+  for(const e of T.els){
+    if(e.len<1e-9) continue;
+    const n=Math.max(1,Math.ceil(e.kind==='arc'?Math.max(e.len/ds,e.sweepAbs/(4*DEG)):dense?e.len/ds:1));
+    for(let i=0;i<n;i++){ const d=e.len*i/n, p=elPoint(e,d); pts.push({x:p.x,y:p.y,s:e.s0+d}); }
+  }
+  const end=pointAt(T,T.length);
+  if(!T.closed) pts.push({x:end.x,y:end.y,s:T.length});
+  return pts;
+}
+/* Nearest centreline point to q: chainage, lateral offset (left positive). */
+function project(T,q){
+  let best=null;
+  for(const e of T.els){
+    let p,s,dir;
+    if(e.kind==='leg'){
+      const t=clamp(dot(sub(q,e.a),e.dir),0,e.len);
+      p=addv(e.a,mulv(e.dir,t)); s=e.s0+t; dir=e.dir;
+    } else {
+      if(e.len<1e-9) continue;
+      const v=sub(q,e.C); let d=(Math.atan2(v.y,v.x)-e.a0)*e.sg;
+      d=((d%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
+      if(d>e.sweepAbs) d=(d-e.sweepAbs<2*Math.PI-d)?e.sweepAbs:0;
+      const ep=elPoint(e,d*e.r); p=V(ep.x,ep.y); s=e.s0+d*e.r; dir=ep.dir;
+    }
+    const dd=dist(p,q);
+    if(!best||dd<best.d) best={d:dd,s,x:p.x,y:p.y,dir,el:e,side:cross(dir,sub(q,p))};
+  }
+  return best;
+}
+/* Same, restricted to straights: where a dragged feature would land. */
+function projectLeg(T,q){
+  let best=null;
+  for(const e of T.legs){
+    const t=clamp(dot(sub(q,e.a),e.dir),0,e.len), p=addv(e.a,mulv(e.dir,t)), d=dist(p,q);
+    if(!best||d<best.d) best={d,leg:e.k,along:t,x:p.x,y:p.y};
+  }
+  return best;
+}
+
+/* ---------- features on the track ---------- */
+function spansOf(T,geom){
+  return (geom.features||[]).map((f,i)=>{
+    const leg=T.legs[f.leg]; if(!leg||!FEATURES[f.type]) return null;
+    const pr=profileOf(f), c=clamp(+f.t||0,0,1)*leg.len, s0=leg.s0+c-pr.len/2;
+    return {i,f,pr,leg,c,s0,s1:s0+pr.len,
+      fits:c-pr.len/2>=-0.02&&c+pr.len/2<=leg.len+0.02};
+  });
+}
+/* Free centre position nearest `c` on a leg for a feature `len` long,
+   skipping feature `skip`. Overlaps are pushed flush against a neighbour. */
+function findSlot(T,spans,leg,c,len,skip){
+  const L=T.legs[leg].len;
+  const occ=spans.filter(sp=>sp&&sp.f.leg===leg&&sp.i!==skip)
+    .map(sp=>[sp.c-sp.pr.len/2,sp.c+sp.pr.len/2]).sort((a,b)=>a[0]-b[0]);
+  const gaps=[]; let x=0;
+  for(const [a,b] of occ){ if(a>x) gaps.push([x,a]); x=Math.max(x,b); }
+  if(L>x) gaps.push([x,L]);
+  let best=null;
+  for(const [g0,g1] of gaps){
+    if(g1-g0<len-1e-6) continue;
+    const cc=clamp(c,g0+len/2,g1-len/2), d=Math.abs(cc-c);
+    if(!best||d<best.d) best={c:cc,d};
+  }
+  if(best) return {c:best.c,ok:true};
+  return {c:L<len?L/2:clamp(c,len/2,L-len/2),ok:false};
+}
+function issuesOf(T,geom,spans){
+  const out=[];
+  for(const c of T.corners) if(c.tight) out.push({kind:'tight',node:c.i,
+    msg:`Corner ${c.i+1} is too big for its straights (radius ${rnd(c.reff,1)} m fits)`});
+  for(const sp of spans) if(sp&&!sp.fits) out.push({kind:'fit',feature:sp.i,
+    msg:`${FEATURES[sp.f.type].name} ${sp.i+1} is longer than its straight`});
+  for(let a=0;a<spans.length;a++) for(let b=a+1;b<spans.length;b++){
+    const A=spans[a],B=spans[b];
+    if(A&&B&&A.f.leg===B.f.leg&&Math.min(A.c+A.pr.len/2,B.c+B.pr.len/2)-Math.max(A.c-A.pr.len/2,B.c-B.pr.len/2)>0.05)
+      out.push({kind:'overlap',feature:b,msg:`${FEATURES[A.f.type].name} ${a+1} and ${FEATURES[B.f.type].name} ${b+1} overlap`});
+  }
+  return out;
+}
+/* Rollers built into a berm sit at its middle. */
+function bermRoller(a){
+  if(!(a.rh>0)||a.len<1) return null;
+  const L=Math.min(a.len*0.8,Math.max(2.5,a.rh*9));
+  return {s0:a.s0+a.len/2-L/2,len:L,h:a.rh};
+}
+function zAt(T,spans,s){
+  let z=0; const Lt=T.length;
+  const local=(s0)=>{let u=s-s0; if(T.closed) u=((u%Lt)+Lt)%Lt; return u;};
+  for(const sp of spans){ if(!sp) continue; const u=local(sp.s0);
+    if(u>=0&&u<=sp.pr.len) z=Math.max(z,profZ(sp.pr,u)); }
+  for(const a of T.arcs){ const br=bermRoller(a); if(!br) continue; const u=local(br.s0);
+    if(u>=0&&u<=br.len) z=Math.max(z,br.h*(1-Math.cos(2*Math.PI*u/br.len))/2); }
+  return z;
+}
+function profileSamples(T,spans,ds=0.25){
+  const out=[], n=Math.max(2,Math.ceil(T.length/ds));
+  for(let i=0;i<=n;i++){ const s=T.length*i/n; out.push({s,z:zAt(T,spans,s)}); }
+  return out;
+}
+/* Dirt estimate: the feature body across the track width plus 1:1 side
+   batters, and each berm as a bank rising across the track to its height
+   with a 1:1 back. A builder's quantity, not a survey. */
+function dirtVolume(T,geom,spans){
+  const w=T.width; let v=0; const du=0.05;
+  for(const sp of spans){ if(!sp) continue;
+    for(let u=0;u<sp.pr.len;u+=du){ const z=profZ(sp.pr,u+du/2); v+=(w*flareAt(sp.pr,u+du/2)*z+z*z)*du; } }
+  for(const a of T.arcs){
+    if(a.berm) v+=a.len*(0.5*a.bh*w+0.5*a.bh*a.bh);
+    const br=bermRoller(a); if(br) v+=br.h*br.len/2*w;
+  }
+  return v;
+}
+function bermWidth(bh){ return Math.max(0.5,bh*0.9); }
+function extentOf(T){
+  const pts=polyline(T,0.5); if(!pts.length) return {x0:-5,y0:-5,x1:5,y1:5};
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const p of pts){ x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y); }
+  let pad=T.width/2; for(const a of T.arcs) if(a.berm) pad=Math.max(pad,T.width/2+bermWidth(a.bh));
+  return {x0:x0-pad,y0:y0-pad,x1:x1+pad,y1:y1+pad};
+}
+function statsOf(T,geom,spans){
+  const e=extentOf(T);
+  return {length:T.length,w:e.x1-e.x0,h:e.y1-e.y0,volume:dirtVolume(T,geom,spans),
+    features:spans.filter(Boolean).length,berms:T.arcs.filter(a=>a.berm).length};
+}
+
+/* ---------- editing that keeps features where they were ---------- */
+function insertNode(geom,T,leg,along,extra){
+  const L=T.legs[leg]; if(!L) return -1;
+  const d=clamp(along,0,L.len), at=leg+1, q=addv(L.a,mulv(L.dir,d));
+  geom.nodes.splice(at,0,Object.assign({x:q.x,y:q.y,r:4,berm:'auto',bh:1.2,rh:0},extra||{}));
+  for(const f of geom.features){
+    if(f.leg>leg) f.leg++;
+    else if(f.leg===leg){
+      const c=f.t*L.len;
+      if(c<d||d>=L.len-1e-9){ f.t=d>1e-9?c/d:0.5; }
+      else { f.leg=leg+1; f.t=L.len-d>1e-9?(c-d)/(L.len-d):0.5; }
+    }
+  }
+  return at;
+}
+function removeNode(geom,T,i){
+  const n=geom.nodes.length, closed=T.closed;
+  if(n<=(closed?3:2)) return false;
+  const p=(i-1+n)%n, newIdx=j=>j>i?j-1:j;
+  const isEnd=!closed&&(i===0||i===n-1);
+  if(isEnd){
+    const gone=i===0?0:n-2;
+    geom.features=geom.features.filter(f=>f.leg!==gone);
+    for(const f of geom.features) if(i===0) f.leg--;
+  } else {
+    const L1=T.legs[p].len, L2=T.legs[i].len, tot=Math.max(1e-6,L1+L2);
+    for(const f of geom.features){
+      if(f.leg===p){ f.t=f.t*L1/tot; f.leg=newIdx(p); }
+      else if(f.leg===i){ f.t=(L1+f.t*L2)/tot; f.leg=newIdx(p); }
+      else f.leg=newIdx(f.leg);
+    }
+  }
+  geom.nodes.splice(i,1);
+  return true;
+}
+
+/* ---------- GPS ----------
+   geo.lat/lon is the plan origin. geo.rot is the compass bearing, in degrees
+   clockwise from north, that the plan's "up" faces. */
+function toLatLon(geo,p){
+  const r=(geo.rot||0)*DEG, E=p.x*Math.cos(r)+p.y*Math.sin(r), N=-p.x*Math.sin(r)+p.y*Math.cos(r);
+  return {lat:geo.lat+N/EARTH_R/DEG, lon:geo.lon+E/(EARTH_R*Math.cos(geo.lat*DEG))/DEG};
+}
+function fromLatLon(geo,ll){
+  const r=(geo.rot||0)*DEG, E=(ll.lon-geo.lon)*DEG*EARTH_R*Math.cos(geo.lat*DEG), N=(ll.lat-geo.lat)*DEG*EARTH_R;
+  return V(E*Math.cos(r)-N*Math.sin(r), E*Math.sin(r)+N*Math.cos(r));
+}
+const xmlEsc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function featureLabel(f){
+  const F=FEATURES[f.type], p=normParams(f.type,f.p);
+  return F.name+' '+p.h.toFixed(2)+' m';
+}
+/* The design rides along inside <extensions>, so a GPX written here opens
+   again exactly; any other GPX is traced into nodes instead. */
+function toGPX(design,T,spans,stamp){
+  const geo=design.cfg.geo, name=(design._meta&&design._meta.name)||'Pump track';
+  const ll=p=>{const q=toLatLon(geo,p);return `lat="${q.lat.toFixed(8)}" lon="${q.lon.toFixed(8)}"`;};
+  const ele=z=>((+geo.ele||0)+z).toFixed(2);
+  const pts=polyline(T,0.5,true); if(T.closed&&pts.length) pts.push(Object.assign({},pts[0],{s:T.length}));
+  const w=spans.filter(Boolean).map(sp=>{
+    const p=pointAt(T,sp.s0+sp.pr.len/2);
+    return `  <wpt ${ll(p)}><ele>${ele(profHeight(sp.pr))}</ele><name>${xmlEsc(featureLabel(sp.f))}</name><type>${sp.f.type}</type></wpt>`;
+  });
+  const trk=pts.map(p=>`      <trkpt ${ll(p)}><ele>${ele(zAt(T,spans,p.s))}</ele></trkpt>`);
+  const json=JSON.stringify({geom:design.geom,geo}).replace(/]]>/g,']]]]><![CDATA[>');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Creature Cycles Pump Track Designer" xmlns="http://www.topografix.com/GPX/1/1" xmlns:ptd="https://creaturecycles.co.uk/apps/pump-track-designer/">
+  <metadata><name>${xmlEsc(name)}</name><time>${stamp||new Date().toISOString()}</time></metadata>
+${w.join('\n')}
+  <trk><name>${xmlEsc(name)}</name><type>${T.closed?'loop':'line'}</type>
+    <trkseg>
+${trk.join('\n')}
+    </trkseg>
+  </trk>
+  <extensions><ptd:design><![CDATA[${json}]]></ptd:design></extensions>
+</gpx>
+`;
+}
+function parseGPX(text){
+  const attr=(s,k)=>{const m=new RegExp('\\b'+k+'\\s*=\\s*["\']([^"\']+)["\']').exec(s);return m?+m[1]:NaN;};
+  const tag=(s,k)=>{const m=new RegExp('<'+k+'\\b[^>]*>([\\s\\S]*?)</'+k+'>').exec(s);return m?m[1].trim():'';};
+  const pts=[], wpts=[];
+  const re=/<(trkpt|rtept|wpt)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)/g; let m;
+  while((m=re.exec(text))){
+    const lat=attr(m[2],'lat'), lon=attr(m[2],'lon'); if(!Number.isFinite(lat)||!Number.isFinite(lon)) continue;
+    const body=m[3]||'', e=parseFloat(tag(body,'ele'));
+    const o={lat,lon,ele:Number.isFinite(e)?e:null};
+    if(m[1]==='wpt'){ o.name=tag(body,'name'); o.type=tag(body,'type'); wpts.push(o); } else pts.push(o);
+  }
+  let design=null;
+  const d=/<ptd:design>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/ptd:design>/.exec(text.replace(/]]]]><!\[CDATA\[>/g,']]>'));
+  if(d){ try{ design=JSON.parse(d[1]); }catch(e){ design=null; } }
+  return {pts,wpts,design};
+}
+function segDist(p,a,b){
+  const ab=sub(b,a), L=dot(ab,ab); if(L<1e-12) return dist(p,a);
+  const t=clamp(dot(sub(p,a),ab)/L,0,1); return dist(p,addv(a,mulv(ab,t)));
+}
+function rdp(pts,eps){
+  if(pts.length<3) return pts.slice();
+  const keep=new Uint8Array(pts.length); keep[0]=keep[pts.length-1]=1;
+  const st=[[0,pts.length-1]];
+  while(st.length){
+    const [a,b]=st.pop(); let md=0,mi=-1;
+    for(let i=a+1;i<b;i++){ const d=segDist(pts[i],pts[a],pts[b]); if(d>md){md=d;mi=i;} }
+    if(md>eps){ keep[mi]=1; st.push([a,mi],[mi,b]); }
+  }
+  return pts.filter((_,i)=>keep[i]);
+}
+/* Trace a foreign GPX track into corner nodes. Each kept vertex gets the
+   largest radius that uses half of its shorter neighbouring chord, which for
+   a sampled curve comes back to roughly that curve's own radius. */
+function traceTrack(xy,opts={}){
+  let pts=[];
+  for(const p of xy) if(!pts.length||dist(p,pts[pts.length-1])>0.05) pts.push(V(p.x,p.y));
+  if(pts.length<2) return null;
+  let total=0; for(let i=1;i<pts.length;i++) total+=dist(pts[i],pts[i-1]);
+  const closed=opts.closed!=null?opts.closed:(pts.length>3&&dist(pts[0],pts[pts.length-1])<Math.max(3,total*0.03));
+  const eps=opts.eps||0.45;
+  let keep;
+  if(closed){
+    if(dist(pts[0],pts[pts.length-1])<0.05) pts.pop();
+    let far=0,fd=0; pts.forEach((p,i)=>{const d=dist(p,pts[0]); if(d>fd){fd=d;far=i;}});
+    const a=rdp(pts.slice(0,far+1),eps), b=rdp(pts.slice(far).concat([pts[0]]),eps);
+    keep=a.concat(b.slice(1,-1));
+  } else keep=rdp(pts,eps);
+  const n=keep.length;
+  const nodes=keep.map((p,i)=>{
+    let r=0;
+    if(closed||(i>0&&i<n-1)){
+      const a=keep[(i-1+n)%n], c=keep[(i+1)%n];
+      const din=unit(sub(p,a)), dout=unit(sub(c,p));
+      const defl=Math.abs(Math.atan2(cross(din,dout),dot(din,dout)));
+      const half=0.5*Math.min(dist(a,p),dist(p,c));
+      r=defl>1e-3?clamp(half/Math.tan(defl/2),0.5,30):4;
+    }
+    return {x:rnd(p.x,3),y:rnd(p.y,3),r:rnd(r,2),berm:'auto',bh:1.2,rh:0};
+  });
+  return {closed:closed&&n>=3,nodes};
+}
+function gpxToDesign(g,width){
+  if(g.design&&g.design.geom) return {geom:normGeom(g.design.geom),geo:Object.assign({lat:null,lon:null,rot:0,ele:0},g.design.geo||{})};
+  if(g.pts.length<2) throw new Error('no track points in this GPX');
+  const geo={lat:g.pts[0].lat,lon:g.pts[0].lon,rot:0,ele:g.pts[0].ele!=null?g.pts[0].ele:0};
+  const xy=g.pts.map(p=>fromLatLon(geo,p));
+  const tr=traceTrack(xy); if(!tr) throw new Error('track too short');
+  const geom={closed:tr.closed,width:width||1.5,nodes:tr.nodes,features:[]};
+  const T=buildTrack(geom);
+  for(const w of g.wpts){
+    if(!FEATURES[w.type]) continue;
+    const q=projectLeg(T,fromLatLon(geo,w)); if(!q||q.d>5) continue;
+    geom.features.push({type:w.type,leg:q.leg,t:T.legs[q.leg].len>0?q.along/T.legs[q.leg].len:.5,p:defaultParams(w.type)});
+  }
+  return {geom,geo};
+}
+
+/* ---------- dimensions CSV ----------
+   One table a spreadsheet can edit: a track row, a row per corner node and a
+   row per feature. Reads back what it writes. */
+const CSV_PARAMS=[['h','height_m'],['L','roller_length_m'],['n','count'],['deck','deck_m'],['gap','gap_m'],
+  ['lh','landing_height_m'],['lip','lip_deg'],['land','landing_deg'],['app','approach_deg'],['kick','kick_deg'],
+  ['top','top_m'],['flare','flare_x'],['back','back_deg'],['ang','rollin_deg']];
+const CSV_HEAD=['kind','ref','type','x_m','y_m','radius_m','corner','berm_height_m','berm_roller_m','width_m',
+  'leg','start_m','length_m'].concat(CSV_PARAMS.map(c=>c[1]));
+function cornerName(b){ return b==='berm'||b===true?'berm':b==='flat'||b===false?'flat':'auto'; }
+function toCSV(geom,T,spans){
+  const row=o=>CSV_HEAD.map(h=>o[h]==null?'':String(o[h])).join(',');
+  const lines=['# Creature Cycles Pump Track Designer - dimensions. Metres and degrees. Plan x east, y north.',
+    '# leg N runs from node N to the next node. start_m is from the end of the corner before it to the feature start.',
+    CSV_HEAD.join(',')];
+  lines.push(row({kind:'track',type:geom.closed?'loop':'line',width_m:rnd(geom.width,3)}));
+  geom.nodes.forEach((p,i)=>lines.push(row({kind:'node',ref:'N'+(i+1),x_m:rnd(p.x,3),y_m:rnd(p.y,3),
+    radius_m:rnd(+p.r||0,3),corner:cornerName(p.berm),berm_height_m:rnd(+p.bh||0,3),berm_roller_m:rnd(+p.rh||0,3)})));
+  spans.forEach((sp,i)=>{ if(!sp) return;
+    const o={kind:'feature',ref:'F'+(i+1),type:sp.f.type,leg:sp.f.leg+1,
+      start_m:rnd(sp.c-sp.pr.len/2,3),length_m:rnd(sp.pr.len,3)};
+    for(const [k,h] of CSV_PARAMS) if(k in sp.pr.p) o[h]=rnd(sp.pr.p[k],3);
+    lines.push(row(o));
+  });
+  return lines.join('\n')+'\n';
+}
+function parseCSV(text){
+  const lines=text.replace(/^\uFEFF/,'').split(/\r?\n/).filter(l=>l.trim()&&!/^\s*#/.test(l));
+  const split=l=>{const out=[];let cur='',q=false;
+    for(let i=0;i<l.length;i++){const ch=l[i];
+      if(q){ if(ch==='"'){ if(l[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+      else if(ch==='"') q=true; else if(ch===','||ch===';'||ch==='\t'){out.push(cur);cur='';} else cur+=ch; }
+    out.push(cur); return out.map(s=>s.trim());};
+  if(!lines.length) throw new Error('empty file');
+  const head=split(lines[0]).map(h=>h.toLowerCase()), ix=k=>head.indexOf(k);
+  if(ix('kind')<0) throw new Error('no "kind" column');
+  const rows=lines.slice(1).map(split).map(c=>{const o={};head.forEach((h,i)=>o[h]=c[i]);return o;});
+  const num=(v,d)=>{const x=parseFloat(v);return Number.isFinite(x)?x:d;};
+  const tr=rows.find(r=>r.kind==='track')||{};
+  const geom={closed:(tr.type||'loop')!=='line',width:num(tr.width_m,1.5),nodes:[],features:[]};
+  for(const r of rows) if(r.kind==='node') geom.nodes.push({x:num(r.x_m,0),y:num(r.y_m,0),r:num(r.radius_m,0),
+    berm:cornerName(r.corner||'auto'),bh:num(r.berm_height_m,1.2),rh:num(r.berm_roller_m,0)});
+  if(geom.nodes.length<2) throw new Error('needs at least two node rows');
+  const T=buildTrack(geom);
+  for(const r of rows){
+    if(r.kind!=='feature'||!FEATURES[r.type]) continue;
+    const p={}; for(const [k,h] of CSV_PARAMS){ const v=parseFloat(r[h]); if(Number.isFinite(v)) p[k]=v; }
+    const f={type:r.type,leg:clamp(Math.round(num(r.leg,1))-1,0,T.legs.length-1),t:.5,p:normParams(r.type,p)};
+    const L=T.legs[f.leg].len, len=profileOf(f).len;
+    f.t=L>0?(num(r.start_m,0)+len/2)/L:.5;
+    geom.features.push(f);
+  }
+  return geom;
+}
+function profileCSV(T,spans,geo){
+  const lines=['chainage_m,x_m,y_m,z_m'+(geo&&geo.lat!=null?',lat,lon':'')];
+  for(const p of polyline(T,0.25,true)){
+    let l=[rnd(p.s,3),rnd(p.x,3),rnd(p.y,3),rnd(zAt(T,spans,p.s),3)].join(',');
+    if(geo&&geo.lat!=null){ const q=toLatLon(geo,p); l+=','+q.lat.toFixed(8)+','+q.lon.toFixed(8); }
+    lines.push(l);
+  }
+  return lines.join('\n')+'\n';
+}
+
+/* ---------- design file ----------
+   Same shape as the suspension designer's: _meta plus the design, layered
+   over the defaults on load so an older file keeps working. */
+function normGeom(g){
+  g=g||{};
+  const nodes=(Array.isArray(g.nodes)?g.nodes:[]).map(p=>({x:+p.x||0,y:+p.y||0,r:Math.max(0,+p.r||0),
+    berm:cornerName(p.berm),bh:Number.isFinite(+p.bh)?+p.bh:1.2,rh:Math.max(0,+p.rh||0)}));
+  const legsN=g.closed&&nodes.length>=3?nodes.length:Math.max(0,nodes.length-1);
+  const features=(Array.isArray(g.features)?g.features:[])
+    .filter(f=>f&&FEATURES[f.type]&&legsN>0)
+    .map(f=>({type:f.type,leg:clamp(Math.round(+f.leg||0),0,legsN-1),t:clamp(+f.t||0,0,1),p:normParams(f.type,f.p)}));
+  return {closed:!!g.closed,width:clamp(+g.width||1.5,0.6,6),nodes,features};
+}
+
+/* ---------- templates ----------
+   Laid out from common real tracks: the backyard oval, the figure eight, an
+   asphalt flow loop, a dirt jump line with a return, a kids' loop and a jump
+   park line. Feature positions are given as metres from the start of their
+   straight, then converted to the stored fraction. */
+function tpl(name,note,closed,width,nodes,feats){
+  const geom={closed,width,nodes:nodes.map(([x,y,r=3.5,berm='berm',bh=1.2,rh=0])=>({x,y,r,berm,bh,rh})),features:[]};
+  const T=buildTrack(geom);
+  geom.features=feats.map(([type,leg,at,p])=>{
+    const f={type,leg,t:0,p:normParams(type,Object.assign(defaultParams(type),p||{}))};
+    f.t=(at+profileOf(f).len/2)/T.legs[leg].len; return f;
+  });
+  return {name,note,geom};
+}
+const TEMPLATES=[
+  tpl('Flow loop','Asphalt-style loop, 7 berms, about 120 m',true,2,
+    [[0,0,4.5],[34,0,4.5],[44,10,4.5],[36,22,4.5,'berm',1.4,.45],[22,16,4.5,'berm',1.1],[10,24,4.5],[-4,16,4.5]],
+    [['roller',0,.5,{h:.5,L:4.5,n:2}],['tabletop',0,10.5,{h:.9,deck:2.5,lip:28,land:22}],['roller',0,21.5,{h:.5,L:4.5}],
+     ['roller',1,.3,{h:.45,L:4,n:2}],['roller',2,1.2,{h:.5,L:4.5}],['roller',3,.3,{h:.45,L:4.2,n:2}],
+     ['roller',4,.2,{h:.45,L:4.4,n:2}],['roller',5,.3,{h:.5,L:4.6,n:2}],['roller',6,.3,{h:.5,L:4.5,n:2}]]),
+  tpl('Backyard oval','Dirt loop, two 180° berms, about 50 m',true,1.2,
+    [[0,0,3.6,'berm',1],[20,0,3.6,'berm',1],[20,7.2,3.6,'berm',1],[0,7.2,3.6,'berm',1]],
+    [['roller',0,.4,{h:.4,L:4,n:3}],['roller',2,.4,{h:.4,L:4,n:3}]]),
+  tpl('Figure eight','Crossing loop, four berms, about 65 m',true,1.5,
+    [[-13,6,3.5],[13,-6,3.5],[13,6,3.5],[-13,-6,3.5]],
+    [['roller',0,.6,{h:.45,L:3.6,n:2}],['roller',0,9.8,{h:.45,L:3.6,n:2}],
+     ['roller',2,.6,{h:.45,L:3.6,n:2}],['roller',2,9.8,{h:.45,L:3.6,n:2}]]),
+  tpl('Dirt jump line','Start hill, table, doubles, step up, berm and return line',false,1.2,
+    [[0,0,0],[64,0,4.5,'berm',1.6],[64,9,4.5,'berm',1.6],[0,9,0]],
+    [['starthill',0,0,{h:2.2,deck:2,ang:28}],['tabletop',0,13.5,{h:1,deck:2.5,lip:38,land:28}],
+     ['double',0,24.5,{h:1.1,gap:2.6,lh:1.1,lip:42,land:30}],['double',0,35.5,{h:1.2,gap:3,lh:1.2,lip:44,land:30}],
+     ['stepup',0,46,{h:.8,gap:1.6,lh:1.3,deck:2,lip:45,land:25}],
+     ['roller',2,1,{h:.5,L:4,n:3}],['stepdown',2,16,{h:1.3,deck:1.8,gap:1.5,lh:.7,app:18,land:25}],
+     ['whaletail',2,31,{h:1.2,lip:35,flare:2.5}],['roller',2,39,{h:.5,L:4,n:2}],
+     ['tabletop',2,49,{h:.7,deck:1.5,lip:30,land:25}]]),
+  tpl('Kids loop','Low rollers and soft berms, about 35 m',true,1,
+    [[0,0,2.8,'berm',.7],[12,0,2.8,'berm',.7],[12,5.6,2.8,'berm',.7],[0,5.6,2.8,'berm',.7]],
+    [['roller',0,.2,{h:.25,L:3,n:2}],['roller',2,.2,{h:.25,L:3,n:2}]]),
+  tpl('Jump park line','Start hill, boner log, drop, whale tail',false,1.4,
+    [[0,0,0],[42,0,6,'berm',1.2],[54,12,0]],
+    [['starthill',0,0,{h:2.6,deck:2,ang:30}],['bonerlog',0,13,{}],['drop',0,25.5,{}],
+     ['whaletail',1,1,{}],['tabletop',1,6.5,{h:.9,deck:2,lip:35,land:25}]]),
+  tpl('Empty loop','Four berms, nothing on the straights',true,1.5,
+    [[0,0,3.5],[24,0,3.5],[24,12,3.5],[0,12,3.5]],[]),
+  tpl('Empty line','One straight to build a jump line on',false,1.2,[[0,0,0],[40,0,0]],[])
+];
+// ==ENGINE-END==
+
+/* ====================================================================
+   Page. Everything below may touch the DOM; nothing above may.
+   ==================================================================== */
+const $=id=>document.getElementById(id);
+const clone=o=>JSON.parse(JSON.stringify(o));
+const SANS='system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif';
+const MONO='ui-monospace,"SF Mono",Menlo,Consolas,monospace';
+const AUTOSAVE_KEY='creature-pump-track-v1';
+const PALETTE=['roller','berm','bermroller','tabletop','double','stepup','stepdown','drop','whaletail','bonerlog','starthill'];
+const PAL_NAME={berm:'Berm',bermroller:'Berm + roller'};
+const f1=v=>(Math.round(v*10)/10).toFixed(1), f2=v=>(Math.round(v*100)/100).toFixed(2);
+
+let COL={};
+function readColours(){
+  const cs=getComputedStyle(document.documentElement);
+  for(const k of ['paper','grid','grid2','ink','ink-soft','rule','panel','press','trk','trk-edge','chev','up','down',
+    'flat','gap','wood','wood-line','berm','berm-tick','berm-face','sel','bad','handle','handle-berm','handle-ink',
+    'label-bg','label-ink']) COL[k]=cs.getPropertyValue('--'+k).trim();
+}
+const kcol=k=>COL[k]||COL.flat;
+
+const DEF_CFG={geo:{lat:null,lon:null,rot:0,ele:0},bg:null,dims:false};
+let D={_meta:{name:'',designer:''},geom:normGeom(TEMPLATES[0].geom),cfg:clone(DEF_CFG)};
+let T=null, spans=[], issues=[], stats=null;
+let sel=null;                 // {kind:'feature'|'node', i}
+let view={cx:0,cy:0,k:10};
+let preview=null, armed=null, mode=null, calPts=[], act=null, polyShow=false;
+let HND={corners:[],plus:[]};
+const bgImg=new Image(); bgImg.onload=()=>draw();
+
+function recompute(){
+  T=buildTrack(D.geom); spans=spansOf(T,D.geom);
+  issues=issuesOf(T,D.geom,spans); stats=statsOf(T,D.geom,spans);
+  draw();
+}
+
+/* ---------- canvases ---------- */
+const plan=$('plan'), pctx=plan.getContext('2d');
+const prof=$('profile'), qctx=prof.getContext('2d');
+let PW=1,PH=1,QW=1,QH=1;
+function sizeCanvas(cv,ctx){
+  const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+  cv.width=Math.max(1,Math.round(r.width*dpr)); cv.height=Math.max(1,Math.round(r.height*dpr));
+  ctx.setTransform(dpr,0,0,dpr,0,0); return [Math.max(1,r.width),Math.max(1,r.height)];
+}
+let fitted=false;
+new ResizeObserver(()=>{ [PW,PH]=sizeCanvas(plan,pctx); if(!fitted&&T&&PW>50){fitView();fitted=true;} drawNow(); }).observe($('canvas'));
+new ResizeObserver(()=>{ [QW,QH]=sizeCanvas(prof,qctx); drawNow(); }).observe($('profile-wrap'));
+const w2s=(x,y)=>[(x-view.cx)*view.k+PW/2, PH/2-(y-view.cy)*view.k];
+const s2w=(sx,sy)=>V((sx-PW/2)/view.k+view.cx,(PH/2-sy)/view.k+view.cy);
+
+function fitBox(e,W,H,margin=1.12){
+  const w=Math.max(4,e.x1-e.x0), h=Math.max(4,e.y1-e.y0);
+  return {cx:(e.x0+e.x1)/2, cy:(e.y0+e.y1)/2, k:Math.min(W/(w*margin),H/(h*margin))};
+}
+function fitView(){ if(!T||!T.ok) return; view=fitBox(extentOf(T),PW,PH,1.18); draw(); }
+
+let rafId=0;
+function draw(){ if(!rafId) rafId=requestAnimationFrame(drawNow); }
+function drawNow(){
+  rafId=0; if(!T) return;
+  drawPlan(pctx,PW,PH,view,{main:true,grid:true,bg:true,handles:true,dims:D.cfg.dims,sel,preview,poly:polyShow,cal:calPts});
+  drawProfile(qctx,QW,QH,{main:true,sel});
+  updateLive();
+}
+
+/* ---------- plan drawing ---------- */
+function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function pill(ctx,text,x,y,o={}){
+  const sz=o.size||12; ctx.font=`700 ${sz}px ${SANS}`;
+  const w=ctx.measureText(text).width+12, h=sz+9;
+  roundRect(ctx,x-w/2,y-h/2,w,h,5); ctx.fillStyle=o.bg||COL['label-bg']; ctx.fill();
+  ctx.lineWidth=1.5; ctx.strokeStyle=o.edge||COL.rule; ctx.stroke();
+  ctx.fillStyle=o.ink||COL['label-ink']; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,x,y+.5);
+}
+function niceStep(px,k,min){ for(const s of [.5,1,2,5,10,20,25,50,100,200,500]) if(s*k>=min) return s; return 1000; }
+function drawGrid(ctx,W,H,vw,X,Y){
+  const g=niceStep(0,vw.k,16), major=g*5;
+  const x0=vw.cx-W/2/vw.k, x1=vw.cx+W/2/vw.k, y0=vw.cy-H/2/vw.k, y1=vw.cy+H/2/vw.k;
+  ctx.lineWidth=1;
+  for(const [step,col] of [[g,COL.grid],[major,COL.grid2]]){
+    ctx.strokeStyle=col; ctx.beginPath();
+    for(let x=Math.ceil(x0/step)*step;x<=x1;x+=step){ const sx=Math.round(X(x))+.5; ctx.moveTo(sx,0); ctx.lineTo(sx,H); }
+    for(let y=Math.ceil(y0/step)*step;y<=y1;y+=step){ const sy=Math.round(Y(y))+.5; ctx.moveTo(0,sy); ctx.lineTo(W,sy); }
+    ctx.stroke();
+  }
+}
+function drawScaleBar(ctx,W,H,k,x=14,y){
+  y=y==null?H-18:y;
+  const L=niceStep(0,k,70), px=L*k;
+  ctx.save(); ctx.lineWidth=3; ctx.strokeStyle=COL.ink; ctx.lineCap='butt';
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+px,y); ctx.moveTo(x,y-6); ctx.lineTo(x,y+1); ctx.moveTo(x+px,y-6); ctx.lineTo(x+px,y+1); ctx.stroke();
+  ctx.font=`700 12px ${SANS}`; ctx.fillStyle=COL.ink; ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.fillText(L+' m',x+px+6,y+5); ctx.restore();
+}
+function strip(ctx,X,Y,s0,u0,u1,hwf,step){
+  const n=Math.max(1,Math.ceil((u1-u0)/step)), L=[], R=[];
+  for(let i=0;i<=n;i++){
+    const u=u0+(u1-u0)*i/n, p=pointAt(T,s0+u), nl=leftOf(p.dir), hw=hwf(u);
+    L.push(X(p.x+nl.x*hw),Y(p.y+nl.y*hw)); R.push(X(p.x-nl.x*hw),Y(p.y-nl.y*hw));
+  }
+  ctx.beginPath(); ctx.moveTo(L[0],L[1]);
+  for(let i=2;i<L.length;i+=2) ctx.lineTo(L[i],L[i+1]);
+  for(let i=R.length-2;i>=0;i-=2) ctx.lineTo(R[i],R[i+1]);
+  ctx.closePath();
+}
+function across(ctx,X,Y,s,hw){
+  const p=pointAt(T,s), nl=leftOf(p.dir);
+  ctx.moveTo(X(p.x+nl.x*hw),Y(p.y+nl.y*hw)); ctx.lineTo(X(p.x-nl.x*hw),Y(p.y-nl.y*hw));
+}
+function drawFeature(ctx,X,Y,k,s0,pr,st={}){
+  const hw0=T.width/2, hwf=u=>hw0*flareAt(pr,u), step=Math.max(.06,1.5/k);
+  ctx.save(); if(st.alpha) ctx.globalAlpha=st.alpha;
+  for(const sg of pr.segs){
+    strip(ctx,X,Y,s0,sg.u0,sg.u1,hwf,step); ctx.fillStyle=kcol(sg.kind); ctx.fill();
+    if(sg.kind==='wood'&&k>6){
+      ctx.beginPath(); for(let u=Math.ceil(sg.u0/.3)*.3;u<sg.u1;u+=.3) across(ctx,X,Y,s0+u,hwf(u));
+      ctx.strokeStyle=COL['wood-line']; ctx.lineWidth=1; ctx.stroke();
+    }
+  }
+  // crests, lips and knuckles: every segment joint that stands proud
+  ctx.beginPath();
+  for(const sg of pr.segs) if(sg.u1<pr.len-1e-6&&profZ(pr,sg.u1)>.12) across(ctx,X,Y,s0+sg.u1,hwf(sg.u1));
+  ctx.strokeStyle=COL.gap; ctx.lineWidth=Math.max(1.5,Math.min(3,k*.08)); ctx.stroke();
+  strip(ctx,X,Y,s0,0,pr.len,hwf,step);
+  if(st.sel){ ctx.lineWidth=3.5; ctx.strokeStyle=COL.sel; ctx.shadowColor=COL.sel; ctx.shadowBlur=10; }
+  else if(st.bad){ ctx.lineWidth=2.5; ctx.strokeStyle=COL.bad; ctx.setLineDash([7,5]); }
+  else { ctx.lineWidth=1.5; ctx.strokeStyle=COL.gap; }
+  ctx.stroke(); ctx.restore();
+}
+function outsideNormalSign(){
+  if(!T.closed) return -1;
+  let a=0; const N=D.geom.nodes;
+  for(let i=0;i<N.length;i++){ const p=N[i], q=N[(i+1)%N.length]; a+=p.x*q.y-q.x*p.y; }
+  return a>0?-1:1;   // counter-clockwise loop: outside is to the right of travel
+}
+function cornerLabel(i){ return String(i+1); }
+function drawPlan(ctx,W,H,vw,o){
+  const k=vw.k, X=x=>(x-vw.cx)*k+W/2, Y=y=>H/2-(y-vw.cy)*k;
+  ctx.fillStyle=COL.paper; ctx.fillRect(0,0,W,H);
+  if(o.grid) drawGrid(ctx,W,H,vw,X,Y);
+  const bg=D.cfg.bg;
+  if(o.bg&&bg&&bgImg.complete&&bgImg.naturalWidth){
+    ctx.save(); ctx.globalAlpha=bg.opacity; ctx.translate(X(bg.x),Y(bg.y)); ctx.rotate(-bg.rot*DEG);
+    const wp=bg.w*k, hp=wp*bgImg.naturalHeight/bgImg.naturalWidth;
+    ctx.drawImage(bgImg,-wp/2,-hp/2,wp,hp); ctx.restore();
+  }
+  if(!T||!T.ok||T.length<.01) return;
+  const w=T.width, out=outsideNormalSign();
+  // berm banks outside the corner, hachured downhill
+  for(const a of T.arcs){
+    if(!a.berm||a.len<.05) continue;
+    const bw=bermWidth(a.bh), rin=a.r+w/2, rout=rin+bw, cx=X(a.C.x), cy=Y(a.C.y);
+    const a0=-a.a0, a1=-(a.a0+a.sg*a.sweepAbs), ccw=a.sg>0;
+    ctx.beginPath(); ctx.arc(cx,cy,rout*k,a0,a1,ccw); ctx.arc(cx,cy,rin*k,a1,a0,!ccw); ctx.closePath();
+    ctx.fillStyle=COL.berm; ctx.fill();
+    const step=Math.max(.35,6/k), n=Math.max(2,Math.floor(a.sweepAbs*rout/step));
+    ctx.beginPath();
+    for(let j=0;j<n;j++){
+      const ang=a.a0+a.sg*a.sweepAbs*(j+.5)/n, c=Math.cos(ang), s=Math.sin(ang), r2=rout-bw*(j%2?.45:.85);
+      ctx.moveTo(cx+rout*k*c,cy-rout*k*s); ctx.lineTo(cx+r2*k*c,cy-r2*k*s);
+    }
+    ctx.strokeStyle=COL['berm-tick']; ctx.lineWidth=Math.max(1,Math.min(2,k*.06)); ctx.stroke();
+  }
+  // track surface with a bold edge
+  const pts=polyline(T,Math.max(.1,2/k));
+  const path=()=>{ ctx.beginPath(); pts.forEach((p,i)=>i?ctx.lineTo(X(p.x),Y(p.y)):ctx.moveTo(X(p.x),Y(p.y))); if(T.closed) ctx.closePath(); };
+  ctx.lineJoin='round'; ctx.lineCap='butt';
+  path(); ctx.strokeStyle=COL['trk-edge']; ctx.lineWidth=w*k+5; ctx.stroke();
+  path(); ctx.strokeStyle=COL.trk; ctx.lineWidth=Math.max(1,w*k-.5); ctx.stroke();
+  // banking on the berm's riding surface: darker toward the high side
+  for(const a of T.arcs){
+    if(!a.berm||a.len<.05) continue;
+    const cx=X(a.C.x), cy=Y(a.C.y);
+    const g=ctx.createRadialGradient(cx,cy,Math.max(0,(a.r-w/2)*k),cx,cy,Math.max(1,(a.r+w/2)*k));
+    g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,COL['berm-face']);
+    ctx.beginPath(); ctx.arc(cx,cy,a.r*k,-a.a0,-(a.a0+a.sg*a.sweepAbs),a.sg>0);
+    ctx.strokeStyle=g; ctx.lineWidth=w*k; ctx.stroke();
+  }
+  // direction of travel
+  const gap=Math.max(8,90/k), cs=Math.min(w*k*.28,9);
+  if(cs>2.5){
+    ctx.beginPath();
+    for(let s=gap*.5;s<T.length-1;s+=gap){
+      const p=pointAt(T,s), d=p.dir, nl=leftOf(d), x=X(p.x), y=Y(p.y);
+      const tx=d.x*cs, ty=-d.y*cs, nx=nl.x*cs, ny=-nl.y*cs;
+      ctx.moveTo(x-tx+nx,y-ty+ny); ctx.lineTo(x,y); ctx.lineTo(x-tx-nx,y-ty-ny);
+    }
+    ctx.strokeStyle=COL.chev; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.stroke(); ctx.lineCap='butt';
+  }
+  // start line: chequered across the track
+  { const p=pointAt(T,0), d=p.dir, nl=leftOf(d), m=6, sq=w/m;
+    for(let r=0;r<2;r++) for(let c=0;c<m;c++){
+      const u0=r*sq, v0=-w/2+c*sq, P=(u,v)=>[X(p.x+d.x*u+nl.x*v),Y(p.y+d.y*u+nl.y*v)];
+      const q=[P(u0,v0),P(u0+sq,v0),P(u0+sq,v0+sq),P(u0,v0+sq)];
+      ctx.beginPath(); ctx.moveTo(...q[0]); q.slice(1).forEach(z=>ctx.lineTo(...z)); ctx.closePath();
+      ctx.fillStyle=(r+c)%2?'#111':'#fff'; ctx.fill();
+    } }
+  // rollers built into berms
+  for(const a of T.arcs){ const br=bermRoller(a); if(!br) continue;
+    drawFeature(ctx,X,Y,k,br.s0,FEATURES.roller.build({h:br.h,L:br.len,n:1}),{}); }
+  // features
+  const selF=o.sel&&o.sel.kind==='feature'?o.sel.i:-1;
+  spans.forEach(sp=>{ if(sp&&sp.i!==selF) drawFeature(ctx,X,Y,k,sp.s0,sp.pr,{bad:!sp.fits||issues.some(q=>q.feature===sp.i)}); });
+  if(selF>=0&&spans[selF]) drawFeature(ctx,X,Y,k,spans[selF].s0,spans[selF].pr,{sel:true});
+  if(o.preview&&o.preview.sp) drawFeature(ctx,X,Y,k,o.preview.sp.s0,o.preview.sp.pr,{alpha:.7,sel:true});
+  // control polygon while a corner is being dragged
+  if(o.poly){
+    const N=D.geom.nodes; ctx.save(); ctx.setLineDash([5,5]); ctx.strokeStyle=COL['ink-soft']; ctx.lineWidth=1.2;
+    ctx.beginPath(); N.forEach((p,i)=>i?ctx.lineTo(X(p.x),Y(p.y)):ctx.moveTo(X(p.x),Y(p.y))); if(T.closed) ctx.closePath(); ctx.stroke();
+    ctx.restore();
+  }
+  // dimensions
+  const labels=[];
+  if(o.dims){
+    for(const L of T.legs){ if(L.len<.3) continue;
+      // straight lengths go inside the track; features and + handles go outside
+      const m=addv(L.a,mulv(L.dir,L.len/2)), nl=mulv(leftOf(L.dir),-out), off=w/2+22/k;
+      labels.push([f1(L.len)+' m',X(m.x+nl.x*off),Y(m.y+nl.y*off),{size:12,edge:COL['trk-edge']}]); }
+    for(const a of T.arcs){ if(a.len<.05) continue;
+      const u=unit(sub(a.M,a.C)), off=w/2+(a.berm?bermWidth(a.bh):0)+26/k;
+      labels.push([(a.berm?'R'+f1(a.r)+' · '+f1(a.bh)+' m':'R'+f1(a.r)),X(a.M.x+u.x*off),Y(a.M.y+u.y*off),{size:12}]); }
+    for(const sp of spans){ if(!sp) continue;
+      const p=pointAt(T,sp.s0+sp.pr.len/2), nl=mulv(leftOf(p.dir),out), off=w/2*flareAt(sp.pr,sp.pr.len/2)+20/k;
+      labels.push([FEATURES[sp.f.type].short+' '+f2(sp.pr.p.h),X(p.x+nl.x*off),Y(p.y+nl.y*off),{size:11}]); }
+  } else if(selF>=0&&spans[selF]){
+    const sp=spans[selF], p=pointAt(T,sp.s0+sp.pr.len/2), nl=mulv(leftOf(p.dir),out), off=w/2*flareAt(sp.pr,sp.pr.len/2)+22/k;
+    labels.push([FEATURES[sp.f.type].name+' · '+f1(sp.pr.len)+' m',X(p.x+nl.x*off),Y(p.y+nl.y*off),{size:13,edge:COL.sel}]);
+  }
+  // corner handles: on the track at the middle of each corner, numbered
+  const hnd={corners:[],plus:[]};
+  if(o.main) HND=hnd;
+  if(o.handles){
+    // shrink when zoomed out so the handle never hides the berm it sits on
+    const tagsOnly=o.handles==='tags', R=tagsOnly?10:clamp(T.width*k*.75,9,14);
+    if(!tagsOnly&&o.preview&&o.preview.corner!=null){
+      const a=T.arcs.find(z=>z.i===o.preview.corner);
+      if(a){ ctx.beginPath(); ctx.arc(X(a.M.x),Y(a.M.y),26,0,7); ctx.fillStyle=COL['berm-face']; ctx.fill();
+        ctx.lineWidth=3; ctx.strokeStyle=COL.sel; ctx.stroke(); }
+    }
+    if(!tagsOnly) for(const L of T.legs){
+      if(L.len<2.5||L.len*k<70) continue;
+      const m=addv(L.a,mulv(L.dir,L.len/2)), nl=mulv(leftOf(L.dir),out), off=w/2+20/k;
+      const x=X(m.x+nl.x*off), y=Y(m.y+nl.y*off);
+      ctx.beginPath(); ctx.arc(x,y,10,0,7); ctx.fillStyle=COL.handle; ctx.fill();
+      ctx.setLineDash([3,3]); ctx.lineWidth=1.5; ctx.strokeStyle=COL['ink-soft']; ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(x-5,y); ctx.lineTo(x+5,y); ctx.moveTo(x,y-5); ctx.lineTo(x,y+5);
+      ctx.strokeStyle=COL['handle-ink']; ctx.lineWidth=2; ctx.stroke();
+      hnd.plus.push({leg:L.k,x,y});
+    }
+    const N=D.geom.nodes;
+    T.corners.forEach(c=>{
+      const a=c.end?null:T.arcs.find(z=>z.i===c.i);
+      const pos=c.end?c.P:a.M, x=X(pos.x), y=Y(pos.y), isSel=o.sel&&o.sel.kind==='node'&&o.sel.i===c.i;
+      const berm=a&&a.berm;
+      if(isSel){ ctx.beginPath(); ctx.arc(x,y,R+6,0,7); ctx.lineWidth=3.5; ctx.strokeStyle=COL.sel; ctx.stroke(); }
+      ctx.beginPath();
+      if(c.end) roundRect(ctx,x-R,y-R,2*R,2*R,4); else ctx.arc(x,y,R,0,7);
+      ctx.fillStyle=berm?COL['handle-berm']:COL.handle; ctx.fill();
+      ctx.lineWidth=2; ctx.strokeStyle=c.tight?COL.bad:(berm?'#fff':COL['handle-ink']); ctx.stroke();
+      ctx.fillStyle=berm?'#fff':COL['handle-ink']; ctx.font=`800 ${tagsOnly?11:13}px ${SANS}`;
+      ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(c.end?(c.i===0?'S':'E'):cornerLabel(c.i),x,y+.5);
+      hnd.corners.push({i:c.i,x,y,end:c.end});
+    });
+  }
+  for(const l of labels) pill(ctx,...l);
+  // scale calibration marks
+  if(o.cal&&o.cal.length){
+    ctx.save(); ctx.strokeStyle=COL.sel; ctx.fillStyle=COL.sel; ctx.lineWidth=3;
+    const s=o.cal.map(p=>[X(p.x),Y(p.y)]);
+    if(s.length===2){ ctx.beginPath(); ctx.moveTo(...s[0]); ctx.lineTo(...s[1]); ctx.stroke(); }
+    for(const [x,y] of s){ ctx.beginPath(); ctx.arc(x,y,6,0,7); ctx.fill(); }
+    ctx.restore();
+  }
+  if(o.grid) drawScaleBar(ctx,W,H,k);
+}
+
+/* ---------- profile strip ---------- */
+let PX={padL:14,hk:1};
+function kindAt(s){
+  const Lt=T.length, loc=s0=>{let u=s-s0; if(T.closed) u=((u%Lt)+Lt)%Lt; return u;};
+  let best=null,bz=-1;
+  for(const sp of spans){ if(!sp) continue; const u=loc(sp.s0);
+    if(u>=0&&u<=sp.pr.len){ const z=profZ(sp.pr,u); if(z>bz){bz=z;best=profKind(sp.pr,u);} } }
+  for(const a of T.arcs){ const br=bermRoller(a); if(!br) continue; const u=loc(br.s0);
+    if(u>=0&&u<=br.len){ const z=br.h*(1-Math.cos(2*Math.PI*u/br.len))/2; if(z>bz){bz=z;best=u<br.len/2?'up':'down';} } }
+  return best;
+}
+function drawProfile(ctx,W,H,o){
+  ctx.fillStyle=COL.panel; ctx.fillRect(0,0,W,H);
+  if(!T||T.length<.1) return;
+  const padL=14,padR=14,padT=32,padB=24, n=Math.max(60,Math.min(2400,Math.round(W*1.5)));
+  const zs=[], ks=[];
+  for(let i=0;i<=n;i++){ const s=T.length*i/n; zs.push(zAt(T,spans,s)); ks.push(kindAt(s)); }
+  // Height is exaggerated to be readable, but capped: past about 10x a row of
+  // rollers reads as spikes rather than humps.
+  const zmax=Math.max(.6,...zs), hk=(W-padL-padR)/T.length, vk=Math.min((H-padT-padB)/zmax,hk*10);
+  const X=s=>padL+s*hk, Y=z=>H-padB-z*vk, base=Y(0);
+  if(o.main) PX={padL,hk};
+  // berm zones, numbered like the plan
+  ctx.font=`800 11px ${SANS}`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(const a of T.arcs){ if(!a.berm||a.len<.05) continue;
+    const x0=X(a.s0), x1=X(a.s0+a.len), sel=o.sel&&o.sel.kind==='node'&&o.sel.i===a.i;
+    ctx.save(); ctx.globalAlpha=.45; ctx.fillStyle=COL['berm-face']; ctx.fillRect(x0,padT-14,x1-x0,base-padT+14); ctx.restore();
+    if(sel){ ctx.strokeStyle=COL.sel; ctx.lineWidth=2; ctx.strokeRect(x0+1,padT-13,x1-x0-2,base-padT+12); }
+    if(x1-x0>14){ ctx.beginPath(); ctx.arc((x0+x1)/2,padT-4,8,0,7); ctx.fillStyle=COL['handle-berm']; ctx.fill();
+      ctx.fillStyle='#fff'; ctx.fillText(cornerLabel(a.i),(x0+x1)/2,padT-3.5); }
+  }
+  // fill by kind, run by run
+  let i=0;
+  while(i<n){
+    const kd=ks[i]; let j=i; while(j<n&&ks[j+1]===kd) j++;
+    if(kd){ ctx.beginPath(); ctx.moveTo(X(T.length*i/n),base);
+      for(let m=i;m<=Math.min(n,j+1);m++) ctx.lineTo(X(T.length*m/n),Y(zs[m]));
+      ctx.lineTo(X(T.length*Math.min(n,j+1)/n),base); ctx.closePath(); ctx.fillStyle=kcol(kd); ctx.fill(); }
+    i=j+1;
+  }
+  ctx.beginPath(); zs.forEach((z,m)=>m?ctx.lineTo(X(T.length*m/n),Y(z)):ctx.moveTo(X(0),Y(z)));
+  ctx.strokeStyle=COL.ink; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(padL,base+.5); ctx.lineTo(W-padR,base+.5); ctx.strokeStyle=COL['ink-soft']; ctx.lineWidth=1; ctx.stroke();
+  // selection band
+  if(o.sel&&o.sel.kind==='feature'&&spans[o.sel.i]){
+    const sp=spans[o.sel.i]; let s0=sp.s0; if(T.closed&&s0<0) s0+=T.length;
+    ctx.save(); ctx.strokeStyle=COL.sel; ctx.lineWidth=2.5; ctx.setLineDash([5,4]);
+    ctx.strokeRect(X(s0),padT-14,sp.pr.len*hk,base-padT+14); ctx.restore();
+  }
+  // feature codes over their peaks
+  ctx.font=`800 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='bottom';
+  for(const sp of spans){ if(!sp||sp.pr.len*hk<20) continue;
+    let s0=sp.s0; if(T.closed&&s0<0) s0+=T.length;
+    const zt=profHeight(sp.pr); ctx.fillText(FEATURES[sp.f.type].short,X(s0+sp.pr.len/2),Math.max(padT-1,Y(zt)-4)); }
+  // chainage
+  const st=niceStep(0,hk,64); ctx.font=`700 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='top';
+  for(let s=0;s<=T.length+1e-6;s+=st){ const x=X(s); ctx.fillRect(x,base,1,5); ctx.textAlign=s===0?'left':'center'; ctx.fillText(s===0?'0 m':String(s),x,base+6); }
+  const ex=vk/hk; ctx.textAlign='left'; ctx.textBaseline='top'; ctx.font=`700 11px ${SANS}`;
+  ctx.fillText('Profile · '+f1(T.length)+' m · '+(Math.abs(ex-1)<.05?'true scale':'height ×'+Math.round(ex)),padL,4);
+}
+
+/* ---------- icons ---------- */
+function iconCanvas(type,cv,W=88,H=34){
+  const dpr=window.devicePixelRatio||1; cv.width=W*dpr; cv.height=H*dpr;
+  const c=cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H);
+  if(type==='berm'||type==='bermroller'){
+    const cx=8, cy=H+18, r=40;
+    c.lineWidth=10; c.strokeStyle=COL.trk; c.beginPath(); c.arc(cx,cy,r,-1.45,-.05); c.stroke();
+    c.lineWidth=7; c.strokeStyle=COL.berm; c.beginPath(); c.arc(cx,cy,r+8.5,-1.45,-.05); c.stroke();
+    c.strokeStyle=COL['berm-tick']; c.lineWidth=1.5; c.beginPath();
+    for(let a=-1.4;a<-.05;a+=.16){ c.moveTo(cx+(r+12)*Math.cos(a),cy+(r+12)*Math.sin(a)); c.lineTo(cx+(r+6)*Math.cos(a),cy+(r+6)*Math.sin(a)); }
+    c.stroke();
+    if(type==='bermroller'){ for(const [a0,a1,col] of [[-.95,-.75,COL.up],[-.75,-.55,COL.down]]){
+      c.lineWidth=10; c.strokeStyle=col; c.beginPath(); c.arc(cx,cy,r,a0,a1); c.stroke(); } }
+    return;
+  }
+  const pr=FEATURES[type].build(defaultParams(type)), hm=profHeight(pr);
+  const k=Math.min((W-6)/pr.len,(H-7)/Math.max(hm,.3)), ox=(W-pr.len*k)/2, gy=H-3;
+  for(const sg of pr.segs){
+    c.beginPath(); c.moveTo(ox+sg.u0*k,gy);
+    for(let u=sg.u0;u<=sg.u1+1e-9;u+=pr.len/120) c.lineTo(ox+u*k,gy-profZ(pr,Math.min(u,sg.u1))*k);
+    c.lineTo(ox+sg.u1*k,gy-profZ(pr,sg.u1)*k); c.lineTo(ox+sg.u1*k,gy); c.closePath(); c.fillStyle=kcol(sg.kind); c.fill();
+  }
+  c.beginPath(); c.moveTo(1,gy+.5); c.lineTo(W-1,gy+.5); c.strokeStyle=COL['ink-soft']; c.lineWidth=1.5; c.stroke();
+}
+function buildPalette(){
+  const P=$('palette'); P.innerHTML='';
+  for(const type of PALETTE){
+    const t=document.createElement('div'); t.className='tile'; t.dataset.type=type; t.setAttribute('role','button');
+    t.tabIndex=0; t.title='Drag onto the track, or tap then tap the track';
+    const cv=document.createElement('canvas'); iconCanvas(type,cv);
+    const s=document.createElement('span'); s.textContent=PAL_NAME[type]||FEATURES[type].name;
+    t.append(cv,s); P.appendChild(t); wireTile(t,type);
+  }
+}
+
+/* ---------- placing from the palette ---------- */
+function nearestCorner(q){
+  let best=null;
+  for(const a of T.arcs){ const d=dist(q,a.M); if(!best||d<best.d) best={i:a.i,d}; }
+  return best;
+}
+function previewFor(type,q){
+  if(!T||!T.ok) return null;
+  if(type==='berm'||type==='bermroller'){
+    const c=nearestCorner(q); return c&&c.d<Math.max(T.width*3,90/view.k)?{corner:c.i}:null;
+  }
+  const pl=projectLeg(T,q); if(!pl||pl.d>T.width/2+50/view.k) return null;
+  const f={type,leg:pl.leg,t:0,p:sizedParams(type,'M')}, pr=profileOf(f);
+  const slot=findSlot(T,spans,pl.leg,pl.along,pr.len,-1), leg=T.legs[pl.leg];
+  return {f,c:slot.c,ok:slot.ok,sp:{s0:leg.s0+slot.c-pr.len/2,pr}};
+}
+function placeAt(type,q){
+  const pv=previewFor(type,q);
+  if(!pv){
+    toast(type.startsWith('berm')?'Drop a berm on a corner. No corner there yet? Drag a + to make one.':'Drop it on a straight.');
+    return false;
+  }
+  if(pv.corner!=null){
+    const nd=D.geom.nodes[pv.corner];
+    nd.berm='berm'; if(!(nd.bh>0)) nd.bh=1.2;
+    if(type==='bermroller'&&!(nd.rh>0)) nd.rh=.45;
+    recompute(); commit(); setSel({kind:'node',i:pv.corner});
+    return true;
+  }
+  const L=T.legs[pv.f.leg].len; pv.f.t=L>0?pv.c/L:.5;
+  D.geom.features.push(pv.f); recompute(); commit();
+  setSel({kind:'feature',i:D.geom.features.length-1});
+  if(!pv.ok) toast('Not enough room on that straight. It is marked in red.');
+  return true;
+}
+function arm(type){
+  armed=type; document.querySelectorAll('.tile').forEach(t=>t.classList.toggle('armed',t.dataset.type===type));
+  plan.classList.add('place');
+  showHint('Tap the track to place '+(PAL_NAME[type]||FEATURES[type].name).toLowerCase());
+}
+function disarm(){
+  armed=null; document.querySelectorAll('.tile.armed').forEach(t=>t.classList.remove('armed'));
+  plan.classList.remove('place'); preview=null; if(!mode) hideHint(); draw();
+}
+const ghost=$('ghost');
+function wireTile(t,type){
+  let g=null;
+  t.addEventListener('pointerdown',e=>{
+    if(e.button>0) return;
+    g={id:e.pointerId,x:e.clientX,y:e.clientY,on:false};
+    try{ t.setPointerCapture(e.pointerId); }catch(_){}
+  });
+  t.addEventListener('pointermove',e=>{
+    if(!g||e.pointerId!==g.id) return;
+    if(!g.on&&Math.hypot(e.clientX-g.x,e.clientY-g.y)>6){
+      g.on=true; if(armed) disarm();
+      ghost.innerHTML=''; const cv=document.createElement('canvas'); iconCanvas(type,cv);
+      const s=document.createElement('div'); s.textContent=PAL_NAME[type]||FEATURES[type].name;
+      ghost.append(cv,s); ghost.style.display='block';
+    }
+    if(!g.on) return;
+    e.preventDefault();
+    ghost.style.left=e.clientX+'px'; ghost.style.top=e.clientY+'px';
+    const r=plan.getBoundingClientRect(), inside=e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom;
+    preview=inside?previewFor(type,s2w(e.clientX-r.left,e.clientY-r.top)):null; draw();
+  });
+  const end=(e,cancel)=>{
+    if(!g||e.pointerId!==g.id) return;
+    const was=g; g=null; ghost.style.display='none'; preview=null;
+    if(cancel){ draw(); return; }
+    if(!was.on){ if(armed===type) disarm(); else arm(type); return; }
+    const r=plan.getBoundingClientRect();
+    if(e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom)
+      placeAt(type,s2w(e.clientX-r.left,e.clientY-r.top));
+    draw();
+  };
+  t.addEventListener('pointerup',e=>end(e,false));
+  t.addEventListener('pointercancel',e=>end(e,true));
+  t.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); arm(type); } });
+}
+
+/* ---------- pointer on the plan ---------- */
+function hitTest(x,y,q){
+  for(const h of HND.corners) if(Math.hypot(h.x-x,h.y-y)<=18) return {kind:'node',i:h.i};
+  for(const h of HND.plus) if(Math.hypot(h.x-x,h.y-y)<=14) return {kind:'plus',leg:h.leg};
+  const pad=8/view.k;
+  const order=spans.map((sp,i)=>i); if(sel&&sel.kind==='feature') order.push(sel.i);
+  for(let j=order.length-1;j>=0;j--){
+    const sp=spans[order[j]]; if(!sp) continue;
+    const L=sp.leg, st=addv(L.a,mulv(L.dir,sp.c-sp.pr.len/2)), rel=sub(q,st), u=dot(rel,L.dir), v=cross(L.dir,rel);
+    if(u>=-pad&&u<=sp.pr.len+pad&&Math.abs(v)<=T.width/2*flareAt(sp.pr,clamp(u,0,sp.pr.len))+pad) return {kind:'feature',i:sp.i};
+  }
+  const pj=project(T,q);
+  if(pj&&pj.el.kind==='arc'&&pj.el.len>.05&&Math.abs(pj.side)<=T.width/2+(pj.el.berm?bermWidth(pj.el.bh):0)+pad)
+    return {kind:'node',i:pj.el.i};
+  if(pj&&pj.d<=T.width/2+pad) return {kind:'track',pj};
+  return {kind:'empty'};
+}
+const ptrs=new Map(); let lastTap={t:0,x:0,y:0};
+const localXY=e=>{const r=plan.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];};
+plan.addEventListener('pointerdown',e=>{
+  const [x,y]=localXY(e); ptrs.set(e.pointerId,{x,y});
+  try{ plan.setPointerCapture(e.pointerId); }catch(_){}
+  if(ptrs.size===2){
+    if(act&&act.moved&&act.kind!=='pan') commit();
+    const [a,b]=[...ptrs.values()];
+    act={kind:'pinch',d0:Math.hypot(a.x-b.x,a.y-b.y)||1,k0:view.k,m0:s2w((a.x+b.x)/2,(a.y+b.y)/2)};
+    polyShow=false; return;
+  }
+  if(ptrs.size>2) return;
+  const q=s2w(x,y);
+  if(armed){ if(placeAt(armed,q)) disarm(); return; }
+  if(mode==='cal'){ calPts.push(q); if(calPts.length===2) askCalDistance(); else showHint('Now tap the other end of that distance'); draw(); return; }
+  if(mode==='img'&&D.cfg.bg){ act={kind:'img',x0:x,y0:y,bx:D.cfg.bg.x,by:D.cfg.bg.y,moved:false}; plan.classList.add('grabbing'); return; }
+  const h=hitTest(x,y,q);
+  if(h.kind==='plus'){
+    const i=insertNode(D.geom,T,h.leg,T.legs[h.leg].len/2); recompute(); setSel({kind:'node',i});
+    const n=D.geom.nodes[i]; act={kind:'node',i,x0:x,y0:y,n0:{x:n.x,y:n.y},moved:true}; polyShow=true;
+  } else if(h.kind==='node'){
+    setSel({kind:'node',i:h.i}); const n=D.geom.nodes[h.i];
+    act={kind:'node',i:h.i,x0:x,y0:y,n0:{x:n.x,y:n.y},moved:false};
+  } else if(h.kind==='feature'){
+    setSel({kind:'feature',i:h.i}); const sp=spans[h.i], pl=projectLeg(T,q);
+    act={kind:'feat',i:h.i,x0:x,y0:y,leg:sp.f.leg,off:pl&&pl.leg===sp.f.leg?sp.c-pl.along:0,moved:false};
+  } else {
+    act={kind:'pan',x0:x,y0:y,c0:{cx:view.cx,cy:view.cy},moved:false,hit:h};
+  }
+  plan.classList.add('grabbing');
+});
+plan.addEventListener('pointermove',e=>{
+  const [x,y]=localXY(e);
+  if(ptrs.has(e.pointerId)) ptrs.set(e.pointerId,{x,y});
+  if(!act){
+    if(e.pointerType==='mouse'&&!armed&&!mode){
+      const h=hitTest(x,y,s2w(x,y)); plan.classList.toggle('grab',h.kind==='node'||h.kind==='feature'||h.kind==='plus');
+    }
+    if(armed&&e.pointerType==='mouse'){ preview=previewFor(armed,s2w(x,y)); draw(); }
+    return;
+  }
+  if(act.kind==='pinch'){
+    if(ptrs.size<2) return;
+    const [a,b]=[...ptrs.values()], d=Math.hypot(a.x-b.x,a.y-b.y);
+    view.k=clamp(act.k0*d/act.d0,.5,400);
+    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    view.cx=act.m0.x-(mx-PW/2)/view.k; view.cy=act.m0.y+(my-PH/2)/view.k; draw(); return;
+  }
+  const dx=x-act.x0, dy=y-act.y0;
+  if(!act.moved&&Math.hypot(dx,dy)<4) return;
+  act.moved=true;
+  if(act.kind==='pan'){ view.cx=act.c0.cx-dx/view.k; view.cy=act.c0.cy+dy/view.k; draw(); }
+  else if(act.kind==='img'){ D.cfg.bg.x=act.bx+dx/view.k; D.cfg.bg.y=act.by-dy/view.k; draw(); }
+  else if(act.kind==='node'){
+    polyShow=true; const n=D.geom.nodes[act.i];
+    n.x=rnd(act.n0.x+dx/view.k,3); n.y=rnd(act.n0.y-dy/view.k,3); recompute(); updateInspector();
+  } else if(act.kind==='feat'){
+    const f=D.geom.features[act.i], pl=projectLeg(T,s2w(x,y)); if(!pl) return;
+    const len=spans[act.i].pr.len, want=pl.along+(pl.leg===act.leg?act.off:0);
+    const slot=findSlot(T,spans,pl.leg,want,len,act.i), L=T.legs[pl.leg].len;
+    f.leg=pl.leg; f.t=L>0?clamp(slot.c/L,0,1):.5; recompute(); updateInspector();
+  }
+});
+function endPointer(e){
+  ptrs.delete(e.pointerId);
+  if(!act) return;
+  if(act.kind==='pinch'){ if(ptrs.size<2) act=null; return; }
+  const a=act; act=null; plan.classList.remove('grabbing'); polyShow=false;
+  if(a.kind==='node'||a.kind==='feat'){ if(a.moved) commit(); draw(); return; }
+  if(a.kind==='img'){ autosave(); return; }
+  if(a.kind==='pan'&&!a.moved){
+    const [x,y]=localXY(e), now=performance.now();
+    const dbl=now-lastTap.t<380&&Math.hypot(x-lastTap.x,y-lastTap.y)<24;
+    lastTap={t:now,x,y};
+    if(dbl&&a.hit.kind==='track'&&a.hit.pj.el.kind==='leg'){
+      const L=a.hit.pj.el, i=insertNode(D.geom,T,L.k,a.hit.pj.s-L.s0); recompute(); commit();
+      setSel({kind:'node',i}); lastTap.t=0; toast('Corner added. Drag it to bend the track.',true);
+    } else if(sel) setSel(null);
+  }
+  draw();
+}
+plan.addEventListener('pointerup',endPointer);
+plan.addEventListener('pointercancel',endPointer);
+plan.addEventListener('pointerleave',e=>{ if(armed&&e.pointerType==='mouse'){ preview=null; draw(); } });
+plan.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const [x,y]=localXY(e), q=s2w(x,y), f=Math.exp(-e.deltaY*(e.deltaMode===1?.05:.0016));
+  view.k=clamp(view.k*f,.5,400); view.cx=q.x-(x-PW/2)/view.k; view.cy=q.y+(y-PH/2)/view.k; draw();
+},{passive:false});
+function zoomBy(f){ view.k=clamp(view.k*f,.5,400); draw(); }
+$('zin').onclick=()=>zoomBy(1.3); $('zout').onclick=()=>zoomBy(1/1.3); $('zfit').onclick=fitView;
+
+prof.addEventListener('click',e=>{
+  const r=prof.getBoundingClientRect(), s=(e.clientX-r.left-PX.padL)/PX.hk;
+  if(!T||s<0||s>T.length) return;
+  const Lt=T.length;
+  for(const sp of spans){ if(!sp) continue; let u=s-sp.s0; if(T.closed) u=((u%Lt)+Lt)%Lt;
+    if(u>=0&&u<=sp.pr.len){ setSel({kind:'feature',i:sp.i}); return; } }
+  for(const a of T.arcs) if(s>=a.s0&&s<=a.s0+a.len){ setSel({kind:'node',i:a.i}); return; }
+  setSel(null);
+});
+
+/* ---------- selection and the inspector ---------- */
+function setSel(s){
+  sel=s; buildInspector(); draw();
+}
+function validSel(){
+  if(!sel) return;
+  if(sel.kind==='feature'&&!D.geom.features[sel.i]) sel=null;
+  else if(sel.kind==='node'&&!D.geom.nodes[sel.i]) sel=null;
+}
+function prmRow(host,q,get,set){
+  const d=document.createElement('div'); d.className='prm';
+  const rng=document.createElement('input'); rng.type='range'; rng.min=q.min; rng.max=q.max; rng.step=q.step; rng.setAttribute('aria-label',q.label);
+  const num=document.createElement('input'); num.type='number'; num.min=q.min; num.max=q.max; num.step=q.step;
+  const lab=document.createElement('span'); lab.textContent=q.label;
+  const u=document.createElement('i'); u.textContent=q.unit;
+  const fmt=v=>q.step>=1?String(Math.round(v)):q.step>=.1?f1(v):f2(v);
+  d.sync=()=>{ const v=get(); rng.value=v; if(document.activeElement!==num) num.value=fmt(v); };
+  rng.addEventListener('input',()=>{ set(+rng.value); num.value=fmt(+rng.value); });
+  rng.addEventListener('change',commit);
+  num.addEventListener('input',()=>{ const v=parseFloat(num.value); if(Number.isFinite(v)){ set(clamp(v,q.min,q.max)); rng.value=v; } });
+  num.addEventListener('change',()=>{ d.sync(); commit(); });
+  d.append(lab,num,u,rng); host.appendChild(d); d.sync(); return d;
+}
+let liveRows=[];
+function hdr(P,title,iconType){
+  const h=document.createElement('div'); h.className='sel-hdr';
+  if(iconType){ const cv=document.createElement('canvas'); iconCanvas(iconType,cv,72,28); h.appendChild(cv); }
+  const t=document.createElement('h3'); t.textContent=title; h.appendChild(t);
+  const x=document.createElement('button'); x.className='x'; x.innerHTML='&times;'; x.setAttribute('aria-label','Close'); x.onclick=()=>setSel(null);
+  h.appendChild(x); P.appendChild(h);
+}
+function segBtns(P,opts,cur,onPick,label){
+  const s=document.createElement('div'); s.className='seg'; s.setAttribute('role','group'); if(label) s.setAttribute('aria-label',label);
+  for(const [v,txt] of opts){ const b=document.createElement('button'); b.textContent=txt; b.dataset.v=v;
+    b.setAttribute('aria-pressed',String(v===cur)); b.onclick=()=>onPick(v); s.appendChild(b); }
+  P.appendChild(s); return s;
+}
+function buildInspector(){
+  validSel();
+  document.body.classList.toggle('has-sel',!!sel);
+  const P=$('sel-panel'); P.innerHTML=''; liveRows=[];
+  refreshTrackPanel();
+  if(!sel) return;
+  if(sel.kind==='feature') buildFeaturePanel(P); else buildNodePanel(P);
+}
+function sizeOf(type,p){
+  for(const s of Object.keys(SIZES)){ const q=sizedParams(type,s);
+    if(Object.keys(q).every(k=>Math.abs(q[k]-p[k])<1e-6)) return s; }
+  return null;
+}
+function buildFeaturePanel(P){
+  const f=D.geom.features[sel.i], F=FEATURES[f.type];
+  hdr(P,F.name+' '+(sel.i+1),f.type);
+  const sz=segBtns(P,Object.keys(SIZES).map(s=>[s,s]),sizeOf(f.type,normParams(f.type,f.p)),s=>{
+    f.p=sizedParams(f.type,s); recompute(); commit(); buildInspector(); },'Size');
+  sz.id='f-size';
+  for(const q of F.params) liveRows.push(prmRow(P,q,()=>normParams(f.type,f.p)[q.k],v=>{
+    f.p=Object.assign({},normParams(f.type,f.p),{[q.k]:v}); recompute(); updateInspector(); }));
+  const cv=document.createElement('canvas'); cv.id='diagram'; P.appendChild(cv);
+  const m=document.createElement('div'); m.id='fitmsg'; m.className='fitmsg'; P.appendChild(m);
+  const br=document.createElement('div'); br.className='btnrow';
+  const dup=document.createElement('button'); dup.textContent='Duplicate'; dup.onclick=duplicateSel;
+  const del=document.createElement('button'); del.textContent='Delete'; del.className='danger'; del.onclick=deleteSel;
+  br.append(dup,del); P.appendChild(br);
+  updateInspector();
+}
+function buildNodePanel(P){
+  const i=sel.i, n=D.geom.nodes[i], c=T.corners[i];
+  if(!c||c.end){
+    hdr(P,i===0?'Start':'End');
+    xyRows(P,n);
+    const br=document.createElement('div'); br.className='btnrow';
+    const del=document.createElement('button'); del.textContent='Delete end'; del.className='danger'; del.onclick=deleteSel;
+    br.appendChild(del); P.appendChild(br); updateInspector(); return;
+  }
+  const a=T.arcs.find(z=>z.i===i);
+  hdr(P,(a&&a.berm?'Berm ':'Corner ')+(i+1),a&&a.berm?'berm':null);
+  segBtns(P,[['berm','Berm'],['flat','Flat'],['auto','Auto']],n.berm,v=>{
+    n.berm=v; if(v==='berm'&&!(n.bh>0)) n.bh=1.2; recompute(); commit(); buildInspector(); },'Corner type');
+  if(a&&a.berm){
+    const cur=Object.keys(BERM_SIZES).find(s=>BERM_SIZES[s].r===n.r&&BERM_SIZES[s].bh===n.bh)||null;
+    const s=segBtns(P,Object.keys(BERM_SIZES).map(s=>[s,s]),cur,v=>{
+      Object.assign(n,BERM_SIZES[v]); recompute(); commit(); buildInspector(); },'Berm size');
+    s.style.marginTop='8px';
+  }
+  liveRows.push(prmRow(P,P_('Radius','m',.5,25,.1),()=>n.r,v=>{ n.r=v; recompute(); updateInspector(); }));
+  if(a&&a.berm) liveRows.push(prmRow(P,P_('Berm height','m',.3,3,.05),()=>n.bh,v=>{ n.bh=v; recompute(); updateInspector(); }));
+  const ck=document.createElement('label'); ck.className='check';
+  const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=n.rh>0;
+  cb.onchange=()=>{ n.rh=cb.checked?.45:0; recompute(); commit(); buildInspector(); };
+  ck.append(cb,document.createTextNode('Roller in the middle')); P.appendChild(ck);
+  if(n.rh>0) liveRows.push(prmRow(P,P_('Roller height','m',.15,1,.05),()=>n.rh,v=>{ n.rh=v; recompute(); updateInspector(); }));
+  const m=document.createElement('div'); m.id='fitmsg'; m.className='fitmsg'; P.appendChild(m);
+  xyRows(P,n);
+  const br=document.createElement('div'); br.className='btnrow';
+  const del=document.createElement('button'); del.textContent='Delete corner'; del.className='danger'; del.onclick=deleteSel;
+  br.appendChild(del); P.appendChild(br);
+  updateInspector();
+}
+function P_(label,unit,min,max,step){ return {label,unit,min,max,step}; }
+function xyRows(P,n){
+  const r=document.createElement('div'); r.className='row2'; r.style.marginTop='10px';
+  for(const k of ['x','y']){
+    const l=document.createElement('label'); l.textContent=(k==='x'?'East':'North')+' (m)';
+    const inp=document.createElement('input'); inp.type='number'; inp.step='.1'; inp.dataset.xy=k;
+    inp.oninput=()=>{ const v=parseFloat(inp.value); if(Number.isFinite(v)){ n[k]=v; recompute(); } };
+    inp.onchange=commit; l.appendChild(inp); r.appendChild(l);
+  }
+  P.appendChild(r);
+}
+/* Cheap per-frame refresh: values, the diagram and the fit line. Never
+   rebuilds inputs, so a slider being dragged keeps its pointer. */
+function updateInspector(){
+  liveRows.forEach(r=>r.sync());
+  document.querySelectorAll('#sel-panel input[data-xy]').forEach(inp=>{
+    const n=sel&&sel.kind==='node'&&D.geom.nodes[sel.i]; if(n&&document.activeElement!==inp) inp.value=f2(n[inp.dataset.xy]); });
+  if(!sel) return;
+  const m=$('fitmsg');
+  if(sel.kind==='feature'){
+    const sp=spans[sel.i]; if(!sp) return;
+    const sz=$('f-size'); if(sz){ const cur=sizeOf(sp.f.type,sp.pr.p); sz.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===cur))); }
+    drawDiagram($('diagram'),sp.pr);
+    const legLen=sp.leg.len, iss=issues.find(q=>q.feature===sp.i);
+    if(m){ m.className='fitmsg'+(iss?' bad':'');
+      m.textContent=iss?iss.msg+'.':`${f1(sp.pr.len)} m long on a ${f1(legLen)} m straight. Starts ${f1(Math.max(0,sp.c-sp.pr.len/2))} m after corner ${T.closed||sp.f.leg>0?sp.f.leg+1:'S'}.`; }
+  } else {
+    const a=T.arcs.find(z=>z.i===sel.i);
+    if(m&&a){ m.className='fitmsg'+(a.tight?' bad':'');
+      m.textContent=(a.tight?`Too big for its straights: ${f1(a.r)} m fits. `:'')+`Turns ${Math.round(Math.abs(a.defl)/DEG)}°, ${f1(a.len)} m of track.`; }
+    else if(m) m.textContent='';
+  }
+}
+function drawDiagram(cv,pr){
+  if(!cv) return;
+  const r=cv.getBoundingClientRect(); if(r.width<10) return;
+  const dpr=window.devicePixelRatio||1; cv.width=r.width*dpr; cv.height=r.height*dpr;
+  const c=cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0);
+  const W=r.width,H=r.height, hm=Math.max(profHeight(pr),.2);
+  const k=Math.min((W-56)/pr.len,(H-62)/hm), ox=(W-pr.len*k)/2+6, gy=H-30, X=u=>ox+u*k, Y=z=>gy-z*k;
+  c.fillStyle=COL.paper; c.fillRect(0,0,W,H);
+  for(const sg of pr.segs){
+    c.beginPath(); c.moveTo(X(sg.u0),gy);
+    const n=Math.max(2,Math.ceil((sg.u1-sg.u0)*k/2));
+    for(let i=0;i<=n;i++){ const u=sg.u0+(sg.u1-sg.u0)*i/n; c.lineTo(X(u),Y(profZ(pr,u))); }
+    c.lineTo(X(sg.u1),gy); c.closePath(); c.fillStyle=kcol(sg.kind); c.fill();
+  }
+  c.beginPath(); for(let i=0;i<=200;i++){ const u=pr.len*i/200; i?c.lineTo(X(u),Y(profZ(pr,u))):c.moveTo(X(u),Y(profZ(pr,u))); }
+  c.strokeStyle=COL.ink; c.lineWidth=2; c.stroke();
+  c.beginPath(); c.moveTo(6,gy+.5); c.lineTo(W-6,gy+.5); c.strokeStyle=COL['ink-soft']; c.lineWidth=1; c.stroke();
+  const ink=COL.ink; c.strokeStyle=ink; c.fillStyle=ink; c.lineWidth=1.3; c.font=`700 12px ${SANS}`; c.textBaseline='middle';
+  const arrow=(x0,y0,x1,y1)=>{ c.beginPath(); c.moveTo(x0,y0); c.lineTo(x1,y1); c.stroke();
+    const a=Math.atan2(y1-y0,x1-x0); for(const [x,y,s] of [[x0,y0,1],[x1,y1,-1]]){ c.beginPath(); c.moveTo(x,y);
+      c.lineTo(x+s*6*Math.cos(a)-3*Math.sin(a)*s,y+s*6*Math.sin(a)+3*Math.cos(a)*s); c.lineTo(x+s*6*Math.cos(a)+3*Math.sin(a)*s,y+s*6*Math.sin(a)-3*Math.cos(a)*s); c.closePath(); c.fill(); } };
+  const txt=(t,x,y)=>{ const w=c.measureText(t).width+8; c.fillStyle=COL.paper; c.fillRect(x-w/2,y-8,w,16); c.fillStyle=ink; c.textAlign='center'; c.fillText(t,x,y); };
+  arrow(X(0),gy+16,X(pr.len),gy+16); txt(f1(pr.len)+' m',(X(0)+X(pr.len))/2,gy+16);
+  let um=0,zm=0; for(let i=0;i<=200;i++){ const u=pr.len*i/200, z=profZ(pr,u); if(z>zm){zm=z;um=u;} }
+  const hx=X(0)-14; c.setLineDash([2,3]); c.beginPath(); c.moveTo(X(um),Y(zm)); c.lineTo(hx-4,Y(zm)); c.stroke(); c.setLineDash([]);
+  arrow(hx,gy,hx,Y(zm)); c.save(); c.translate(hx-1,(gy+Y(zm))/2); c.rotate(-Math.PI/2); txt(f2(zm)+' m',0,0); c.restore();
+  const gs=pr.segs.find(s=>s.kind==='gap'&&pr.type!=='whaletail'&&pr.type!=='starthill');
+  if(gs&&pr.p.gap>0){ const y=Y(zm)-14; arrow(X(gs.u0),y,X(gs.u1),y); txt('gap '+f1(gs.u1-gs.u0),(X(gs.u0)+X(gs.u1))/2,y); }
+}
+function refreshTrackPanel(){
+  const g=D.geom;
+  $('t-loop').setAttribute('aria-pressed',String(!!g.closed)); $('t-line').setAttribute('aria-pressed',String(!g.closed));
+  if(document.activeElement!==$('t-width')) $('t-width').value=f1(g.width); $('t-width-r').value=g.width;
+  if(document.activeElement!==$('d-name')) $('d-name').value=D._meta.name||'';
+  if(document.activeElement!==$('d-designer')) $('d-designer').value=D._meta.designer||'';
+  updateLive();
+}
+let lastStatsHtml='';
+function updateLive(){
+  if(!stats) return;
+  const st=(l,v,cls='')=>`<div class="stat ${cls}"><span>${l}</span><b>${v}</b></div>`;
+  const h=st('Length',f1(stats.length)+' m')+st('Footprint',Math.round(stats.w)+' × '+Math.round(stats.h)+' m')+
+    st('Dirt, rough',(stats.volume<10?f1(stats.volume):Math.round(stats.volume))+' m³')+
+    st('Features · berms',stats.features+' · '+stats.berms);
+  const iss=issues.map((q,j)=>`<button data-iss="${j}">${q.msg}</button>`).join('');
+  if(h+iss!==lastStatsHtml){ lastStatsHtml=h+iss; $('stats').innerHTML=h; $('issues').innerHTML=iss; }
+}
+$('issues').addEventListener('click',e=>{
+  const b=e.target.closest('[data-iss]'); if(!b) return; const q=issues[+b.dataset.iss];
+  if(q.feature!=null) setSel({kind:'feature',i:q.feature}); else if(q.node!=null) setSel({kind:'node',i:q.node});
+});
+
+/* ---------- edits ---------- */
+function deleteSel(){
+  if(!sel) return;
+  if(sel.kind==='feature'){ D.geom.features.splice(sel.i,1); }
+  else if(!removeNode(D.geom,T,sel.i)){ toast(T.closed?'A loop needs at least three corners.':'A line needs two ends.'); return; }
+  sel=null; recompute(); commit(); buildInspector();
+}
+function duplicateSel(){
+  if(!sel||sel.kind!=='feature') return;
+  const sp=spans[sel.i], f=clone(sp.f), slot=findSlot(T,spans,f.leg,sp.c+sp.pr.len,sp.pr.len,-1);
+  if(!slot.ok){ toast('No room for another on this straight.'); return; }
+  f.t=slot.c/sp.leg.len; D.geom.features.push(f); recompute(); commit();
+  setSel({kind:'feature',i:D.geom.features.length-1});
+}
+$('t-loop').onclick=()=>{ if(D.geom.nodes.length<3){ toast('A loop needs at least three corners. Add one with +.'); return; }
+  D.geom.closed=true; recompute(); commit(); refreshTrackPanel(); };
+$('t-line').onclick=()=>{ D.geom.closed=false; recompute(); commit(); refreshTrackPanel(); };
+const setWidth=v=>{ if(Number.isFinite(v)){ D.geom.width=clamp(v,.6,6); recompute(); } };
+$('t-width').oninput=e=>{ setWidth(parseFloat(e.target.value)); $('t-width-r').value=D.geom.width; };
+$('t-width').onchange=()=>{ refreshTrackPanel(); commit(); };
+$('t-width-r').oninput=e=>{ setWidth(+e.target.value); $('t-width').value=f1(D.geom.width); };
+$('t-width-r').onchange=commit;
+$('d-name').oninput=e=>{ D._meta.name=e.target.value; autosave(); };
+$('d-designer').oninput=e=>{ D._meta.designer=e.target.value; autosave(); };
+$('b-dims').onclick=()=>{ D.cfg.dims=!D.cfg.dims; $('b-dims').setAttribute('aria-pressed',String(D.cfg.dims)); autosave(); draw(); };
+
+/* ---------- undo ---------- */
+let undoS=[], redoS=[], lastSnap=null;
+const snap=()=>JSON.stringify(D.geom);
+function commit(){
+  const s=snap(); if(s===lastSnap) return;
+  if(lastSnap!=null){ undoS.push(lastSnap); if(undoS.length>200) undoS.shift(); }
+  redoS=[]; lastSnap=s; syncUndo(); autosave();
+}
+function restore(s){ D.geom=JSON.parse(s); lastSnap=s; validSel(); recompute(); buildInspector(); syncUndo(); autosave(); }
+function undo(){ if(!undoS.length) return; redoS.push(lastSnap); restore(undoS.pop()); }
+function redo(){ if(!redoS.length) return; undoS.push(lastSnap); restore(redoS.pop()); }
+function syncUndo(){ $('b-undo').disabled=!undoS.length; $('b-redo').disabled=!redoS.length; }
+$('b-undo').onclick=undo; $('b-redo').onclick=redo;
+
+/* ---------- keyboard ---------- */
+document.addEventListener('keydown',e=>{
+  const typing=/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement&&document.activeElement.tagName);
+  const mod=e.ctrlKey||e.metaKey;
+  if(mod&&e.key.toLowerCase()==='z'&&!typing){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
+  if(mod&&e.key.toLowerCase()==='y'&&!typing){ e.preventDefault(); redo(); return; }
+  if(mod&&e.key.toLowerCase()==='s'){ e.preventDefault(); saveJSON(); return; }
+  if(typing) return;
+  if(e.key==='Escape'){ if(armed) disarm(); else if(mode) endMode(); else if(document.querySelector('dialog[open]')) return; else setSel(null); }
+  else if((e.key==='Delete'||e.key==='Backspace')&&sel){ e.preventDefault(); deleteSel(); }
+  else if(sel&&/^Arrow/.test(e.key)){
+    e.preventDefault(); const st=e.shiftKey?1:.1;
+    if(sel.kind==='feature'){ const sp=spans[sel.i], d=(e.key==='ArrowRight'||e.key==='ArrowUp')?st:-st;
+      sp.f.t=clamp((sp.c+d)/sp.leg.len,0,1); }
+    else { const n=D.geom.nodes[sel.i]; if(e.key==='ArrowLeft') n.x-=st; if(e.key==='ArrowRight') n.x+=st;
+      if(e.key==='ArrowUp') n.y+=st; if(e.key==='ArrowDown') n.y-=st; }
+    recompute(); updateInspector(); clearTimeout(keyCommit); keyCommit=setTimeout(commit,400);
+  }
+});
+let keyCommit=0;
+
+/* ---------- hints and messages ---------- */
+function showHint(text,extra){
+  $('hint-text').textContent=text; const x=$('hint-extra'); x.innerHTML=''; if(extra) x.appendChild(extra);
+  $('hint').classList.add('on');
+}
+function hideHint(){ $('hint').classList.remove('on'); }
+$('hint-x').onclick=()=>{ if(armed) disarm(); if(mode) endMode(); hideHint(); };
+let toastT=0;
+function toast(t,ok){ const m=$('msg'); m.textContent=t; m.className='on'+(ok?' ok':''); clearTimeout(toastT); toastT=setTimeout(()=>m.className='',3200); }
+
+/* ---------- design file ----------
+   Same file shape as the suspension designer: _meta, then the design. */
+function designOut(withImage=true){
+  const cfg=clone(D.cfg); if(!withImage) cfg.bg=null;
+  return {_meta:{name:D._meta.name||'',designer:D._meta.designer||'',date:new Date().toISOString(),version:'1.0',
+    tool:'pump-track-designer'},geom:D.geom,cfg};
+}
+function loadDesign(data,{fit=true}={}){
+  if(!data||!data.geom||!Array.isArray(data.geom.nodes)) throw new Error('missing geom');
+  const g=normGeom(data.geom); if(g.nodes.length<2) throw new Error('needs at least two nodes');
+  const c=data.cfg||{};
+  D={_meta:{name:(data._meta&&data._meta.name)||'',designer:(data._meta&&data._meta.designer)||''},geom:g,
+    cfg:Object.assign(clone(DEF_CFG),c,{geo:Object.assign(clone(DEF_CFG.geo),c.geo||{})})};
+  if(D.cfg.bg&&D.cfg.bg.src) bgImg.src=D.cfg.bg.src; else D.cfg.bg=null;
+  sel=null; recompute(); if(fit) fitView(); buildInspector();
+  $('b-dims').setAttribute('aria-pressed',String(!!D.cfg.dims));
+}
+function slug(ext){
+  const s=(D._meta.name||'pump-track').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'')||'pump-track';
+  return s+ext;
+}
+function download(name,blob){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1500);   // Safari starts the save asynchronously
+}
+function saveJSON(){ download(slug('.json'),new Blob([JSON.stringify(designOut(true),null,2)],{type:'application/json'})); toast('Design saved',true); }
+$('b-save').onclick=saveJSON;
+let saveT=0;
+function autosave(){
+  clearTimeout(saveT);
+  saveT=setTimeout(()=>{
+    try{ localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(designOut(true))); }
+    catch(e){ try{ localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(designOut(false))); }catch(_){} }
+  },350);
+}
+function openFile(){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='.json,.gpx,.csv,.txt,.xml,application/json,text/csv';
+  inp.onchange=()=>{
+    const file=inp.files[0]; if(!file) return;
+    const r=new FileReader();
+    r.onload=()=>{
+      const text=String(r.result), name=file.name.toLowerCase(), head=text.trimStart().slice(0,1);
+      try{
+        if(name.endsWith('.json')||head==='{'){ loadDesign(JSON.parse(text)); }
+        else if(name.endsWith('.gpx')||name.endsWith('.xml')||head==='<'){
+          const g=parseGPX(text), out=gpxToDesign(g,D.geom.width);
+          D.geom=out.geom; D.cfg.geo=Object.assign(clone(DEF_CFG.geo),out.geo); sel=null;
+          if(!g.design&&g.pts.length) D._meta.name=D._meta.name||file.name.replace(/\.[^.]+$/,'');
+          recompute(); fitView(); buildInspector();
+          if(!g.design) toast('Traced '+D.geom.nodes.length+' corners from the GPX track.',true);
+        } else { D.geom=parseCSV(text); sel=null; recompute(); fitView(); buildInspector(); }
+        commit(); if(D.geom) toast('Opened '+file.name,true);
+      }catch(err){ toast('Could not open '+file.name+': '+err.message); }
+    };
+    r.readAsText(file);
+  };
+  inp.click();
+}
+$('b-open').onclick=openFile;
+
+/* ---------- dialogs ---------- */
+document.querySelectorAll('dialog [data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
+document.querySelectorAll('dialog').forEach(d=>d.addEventListener('click',e=>{ if(e.target===d) d.close(); }));
+function thumb(cv,geom){
+  const W=cv.clientWidth||150, H=cv.clientHeight||96, dpr=window.devicePixelRatio||1;
+  cv.width=W*dpr; cv.height=H*dpr; const c=cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0);
+  const keep={T,spans,issues}; T=buildTrack(geom); spans=spansOf(T,geom); issues=[];
+  const g0=D.geom; D.geom=geom;
+  drawPlan(c,W,H,fitBox(extentOf(T),W,H,1.08),{grid:false,bg:false,handles:false,dims:false});
+  D.geom=g0; ({T,spans,issues}=keep);
+}
+$('b-tpl').onclick=()=>{
+  const L=$('tpl-list'); L.innerHTML='';
+  const dlg=$('dlg-tpl'); dlg.showModal();
+  TEMPLATES.forEach((t,i)=>{
+    const b=document.createElement('button'); b.className='tpl';
+    const cv=document.createElement('canvas'); const nm=document.createElement('b'); nm.textContent=t.name;
+    const sm=document.createElement('small'); sm.textContent=t.note;
+    b.append(cv,nm,sm); L.appendChild(b); thumb(cv,normGeom(t.geom));
+    b.onclick=()=>{ D.geom=normGeom(clone(t.geom)); sel=null; recompute(); fitView(); buildInspector(); commit(); dlg.close();
+      toast(t.name+' loaded. Undo to go back.',true); };
+  });
+};
+function fillGeo(){ const g=D.cfg.geo;
+  $('g-lat').value=g.lat==null?'':g.lat; $('g-lon').value=g.lon==null?'':g.lon; $('g-rot').value=g.rot||0; $('g-ele').value=g.ele||0; }
+$('b-export').onclick=()=>{ fillGeo(); $('dlg-export').showModal(); };
+for(const [id,k] of [['g-lat','lat'],['g-lon','lon'],['g-rot','rot'],['g-ele','ele']])
+  $(id).oninput=e=>{ const v=parseFloat(e.target.value); D.cfg.geo[k]=Number.isFinite(v)?v:(k==='lat'||k==='lon'?null:0); autosave(); };
+$('g-here').onclick=()=>{
+  if(!navigator.geolocation){ toast('Location is not available in this browser.'); return; }
+  navigator.geolocation.getCurrentPosition(p=>{
+    D.cfg.geo.lat=rnd(p.coords.latitude,7); D.cfg.geo.lon=rnd(p.coords.longitude,7);
+    if(p.coords.altitude!=null) D.cfg.geo.ele=rnd(p.coords.altitude,1);
+    fillGeo(); autosave(); toast('Site set to where you are standing.',true);
+  },err=>toast('Could not get your location: '+err.message),{enableHighAccuracy:true,timeout:15000});
+};
+$('x-gpx').onclick=()=>{
+  const g=D.cfg.geo;
+  if(g.lat==null||g.lon==null||!Number.isFinite(g.lat)||!Number.isFinite(g.lon)){ toast('Set the site latitude and longitude first.'); $('g-lat').focus(); return; }
+  download(slug('.gpx'),new Blob([toGPX(designOut(false),T,spans)],{type:'application/gpx+xml'}));
+};
+$('x-csv').onclick=()=>download(slug('-dimensions.csv'),new Blob([toCSV(D.geom,T,spans)],{type:'text/csv'}));
+$('x-prof').onclick=()=>{ const g=D.cfg.geo;
+  download(slug('-profile.csv'),new Blob([profileCSV(T,spans,g.lat!=null&&g.lon!=null?g:null)],{type:'text/csv'})); };
+$('x-png').onclick=()=>{ const cv=buildSheet(); cv.toBlob(b=>download(slug('-build-sheet.png'),b),'image/png'); };
+
+/* A4 landscape at 300 dpi, drawn in the light theme so it prints. */
+function buildSheet(){
+  const W=3508,H=2480,M=110, cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const c=cv.getContext('2d'), root=document.documentElement, was=root.getAttribute('data-theme');
+  root.setAttribute('data-theme','light'); readColours();
+  try{
+    c.fillStyle='#fff'; c.fillRect(0,0,W,H);
+    c.fillStyle=COL.ink; c.textBaseline='alphabetic'; c.textAlign='left';
+    c.font=`800 72px ${SANS}`; c.fillText(D._meta.name||'Pump track',M,M+60);
+    c.font=`600 34px ${SANS}`; c.fillStyle=COL['ink-soft'];
+    c.fillText([D._meta.designer,new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),'Creature Cycles Pump Track Designer'].filter(Boolean).join('  ·  '),M,M+112);
+    const facts=[['Length',f1(stats.length)+' m'],['Track width',f1(T.width)+' m'],['Footprint',Math.round(stats.w)+' × '+Math.round(stats.h)+' m'],
+      ['Dirt, rough',Math.round(stats.volume)+' m³']];
+    let fx=W-M; c.textAlign='right';
+    for(let i=facts.length-1;i>=0;i--){ const [l,v]=facts[i];
+      c.font=`800 52px ${MONO}`; c.fillStyle=COL.ink; c.fillText(v,fx,M+60);
+      const w1=c.measureText(v).width; c.font=`600 28px ${SANS}`; c.fillStyle=COL['ink-soft']; c.fillText(l,fx,M+108);
+      fx-=Math.max(w1,c.measureText(l).width)+90; }
+    const top=M+170, profH=480, planH=H-top-profH-M-120;
+    // Drawn at print scale so labels, strokes and tags read on paper the way
+    // they do on screen.
+    const S=2.6, pw=(W-2*M)/S, ph=planH/S;
+    c.save(); c.translate(M,top); c.scale(S,S);
+    c.beginPath(); c.rect(0,0,pw,ph); c.clip();
+    drawPlan(c,pw,ph,fitBox(extentOf(T),pw,ph,1.12),{grid:true,bg:true,handles:'tags',dims:true});
+    c.restore();
+    c.strokeStyle=COL.rule; c.lineWidth=3; c.strokeRect(M,top,W-2*M,planH);
+    // north arrow
+    { const x=W-M-80, y=top+100, r=(D.cfg.geo.rot||0)*DEG; c.save(); c.translate(x,y); c.rotate(-r);
+      c.fillStyle=COL.ink; c.beginPath(); c.moveTo(0,-46); c.lineTo(20,20); c.lineTo(0,8); c.lineTo(-20,20); c.closePath(); c.fill();
+      c.font=`800 32px ${SANS}`; c.textAlign='center'; c.fillText('N',0,-58); c.restore(); }
+    c.save(); c.translate(M,top+planH+40); c.scale(S,S); drawProfile(c,(W-2*M)/S,profH/S,{}); c.restore();
+    c.strokeRect(M,top+planH+40,W-2*M,profH);
+    const leg=[['up','Takeoff / up'],['down','Landing / down'],['flat','Deck'],['gap','Air'],['wood','Timber'],['berm','Berm']];
+    let lx=M; const ly=H-M+10; c.textAlign='left'; c.textBaseline='middle'; c.font=`700 30px ${SANS}`;
+    for(const [k,l] of leg){ c.fillStyle=k==='berm'?COL.berm:kcol(k); c.fillRect(lx,ly-18,44,36); c.strokeStyle=COL.ink; c.lineWidth=2; c.strokeRect(lx,ly-18,44,36);
+      c.fillStyle=COL.ink; c.fillText(l,lx+58,ly); lx+=58+c.measureText(l).width+60; }
+    c.textAlign='right'; c.fillStyle=COL['ink-soft']; c.font=`600 26px ${SANS}`;
+    c.fillText('Heights and dirt are estimates. Check the ground, drainage and access before building.',W-M,ly);
+  } finally { root.setAttribute('data-theme',was); readColours(); drawNow(); }
+  return cv;
+}
+
+/* ---------- site photo ---------- */
+function syncImageDlg(){
+  const b=D.cfg.bg; $('i-controls').style.display=b?'':'none'; $('i-remove').disabled=!b;
+  if(!b) return;
+  $('i-w').value=f1(b.w); $('i-rot').value=Math.round(b.rot); $('i-rot-r').value=b.rot;
+  $('i-op').value=Math.round(b.opacity*100); $('i-op-r').value=Math.round(b.opacity*100);
+  $('i-move').setAttribute('aria-pressed',String(mode==='img'));
+}
+$('b-image').onclick=()=>{ syncImageDlg(); $('dlg-image').showModal(); };
+$('i-load').onclick=()=>{
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+  inp.onchange=()=>{
+    const file=inp.files[0]; if(!file) return;
+    const r=new FileReader();
+    r.onload=()=>{
+      const im=new Image();
+      im.onload=()=>{
+        // Kept inside the design file, so it is shrunk to a sensible size first.
+        const s=Math.min(1,2400/Math.max(im.width,im.height)), cv=document.createElement('canvas');
+        cv.width=Math.round(im.width*s); cv.height=Math.round(im.height*s);
+        cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);
+        const e=extentOf(T);
+        D.cfg.bg={src:cv.toDataURL('image/jpeg',.85),x:(e.x0+e.x1)/2,y:(e.y0+e.y1)/2,
+          w:Math.max(40,(e.x1-e.x0)*1.5),rot:0,opacity:.6};
+        bgImg.src=D.cfg.bg.src; syncImageDlg(); autosave(); draw();
+        toast('Photo loaded. Use Set scale to size it from a known distance.',true);
+      };
+      im.onerror=()=>toast('That image could not be read.');
+      im.src=r.result;
+    };
+    r.readAsDataURL(file);
+  };
+  inp.click();
+};
+$('i-remove').onclick=()=>{ D.cfg.bg=null; if(mode==='img') endMode(); syncImageDlg(); autosave(); draw(); };
+$('i-w').oninput=e=>{ const v=parseFloat(e.target.value); if(D.cfg.bg&&v>0){ D.cfg.bg.w=v; draw(); autosave(); } };
+const setRot=v=>{ if(D.cfg.bg&&Number.isFinite(v)){ D.cfg.bg.rot=v; $('i-rot').value=Math.round(v); $('i-rot-r').value=v; draw(); autosave(); } };
+$('i-rot').oninput=e=>setRot(parseFloat(e.target.value)); $('i-rot-r').oninput=e=>setRot(+e.target.value);
+const setOp=v=>{ if(D.cfg.bg&&Number.isFinite(v)){ D.cfg.bg.opacity=clamp(v,5,100)/100; $('i-op').value=Math.round(v); $('i-op-r').value=v; draw(); autosave(); } };
+$('i-op').oninput=e=>setOp(parseFloat(e.target.value)); $('i-op-r').oninput=e=>setOp(+e.target.value);
+$('i-cal').onclick=()=>{ $('dlg-image').close(); if(armed) disarm(); mode='cal'; calPts=[]; plan.classList.add('cross');
+  showHint('Tap one end of a distance you know on the photo'); };
+$('i-move').onclick=()=>{ $('dlg-image').close(); if(armed) disarm(); mode='img'; plan.classList.add('grab');
+  const done=document.createElement('button'); done.textContent='Done'; done.className='primary'; done.onclick=endMode;
+  showHint('Drag the photo to line it up',done); };
+function askCalDistance(){
+  const wrap=document.createElement('span'); wrap.style.display='flex'; wrap.style.gap='6px';
+  const inp=document.createElement('input'); inp.type='number'; inp.step='.1'; inp.min='.1'; inp.placeholder='m';
+  const ok=document.createElement('button'); ok.textContent='Set'; ok.className='primary';
+  ok.onclick=()=>{
+    const real=parseFloat(inp.value), [a,b]=calPts, d=dist(a,b);
+    if(!(real>0)||d<1e-6){ toast('Enter the real distance in metres.'); return; }
+    const f=real/d, bg=D.cfg.bg;
+    // scale the photo about the first point, so that point stays put
+    bg.w*=f; bg.x=a.x+(bg.x-a.x)*f; bg.y=a.y+(bg.y-a.y)*f;
+    endMode(); autosave(); toast('Photo scaled. Width is now '+f1(bg.w)+' m.',true);
+  };
+  inp.onkeydown=e=>{ if(e.key==='Enter') ok.click(); };
+  wrap.append(inp,ok); showHint('Real distance between the points',wrap); setTimeout(()=>inp.focus(),30);
+}
+function endMode(){ mode=null; calPts=[]; plan.classList.remove('cross','grab'); hideHint(); draw(); }
+
+/* ---------- theme ---------- */
+function setUiTheme(name){
+  document.documentElement.setAttribute('data-theme',name);
+  $('theme-light').setAttribute('aria-pressed',String(name==='light'));
+  $('theme-dark').setAttribute('aria-pressed',String(name==='dark'));
+  readColours(); buildPalette(); buildInspector(); drawNow();
+  try{ localStorage.setItem('creature-pump-track-theme',name); }catch(_){}
+}
+$('theme-light').onclick=()=>setUiTheme('light');
+$('theme-dark').onclick=()=>setUiTheme('dark');
+
+/* ---------- start ---------- */
+try{
+  let th='dark'; try{ th=localStorage.getItem('creature-pump-track-theme')||'dark'; }catch(_){}
+  document.documentElement.setAttribute('data-theme',th);
+  $('theme-light').setAttribute('aria-pressed',String(th==='light')); $('theme-dark').setAttribute('aria-pressed',String(th==='dark'));
+  readColours();
+  let restored=false;
+  try{ const s=localStorage.getItem(AUTOSAVE_KEY); if(s){ loadDesign(JSON.parse(s),{fit:false}); restored=true; } }catch(_){ restored=false; }
+  if(!restored){ D._meta.name=''; D.geom=normGeom(clone(TEMPLATES[0].geom)); recompute(); }
+  lastSnap=snap(); syncUndo();
+  buildPalette(); buildInspector();
+  $('b-dims').setAttribute('aria-pressed',String(!!D.cfg.dims));
+  [PW,PH]=sizeCanvas(plan,pctx); [QW,QH]=sizeCanvas(prof,qctx);
+  if(PW>50){ fitView(); fitted=true; }
+  drawNow();
+}catch(err){ toast('Start-up failed: '+err.message); console.error(err); }
+</script>
+</body>
+</html>
