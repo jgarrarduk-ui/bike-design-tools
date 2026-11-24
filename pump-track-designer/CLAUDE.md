@@ -89,6 +89,11 @@ saved in `cfg.layers` and respected by the build sheet.
   and below handles and labels (so editing is never blocked).
 - Hiding **Design** also stops it being edited: no hit tests, no drops.
 - **Photo** is the old site-photo feature; its toolbar button moved here.
+- All file pickers go through `fileInput()`. On iPhone/iPad it drops the
+  `accept` filter (except images): iOS greys out `.gpx` and `.csv` in Files
+  because they have no system file type. Files are checked after reading.
+  The input is attached to the page until used; WebKit can drop a detached
+  one before `change` fires.
 
 Autosave writes the same JSON to `localStorage` (key
 `creature-pump-track-v1`), without the photo if quota is short.

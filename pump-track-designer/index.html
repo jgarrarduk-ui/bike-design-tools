@@ -1953,8 +1953,24 @@ function autosave(){
     catch(e){ try{ localStorage.setItem(AUTOSAVE_KEY,JSON.stringify(designOut(false))); }catch(_){} }
   },350);
 }
+/* A file picker that works on iPhone and iPad. iOS turns `accept` into its
+   own file types, and .gpx and .csv have none, so those files show greyed out
+   in Files and can't be picked. On iOS only images keep a filter; everything
+   else is checked after it is read. The input also sits in the page until it
+   is used, because WebKit can drop a detached input before it reports the
+   chosen file. */
+const IS_IOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function fileInput(accept){
+  const inp=document.createElement('input'); inp.type='file';
+  if(!IS_IOS||accept==='image/*') inp.accept=accept;
+  inp.style.cssText='position:fixed;left:-9999px;top:0;opacity:0';
+  document.body.appendChild(inp);
+  const done=()=>setTimeout(()=>inp.remove(),0);
+  inp.addEventListener('change',done); inp.addEventListener('cancel',done);
+  return inp;
+}
 function openFile(){
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='.json,.gpx,.csv,.txt,.xml,application/json,text/csv';
+  const inp=fileInput('.json,.gpx,.csv,.txt,.xml,application/json,text/csv');
   inp.onchange=()=>{
     const file=inp.files[0]; if(!file) return;
     const r=new FileReader();
@@ -2078,7 +2094,7 @@ function syncImageDlg(){
 }
 function openPhotoDlg(){ syncImageDlg(); $('dlg-image').showModal(); }
 function loadPhoto(){
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+  const inp=fileInput('image/*');
   inp.onchange=()=>{
     const file=inp.files[0]; if(!file) return;
     const r=new FileReader();
@@ -2157,7 +2173,7 @@ $('layers-head').onclick=()=>{ const o=$('layers').classList.toggle('open'); $('
 $('ly-photo-act').onclick=()=>D.cfg.bg?openPhotoDlg():loadPhoto();
 $('ly-gpx-act').onclick=()=>{
   if(D.cfg.gpx){ D.cfg.gpx=null; refCache.key=''; syncLayers(); autosave(); draw(); return; }
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='.gpx,.xml,application/gpx+xml';
+  const inp=fileInput('.gpx,.xml,application/gpx+xml');
   inp.onchange=()=>{
     const file=inp.files[0]; if(!file) return;
     const r=new FileReader();
@@ -2179,6 +2195,8 @@ $('ly-gpx-act').onclick=()=>{
         D.cfg.layers.gpx=true; refCache.key='';
         const ref=refLocal(), c=ref[Math.floor(ref.length/2)], e=extentOf(T);
         const far=Math.hypot(c.x-(e.x0+e.x1)/2,c.y-(e.y0+e.y1)/2);
+        // on a phone, fold the panel away so the trace just loaded is in view
+        if(window.matchMedia('(max-width:900px)').matches){ $('layers').classList.remove('open'); $('layers-head').setAttribute('aria-expanded','false'); }
         fitView(); syncLayers(); autosave();
         toast(anchored?'GPX trace placed over the track at true scale. The site location now comes from it.'
           :far>2000?`GPX trace added. It is ${f1(far/1000)} km from the site location.`
