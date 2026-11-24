@@ -5,7 +5,7 @@ const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==
 const m=new Function(eng+'\nreturn {DEG,FEATURES,SIZES,TEMPLATES,buildTrack,pointAt,polyline,project,projectLeg,'+
   'spansOf,findSlot,issuesOf,zAt,profileOf,profZ,profHeight,defaultParams,sizedParams,normParams,statsOf,'+
   'insertNode,removeNode,toLatLon,fromLatLon,toGPX,parseGPX,gpxToDesign,traceTrack,toCSV,parseCSV,profileCSV,'+
-  'normGeom,dist,bermRoller};')();
+  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen};')();
 
 let fails=0;
 const ok=(name,cond,info='')=>{console.log((cond?'  pass  ':'  FAIL  ')+name+(info?'   '+info:''));if(!cond)fails++};
@@ -148,6 +148,18 @@ ok('foreign GPX waypoints come back as features', tr.geom.features.length===dj.f
 const loopG=m.normGeom(m.TEMPLATES[0].geom), Tl=m.buildTrack(loopG);
 const fl=m.gpxToDesign(m.parseGPX(m.toGPX({_meta:{},geom:loopG,cfg:{geo}},Tl,m.spansOf(Tl,loopG)).replace(/<extensions>[\s\S]*<\/extensions>/,'')),2);
 ok('a traced loop is detected as closed', fl.geom.closed===true, Math.abs(m.buildTrack(fl.geom).length-Tl.length).toFixed(2)+' m length error');
+
+/* ---- GPX trace layer ---- */
+const tracePts=m.parseGPX(foreign).pts;
+for(const rot of [0,35]){
+  const ag=m.anchorGeo(tracePts,{x:12,y:-7},rot), c=m.fromLatLon(ag,m.llCentroid(tracePts));
+  ok(`anchorGeo puts the trace middle on the track (rot ${rot})`, near(c.x,12,1e-6)&&near(c.y,-7,1e-6));
+}
+const refXY=m.refPolyline(geo,tracePts), refLen=m.polyLen(refXY);
+ok('trace layer keeps true scale', Math.abs(refLen-T.length)<0.5, refLen.toFixed(2)+' vs '+T.length.toFixed(2)+' m');
+ok('trace layer lands where its design was', m.dist(refXY[0],m.pointAt(T,0))<0.01);
+const moved=m.refPolyline(Object.assign({},geo,{lat:geo.lat+0.0001}),tracePts);
+ok('moving the site location moves the trace, not its shape', near(m.polyLen(moved),refLen,1e-3)&&near(m.dist(refXY[0],moved[0]),11.12,0.02));   // 0.0001 deg of latitude
 
 /* ---- dimensions CSV ---- */
 for(const t of m.TEMPLATES){

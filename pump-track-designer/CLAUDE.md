@@ -72,6 +72,24 @@ All read by the one **Open** button (by extension, then by first character).
   theme, with plan, dimensions, profile and legend. Drawn at 2.6× so screen
   sized text reads on paper.
 
+## Layers
+
+A small Illustrator-style panel on the plan, top of the list draws on top:
+**GPX trace**, **Design**, **Photo**. Each has an eye toggle; visibility is
+saved in `cfg.layers` and respected by the build sheet.
+
+- **GPX trace** (`cfg.gpx = {name, pts:[{lat,lon}]}`) is a reference line,
+  not the design. It is stored as lat/lon so it is fixed to the ground at true
+  scale; only the site location (`cfg.geo`) decides where it lands. It cannot
+  be dragged. If no site location is set when it loads, `anchorGeo` sets one
+  so the trace's middle sits over the track; from then on it is fixed. Traces
+  over 3000 points are thinned to 8 cm (RDP). Loading a GPX with **Open**
+  still replaces the design; the layer's **Load** never does.
+- It draws above the track surface (so you can see the design against it)
+  and below handles and labels (so editing is never blocked).
+- Hiding **Design** also stops it being edited: no hit tests, no drops.
+- **Photo** is the old site-photo feature; its toolbar button moved here.
+
 Autosave writes the same JSON to `localStorage` (key
 `creature-pump-track-v1`), without the photo if quota is short.
 

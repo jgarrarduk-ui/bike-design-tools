@@ -14,7 +14,7 @@ during the dual-host period.
 | Frame Designer | `frame-designer.html` | Parametric bicycle frame geometry: angles, lengths, stack/reach, drawn live. |
 | Spoke Length Calculator | `spoke-calculator.html` | J-bend spoke lengths for 1×, 2× and 3× lacing, with rim and hub presets. |
 | Spring Rate Calculator | `spring-calculator.html` | Rear coil spring rate from sag target, rider weight and shock travel. |
-| Pump Track Designer | `pump-track-designer/index.html` | Pump track and dirt jump layout: drag rollers, berms, tables, doubles, step ups/downs, drops, whale tails and boner logs onto a track; trace a site photo; save JSON, export a build sheet PNG, dimensions CSV and GPX. |
+| Pump Track Designer | `pump-track-designer/index.html` | Pump track and dirt jump layout: drag rollers, berms, tables, doubles, step ups/downs, drops, whale tails and boner logs onto a track; trace over a site photo or a ridden GPX in a layers panel; save JSON, export a build sheet PNG, dimensions CSV and GPX. |
 | Suspension Designer | `suspension-designer/index.html` | Four-bar suspension kinematics solver. Currently the flex-stay variant — leverage ratio, anti-squat/anti-rise, pedal kickback, stay bending stress, derailleur cage take-up, validated against Linkage X3 — with other linkage types planned. |
 
 Each tool is a static page: no build step, open it directly or serve the

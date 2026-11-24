@@ -60,7 +60,7 @@
   --trk:#d3d8dc; --trk-edge:#1f5f8b; --chev:rgba(31,95,139,.35);
   --up:#e08a00; --down:#0f8a6e; --flat:#a9cde6; --gap:#3c4650; --wood:#c58b4c; --wood-line:#7a5020;
   --berm:#8fb6cf; --berm-tick:#134463; --berm-face:rgba(31,95,139,.30);
-  --sel:#c026a3; --bad:#c0261a; --handle:#fff; --handle-berm:#1f5f8b; --handle-ink:#16202a;
+  --sel:#c026a3; --bad:#c0261a; --handle:#fff; --handle-berm:#1f5f8b; --handle-ink:#16202a; --ref:#7c3aed;
   --label-bg:rgba(255,255,255,.94); --label-ink:#16202a;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -73,7 +73,7 @@
   --trk:#46454c; --trk-edge:#86efac; --chev:rgba(134,239,172,.35);
   --up:#fbbf24; --down:#4ade80; --flat:#d9f99d; --gap:#141316; --wood:#d4a15a; --wood-line:#7a4f1c;
   --berm:#166534; --berm-tick:#86efac; --berm-face:rgba(74,222,128,.30);
-  --sel:#f0abfc; --bad:#f87171; --handle:#1a191c; --handle-berm:#16a34a; --handle-ink:#dcfce7;
+  --sel:#f0abfc; --bad:#f87171; --handle:#1a191c; --handle-berm:#16a34a; --handle-ink:#dcfce7; --ref:#38bdf8;
   --label-bg:rgba(20,20,22,.9); --label-ink:#dcfce7;
 }
 *{box-sizing:border-box}
@@ -152,6 +152,29 @@ h2:first-child{margin-top:2px}
 #hint.on{display:flex}
 #hint input{width:80px}
 #hint button{padding:4px 9px}
+
+/* Layers panel, Illustrator style: top of the list draws on top. */
+#layers{position:absolute;top:12px;left:12px;z-index:5;width:232px;max-width:calc(100% - 70px);
+  background:var(--label-bg);color:var(--label-ink);border:1px solid var(--rule);border-radius:8px;
+  box-shadow:0 6px 22px rgba(0,0,0,.25);overflow:hidden}
+#layers-head{display:flex;align-items:center;justify-content:space-between;width:100%;border:0;border-radius:0;
+  background:transparent;color:var(--ink-soft);font:800 12px var(--sans);letter-spacing:.8px;text-transform:uppercase;padding:8px 10px}
+#layers-head:hover{background:var(--btn-hover)}
+#layers-head i{font-style:normal;transition:transform .15s}
+#layers:not(.open) #layers-head i{transform:rotate(-90deg)}
+#layers:not(.open) #layers-list{display:none}
+.lyr{display:flex;align-items:center;gap:7px;padding:5px 7px 5px 4px;border-top:1px solid var(--rule)}
+.lyr .eye,.lyr .eye[aria-pressed]{width:32px;height:32px;padding:0;display:grid;place-items:center;flex:none;
+  background:transparent;border-color:transparent;color:var(--label-ink)}
+.lyr .eye:hover{background:var(--btn-hover)}
+.lyr .eye[aria-pressed=true] .slash{display:none}
+.lyr .eye[aria-pressed=false]{color:var(--ink-soft)}
+.lyr .eye:disabled{opacity:.25}
+.lyr .sw{width:20px;height:20px;border-radius:4px;flex:none;border:1px solid var(--rule);background-size:cover;background-position:center}
+.lyr .nm{flex:1;min-width:0;font-weight:700;font-size:13px;line-height:1.2}
+.lyr .nm small{display:block;font-weight:500;font-size:11px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lyr .act{padding:4px 8px;font-size:12px;flex:none}
+.lyr.empty .nm>span,.lyr.off .nm>span{opacity:.5}
 
 /* ---- profile strip ---- */
 #profile-wrap{height:156px;flex:none;position:relative;border-top:1px solid var(--rule);background:var(--panel)}
@@ -234,6 +257,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
   #profile-wrap{height:112px}
   #bar{gap:5px;padding:6px 8px}
   #bar .sep{display:none}
+  #hint{top:58px}
   /* A selection opens as a sheet over the bottom of the screen, so the
      plan stays in view while you size the thing you just tapped. */
   body.has-sel #sel-panel{position:fixed;left:0;right:0;bottom:0;z-index:30;max-height:52vh;overflow-y:auto;
@@ -270,7 +294,6 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     <button id="b-open">Open</button>
     <button id="b-save">Save</button>
     <button id="b-export">Export</button>
-    <button id="b-image">Photo</button>
     <span class="sep"></span>
     <button id="b-undo" class="ic" title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;</button>
     <button id="b-redo" class="ic" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">&#8631;</button>
@@ -284,6 +307,20 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
   </div>
   <div id="canvas">
     <canvas id="plan" aria-label="Track plan"></canvas>
+    <div id="layers" class="open">
+      <button id="layers-head" aria-expanded="true" aria-controls="layers-list">Layers<i>&#9662;</i></button>
+      <div id="layers-list">
+        <div class="lyr" data-l="gpx"><button class="eye" aria-label="Show GPX trace"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+          <span class="sw" style="background:var(--ref)"></span>
+          <span class="nm"><span>GPX trace</span><small id="ly-gpx-sub"></small></span><button class="act" id="ly-gpx-act"></button></div>
+        <div class="lyr" data-l="design"><button class="eye" aria-label="Show design"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+          <span class="sw" style="background:var(--trk);border:3px solid var(--trk-edge)"></span>
+          <span class="nm"><span>Design</span><small id="ly-design-sub"></small></span></div>
+        <div class="lyr" data-l="photo"><button class="eye" aria-label="Show photo"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+          <span class="sw" id="ly-photo-sw"></span>
+          <span class="nm"><span>Photo</span><small id="ly-photo-sub"></small></span><button class="act" id="ly-photo-act"></button></div>
+      </div>
+    </div>
     <div id="hint" role="status"><span id="hint-text"></span><span id="hint-extra"></span><button id="hint-x" aria-label="Cancel">&times;</button></div>
     <div id="zoomctl">
       <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
@@ -765,6 +802,22 @@ function fromLatLon(geo,ll){
   const r=(geo.rot||0)*DEG, E=(ll.lon-geo.lon)*DEG*EARTH_R*Math.cos(geo.lat*DEG), N=(ll.lat-geo.lat)*DEG*EARTH_R;
   return V(E*Math.cos(r)-N*Math.sin(r), E*Math.sin(r)+N*Math.cos(r));
 }
+/* A GPX trace layer is kept as lat/lon, so it stays fixed to the ground at
+   true scale: only the site location (geo) decides where it lands on the plan. */
+function llCentroid(pts){
+  let a=0,b=0; for(const p of pts){ a+=p.lat; b+=p.lon; }
+  return {lat:a/pts.length, lon:b/pts.length};
+}
+/* The site origin that puts the middle of `pts` at plan point `centre`. Used
+   when a trace is loaded before any site location is set. */
+function anchorGeo(pts,centre,rot=0){
+  const c=llCentroid(pts), r=rot*DEG;
+  const E=centre.x*Math.cos(r)+centre.y*Math.sin(r), N=-centre.x*Math.sin(r)+centre.y*Math.cos(r);
+  const lat=c.lat-N/EARTH_R/DEG;
+  return {lat, lon:c.lon-E/(EARTH_R*Math.cos(lat*DEG))/DEG, rot};
+}
+function refPolyline(geo,pts){ return pts.map(p=>fromLatLon(geo,p)); }
+function polyLen(xy){ let L=0; for(let i=1;i<xy.length;i++) L+=dist(xy[i],xy[i-1]); return L; }
 const xmlEsc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function featureLabel(f){
   const F=FEATURES[f.type], p=normParams(f.type,f.p);
@@ -1016,11 +1069,12 @@ function readColours(){
   const cs=getComputedStyle(document.documentElement);
   for(const k of ['paper','grid','grid2','ink','ink-soft','rule','panel','press','trk','trk-edge','chev','up','down',
     'flat','gap','wood','wood-line','berm','berm-tick','berm-face','sel','bad','handle','handle-berm','handle-ink',
-    'label-bg','label-ink']) COL[k]=cs.getPropertyValue('--'+k).trim();
+    'label-bg','label-ink','ref']) COL[k]=cs.getPropertyValue('--'+k).trim();
 }
 const kcol=k=>COL[k]||COL.flat;
 
-const DEF_CFG={geo:{lat:null,lon:null,rot:0,ele:0},bg:null,dims:false};
+const DEF_CFG={geo:{lat:null,lon:null,rot:0,ele:0},bg:null,gpx:null,dims:false,
+  layers:{design:true,gpx:true,photo:true}};
 let D={_meta:{name:'',designer:''},geom:normGeom(TEMPLATES[0].geom),cfg:clone(DEF_CFG)};
 let T=null, spans=[], issues=[], stats=null;
 let sel=null;                 // {kind:'feature'|'node', i}
@@ -1054,7 +1108,7 @@ function fitBox(e,W,H,margin=1.12){
   const w=Math.max(4,e.x1-e.x0), h=Math.max(4,e.y1-e.y0);
   return {cx:(e.x0+e.x1)/2, cy:(e.y0+e.y1)/2, k:Math.min(W/(w*margin),H/(h*margin))};
 }
-function fitView(){ if(!T||!T.ok) return; view=fitBox(extentOf(T),PW,PH,1.18); draw(); }
+function fitView(){ if(!T||!T.ok) return; view=fitBox(extentAll(),PW,PH,1.18); draw(); }
 
 let rafId=0;
 function draw(){ if(!rafId) rafId=requestAnimationFrame(drawNow); }
@@ -1137,17 +1191,47 @@ function outsideNormalSign(){
   return a>0?-1:1;   // counter-clockwise loop: outside is to the right of travel
 }
 function cornerLabel(i){ return String(i+1); }
+let refCache={key:'',xy:null};
+function refLocal(){
+  const g=D.cfg.gpx, geo=D.cfg.geo;
+  if(!g||!g.pts||g.pts.length<2||!Number.isFinite(geo.lat)||!Number.isFinite(geo.lon)) return null;
+  const key=[g.pts.length,g.pts[0].lat,g.pts[0].lon,geo.lat,geo.lon,geo.rot].join('|');
+  if(refCache.key!==key) refCache={key,xy:refPolyline(geo,g.pts)};
+  return refCache.xy;
+}
+/* The GPX trace sits above the track surface so it can be compared against
+   it, and below the handles and labels so editing is never blocked. */
+function drawRef(ctx,X,Y,LY){
+  const ref=LY.gpx!==false?refLocal():null; if(!ref) return;
+  ctx.save(); ctx.lineJoin='round'; ctx.lineCap='round';
+  const path=()=>{ ctx.beginPath(); ref.forEach((p,i)=>i?ctx.lineTo(X(p.x),Y(p.y)):ctx.moveTo(X(p.x),Y(p.y))); };
+  path(); ctx.globalAlpha=.8; ctx.strokeStyle=COL.paper; ctx.lineWidth=7; ctx.stroke();
+  ctx.globalAlpha=1; path(); ctx.strokeStyle=COL.ref; ctx.lineWidth=3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(X(ref[0].x),Y(ref[0].y),5.5,0,7); ctx.fillStyle=COL.ref; ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle=COL.paper; ctx.stroke();
+  ctx.restore();
+}
+function extentAll(){
+  const e=T&&T.ok?extentOf(T):null, r=D.cfg.layers.gpx!==false?refLocal():null;
+  if(!r) return e||{x0:-10,y0:-10,x1:10,y1:10};
+  const b=e?Object.assign({},e):{x0:Infinity,y0:Infinity,x1:-Infinity,y1:-Infinity};
+  for(const p of r){ b.x0=Math.min(b.x0,p.x); b.x1=Math.max(b.x1,p.x); b.y0=Math.min(b.y0,p.y); b.y1=Math.max(b.y1,p.y); }
+  return b;
+}
 function drawPlan(ctx,W,H,vw,o){
   const k=vw.k, X=x=>(x-vw.cx)*k+W/2, Y=y=>H/2-(y-vw.cy)*k;
   ctx.fillStyle=COL.paper; ctx.fillRect(0,0,W,H);
   if(o.grid) drawGrid(ctx,W,H,vw,X,Y);
-  const bg=D.cfg.bg;
-  if(o.bg&&bg&&bgImg.complete&&bgImg.naturalWidth){
+  const bg=D.cfg.bg, LY=D.cfg.layers||{};
+  if(o.bg&&LY.photo!==false&&bg&&bgImg.complete&&bgImg.naturalWidth){
     ctx.save(); ctx.globalAlpha=bg.opacity; ctx.translate(X(bg.x),Y(bg.y)); ctx.rotate(-bg.rot*DEG);
     const wp=bg.w*k, hp=wp*bgImg.naturalHeight/bgImg.naturalWidth;
     ctx.drawImage(bgImg,-wp/2,-hp/2,wp,hp); ctx.restore();
   }
-  if(!T||!T.ok||T.length<.01) return;
+  if(LY.design===false||!T||!T.ok||T.length<.01){
+    drawRef(ctx,X,Y,LY); if(o.main) HND={corners:[],plus:[]};
+    if(o.grid) drawScaleBar(ctx,W,H,k); return;
+  }
   const w=T.width, out=outsideNormalSign();
   // berm banks outside the corner, hachured downhill
   for(const a of T.arcs){
@@ -1206,6 +1290,7 @@ function drawPlan(ctx,W,H,vw,o){
   spans.forEach(sp=>{ if(sp&&sp.i!==selF) drawFeature(ctx,X,Y,k,sp.s0,sp.pr,{bad:!sp.fits||issues.some(q=>q.feature===sp.i)}); });
   if(selF>=0&&spans[selF]) drawFeature(ctx,X,Y,k,spans[selF].s0,spans[selF].pr,{sel:true});
   if(o.preview&&o.preview.sp) drawFeature(ctx,X,Y,k,o.preview.sp.s0,o.preview.sp.pr,{alpha:.7,sel:true});
+  drawRef(ctx,X,Y,LY);
   // control polygon while a corner is being dragged
   if(o.poly){
     const N=D.geom.nodes; ctx.save(); ctx.setLineDash([5,5]); ctx.strokeStyle=COL['ink-soft']; ctx.lineWidth=1.2;
@@ -1380,7 +1465,7 @@ function nearestCorner(q){
   return best;
 }
 function previewFor(type,q){
-  if(!T||!T.ok) return null;
+  if(!T||!T.ok||D.cfg.layers.design===false) return null;
   if(type==='berm'||type==='bermroller'){
     const c=nearestCorner(q); return c&&c.d<Math.max(T.width*3,90/view.k)?{corner:c.i}:null;
   }
@@ -1390,6 +1475,7 @@ function previewFor(type,q){
   return {f,c:slot.c,ok:slot.ok,sp:{s0:leg.s0+slot.c-pr.len/2,pr}};
 }
 function placeAt(type,q){
+  if(D.cfg.layers.design===false){ toast('The design layer is hidden. Show it in Layers to edit.'); return false; }
   const pv=previewFor(type,q);
   if(!pv){
     toast(type.startsWith('berm')?'Drop a berm on a corner. No corner there yet? Drag a + to make one.':'Drop it on a straight.');
@@ -1456,6 +1542,7 @@ function wireTile(t,type){
 
 /* ---------- pointer on the plan ---------- */
 function hitTest(x,y,q){
+  if(D.cfg.layers.design===false) return {kind:'empty'};
   for(const h of HND.corners) if(Math.hypot(h.x-x,h.y-y)<=18) return {kind:'node',i:h.i};
   for(const h of HND.plus) if(Math.hypot(h.x-x,h.y-y)<=14) return {kind:'plus',leg:h.leg};
   const pad=8/view.k;
@@ -1840,9 +1927,11 @@ function loadDesign(data,{fit=true}={}){
   const g=normGeom(data.geom); if(g.nodes.length<2) throw new Error('needs at least two nodes');
   const c=data.cfg||{};
   D={_meta:{name:(data._meta&&data._meta.name)||'',designer:(data._meta&&data._meta.designer)||''},geom:g,
-    cfg:Object.assign(clone(DEF_CFG),c,{geo:Object.assign(clone(DEF_CFG.geo),c.geo||{})})};
+    cfg:Object.assign(clone(DEF_CFG),c,{geo:Object.assign(clone(DEF_CFG.geo),c.geo||{}),
+      layers:Object.assign(clone(DEF_CFG.layers),c.layers||{})})};
+  if(D.cfg.gpx&&!(Array.isArray(D.cfg.gpx.pts)&&D.cfg.gpx.pts.length>1)) D.cfg.gpx=null;
   if(D.cfg.bg&&D.cfg.bg.src) bgImg.src=D.cfg.bg.src; else D.cfg.bg=null;
-  sel=null; recompute(); if(fit) fitView(); buildInspector();
+  sel=null; refCache.key=''; recompute(); if(fit) fitView(); buildInspector(); syncLayers();
   $('b-dims').setAttribute('aria-pressed',String(!!D.cfg.dims));
 }
 function slug(ext){
@@ -1959,7 +2048,7 @@ function buildSheet(){
     const S=2.6, pw=(W-2*M)/S, ph=planH/S;
     c.save(); c.translate(M,top); c.scale(S,S);
     c.beginPath(); c.rect(0,0,pw,ph); c.clip();
-    drawPlan(c,pw,ph,fitBox(extentOf(T),pw,ph,1.12),{grid:true,bg:true,handles:'tags',dims:true});
+    drawPlan(c,pw,ph,fitBox(extentAll(),pw,ph,1.12),{grid:true,bg:true,handles:'tags',dims:true});
     c.restore();
     c.strokeStyle=COL.rule; c.lineWidth=3; c.strokeRect(M,top,W-2*M,planH);
     // north arrow
@@ -1969,6 +2058,7 @@ function buildSheet(){
     c.save(); c.translate(M,top+planH+40); c.scale(S,S); drawProfile(c,(W-2*M)/S,profH/S,{}); c.restore();
     c.strokeRect(M,top+planH+40,W-2*M,profH);
     const leg=[['up','Takeoff / up'],['down','Landing / down'],['flat','Deck'],['gap','Air'],['wood','Timber'],['berm','Berm']];
+    if(D.cfg.layers.gpx!==false&&refLocal()) leg.push(['ref','GPX trace']);
     let lx=M; const ly=H-M+10; c.textAlign='left'; c.textBaseline='middle'; c.font=`700 30px ${SANS}`;
     for(const [k,l] of leg){ c.fillStyle=k==='berm'?COL.berm:kcol(k); c.fillRect(lx,ly-18,44,36); c.strokeStyle=COL.ink; c.lineWidth=2; c.strokeRect(lx,ly-18,44,36);
       c.fillStyle=COL.ink; c.fillText(l,lx+58,ly); lx+=58+c.measureText(l).width+60; }
@@ -1986,8 +2076,8 @@ function syncImageDlg(){
   $('i-op').value=Math.round(b.opacity*100); $('i-op-r').value=Math.round(b.opacity*100);
   $('i-move').setAttribute('aria-pressed',String(mode==='img'));
 }
-$('b-image').onclick=()=>{ syncImageDlg(); $('dlg-image').showModal(); };
-$('i-load').onclick=()=>{
+function openPhotoDlg(){ syncImageDlg(); $('dlg-image').showModal(); }
+function loadPhoto(){
   const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
   inp.onchange=()=>{
     const file=inp.files[0]; if(!file) return;
@@ -2002,7 +2092,7 @@ $('i-load').onclick=()=>{
         const e=extentOf(T);
         D.cfg.bg={src:cv.toDataURL('image/jpeg',.85),x:(e.x0+e.x1)/2,y:(e.y0+e.y1)/2,
           w:Math.max(40,(e.x1-e.x0)*1.5),rot:0,opacity:.6};
-        bgImg.src=D.cfg.bg.src; syncImageDlg(); autosave(); draw();
+        D.cfg.layers.photo=true; bgImg.src=D.cfg.bg.src; syncImageDlg(); syncLayers(); autosave(); draw();
         toast('Photo loaded. Use Set scale to size it from a known distance.',true);
       };
       im.onerror=()=>toast('That image could not be read.');
@@ -2011,8 +2101,9 @@ $('i-load').onclick=()=>{
     r.readAsDataURL(file);
   };
   inp.click();
-};
-$('i-remove').onclick=()=>{ D.cfg.bg=null; if(mode==='img') endMode(); syncImageDlg(); autosave(); draw(); };
+}
+$('i-load').onclick=loadPhoto;
+$('i-remove').onclick=()=>{ D.cfg.bg=null; if(mode==='img') endMode(); syncImageDlg(); syncLayers(); autosave(); draw(); };
 $('i-w').oninput=e=>{ const v=parseFloat(e.target.value); if(D.cfg.bg&&v>0){ D.cfg.bg.w=v; draw(); autosave(); } };
 const setRot=v=>{ if(D.cfg.bg&&Number.isFinite(v)){ D.cfg.bg.rot=v; $('i-rot').value=Math.round(v); $('i-rot-r').value=v; draw(); autosave(); } };
 $('i-rot').oninput=e=>setRot(parseFloat(e.target.value)); $('i-rot-r').oninput=e=>setRot(+e.target.value);
@@ -2033,19 +2124,79 @@ function askCalDistance(){
     const f=real/d, bg=D.cfg.bg;
     // scale the photo about the first point, so that point stays put
     bg.w*=f; bg.x=a.x+(bg.x-a.x)*f; bg.y=a.y+(bg.y-a.y)*f;
-    endMode(); autosave(); toast('Photo scaled. Width is now '+f1(bg.w)+' m.',true);
+    endMode(); syncLayers(); autosave(); toast('Photo scaled. Width is now '+f1(bg.w)+' m.',true);
   };
   inp.onkeydown=e=>{ if(e.key==='Enter') ok.click(); };
   wrap.append(inp,ok); showHint('Real distance between the points',wrap); setTimeout(()=>inp.focus(),30);
 }
 function endMode(){ mode=null; calPts=[]; plan.classList.remove('cross','grab'); hideHint(); draw(); }
 
+/* ---------- layers ---------- */
+function syncLayers(){
+  const L=D.cfg.layers, has={design:true,gpx:!!refLocal()||!!D.cfg.gpx,photo:!!D.cfg.bg};
+  document.querySelectorAll('.lyr').forEach(r=>{
+    const k=r.dataset.l, on=has[k]&&L[k]!==false, eye=r.querySelector('.eye');
+    r.classList.toggle('empty',!has[k]); r.classList.toggle('off',has[k]&&!on);
+    eye.disabled=!has[k]; eye.setAttribute('aria-pressed',String(on));
+  });
+  const ref=refLocal();
+  $('ly-design-sub').textContent=T&&T.ok?f1(T.length)+' m '+(T.closed?'loop':'line'):'';
+  $('ly-gpx-sub').textContent=D.cfg.gpx?(ref?f1(polyLen(ref))+' m · ':'')+(D.cfg.gpx.name||'GPX'):'Fixed to the ground, true scale';
+  const ga=$('ly-gpx-act'); ga.textContent=D.cfg.gpx?'Remove':'Load';
+  ga.setAttribute('aria-label',D.cfg.gpx?'Remove GPX trace':'Load a GPX trace');
+  $('ly-photo-sub').textContent=D.cfg.bg?f1(D.cfg.bg.w)+' m wide':'Aerial photo or site plan';
+  $('ly-photo-act').textContent=D.cfg.bg?'Edit':'Load';
+  $('ly-photo-sw').style.backgroundImage=D.cfg.bg?`url("${D.cfg.bg.src}")`:'';
+}
+document.querySelectorAll('.lyr .eye').forEach(b=>b.onclick=()=>{
+  const k=b.closest('.lyr').dataset.l, L=D.cfg.layers; L[k]=L[k]===false;
+  if(k==='design'&&L.design===false){ if(armed) disarm(); if(sel) setSel(null); }
+  syncLayers(); autosave(); draw();
+});
+$('layers-head').onclick=()=>{ const o=$('layers').classList.toggle('open'); $('layers-head').setAttribute('aria-expanded',String(o)); };
+$('ly-photo-act').onclick=()=>D.cfg.bg?openPhotoDlg():loadPhoto();
+$('ly-gpx-act').onclick=()=>{
+  if(D.cfg.gpx){ D.cfg.gpx=null; refCache.key=''; syncLayers(); autosave(); draw(); return; }
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='.gpx,.xml,application/gpx+xml';
+  inp.onchange=()=>{
+    const file=inp.files[0]; if(!file) return;
+    const r=new FileReader();
+    r.onload=()=>{
+      try{
+        const g=parseGPX(String(r.result)), src=g.pts.length>1?g.pts:g.wpts;
+        if(src.length<2) throw new Error('no track or route points in it');
+        const geo=D.cfg.geo; let anchored=false;
+        if(!Number.isFinite(geo.lat)||!Number.isFinite(geo.lon)){
+          // No site location yet: put the trace over the track, keeping it at
+          // true scale. The site location is set from it, so it stays fixed.
+          const e=T&&T.ok?extentOf(T):{x0:0,x1:0,y0:0,y1:0};
+          Object.assign(geo,anchorGeo(src,{x:(e.x0+e.x1)/2,y:(e.y0+e.y1)/2},geo.rot||0)); anchored=true;
+        }
+        // a phone logs a point a second; thin very long traces to 8 cm
+        let xy=src.map(p=>Object.assign(fromLatLon(geo,p),{lat:p.lat,lon:p.lon}));
+        if(xy.length>3000) xy=rdp(xy,0.08);
+        D.cfg.gpx={name:file.name.replace(/\.[^.]+$/,''),pts:xy.map(p=>({lat:rnd(p.lat,8),lon:rnd(p.lon,8)}))};
+        D.cfg.layers.gpx=true; refCache.key='';
+        const ref=refLocal(), c=ref[Math.floor(ref.length/2)], e=extentOf(T);
+        const far=Math.hypot(c.x-(e.x0+e.x1)/2,c.y-(e.y0+e.y1)/2);
+        fitView(); syncLayers(); autosave();
+        toast(anchored?'GPX trace placed over the track at true scale. The site location now comes from it.'
+          :far>2000?`GPX trace added. It is ${f1(far/1000)} km from the site location.`
+          :'GPX trace added at its real position.',true);
+      }catch(err){ toast('Could not read that GPX: '+err.message); }
+    };
+    r.readAsText(file);
+  };
+  inp.click();
+};
+for(const id of ['g-lat','g-lon','g-rot']) $(id).addEventListener('input',()=>{ refCache.key=''; syncLayers(); draw(); });
+
 /* ---------- theme ---------- */
 function setUiTheme(name){
   document.documentElement.setAttribute('data-theme',name);
   $('theme-light').setAttribute('aria-pressed',String(name==='light'));
   $('theme-dark').setAttribute('aria-pressed',String(name==='dark'));
-  readColours(); buildPalette(); buildInspector(); drawNow();
+  readColours(); buildPalette(); buildInspector(); syncLayers(); drawNow();
   try{ localStorage.setItem('creature-pump-track-theme',name); }catch(_){}
 }
 $('theme-light').onclick=()=>setUiTheme('light');
@@ -2061,7 +2212,8 @@ try{
   try{ const s=localStorage.getItem(AUTOSAVE_KEY); if(s){ loadDesign(JSON.parse(s),{fit:false}); restored=true; } }catch(_){ restored=false; }
   if(!restored){ D._meta.name=''; D.geom=normGeom(clone(TEMPLATES[0].geom)); recompute(); }
   lastSnap=snap(); syncUndo();
-  buildPalette(); buildInspector();
+  if(window.matchMedia('(max-width:900px)').matches){ $('layers').classList.remove('open'); $('layers-head').setAttribute('aria-expanded','false'); }
+  buildPalette(); buildInspector(); syncLayers();
   $('b-dims').setAttribute('aria-pressed',String(!!D.cfg.dims));
   [PW,PH]=sizeCanvas(plan,pctx); [QW,QH]=sizeCanvas(prof,qctx);
   if(PW>50){ fitView(); fitted=true; }
