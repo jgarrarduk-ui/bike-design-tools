@@ -375,7 +375,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     <h2>Design</h2>
     <label class="lbl">Name<input type="text" id="d-name" placeholder="Untitled track" autocomplete="off"></label>
     <label class="lbl">Designer<input type="text" id="d-designer" autocomplete="off"></label>
-    <p class="note">Drag elements onto the track. Drag a numbered corner to reshape, tap it to change the berm, hold it to delete it. <b>+</b> adds a corner, as does double-clicking a straight.</p>
+    <p class="note">Drag elements onto the track. Drag a numbered corner to reshape and tap it to change the berm. Hold a corner or a feature to delete it. <b>+</b> adds a corner, as does double-clicking a straight.</p>
   </div>
 </div>
 
@@ -1187,7 +1187,7 @@ let D={_meta:{name:'',designer:''},geom:normGeom(TEMPLATES[0].geom),cfg:clone(DE
 let T=null, spans=[], issues=[], stats=null;
 let sel=null;                 // {kind:'feature'|'node', i}
 let view={cx:0,cy:0,k:10};
-let delCorner=null;          // corner showing its long-press delete button
+let delTarget=null;          // {kind:'node'|'feature', i}: what is showing its long-press delete button
 let preview=null, armed=null, mode=null, calPts=[], act=null, polyShow=false;
 let HND={corners:[],plus:[]};
 const bgImg=new Image(); bgImg.onload=()=>draw();
@@ -1509,9 +1509,12 @@ function drawPlan(ctx,W,H,vw,o){
     });
   }
   for(const l of labels) pill(ctx,...l);
-  // long-press delete button, next to its corner
-  if(o.main&&delCorner!=null&&T.corners[delCorner]){
-    const c=T.corners[delCorner], a=c.end?null:T.arcs.find(z=>z.i===c.i), pos=c.end||!a?c.P:a.M;
+  // long-press delete button, next to the corner or feature being held
+  const dt=o.main?delTarget:null;
+  const dpos=!dt?null:dt.kind==='feature'?(spans[dt.i]?pointAt(T,spans[dt.i].s0+spans[dt.i].pr.len/2):null)
+    :T.corners[dt.i]?(c=>{ const a=c.end?null:T.arcs.find(z=>z.i===c.i); return c.end||!a?c.P:a.M; })(T.corners[dt.i]):null;
+  if(dpos){
+    const pos=dpos;
     const x=clamp(X(pos.x)+30,20,W-20), y=clamp(Y(pos.y)-30,20,H-20);
     ctx.save();
     ctx.beginPath(); ctx.moveTo(X(pos.x),Y(pos.y)); ctx.lineTo(x,y); ctx.strokeStyle=COL.bad; ctx.lineWidth=2; ctx.stroke();
@@ -1520,7 +1523,7 @@ function drawPlan(ctx,W,H,vw,o){
     ctx.lineWidth=2; ctx.strokeStyle='#fff'; ctx.stroke();
     ctx.beginPath(); ctx.moveTo(x-5.5,y-5.5); ctx.lineTo(x+5.5,y+5.5); ctx.moveTo(x+5.5,y-5.5); ctx.lineTo(x-5.5,y+5.5);
     ctx.lineWidth=3; ctx.lineCap='round'; ctx.stroke(); ctx.restore();
-    hnd.del={i:delCorner,x,y};
+    hnd.del={x,y};
   }
   // scale calibration marks
   if(o.cal&&o.cal.length){
@@ -1773,6 +1776,18 @@ function hitTest(x,y,q){
   return {kind:'empty'};
 }
 const ptrs=new Map(); let lastTap={t:0,x:0,y:0};
+/* Hold still on a corner or a feature and its delete button appears. Moving
+   first turns it into an ordinary drag instead. */
+function holdToDelete(kind,i){
+  act.timer=setTimeout(()=>{
+    if(!act||act.kind!==kind||act.i!==i||act.moved) return;
+    act=null; plan.classList.remove('grabbing'); polyShow=false;
+    delTarget={kind:kind==='feat'?'feature':'node',i};
+    if(sel){ sel=null; buildInspector(); }   // keep the phone sheet out of the way
+    try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
+    draw();
+  },550);
+}
 const localXY=e=>{const r=plan.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];};
 plan.addEventListener('pointerdown',e=>{
   const [x,y]=localXY(e); ptrs.set(e.pointerId,{x,y});
@@ -1787,9 +1802,10 @@ plan.addEventListener('pointerdown',e=>{
   if(ptrs.size>2) return;
   const q=s2w(x,y);
   // While a delete button is showing, the next tap either hits it or clears it.
-  if(delCorner!=null){
-    const d=HND.del, i=delCorner; delCorner=null;
-    if(d&&Math.hypot(d.x-x,d.y-y)<=22) deleteNode(i); else draw();
+  if(delTarget!=null){
+    const d=HND.del, t=delTarget; delTarget=null;
+    if(d&&Math.hypot(d.x-x,d.y-y)<=22){ if(t.kind==='feature') deleteFeature(t.i); else deleteNode(t.i); }
+    else draw();
     return;
   }
   if(armed){ if(placeAt(armed,q)) disarm(); return; }
@@ -1802,17 +1818,12 @@ plan.addEventListener('pointerdown',e=>{
   } else if(h.kind==='node'){
     setSel({kind:'node',i:h.i}); const n=D.geom.nodes[h.i];
     act={kind:'node',i:h.i,x0:x,y0:y,n0:{x:n.x,y:n.y},moved:false,tol:e.pointerType==='touch'?9:4};
-    // hold still on a corner and its delete button appears
-    act.timer=setTimeout(()=>{
-      if(!act||act.kind!=='node'||act.i!==h.i||act.moved) return;
-      act=null; plan.classList.remove('grabbing'); polyShow=false; delCorner=h.i;
-      if(sel){ sel=null; buildInspector(); }   // keep the phone sheet out of the way
-      try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
-      draw();
-    },550);
+    holdToDelete('node',h.i);
   } else if(h.kind==='feature'){
     setSel({kind:'feature',i:h.i}); const sp=spans[h.i], pl=projectLeg(T,q);
-    act={kind:'feat',i:h.i,x0:x,y0:y,leg:sp.f.leg,off:pl&&pl.leg===sp.f.leg?sp.c-pl.along:0,moved:false};
+    act={kind:'feat',i:h.i,x0:x,y0:y,leg:sp.f.leg,off:pl&&pl.leg===sp.f.leg?sp.c-pl.along:0,moved:false,
+      tol:e.pointerType==='touch'?9:4};
+    holdToDelete('feat',h.i);
   } else {
     act={kind:'pan',x0:x,y0:y,c0:{cx:view.cx,cy:view.cy},moved:false,hit:h};
   }
@@ -1873,7 +1884,7 @@ plan.addEventListener('pointerup',endPointer);
 plan.addEventListener('pointercancel',endPointer);
 plan.addEventListener('contextmenu',e=>e.preventDefault());
 // a tap anywhere off the plan also clears a showing delete button
-document.addEventListener('pointerdown',e=>{ if(delCorner!=null&&e.target!==plan){ delCorner=null; draw(); } },true);
+document.addEventListener('pointerdown',e=>{ if(delTarget!=null&&e.target!==plan){ delTarget=null; draw(); } },true);
 plan.addEventListener('pointerleave',e=>{ if(armed&&e.pointerType==='mouse'){ preview=null; draw(); } });
 plan.addEventListener('wheel',e=>{
   e.preventDefault();
@@ -2131,14 +2142,18 @@ $('issue-list').addEventListener('click',e=>{
 /* ---------- edits ---------- */
 function deleteNode(i){
   if(!removeNode(D.geom,T,i)){ toast(T.closed?'A loop needs at least three corners.':'A line needs two ends.'); draw(); return; }
-  sel=null; delCorner=null; recompute(); commit(); buildInspector();
+  sel=null; delTarget=null; recompute(); commit(); buildInspector();
   toast('Corner deleted. Undo brings it back.',true);
+}
+function deleteFeature(i){
+  const f=D.geom.features[i]; if(!f) return;
+  D.geom.features.splice(i,1);
+  sel=null; delTarget=null; recompute(); commit(); buildInspector();
+  toast(FEATURES[f.type].name+' deleted. Undo brings it back.',true);
 }
 function deleteSel(){
   if(!sel) return;
-  if(sel.kind==='node'){ deleteNode(sel.i); return; }
-  D.geom.features.splice(sel.i,1);
-  sel=null; recompute(); commit(); buildInspector();
+  if(sel.kind==='node') deleteNode(sel.i); else deleteFeature(sel.i);
 }
 function duplicateSel(){
   if(!sel||sel.kind!=='feature') return;
@@ -2167,7 +2182,7 @@ function commit(){
   if(lastSnap!=null){ undoS.push(lastSnap); if(undoS.length>200) undoS.shift(); }
   redoS=[]; lastSnap=s; syncUndo(); autosave();
 }
-function restore(s){ delCorner=null; D.geom=JSON.parse(s); lastSnap=s; validSel(); recompute(); buildInspector(); syncUndo(); autosave(); }
+function restore(s){ delTarget=null; D.geom=JSON.parse(s); lastSnap=s; validSel(); recompute(); buildInspector(); syncUndo(); autosave(); }
 function undo(){ if(!undoS.length) return; redoS.push(lastSnap); restore(undoS.pop()); }
 function redo(){ if(!redoS.length) return; undoS.push(lastSnap); restore(redoS.pop()); }
 function syncUndo(){ $('b-undo').disabled=!undoS.length; $('b-redo').disabled=!redoS.length; }
@@ -2181,7 +2196,7 @@ document.addEventListener('keydown',e=>{
   if(mod&&e.key.toLowerCase()==='y'&&!typing){ e.preventDefault(); redo(); return; }
   if(mod&&e.key.toLowerCase()==='s'){ e.preventDefault(); saveJSON(); return; }
   if(typing) return;
-  if(e.key==='Escape'&&delCorner!=null){ delCorner=null; draw(); return; }
+  if(e.key==='Escape'&&delTarget!=null){ delTarget=null; draw(); return; }
   if(e.key==='Escape'){ if(armed) disarm(); else if(mode) endMode(); else if(document.querySelector('dialog[open]')) return; else setSel(null); }
   else if((e.key==='Delete'||e.key==='Backspace')&&sel){ e.preventDefault(); deleteSel(); }
   else if(sel&&/^Arrow/.test(e.key)){
@@ -2221,7 +2236,7 @@ function loadDesign(data,{fit=true}={}){
       layers:Object.assign(clone(DEF_CFG.layers),c.layers||{})})};
   if(D.cfg.gpx&&!(Array.isArray(D.cfg.gpx.pts)&&D.cfg.gpx.pts.length>1)) D.cfg.gpx=null;
   if(D.cfg.bg&&D.cfg.bg.src) bgImg.src=D.cfg.bg.src; else D.cfg.bg=null;
-  sel=null; delCorner=null; refCache.key=''; recompute(); if(fit) fitView(); buildInspector(); syncLayers();
+  sel=null; delTarget=null; refCache.key=''; recompute(); if(fit) fitView(); buildInspector(); syncLayers();
   $('b-dims').setAttribute('aria-pressed',String(!!D.cfg.dims));
 }
 function slug(ext){
@@ -2457,7 +2472,7 @@ function syncLayers(){
 document.querySelectorAll('.lyr .eye').forEach(b=>b.onclick=()=>{
   const k=b.closest('.lyr').dataset.l, L=D.cfg.layers; L[k]=L[k]===false;
   if(k==='design'&&L.design===false){ if(armed) disarm(); if(sel) setSel(null); }
-  if(k!=='photo') delCorner=null;
+  if(k!=='photo') delTarget=null;
   syncLayers(); autosave(); draw();
 });
 $('layers-head').onclick=()=>{ const o=$('layers').classList.toggle('open'); $('layers-head').setAttribute('aria-expanded',String(o)); };

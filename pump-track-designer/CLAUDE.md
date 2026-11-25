@@ -124,8 +124,9 @@ saved in `cfg.layers` and respected by the build sheet.
   is an error (a feature that overflows or overlaps), amber when all are
   warnings (a corner shrunk to fit). It opens a floating log; an entry
   selects the item. There is no list in the side panel any more.
-- Hold a corner (550 ms, 9 px tolerance on touch) and a red X appears next
-  to it (`delCorner`). Tapping the X deletes the corner; any other tap, on
+- Hold a corner or a feature (550 ms, 9 px tolerance on touch) and a red X
+  appears next to it (`delTarget`, set by `holdToDelete`). A hip is a corner,
+  so holding it deletes the corner and the hip with it. Tapping the X deletes the corner; any other tap, on
   or off the plan, clears it. Undo restores. A drag cancels the hold.
 - The phone selection sheet has `overscroll-behavior: contain` so scrolling
   it never hands the gesture to the page.
