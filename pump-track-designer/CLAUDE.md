@@ -23,8 +23,8 @@ globals; the test lifts it out with `new Function`. Keep it that way.
   circular arc of the node's radius (`buildTrack`). Straights are "legs":
   leg N runs from node N to node N+1. A loop has as many legs as nodes; a
   line has one fewer and its end nodes have no arc.
-- **A berm is a corner**, not an object. `node.berm` is `berm`, `flat` or
-  `auto` (banked above 35° of turn). `bh` is berm height, `rh` a roller in
+- **A berm is a corner**, not an object. `node.berm` is `berm`, `flat`,
+  `auto` (banked above 35° of turn) or `hip` (see Hips below). `bh` is berm height, `rh` a roller in
   the middle of the berm (0 = none). Changing the radius changes the plan.
 - Radii too big for their straights are shrunk to fit (`tight`), reported
   as an issue, and the handle is outlined red. Nothing jams.
@@ -36,7 +36,7 @@ globals; the test lifts it out with `new Function`. Keep it that way.
   `build()` that returns profile segments along its own axis. Segment kind
   drives colour everywhere: `up` amber, `down` green, `flat` pale, `gap`
   near-black (faces you fly over), `wood` brown. `flare` widens the plan
-  footprint (whale tail).
+  footprint (a hip's landing).
 - `zAt` is the centreline height: the max of the feature profiles, plus berm
   rollers. Berm banking is lateral and is not in the centreline profile.
 - Dirt is a rough builder's quantity: feature body across the width plus
@@ -48,10 +48,36 @@ globals; the test lifts it out with `new Function`. Keep it that way.
 Sizes come from common build guidance, not a standard (there isn't one):
 roller crest spacing about 10× height (UCI pump track spec: 0.3–0.8 m
 rollers, 3–10 m apart), berm radius about 3 m for a rideable 180 (bigger than
-~3.7 m gets hard to pump), lips 25–45°, landings 25–30°. Whale tail is a
-timber kicker that fans to 2–3× its takeoff width. Boner log is a flat
-timber deck jutting off a hill: it sends you out, not up, so its `kick` is
-small. S/M/L/XL scale every length and height of the default; angles stay.
+~3.7 m gets hard to pump), lips 25–45°, landings 25–30°. Wooden drop
+(`woodendrop`, formerly the boner log) is a flat timber deck jutting off a
+hill: it sends you out, not up, so its `kick` is small. The whale tail was
+removed; old files that had one simply lose it. S/M/L/XL scale every length and height of the default; angles stay.
+
+## Hips
+
+A hip is a corner type (`node.berm==='hip'`, settings in `node.hip`, always
+through `normHip`). It is a jump that turns the track:
+
+- No fillet: the corner is a sharp kink. The takeoff ends on the straight in,
+  the landing starts on the straight out, and the flight line cuts the
+  corner. `gap` is the straight-line plan distance lip centre to knuckle
+  centre, so lip and knuckle each sit `gap / (2 cos(theta/2))` from the
+  corner point (`hipOf`). The turn `theta` is the corner's own angle.
+- `style` is `table` (deck across the corner, one height) or `double`
+  (pit between, takeoff and landing heights). `side` is +1 left, -1 right.
+  `w` is the takeoff width; the landing is `w * flare`.
+- `setHipTurn(geom,i,deg,side)` sets the angle by swinging the next straight
+  round the hip, keeping its length. The angle slider and the Left/Right
+  switch both use it; dragging the corner still works. Over 90° is a warning.
+- Dropped on a corner it takes that corner's turn; dropped on a straight it
+  inserts a corner there and turns 45° towards the side it was dropped on.
+- `T.hips` holds each hip's position, its centreline profile (unrolled round
+  the corner, so the middle is 2 x half long, not `gap`) and the lengths of
+  straight it uses either side (`zones`). `findSlot` keeps features off those
+  zones; `issuesOf` reports a hip that doesn't fit, overlaps, or turns past 90°.
+- In plan, `drawHip` draws it; the corner handle is amber. It is saved in the
+  JSON, the dimensions CSV (`corner=hip` plus `hip_style`, `hip_side`,
+  `width_m` and the param columns) and as a GPX waypoint.
 
 ## Files in and out
 

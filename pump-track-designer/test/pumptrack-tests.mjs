@@ -5,7 +5,7 @@ const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==
 const m=new Function(eng+'\nreturn {DEG,FEATURES,SIZES,TEMPLATES,buildTrack,pointAt,polyline,project,projectLeg,'+
   'spansOf,findSlot,issuesOf,zAt,profileOf,profZ,profHeight,defaultParams,sizedParams,normParams,statsOf,'+
   'insertNode,removeNode,toLatLon,fromLatLon,toGPX,parseGPX,gpxToDesign,traceTrack,toCSV,parseCSV,profileCSV,'+
-  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen};')();
+  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip};')();
 
 let fails=0;
 const ok=(name,cond,info='')=>{console.log((cond?'  pass  ':'  FAIL  ')+name+(info?'   '+info:''));if(!cond)fails++};
@@ -70,14 +70,53 @@ ok('double gap is measured lip to knuckle', near(gs.u1-gs.u0,3,1e-9)&&near(m.pro
 ok('double pit reaches the ground', near(m.profZ(db,(gs.u0+gs.u1)/2),0,1e-9));
 const r3=m.profileOf({type:'roller',p:{h:.5,L:4,n:3}});
 ok('roller set is count x length', near(r3.len,12,1e-9)&&near(m.profZ(r3,2),.5,1e-9)&&near(m.profZ(r3,6),.5,1e-9)&&near(m.profZ(r3,4),0,1e-9));
-const wt=m.profileOf({type:'whaletail',p:{flare:2.5}});
-ok('whale tail fans out to its flare', near(wt.flare(0),1,1e-9)&&near(wt.flare(wt.len),2.5,1e-9));
-const bl=m.profileOf({type:'bonerlog',p:{h:1,deck:2,kick:5}});
+ok('whale tail is gone and boner log is now wooden drop', !m.FEATURES.whaletail&&!m.FEATURES.bonerlog&&m.FEATURES.woodendrop.name==='Wooden drop');
+const bl=m.profileOf({type:'woodendrop',p:{h:1,deck:2,kick:5}});
 const ws=bl.segs.find(s=>s.kind==='wood');
-ok('boner log deck kicks up by its angle', near(ws.z(ws.u1)-ws.z(ws.u0),2*Math.tan(5*m.DEG),1e-9));
+ok('wooden drop deck kicks up by its angle', near(ws.z(ws.u1)-ws.z(ws.u0),2*Math.tan(5*m.DEG),1e-9));
 const L=m.sizedParams('tabletop','L'), S=m.sizedParams('tabletop','S');
 ok('sizes scale heights but keep angles', L.h>1&&S.h<1&&L.lip===S.lip);
 ok('params are clamped to their range', m.normParams('roller',{h:9,n:2.6}).h===1.2&&m.normParams('roller',{n:2.6}).n===3);
+
+/* ---- hips ---- */
+// a line: in from the west, hip at (30,0), out again
+const hipLine=(deg,side,hip)=>{
+  const g={closed:false,width:1.5,features:[],nodes:[{x:0,y:0,r:0},{x:30,y:0,r:3,berm:'hip',hip:Object.assign({gap:3,h:1,lh:1.2},hip)},{x:55,y:0,r:0}]};
+  m.setHipTurn(g,1,deg,side); return g;
+};
+for(const deg of [0,30,60,90]){
+  const g=hipLine(deg,1), Th=m.buildTrack(g), h=Th.hips[0];
+  ok(`hip at ${deg}°: turns that much, lip to knuckle is the gap`,
+     near(h.theta/m.DEG,deg,0.01)&&near(m.dist(h.lip,h.knuckle),3,1e-9), m.dist(h.lip,h.knuckle).toFixed(4)+' m');
+}
+let gH=hipLine(45,1), TH=m.buildTrack(gH), H=TH.hips[0];
+ok('a hip has no fillet', TH.arcs[0].len===0&&TH.corners[1].T===0&&TH.arcs[0].berm===false);
+ok('setHipTurn keeps the next straight its length', near(m.dist(gH.nodes[1],gH.nodes[2]),25,1e-3));
+ok('hip turns left for side +1', TH.corners[1].defl>0);
+m.setHipTurn(gH,1,45,-1); TH=m.buildTrack(gH);
+ok('the Left/Right switch mirrors the turn', near(TH.corners[1].defl/m.DEG,-45,1e-3));
+H=TH.hips[0];
+ok('hip profile peaks at the lip, lands on the landing height', near(m.zAt(TH,[],TH.arcs[0].s0-H.half),1,1e-6)&&near(m.zAt(TH,[],TH.arcs[0].s0+H.half),1.2,1e-6));
+ok('a double hip has a pit at the corner', m.zAt(TH,[],TH.arcs[0].s0)<1e-9);
+const gT=hipLine(45,1,{style:'table'}), TT2=m.buildTrack(gT);
+ok('a table hip has a deck across the corner', near(m.zAt(TT2,[],TT2.arcs[0].s0),1,1e-9));
+ok('a table hip lands at its takeoff height', near(m.zAt(TT2,[],TT2.arcs[0].s0+TT2.hips[0].half),1,1e-6));
+const lf=TH.hips[0].pr;
+ok('the landing flares out', near(lf.flare(0)*1.5,1.5,1e-9)&&near(lf.flare(lf.len),1.5,1e-9)&&lf.flare(lf.len)>lf.flare(0));
+// features are kept clear of a hip
+const spH=m.spansOf(TH,gH), sl=m.findSlot(TH,spH,0,29,4,-1);
+ok('findSlot keeps a feature off the hip takeoff', sl.ok&&sl.c+2<=TH.legs[0].len-TH.hips[0].needIn+1e-9, 'centre '+sl.c.toFixed(2));
+gH.features=[{type:'roller',leg:1,t:.02,p:{}}];
+ok('a feature on the hip landing is an overlap', m.issuesOf(TH,gH,m.spansOf(TH,gH)).some(i=>i.kind==='overlap'&&i.node===1));
+const short={closed:false,width:1.5,features:[],nodes:[{x:0,y:0},{x:3,y:0,berm:'hip',hip:{}},{x:20,y:0}]};
+ok('a hip without enough straight is reported', m.issuesOf(m.buildTrack(short),short,[]).some(i=>i.kind==='fit'&&i.node===1));
+const wide=hipLine(120,1);
+ok('a hip past 90° is a warning', m.issuesOf(m.buildTrack(wide),wide,[]).some(i=>i.kind==='hipangle'));
+ok('hip settings survive the design file', JSON.stringify(m.normGeom(JSON.parse(JSON.stringify(gT))).nodes[1].hip)===JSON.stringify(m.normHip(gT.nodes[1].hip)));
+ok('hip settings are clamped', m.normHip({gap:99,flare:9,style:'x'}).gap===8&&m.normHip({flare:9}).flare===2.5&&m.normHip({style:'x'}).style==='double');
+const hcsv=m.parseCSV(m.toCSV(gT,TT2,[])), hcT=m.buildTrack(hcsv);
+ok('hip corners round trip through the CSV', hcsv.nodes[1].berm==='hip'&&JSON.stringify(hcsv.nodes[1].hip)===JSON.stringify(m.normHip(gT.nodes[1].hip))&&near(hcT.length,TT2.length,0.01));
+ok('a hip appears in GPX waypoints', m.toGPX({_meta:{},geom:gT,cfg:{geo:{lat:51.6,lon:-3.9,rot:0,ele:0}}},TT2,[]).includes('<type>hip</type>'));
 
 /* ---- features on the track ---- */
 const g=clone(rect); g.features=[{type:'roller',leg:0,t:.5,p:{h:.5,L:4,n:1}}];
@@ -133,7 +172,7 @@ T=m.buildTrack(dj); sp=m.spansOf(T,dj);
 const design={_meta:{name:'Line & <test>'},geom:dj,cfg:{geo}};
 const gpx=m.toGPX(design,T,sp,'2026-01-01T00:00:00Z');
 const parsed=m.parseGPX(gpx);
-ok('GPX is well formed enough to read back', parsed.pts.length>200&&parsed.wpts.length===dj.features.length);
+ok('GPX is well formed enough to read back', parsed.pts.length>200&&parsed.wpts.length===dj.features.length+T.hips.length);
 ok('GPX escapes the name', gpx.includes('Line &amp; &lt;test&gt;'));
 ok('GPX track starts at the plan origin offset', near(m.fromLatLon(geo,parsed.pts[0]).x,m.pointAt(T,0).x,0.01));
 ok('GPX heights follow the profile', Math.max(...parsed.pts.map(p=>p.ele))>12+2);

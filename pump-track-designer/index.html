@@ -512,19 +512,9 @@ const FEATURES={
     build(p){const S=seq(),a=cosRamp(p.h,p.app*DEG),d=cosRamp(p.lh,p.land*DEG);
       S.add('up',a.len,a.z).add('flat',p.deck,()=>p.h); gapZone(S,p.h,p.gap,p.lh,60,55);
       return S.add('down',d.len,x=>p.lh-d.z(x));}},
-  whaletail:{name:'Whale tail',short:'WT',
-    params:[P('h','Height','m',.4,3,.05,1.2),P('lip','Lip angle','°',15,65,1,35),
-            P('top','Top','m',.2,2,.05,.4),P('flare','Flare','×',1,4,.1,2.5),
-            P('back','Back angle','°',30,80,1,55)],
-    build(p){const S=seq(),u=arcUp(p.h,p.lip*DEG),tb=Math.tan(p.back*DEG);
-      S.add('wood',u.len,u.z).add('wood',p.top,()=>p.h).add('gap',p.h/tb,x=>p.h-x*tb);
-      const a=u.len;
-      // fans from track width at the foot to `flare` times it at the lip
-      S.flare=x=>x>=a?p.flare:1+(p.flare-1)*Math.pow(clamp(x/a,0,1),1.4);
-      return S;}},
-  bonerlog:{name:'Boner log',short:'BL',
-    params:[P('h','Deck height','m',.4,3,.05,1),P('deck','Log length','m',.8,6,.1,2.4),
-            P('kick','Log kick','°',0,15,.5,4),P('gap','Gap','m',.3,6,.1,1.8),
+  woodendrop:{name:'Wooden drop',short:'WD',
+    params:[P('h','Deck height','m',.4,3,.05,1),P('deck','Deck length','m',.8,6,.1,2.4),
+            P('kick','Deck kick','°',0,15,.5,4),P('gap','Gap','m',.3,6,.1,1.8),
             P('lh','Landing height','m',.2,2.5,.05,.6),P('app','Run-up angle','°',8,40,1,20),
             P('land','Landing angle','°',10,45,1,28)],
     build(p){const S=seq(),a=cosRamp(p.h,p.app*DEG),d=cosRamp(p.lh,p.land*DEG),tk=Math.tan(p.kick*DEG);
@@ -547,9 +537,30 @@ const FEATURES={
 /* Quick sizes scale every length and height of the default; angles, counts
    and the whale tail's flare stay. */
 const SIZES={S:.65,M:1,L:1.35,XL:1.7};
-const SCALED=new Set(['h','L','deck','gap','lh','top']);
+const SCALED=new Set(['h','L','deck','gap','lh']);
 const BERM_SIZES={S:{r:2.5,bh:.9},M:{r:3.5,bh:1.2},L:{r:5,bh:1.6},XL:{r:7,bh:2}};
 
+/* ---------- hips ----------
+   A hip is a corner type. It has no fillet: the takeoff ends on the straight
+   coming in, the landing starts on the straight going out, and the flight
+   line cuts the corner. `gap` is the straight-line plan distance from the
+   centre of the lip to the centre of the knuckle, so for a turn of theta the
+   lip and knuckle each sit gap/(2 cos(theta/2)) from the corner point. The
+   turn itself is the corner's own angle, 0-90 degrees. */
+const HIP_PARAMS=[P('gap','Gap, lip to knuckle','m',.5,8,.1,2.5),P('w','Takeoff width','m',.8,4,.1,1.5),
+  P('flare','Landing flare','×',1,2.5,.1,1.5),P('h','Takeoff height','m',.3,3,.05,1),
+  P('lh','Landing height','m',.3,3,.05,1),P('lip','Lip angle','°',10,70,1,40),P('land','Landing angle','°',10,50,1,30)];
+const HIP_SIZES={S:.7,M:1,L:1.35,XL:1.7};
+function normHip(h){
+  h=h||{}; const o={style:h.style==='table'?'table':'double',side:+h.side<0?-1:1};
+  for(const q of HIP_PARAMS){ const v=+h[q.k]; o[q.k]=Number.isFinite(v)?clamp(v,q.min,q.max):q.def; }
+  return o;
+}
+function sizedHip(h,size){
+  const k=HIP_SIZES[size]||1, o=normHip(h);
+  for(const q of HIP_PARAMS) if(q.k==='h'||q.k==='lh'||q.k==='gap') o[q.k]=clamp(rnd(q.def*k,2),q.min,q.max);
+  return o;
+}
 function defaultParams(type){
   const o={}; for(const q of FEATURES[type].params) o[q.k]=q.def; return o;
 }
@@ -586,6 +597,7 @@ function profHeight(pr){ let m=0; for(let u=0;u<=pr.len;u+=pr.len/200) m=Math.ma
 /* ---------- track geometry ---------- */
 const AUTO_BERM_DEG=35;   // an "auto" corner is banked once it turns more than this
 function cornerIsBerm(node,deflDeg){
+  if(node.berm==='hip') return false;
   if(node.berm==='berm'||node.berm===true) return true;
   if(node.berm==='flat'||node.berm===false) return false;
   return Math.abs(deflDeg)>AUTO_BERM_DEG;
@@ -601,7 +613,7 @@ function buildTrack(geom){
     let defl=Math.atan2(cross(din,dout),dot(din,dout));
     // a reversal has no fillet; keep it just short of one so tan() stays finite
     defl=clamp(defl,-179*DEG,179*DEG);
-    const r=Math.max(0,+p.r||0);
+    const r=p.berm==='hip'?0:Math.max(0,+p.r||0);
     return {i,end:false,din,dout,defl,r,T:r*Math.tan(Math.abs(defl)/2),P:V(p.x,p.y)};
   });
   const legsN=closed?n:n-1, scale=cor.map(()=>1);
@@ -620,7 +632,7 @@ function buildTrack(geom){
     if(c.end) return;
     const node=N[c.i], sg=c.defl>=0?1:-1, berm=cornerIsBerm(node,c.defl/DEG);
     const arc={kind:'arc',i:c.i,r:c.reff,sg,sweepAbs:Math.abs(c.defl),defl:c.defl,s0:s,len:c.reff*Math.abs(c.defl),
-      A:c.A,B:c.B,P:c.P,tight:c.tight,berm,bh:berm?(+node.bh||0):0,rh:+node.rh||0};
+      A:c.A,B:c.B,P:c.P,tight:c.tight,berm,bh:berm?(+node.bh||0):0,rh:node.berm==='hip'?0:+node.rh||0,hip:node.berm==='hip'};
     if(arc.len>1e-9){
       arc.C=addv(c.A,mulv(leftOf(c.din),c.reff*sg));
       arc.a0=Math.atan2(c.A.y-arc.C.y,c.A.x-arc.C.x);
@@ -638,7 +650,42 @@ function buildTrack(geom){
     if(closed||k+1<n-1) pushArc(b);
   }
   out.length=s;
+  out.hips=[];
+  for(const a of out.arcs) if(a.hip) out.hips.push(hipOf(out,N[a.i],a,n));
   return out;
+}
+/* Where a hip's takeoff and landing sit, its centreline profile (unrolled
+   round the corner) and the lengths of straight it uses either side. */
+function hipOf(T,node,arc,n){
+  const hp=normHip(node.hip), th=arc.sweepAbs, half=hp.gap/(2*Math.cos(Math.min(th,170*DEG)/2));
+  const table=hp.style==='table', lh=table?hp.h:hp.lh;
+  const up=arcUp(hp.h,hp.lip*DEG), dn=cosRamp(lh,hp.land*DEG), S=seq();
+  S.add('up',up.len,up.z);
+  if(table) S.add('flat',2*half,()=>hp.h); else gapZone(S,hp.h,2*half,lh,55,55);
+  S.add('down',dn.len,x=>lh-dn.z(x));
+  const wt=hp.w/T.width, wl=wt*hp.flare;
+  S.flare=u=>u<up.len+half?wt:wl;
+  S.type='hip'; S.p=hp;
+  const legIn=T.legs.find(l=>l.k===(arc.i-1+n)%n), legOut=T.legs.find(l=>l.k===arc.i);
+  const c=T.corners[arc.i], din=c.din, dout=c.dout;
+  const zIn=up.len+half, zOut=half+dn.len;
+  return {i:arc.i,hp,table,theta:th,sg:arc.sg,half,s0:arc.s0-zIn,pr:S,up:up.len,down:dn.len,
+    P:arc.P,din,dout,lip:sub(arc.P,mulv(din,half)),knuckle:addv(arc.P,mulv(dout,half)),
+    legIn:legIn?legIn.k:-1,legOut:legOut?legOut.k:-1,
+    zones:[legIn&&{leg:legIn.k,a:legIn.len-zIn,b:legIn.len},legOut&&{leg:legOut.k,a:0,b:zOut}].filter(Boolean),
+    fits:!!legIn&&!!legOut&&legIn.len>=zIn-0.02&&legOut.len>=zOut-0.02,needIn:zIn,needOut:zOut};
+}
+/* Turn a hip corner to `deg` (0-90) towards `side` (+1 left, -1 right) by
+   swinging the next straight round it, keeping that straight's length. */
+function setHipTurn(geom,i,deg,side){
+  const N=geom.nodes, n=N.length, closed=!!geom.closed&&n>=3;
+  if(!closed&&(i<=0||i>=n-1)) return false;
+  const A=N[(i-1+n)%n], Pn=N[i], C=N[(i+1)%n];
+  const din=unit(sub(Pn,A)), L=dist(Pn,C), a=clamp(deg,0,179)*DEG*(side<0?-1:1);
+  const d=V(din.x*Math.cos(a)-din.y*Math.sin(a),din.x*Math.sin(a)+din.y*Math.cos(a));
+  C.x=rnd(Pn.x+d.x*L,3); C.y=rnd(Pn.y+d.y*L,3);
+  Pn.hip=Object.assign(normHip(Pn.hip),{side:side<0?-1:1});
+  return true;
 }
 function elPoint(e,d){
   if(e.kind==='leg') return {x:e.a.x+e.dir.x*d,y:e.a.y+e.dir.y*d,dir:e.dir};
@@ -710,7 +757,9 @@ function spansOf(T,geom){
 function findSlot(T,spans,leg,c,len,skip){
   const L=T.legs[leg].len;
   const occ=spans.filter(sp=>sp&&sp.f.leg===leg&&sp.i!==skip)
-    .map(sp=>[sp.c-sp.pr.len/2,sp.c+sp.pr.len/2]).sort((a,b)=>a[0]-b[0]);
+    .map(sp=>[sp.c-sp.pr.len/2,sp.c+sp.pr.len/2])
+    .concat((T.hips||[]).flatMap(h=>h.zones.filter(z=>z.leg===leg).map(z=>[z.a,z.b])))
+    .sort((a,b)=>a[0]-b[0]);
   const gaps=[]; let x=0;
   for(const [a,b] of occ){ if(a>x) gaps.push([x,a]); x=Math.max(x,b); }
   if(L>x) gaps.push([x,L]);
@@ -734,6 +783,20 @@ function issuesOf(T,geom,spans){
     if(A&&B&&A.f.leg===B.f.leg&&Math.min(A.c+A.pr.len/2,B.c+B.pr.len/2)-Math.max(A.c-A.pr.len/2,B.c-B.pr.len/2)>0.05)
       out.push({kind:'overlap',feature:b,msg:`${FEATURES[A.f.type].name} ${a+1} and ${FEATURES[B.f.type].name} ${b+1} overlap`});
   }
+  for(const h of T.hips||[]){
+    if(!h.fits) out.push({kind:'fit',node:h.i,
+      msg:`Hip ${h.i+1} needs ${rnd(h.needIn,1)} m of straight before it and ${rnd(h.needOut,1)} m after`});
+    if(h.theta>90.5*DEG) out.push({kind:'hipangle',node:h.i,msg:`Hip ${h.i+1} turns ${Math.round(h.theta/DEG)}°; a hip is 0–90°`});
+    for(const z of h.zones) for(const sp of spans){
+      if(!sp||sp.f.leg!==z.leg) continue;
+      if(Math.min(z.b,sp.c+sp.pr.len/2)-Math.max(z.a,sp.c-sp.pr.len/2)>0.05)
+        out.push({kind:'overlap',node:h.i,feature:sp.i,msg:`Hip ${h.i+1} and ${FEATURES[sp.f.type].name} ${sp.i+1} overlap`});
+    }
+  }
+  for(let a=0;a<(T.hips||[]).length;a++) for(let b=a+1;b<T.hips.length;b++)
+    for(const za of T.hips[a].zones) for(const zb of T.hips[b].zones)
+      if(za.leg===zb.leg&&Math.min(za.b,zb.b)-Math.max(za.a,zb.a)>0.05)
+        out.push({kind:'overlap',node:T.hips[b].i,msg:`Hip ${T.hips[a].i+1} and hip ${T.hips[b].i+1} overlap`});
   return out;
 }
 /* Rollers built into a berm sit at its middle. */
@@ -749,6 +812,7 @@ function zAt(T,spans,s){
     if(u>=0&&u<=sp.pr.len) z=Math.max(z,profZ(sp.pr,u)); }
   for(const a of T.arcs){ const br=bermRoller(a); if(!br) continue; const u=local(br.s0);
     if(u>=0&&u<=br.len) z=Math.max(z,br.h*(1-Math.cos(2*Math.PI*u/br.len))/2); }
+  for(const h of T.hips||[]){ const u=local(h.s0); if(u>=0&&u<=h.pr.len) z=Math.max(z,profZ(h.pr,u)); }
   return z;
 }
 function profileSamples(T,spans,ds=0.25){
@@ -761,8 +825,8 @@ function profileSamples(T,spans,ds=0.25){
    with a 1:1 back. A builder's quantity, not a survey. */
 function dirtVolume(T,geom,spans){
   const w=T.width; let v=0; const du=0.05;
-  for(const sp of spans){ if(!sp) continue;
-    for(let u=0;u<sp.pr.len;u+=du){ const z=profZ(sp.pr,u+du/2); v+=(w*flareAt(sp.pr,u+du/2)*z+z*z)*du; } }
+  for(const pr of spans.filter(Boolean).map(sp=>sp.pr).concat((T.hips||[]).map(h=>h.pr)))
+    for(let u=0;u<pr.len;u+=du){ const z=profZ(pr,u+du/2); v+=(w*flareAt(pr,u+du/2)*z+z*z)*du; }
   for(const a of T.arcs){
     if(a.berm) v+=a.len*(0.5*a.bh*w+0.5*a.bh*a.bh);
     const br=bermRoller(a); if(br) v+=br.h*br.len/2*w;
@@ -780,7 +844,7 @@ function extentOf(T){
 function statsOf(T,geom,spans){
   const e=extentOf(T);
   return {length:T.length,w:e.x1-e.x0,h:e.y1-e.y0,volume:dirtVolume(T,geom,spans),
-    features:spans.filter(Boolean).length,berms:T.arcs.filter(a=>a.berm).length};
+    features:spans.filter(Boolean).length+(T.hips||[]).length,berms:T.arcs.filter(a=>a.berm).length};
 }
 
 /* ---------- editing that keeps features where they were ---------- */
@@ -861,7 +925,7 @@ function toGPX(design,T,spans,stamp){
   const w=spans.filter(Boolean).map(sp=>{
     const p=pointAt(T,sp.s0+sp.pr.len/2);
     return `  <wpt ${ll(p)}><ele>${ele(profHeight(sp.pr))}</ele><name>${xmlEsc(featureLabel(sp.f))}</name><type>${sp.f.type}</type></wpt>`;
-  });
+  }).concat((T.hips||[]).map(h=>`  <wpt ${ll(h.P)}><ele>${ele(Math.max(h.hp.h,h.table?h.hp.h:h.hp.lh))}</ele><name>Hip ${h.hp.style} ${Math.round(h.theta/DEG)}° ${h.hp.gap.toFixed(1)} m</name><type>hip</type></wpt>`));
   const trk=pts.map(p=>`      <trkpt ${ll(p)}><ele>${ele(zAt(T,spans,p.s))}</ele></trkpt>`);
   const json=JSON.stringify({geom:design.geom,geo}).replace(/]]>/g,']]]]><![CDATA[>');
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -960,18 +1024,23 @@ function gpxToDesign(g,width){
    row per feature. Reads back what it writes. */
 const CSV_PARAMS=[['h','height_m'],['L','roller_length_m'],['n','count'],['deck','deck_m'],['gap','gap_m'],
   ['lh','landing_height_m'],['lip','lip_deg'],['land','landing_deg'],['app','approach_deg'],['kick','kick_deg'],
-  ['top','top_m'],['flare','flare_x'],['back','back_deg'],['ang','rollin_deg']];
-const CSV_HEAD=['kind','ref','type','x_m','y_m','radius_m','corner','berm_height_m','berm_roller_m','width_m',
+  ['flare','flare_x'],['ang','rollin_deg']];
+const CSV_HEAD=['kind','ref','type','x_m','y_m','radius_m','corner','hip_style','hip_side','berm_height_m','berm_roller_m','width_m',
   'leg','start_m','length_m'].concat(CSV_PARAMS.map(c=>c[1]));
-function cornerName(b){ return b==='berm'||b===true?'berm':b==='flat'||b===false?'flat':'auto'; }
+function cornerName(b){ return b==='berm'||b===true?'berm':b==='flat'||b===false?'flat':b==='hip'?'hip':'auto'; }
 function toCSV(geom,T,spans){
   const row=o=>CSV_HEAD.map(h=>o[h]==null?'':String(o[h])).join(',');
   const lines=['# Creature Cycles Pump Track Designer - dimensions. Metres and degrees. Plan x east, y north.',
     '# leg N runs from node N to the next node. start_m is from the end of the corner before it to the feature start.',
     CSV_HEAD.join(',')];
   lines.push(row({kind:'track',type:geom.closed?'loop':'line',width_m:rnd(geom.width,3)}));
-  geom.nodes.forEach((p,i)=>lines.push(row({kind:'node',ref:'N'+(i+1),x_m:rnd(p.x,3),y_m:rnd(p.y,3),
-    radius_m:rnd(+p.r||0,3),corner:cornerName(p.berm),berm_height_m:rnd(+p.bh||0,3),berm_roller_m:rnd(+p.rh||0,3)})));
+  geom.nodes.forEach((p,i)=>{
+    const o={kind:'node',ref:'N'+(i+1),x_m:rnd(p.x,3),y_m:rnd(p.y,3),
+      radius_m:rnd(+p.r||0,3),corner:cornerName(p.berm),berm_height_m:rnd(+p.bh||0,3),berm_roller_m:rnd(+p.rh||0,3)};
+    if(p.berm==='hip'){ const h=normHip(p.hip); o.hip_style=h.style; o.hip_side=h.side<0?'right':'left';
+      o.width_m=rnd(h.w,3); for(const [k,c] of CSV_PARAMS) if(k in h) o[c]=rnd(h[k],3); }
+    lines.push(row(o));
+  });
   spans.forEach((sp,i)=>{ if(!sp) return;
     const o={kind:'feature',ref:'F'+(i+1),type:sp.f.type,leg:sp.f.leg+1,
       start_m:rnd(sp.c-sp.pr.len/2,3),length_m:rnd(sp.pr.len,3)};
@@ -994,8 +1063,14 @@ function parseCSV(text){
   const num=(v,d)=>{const x=parseFloat(v);return Number.isFinite(x)?x:d;};
   const tr=rows.find(r=>r.kind==='track')||{};
   const geom={closed:(tr.type||'loop')!=='line',width:num(tr.width_m,1.5),nodes:[],features:[]};
-  for(const r of rows) if(r.kind==='node') geom.nodes.push({x:num(r.x_m,0),y:num(r.y_m,0),r:num(r.radius_m,0),
-    berm:cornerName(r.corner||'auto'),bh:num(r.berm_height_m,1.2),rh:num(r.berm_roller_m,0)});
+  for(const r of rows) if(r.kind==='node'){
+    const nd={x:num(r.x_m,0),y:num(r.y_m,0),r:num(r.radius_m,0),
+      berm:cornerName(r.corner||'auto'),bh:num(r.berm_height_m,1.2),rh:num(r.berm_roller_m,0)};
+    if(nd.berm==='hip'){ const h={style:r.hip_style,side:r.hip_side==='right'?-1:1,w:num(r.width_m,NaN)};
+      for(const [k,c] of CSV_PARAMS){ const v=parseFloat(r[c]); if(Number.isFinite(v)) h[k]=v; }
+      nd.hip=normHip(h); }
+    geom.nodes.push(nd);
+  }
   if(geom.nodes.length<2) throw new Error('needs at least two node rows');
   const T=buildTrack(geom);
   for(const r of rows){
@@ -1023,8 +1098,12 @@ function profileCSV(T,spans,geo){
    over the defaults on load so an older file keeps working. */
 function normGeom(g){
   g=g||{};
-  const nodes=(Array.isArray(g.nodes)?g.nodes:[]).map(p=>({x:+p.x||0,y:+p.y||0,r:Math.max(0,+p.r||0),
-    berm:cornerName(p.berm),bh:Number.isFinite(+p.bh)?+p.bh:1.2,rh:Math.max(0,+p.rh||0)}));
+  const nodes=(Array.isArray(g.nodes)?g.nodes:[]).map(p=>{
+    const o={x:+p.x||0,y:+p.y||0,r:Math.max(0,+p.r||0),
+      berm:cornerName(p.berm),bh:Number.isFinite(+p.bh)?+p.bh:1.2,rh:Math.max(0,+p.rh||0)};
+    if(p.hip||o.berm==='hip') o.hip=normHip(p.hip);
+    return o;
+  });
   const legsN=g.closed&&nodes.length>=3?nodes.length:Math.max(0,nodes.length-1);
   const features=(Array.isArray(g.features)?g.features:[])
     .filter(f=>f&&FEATURES[f.type]&&legsN>0)
@@ -1038,7 +1117,8 @@ function normGeom(g){
    park line. Feature positions are given as metres from the start of their
    straight, then converted to the stored fraction. */
 function tpl(name,note,closed,width,nodes,feats){
-  const geom={closed,width,nodes:nodes.map(([x,y,r=3.5,berm='berm',bh=1.2,rh=0])=>({x,y,r,berm,bh,rh})),features:[]};
+  const geom={closed,width,nodes:nodes.map(([x,y,r=3.5,berm='berm',bh=1.2,rh=0,hip])=>
+    Object.assign({x,y,r,berm,bh,rh},hip?{hip:normHip(hip)}:{})),features:[]};
   const T=buildTrack(geom);
   geom.features=feats.map(([type,leg,at,p])=>{
     const f={type,leg,t:0,p:normParams(type,Object.assign(defaultParams(type),p||{}))};
@@ -1059,21 +1139,21 @@ const TEMPLATES=[
     [[-13,6,3.5],[13,-6,3.5],[13,6,3.5],[-13,-6,3.5]],
     [['roller',0,.6,{h:.45,L:3.6,n:2}],['roller',0,9.8,{h:.45,L:3.6,n:2}],
      ['roller',2,.6,{h:.45,L:3.6,n:2}],['roller',2,9.8,{h:.45,L:3.6,n:2}]]),
-  tpl('Dirt jump line','Start hill, table, doubles, step up, berm and return line',false,1.2,
-    [[0,0,0],[64,0,4.5,'berm',1.6],[64,9,4.5,'berm',1.6],[0,9,0]],
+  tpl('Dirt jump line','Start hill, table, doubles, step up, berm, return line with a hip',false,1.2,
+    [[0,0,0],[64,0,4.5,'berm',1.6],[64,9,4.5,'berm',1.6],[22,9,0,'hip',0,0,{style:'double',side:-1,gap:2.5,w:1.2,h:1,lh:1}],
+     [1.215,21,0]],
     [['starthill',0,0,{h:2.2,deck:2,ang:28}],['tabletop',0,13.5,{h:1,deck:2.5,lip:38,land:28}],
      ['double',0,24.5,{h:1.1,gap:2.6,lh:1.1,lip:42,land:30}],['double',0,35.5,{h:1.2,gap:3,lh:1.2,lip:44,land:30}],
      ['stepup',0,46,{h:.8,gap:1.6,lh:1.3,deck:2,lip:45,land:25}],
      ['roller',2,1,{h:.5,L:4,n:3}],['stepdown',2,16,{h:1.3,deck:1.8,gap:1.5,lh:.7,app:18,land:25}],
-     ['whaletail',2,31,{h:1.2,lip:35,flare:2.5}],['roller',2,39,{h:.5,L:4,n:2}],
-     ['tabletop',2,49,{h:.7,deck:1.5,lip:30,land:25}]]),
+     ['roller',3,5,{h:.5,L:4,n:2}],['tabletop',3,15,{h:.7,deck:1.5,lip:30,land:25}]]),
   tpl('Kids loop','Low rollers and soft berms, about 35 m',true,1,
     [[0,0,2.8,'berm',.7],[12,0,2.8,'berm',.7],[12,5.6,2.8,'berm',.7],[0,5.6,2.8,'berm',.7]],
     [['roller',0,.2,{h:.25,L:3,n:2}],['roller',2,.2,{h:.25,L:3,n:2}]]),
-  tpl('Jump park line','Start hill, boner log, drop, whale tail',false,1.4,
-    [[0,0,0],[42,0,6,'berm',1.2],[54,12,0]],
-    [['starthill',0,0,{h:2.6,deck:2,ang:30}],['bonerlog',0,13,{}],['drop',0,25.5,{}],
-     ['whaletail',1,1,{}],['tabletop',1,6.5,{h:.9,deck:2,lip:35,land:25}]]),
+  tpl('Jump park line','Start hill, wooden drop, drop, 45° hip',false,1.4,
+    [[0,0,0],[42,0,0,'hip',0,0,{style:'table',side:1,gap:2.5,w:1.4,h:1,lh:1}],[54,12,0]],
+    [['starthill',0,0,{h:2.6,deck:2,ang:30}],['woodendrop',0,13,{}],['drop',0,25.5,{}],
+     ['tabletop',1,6.5,{h:.9,deck:2,lip:35,land:25}]]),
   tpl('Empty loop','Four berms, nothing on the straights',true,1.5,
     [[0,0,3.5],[24,0,3.5],[24,12,3.5],[0,12,3.5]],[]),
   tpl('Empty line','One straight to build a jump line on',false,1.2,[[0,0,0],[40,0,0]],[])
@@ -1088,8 +1168,8 @@ const clone=o=>JSON.parse(JSON.stringify(o));
 const SANS='system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif';
 const MONO='ui-monospace,"SF Mono",Menlo,Consolas,monospace';
 const AUTOSAVE_KEY='creature-pump-track-v1';
-const PALETTE=['roller','berm','bermroller','tabletop','double','stepup','stepdown','drop','whaletail','bonerlog','starthill'];
-const PAL_NAME={berm:'Berm',bermroller:'Berm + roller'};
+const PALETTE=['roller','berm','bermroller','hip','tabletop','double','stepup','stepdown','drop','woodendrop','starthill'];
+const PAL_NAME={berm:'Berm',bermroller:'Berm + roller',hip:'Hip'};
 const f1=v=>(Math.round(v*10)/10).toFixed(1), f2=v=>(Math.round(v*100)/100).toFixed(2);
 
 let COL={};
@@ -1213,6 +1293,44 @@ function drawFeature(ctx,X,Y,k,s0,pr,st={}){
   else { ctx.lineWidth=1.5; ctx.strokeStyle=COL.gap; }
   ctx.stroke(); ctx.restore();
 }
+/* A hip in plan: takeoff on the straight in, flared landing on the straight
+   out. A table fills the corner with a deck; a double shows the faces you fly
+   over and a dashed flight line, lip to knuckle. */
+function drawHip(ctx,X,Y,k,h,st){
+  const pr=h.pr, step=Math.max(.06,1.5/k), hwf=u=>T.width/2*flareAt(pr,u);
+  const wt=h.hp.w/2, wl=wt*h.hp.flare, nIn=leftOf(h.din), nOut=leftOf(h.dout);
+  const edge=()=>{
+    if(st.sel){ ctx.lineWidth=3.5; ctx.strokeStyle=COL.sel; }
+    else if(st.bad){ ctx.lineWidth=2.5; ctx.strokeStyle=COL.bad; ctx.setLineDash([7,5]); }
+    else { ctx.lineWidth=1.5; ctx.strokeStyle=COL.gap; }
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  const poly=pts=>{ ctx.beginPath(); pts.forEach((p,i)=>i?ctx.lineTo(X(p.x),Y(p.y)):ctx.moveTo(X(p.x),Y(p.y))); ctx.closePath(); };
+  const LL=addv(h.lip,mulv(nIn,wt)), LR=sub(h.lip,mulv(nIn,wt)), KL=addv(h.knuckle,mulv(nOut,wl)), KR=sub(h.knuckle,mulv(nOut,wl));
+  ctx.save(); ctx.lineJoin='round';
+  strip(ctx,X,Y,h.s0,0,h.up,hwf,step); ctx.fillStyle=COL.up; ctx.fill(); edge();
+  strip(ctx,X,Y,h.s0,h.up+2*h.half,pr.len,hwf,step); ctx.fillStyle=COL.down; ctx.fill(); edge();
+  if(h.table){ poly([LL,KL,KR,LR]); ctx.fillStyle=COL.flat; ctx.fill(); edge(); }
+  else {
+    const back=Math.min(h.half,h.hp.h/Math.tan(55*DEG)), front=Math.min(h.half,h.hp.lh/Math.tan(55*DEG));
+    const B=addv(h.lip,mulv(h.din,back)), F=sub(h.knuckle,mulv(h.dout,front));
+    ctx.fillStyle=COL.gap;
+    poly([LL,addv(B,mulv(nIn,wt)),sub(B,mulv(nIn,wt)),LR]); ctx.fill();
+    poly([KL,addv(F,mulv(nOut,wl)),sub(F,mulv(nOut,wl)),KR]); ctx.fill();
+    const x0=X(h.lip.x), y0=Y(h.lip.y), x1=X(h.knuckle.x), y1=Y(h.knuckle.y), a=Math.atan2(y1-y0,x1-x0);
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1);
+    ctx.setLineDash([6,5]); ctx.lineWidth=2.5; ctx.strokeStyle=COL.ink; ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x1-10*Math.cos(a-.45),y1-10*Math.sin(a-.45));
+    ctx.lineTo(x1-10*Math.cos(a+.45),y1-10*Math.sin(a+.45)); ctx.closePath(); ctx.fillStyle=COL.ink; ctx.fill();
+  }
+  ctx.beginPath(); ctx.moveTo(X(LL.x),Y(LL.y)); ctx.lineTo(X(LR.x),Y(LR.y)); ctx.moveTo(X(KL.x),Y(KL.y)); ctx.lineTo(X(KR.x),Y(KR.y));
+  ctx.strokeStyle=st.sel?COL.sel:COL.gap; ctx.lineWidth=Math.max(2,Math.min(3.5,k*.1)); ctx.stroke();
+  ctx.restore();
+}
+function hipLabelAt(h,off){
+  const o=unit(mulv(addv(leftOf(h.din),leftOf(h.dout)),-h.sg));
+  return addv(h.P,mulv(o.x||o.y?o:leftOf(h.din),off));
+}
 function outsideNormalSign(){
   if(!T.closed) return -1;
   let a=0; const N=D.geom.nodes;
@@ -1318,6 +1436,8 @@ function drawPlan(ctx,W,H,vw,o){
   const selF=o.sel&&o.sel.kind==='feature'?o.sel.i:-1;
   spans.forEach(sp=>{ if(sp&&sp.i!==selF) drawFeature(ctx,X,Y,k,sp.s0,sp.pr,{bad:!sp.fits||issues.some(q=>q.feature===sp.i)}); });
   if(selF>=0&&spans[selF]) drawFeature(ctx,X,Y,k,spans[selF].s0,spans[selF].pr,{sel:true});
+  for(const h of T.hips) drawHip(ctx,X,Y,k,h,{sel:o.sel&&o.sel.kind==='node'&&o.sel.i===h.i,
+    bad:!h.fits||issues.some(q=>q.node===h.i&&q.kind==='overlap')});
   if(o.preview&&o.preview.sp) drawFeature(ctx,X,Y,k,o.preview.sp.s0,o.preview.sp.pr,{alpha:.7,sel:true});
   drawRef(ctx,X,Y,LY);
   // control polygon while a corner is being dragged
@@ -1339,6 +1459,11 @@ function drawPlan(ctx,W,H,vw,o){
     for(const sp of spans){ if(!sp) continue;
       const p=pointAt(T,sp.s0+sp.pr.len/2), nl=mulv(leftOf(p.dir),out), off=w/2*flareAt(sp.pr,sp.pr.len/2)+20/k;
       labels.push([FEATURES[sp.f.type].short+' '+f2(sp.pr.p.h),X(p.x+nl.x*off),Y(p.y+nl.y*off),{size:11}]); }
+    for(const h of T.hips){ const p=hipLabelAt(h,h.hp.w/2*h.hp.flare+30/k);
+      labels.push([`HIP ${Math.round(h.theta/DEG)}° · ${f1(h.hp.gap)} m`,X(p.x),Y(p.y),{size:11}]); }
+  } else if(o.sel&&o.sel.kind==='node'&&T.hips.some(h=>h.i===o.sel.i)){
+    const h=T.hips.find(h=>h.i===o.sel.i), p=hipLabelAt(h,h.hp.w/2*h.hp.flare+34/k);
+    labels.push([`Hip ${Math.round(h.theta/DEG)}° · gap ${f1(h.hp.gap)} m`,X(p.x),Y(p.y),{size:13,edge:COL.sel}]);
   } else if(selF>=0&&spans[selF]){
     const sp=spans[selF], p=pointAt(T,sp.s0+sp.pr.len/2), nl=mulv(leftOf(p.dir),out), off=w/2*flareAt(sp.pr,sp.pr.len/2)+22/k;
     labels.push([FEATURES[sp.f.type].name+' · '+f1(sp.pr.len)+' m',X(p.x+nl.x*off),Y(p.y+nl.y*off),{size:13,edge:COL.sel}]);
@@ -1349,6 +1474,10 @@ function drawPlan(ctx,W,H,vw,o){
   if(o.handles&&LY.labels!==false){
     // shrink when zoomed out so the handle never hides the berm it sits on
     const tagsOnly=o.handles==='tags', R=tagsOnly?10:clamp(T.width*k*.75,9,14);
+    if(!tagsOnly&&o.preview&&o.preview.pt){
+      ctx.beginPath(); ctx.arc(X(o.preview.pt.x),Y(o.preview.pt.y),22,0,7); ctx.fillStyle=COL['berm-face']; ctx.fill();
+      ctx.lineWidth=3; ctx.strokeStyle=COL.sel; ctx.stroke();
+    }
     if(!tagsOnly&&o.preview&&o.preview.corner!=null){
       const a=T.arcs.find(z=>z.i===o.preview.corner);
       if(a){ ctx.beginPath(); ctx.arc(X(a.M.x),Y(a.M.y),26,0,7); ctx.fillStyle=COL['berm-face']; ctx.fill();
@@ -1368,13 +1497,13 @@ function drawPlan(ctx,W,H,vw,o){
     T.corners.forEach(c=>{
       const a=c.end?null:T.arcs.find(z=>z.i===c.i);
       const pos=c.end?c.P:a.M, x=X(pos.x), y=Y(pos.y), isSel=o.sel&&o.sel.kind==='node'&&o.sel.i===c.i;
-      const berm=a&&a.berm;
+      const berm=a&&a.berm, hip=a&&a.hip;
       if(isSel){ ctx.beginPath(); ctx.arc(x,y,R+6,0,7); ctx.lineWidth=3.5; ctx.strokeStyle=COL.sel; ctx.stroke(); }
       ctx.beginPath();
       if(c.end) roundRect(ctx,x-R,y-R,2*R,2*R,4); else ctx.arc(x,y,R,0,7);
-      ctx.fillStyle=berm?COL['handle-berm']:COL.handle; ctx.fill();
-      ctx.lineWidth=2; ctx.strokeStyle=c.tight?COL.bad:(berm?'#fff':COL['handle-ink']); ctx.stroke();
-      ctx.fillStyle=berm?'#fff':COL['handle-ink']; ctx.font=`800 ${tagsOnly?11:13}px ${SANS}`;
+      ctx.fillStyle=hip?COL.up:berm?COL['handle-berm']:COL.handle; ctx.fill();
+      ctx.lineWidth=2; ctx.strokeStyle=c.tight?COL.bad:hip?'#1a1a1a':(berm?'#fff':COL['handle-ink']); ctx.stroke();
+      ctx.fillStyle=hip?'#1a1a1a':berm?'#fff':COL['handle-ink']; ctx.font=`800 ${tagsOnly?11:13}px ${SANS}`;
       ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(c.end?(c.i===0?'S':'E'):cornerLabel(c.i),x,y+.5);
       hnd.corners.push({i:c.i,x,y,end:c.end});
     });
@@ -1413,6 +1542,8 @@ function kindAt(s){
     if(u>=0&&u<=sp.pr.len){ const z=profZ(sp.pr,u); if(z>bz){bz=z;best=profKind(sp.pr,u);} } }
   for(const a of T.arcs){ const br=bermRoller(a); if(!br) continue; const u=loc(br.s0);
     if(u>=0&&u<=br.len){ const z=br.h*(1-Math.cos(2*Math.PI*u/br.len))/2; if(z>bz){bz=z;best=u<br.len/2?'up':'down';} } }
+  for(const h of T.hips){ const u=loc(h.s0);
+    if(u>=0&&u<=h.pr.len){ const z=profZ(h.pr,u); if(z>bz){bz=z;best=profKind(h.pr,u);} } }
   return best;
 }
 function drawProfile(ctx,W,H,o){
@@ -1458,6 +1589,8 @@ function drawProfile(ctx,W,H,o){
   for(const sp of spans){ if(!sp||sp.pr.len*hk<20) continue;
     let s0=sp.s0; if(T.closed&&s0<0) s0+=T.length;
     const zt=profHeight(sp.pr); ctx.fillText(FEATURES[sp.f.type].short,X(s0+sp.pr.len/2),Math.max(padT-1,Y(zt)-4)); }
+  for(const h of T.hips){ if(h.pr.len*hk<20) continue; let s0=h.s0; if(T.closed&&s0<0) s0+=T.length;
+    ctx.fillText('HIP',X(s0+h.pr.len/2),Math.max(padT-1,Y(profHeight(h.pr))-4)); }
   // chainage
   const st=niceStep(0,hk,64); ctx.font=`700 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='top';
   for(let s=0;s<=T.length+1e-6;s+=st){ const x=X(s); ctx.fillRect(x,base,1,5); ctx.textAlign=s===0?'left':'center'; ctx.fillText(s===0?'0 m':String(s),x,base+6); }
@@ -1469,6 +1602,19 @@ function drawProfile(ctx,W,H,o){
 function iconCanvas(type,cv,W=88,H=34){
   const dpr=window.devicePixelRatio||1; cv.width=W*dpr; cv.height=H*dpr;
   const c=cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H);
+  if(type==='hip'){
+    // plan view: a takeoff on one straight, a flared landing on the next, the flight line between
+    const y=H-10, cx=W*.5;
+    c.lineCap='butt'; c.lineWidth=9; c.strokeStyle=COL.trk;
+    c.beginPath(); c.moveTo(4,y); c.lineTo(cx,y); c.lineTo(cx+30*Math.cos(.7),y-30*Math.sin(.7)); c.stroke();
+    c.fillStyle=COL.up; c.fillRect(cx-28,y-4.5,16,9);
+    c.save(); c.translate(cx,y); c.rotate(-.7);
+    c.fillStyle=COL.down; c.beginPath(); c.moveTo(12,-4.5); c.lineTo(28,-7); c.lineTo(28,7); c.lineTo(12,4.5); c.closePath(); c.fill();
+    c.restore();
+    c.setLineDash([3,3]); c.strokeStyle=COL.ink; c.lineWidth=1.5;
+    c.beginPath(); c.moveTo(cx-12,y); c.lineTo(cx+12*Math.cos(.7),y-12*Math.sin(.7)); c.stroke(); c.setLineDash([]);
+    return;
+  }
   if(type==='berm'||type==='bermroller'){
     const cx=8, cy=H+18, r=40;
     c.lineWidth=10; c.strokeStyle=COL.trk; c.beginPath(); c.arc(cx,cy,r,-1.45,-.05); c.stroke();
@@ -1511,6 +1657,14 @@ function previewFor(type,q){
   if(type==='berm'||type==='bermroller'){
     const c=nearestCorner(q); return c&&c.d<Math.max(T.width*3,90/view.k)?{corner:c.i}:null;
   }
+  if(type==='hip'){
+    // on a corner it becomes that corner; on a straight it adds a corner there
+    const c=nearestCorner(q);
+    if(c&&c.d<Math.max(T.width*2.5,60/view.k)) return {corner:c.i,hip:true};
+    const pl=projectLeg(T,q); if(!pl||pl.d>T.width/2+50/view.k) return null;
+    const L=T.legs[pl.leg], pt=V(pl.x,pl.y);
+    return {hip:true,leg:pl.leg,along:pl.along,pt,side:cross(L.dir,sub(q,pt))>=0?1:-1};
+  }
   const pl=projectLeg(T,q); if(!pl||pl.d>T.width/2+50/view.k) return null;
   const f={type,leg:pl.leg,t:0,p:sizedParams(type,'M')}, pr=profileOf(f);
   const slot=findSlot(T,spans,pl.leg,pl.along,pr.len,-1), leg=T.legs[pl.leg];
@@ -1520,8 +1674,22 @@ function placeAt(type,q){
   if(D.cfg.layers.design===false){ toast('The design layer is hidden. Show it in Layers to edit.'); return false; }
   const pv=previewFor(type,q);
   if(!pv){
-    toast(type.startsWith('berm')?'Drop a berm on a corner. No corner there yet? Drag a + to make one.':'Drop it on a straight.');
+    toast(type.startsWith('berm')?'Drop a berm on a corner. No corner there yet? Drag a + to make one.'
+      :type==='hip'?'Drop a hip on a corner or a straight.':'Drop it on a straight.');
     return false;
+  }
+  if(type==='hip'){
+    let i=pv.corner;
+    if(i!=null){
+      const nd=D.geom.nodes[i], c=T.corners[i];
+      nd.berm='hip'; nd.hip=normHip(Object.assign({w:T.width},nd.hip,{side:c.defl<0?-1:1}));
+      if(Math.abs(c.defl)>90.5*DEG) toast('That corner turns more than 90°. Set the hip angle to 90° or less.');
+    } else {
+      i=insertNode(D.geom,T,pv.leg,pv.along,{berm:'hip',r:0,hip:normHip({w:T.width,side:pv.side})});
+      recompute(); setHipTurn(D.geom,i,45,pv.side);
+    }
+    recompute(); commit(); setSel({kind:'node',i});
+    return true;
   }
   if(pv.corner!=null){
     const nd=D.geom.nodes[pv.corner];
@@ -1593,6 +1761,10 @@ function hitTest(x,y,q){
     const sp=spans[order[j]]; if(!sp) continue;
     const L=sp.leg, st=addv(L.a,mulv(L.dir,sp.c-sp.pr.len/2)), rel=sub(q,st), u=dot(rel,L.dir), v=cross(L.dir,rel);
     if(u>=-pad&&u<=sp.pr.len+pad&&Math.abs(v)<=T.width/2*flareAt(sp.pr,clamp(u,0,sp.pr.len))+pad) return {kind:'feature',i:sp.i};
+  }
+  for(const hh of T.hips){
+    const A0=sub(hh.P,mulv(hh.din,hh.half+hh.up)), B0=addv(hh.P,mulv(hh.dout,hh.half+hh.down));
+    if(Math.min(segDist(q,A0,hh.P),segDist(q,hh.P,B0))<=hh.hp.w/2*hh.hp.flare+pad) return {kind:'node',i:hh.i};
   }
   const pj=project(T,q);
   if(pj&&pj.el.kind==='arc'&&pj.el.len>.05&&Math.abs(pj.side)<=T.width/2+(pj.el.berm?bermWidth(pj.el.bh):0)+pad)
@@ -1717,6 +1889,8 @@ prof.addEventListener('click',e=>{
   const Lt=T.length;
   for(const sp of spans){ if(!sp) continue; let u=s-sp.s0; if(T.closed) u=((u%Lt)+Lt)%Lt;
     if(u>=0&&u<=sp.pr.len){ setSel({kind:'feature',i:sp.i}); return; } }
+  for(const h of T.hips){ let u=s-h.s0; if(T.closed) u=((u%Lt)+Lt)%Lt;
+    if(u>=0&&u<=h.pr.len){ setSel({kind:'node',i:h.i}); return; } }
   for(const a of T.arcs) if(s>=a.s0&&s<=a.s0+a.len){ setSel({kind:'node',i:a.i}); return; }
   setSel(null);
 });
@@ -1796,9 +1970,11 @@ function buildNodePanel(P){
     const del=document.createElement('button'); del.textContent='Delete end'; del.className='danger'; del.onclick=deleteSel;
     br.appendChild(del); P.appendChild(br); updateInspector(); return;
   }
+  if(n.berm==='hip'){ buildHipPanel(P,i,n); return; }
   const a=T.arcs.find(z=>z.i===i);
   hdr(P,(a&&a.berm?'Berm ':'Corner ')+(i+1),a&&a.berm?'berm':null);
-  segBtns(P,[['berm','Berm'],['flat','Flat'],['auto','Auto']],n.berm,v=>{
+  segBtns(P,[['berm','Berm'],['flat','Flat'],['auto','Auto'],['hip','Hip']],n.berm,v=>{
+    if(v==='hip') n.hip=normHip(Object.assign({w:T.width},n.hip,{side:c.defl<0?-1:1}));
     n.berm=v; if(v==='berm'&&!(n.bh>0)) n.bh=1.2; recompute(); commit(); buildInspector(); },'Corner type');
   if(a&&a.berm){
     const cur=Object.keys(BERM_SIZES).find(s=>BERM_SIZES[s].r===n.r&&BERM_SIZES[s].bh===n.bh)||null;
@@ -1813,6 +1989,31 @@ function buildNodePanel(P){
   cb.onchange=()=>{ n.rh=cb.checked?.45:0; recompute(); commit(); buildInspector(); };
   ck.append(cb,document.createTextNode('Roller in the middle')); P.appendChild(ck);
   if(n.rh>0) liveRows.push(prmRow(P,P_('Roller height','m',.15,1,.05),()=>n.rh,v=>{ n.rh=v; recompute(); updateInspector(); }));
+  const m=document.createElement('div'); m.id='fitmsg'; m.className='fitmsg'; P.appendChild(m);
+  xyRows(P,n);
+  const br=document.createElement('div'); br.className='btnrow';
+  const del=document.createElement('button'); del.textContent='Delete corner'; del.className='danger'; del.onclick=deleteSel;
+  br.appendChild(del); P.appendChild(br);
+  updateInspector();
+}
+function buildHipPanel(P,i,n){
+  const h=()=>(n.hip=normHip(n.hip)), deg=()=>Math.abs(T.corners[i].defl)/DEG;
+  hdr(P,'Hip '+(i+1),'hip');
+  segBtns(P,[['berm','Berm'],['flat','Flat'],['auto','Auto'],['hip','Hip']],'hip',v=>{
+    if(v==='hip') return;
+    n.berm=v; if(!(n.r>0)) n.r=4; if(v==='berm'&&!(n.bh>0)) n.bh=1.2; recompute(); commit(); buildInspector(); },'Corner type');
+  const row=el=>{ el.style.marginTop='8px'; return el; };
+  row(segBtns(P,[['table','Table'],['double','Double']],h().style,v=>{ h().style=v; recompute(); commit(); buildInspector(); },'Hip style'));
+  row(segBtns(P,[['1','Turn left'],['-1','Turn right']],String(h().side),v=>{
+    setHipTurn(D.geom,i,deg(),+v); recompute(); commit(); buildInspector(); },'Turn direction'));
+  const cur=Object.keys(HIP_SIZES).find(z=>{ const q=sizedHip(h(),z); return q.h===h().h&&q.lh===h().lh&&q.gap===h().gap; })||null;
+  row(segBtns(P,Object.keys(HIP_SIZES).map(z=>[z,z]),cur,v=>{ n.hip=sizedHip(h(),v); recompute(); commit(); buildInspector(); },'Hip size'));
+  liveRows.push(prmRow(P,P_('Hip angle','°',0,90,1),()=>Math.round(deg()),v=>{
+    setHipTurn(D.geom,i,v,h().side); recompute(); updateInspector(); }));
+  for(const q of HIP_PARAMS){
+    if(q.k==='lh'&&h().style==='table') continue;
+    liveRows.push(prmRow(P,q,()=>h()[q.k],v=>{ h()[q.k]=v; recompute(); updateInspector(); }));
+  }
   const m=document.createElement('div'); m.id='fitmsg'; m.className='fitmsg'; P.appendChild(m);
   xyRows(P,n);
   const br=document.createElement('div'); br.className='btnrow';
@@ -1847,8 +2048,12 @@ function updateInspector(){
     if(m){ m.className='fitmsg'+(iss?' bad':'');
       m.textContent=iss?iss.msg+'.':`${f1(sp.pr.len)} m long on a ${f1(legLen)} m straight. Starts ${f1(Math.max(0,sp.c-sp.pr.len/2))} m after corner ${T.closed||sp.f.leg>0?sp.f.leg+1:'S'}.`; }
   } else {
-    const a=T.arcs.find(z=>z.i===sel.i);
-    if(m&&a){ m.className='fitmsg'+(a.tight?' bad':'');
+    const a=T.arcs.find(z=>z.i===sel.i), hh=T.hips.find(z=>z.i===sel.i);
+    if(m&&hh){
+      const iss=issues.find(q=>q.node===sel.i);
+      m.className='fitmsg'+(iss&&issueIsError(iss)?' bad':'');
+      m.textContent=iss?iss.msg+'.':`Turns ${Math.round(hh.theta/DEG)}°. Uses ${f1(hh.needIn)} m of straight before the corner and ${f1(hh.needOut)} m after.`;
+    } else if(m&&a){ m.className='fitmsg'+(a.tight?' bad':'');
       m.textContent=(a.tight?`Too big for its straights: ${f1(a.r)} m fits. `:'')+`Turns ${Math.round(Math.abs(a.defl)/DEG)}°, ${f1(a.len)} m of track.`; }
     else if(m) m.textContent='';
   }
@@ -1879,7 +2084,7 @@ function drawDiagram(cv,pr){
   let um=0,zm=0; for(let i=0;i<=200;i++){ const u=pr.len*i/200, z=profZ(pr,u); if(z>zm){zm=z;um=u;} }
   const hx=X(0)-14; c.setLineDash([2,3]); c.beginPath(); c.moveTo(X(um),Y(zm)); c.lineTo(hx-4,Y(zm)); c.stroke(); c.setLineDash([]);
   arrow(hx,gy,hx,Y(zm)); c.save(); c.translate(hx-1,(gy+Y(zm))/2); c.rotate(-Math.PI/2); txt(f2(zm)+' m',0,0); c.restore();
-  const gs=pr.segs.find(s=>s.kind==='gap'&&pr.type!=='whaletail'&&pr.type!=='starthill');
+  const gs=pr.segs.find(s=>s.kind==='gap'&&pr.type!=='starthill');
   if(gs&&pr.p.gap>0){ const y=Y(zm)-14; arrow(X(gs.u0),y,X(gs.u1),y); txt('gap '+f1(gs.u1-gs.u0),(X(gs.u0)+X(gs.u1))/2,y); }
 }
 function refreshTrackPanel(){
@@ -1899,10 +2104,11 @@ function updateLive(){
     st('Features · berms',stats.features+' · '+stats.berms);
   if(h!==lastStatsHtml){ lastStatsHtml=h; $('stats').innerHTML=h; }
   syncIssues();
+  const dsub=f1(T.length)+' m '+(T.closed?'loop':'line'); if($('ly-design-sub').textContent!==dsub) $('ly-design-sub').textContent=dsub;
 }
 /* A corner too big for its straights is shrunk to fit, so it is a warning.
    A feature that overflows or overlaps is a real error. */
-const issueIsError=q=>q.kind!=='tight';
+const issueIsError=q=>q.kind!=='tight'&&q.kind!=='hipangle';
 let lastIssues='';
 function syncIssues(){
   const btn=$('issue-btn'), n=issues.length, err=issues.some(issueIsError);
