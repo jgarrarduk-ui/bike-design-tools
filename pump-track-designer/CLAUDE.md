@@ -106,7 +106,15 @@ through `normHip`). It is a jump that turns the track:
 
 All read by the one **Open** button (by extension, then by first character).
 
-- **JSON** design file: `{_meta:{name,designer,date,version,tool}, geom, cfg}`,
+- **Zip bundle** (what Save writes): `design.json`, `photo/<original name>`,
+  `gpx/<original name>` and `README.txt`, stored uncompressed (`packDesign`,
+  `zipStore`). In the bundle the photo is a file (`cfg.bg.file`), not a data
+  URL; a trace with no original file is written out from its points. Open
+  reads any zip (`unzip`, `readBundle`), inflating method 8 entries with
+  `DecompressionStream`. The originals are kept in `ORIG` and IndexedDB
+  (`creature-pump-track` / `files`), tied to their layer by `cfg.bg.id` /
+  `cfg.gpx.id`, so a reload keeps them and a different design never gets them.
+- **JSON** design file (Export, "Design only"): `{_meta:{name,designer,date,version,tool}, geom, cfg}`,
   same `_meta` shape as the suspension designer. Loaded through `normGeom`,
   so an older or hand-edited file is clamped, not rejected. The site photo
   is embedded (shrunk to 2400 px JPEG).

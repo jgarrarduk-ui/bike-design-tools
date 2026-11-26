@@ -460,7 +460,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
 
     <h2>Files</h2>
     <ul>
-      <li><b>Save</b> downloads the design file (.json, photo included). <b>Open</b> reads it back, and also opens GPX and dimensions CSV files.</li>
+      <li><b>Save</b> downloads one zip: the design, the site photo and the GPX trace exactly as you loaded them. Keep it anywhere (Dropbox, Drive, iCloud, email) and <b>Open</b> it to carry on. Open also reads a design .json, a GPX and a dimensions CSV.</li>
       <li><b>Export</b>: a build sheet (A4 PNG with plan, profile and dimensions), a dimensions CSV for a spreadsheet, a profile CSV (height every 25&nbsp;cm), and GPX for a phone or GPS on site once you set the site location.</li>
     </ul>
 
@@ -486,6 +486,9 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
   <div class="dlg-body">
     <h2>Build sheet</h2>
     <div class="btnrow"><button id="x-png" class="primary">Build sheet (PNG)</button></div>
+    <h2>Design file</h2>
+    <div class="btnrow"><button id="x-json">Design only (.json)</button></div>
+    <p class="note">Save makes a zip with the design, the original site photo and the GPX trace. This is the design alone in one file, with a reduced copy of the photo inside.</p>
     <h2>Dimensions</h2>
     <div class="btnrow"><button id="x-csv">Dimensions (CSV)</button><button id="x-prof">Profile (CSV)</button></div>
     <p class="note">Dimensions CSV opens in a spreadsheet: one row per corner and per feature. Edit it and Open it back in.</p>
@@ -1406,6 +1409,110 @@ const TEMPLATES=[
     [[0,0,3.5],[24,0,3.5],[24,12,3.5],[0,12,3.5]],[]),
   tpl('Empty line','One straight to build a jump line on',false,1.2,[[0,0,0],[40,0,0]],[])
 ];
+/* ---------- design bundle (.zip) ----------
+   Save writes one zip: design.json, the original site photo and the original
+   GPX trace, so nothing is lost to the shrunk copies the design keeps for
+   drawing. Stored (not compressed): photos are already compressed and this
+   keeps the writer small. The reader takes any zip; entries another tool
+   compressed come back with method 8 and the page inflates them. */
+const CRC_T=(()=>{ const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=CRC_T[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+const utf8=s=>new TextEncoder().encode(s);
+function dosTime(d){
+  return {time:(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1),
+    date:((Math.max(1980,d.getFullYear())-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate()};
+}
+/* files: [{name, data: Uint8Array or string}] -> Uint8Array */
+function zipStore(files,when=new Date(2026,0,1)){
+  const {time,date}=dosTime(when), parts=[], cen=[]; let off=0;
+  for(const f of files){
+    const name=utf8(f.name), data=typeof f.data==='string'?utf8(f.data):f.data, crc=crc32(data);
+    const h=new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(8,0,true);
+    h.setUint16(10,time,true); h.setUint16(12,date,true); h.setUint32(14,crc,true);
+    h.setUint32(18,data.length,true); h.setUint32(22,data.length,true); h.setUint16(26,name.length,true); h.setUint16(28,0,true);
+    const c=new DataView(new ArrayBuffer(46));
+    c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true);
+    c.setUint16(10,0,true); c.setUint16(12,time,true); c.setUint16(14,date,true); c.setUint32(16,crc,true);
+    c.setUint32(20,data.length,true); c.setUint32(24,data.length,true); c.setUint16(28,name.length,true);
+    c.setUint32(42,off,true);
+    parts.push(new Uint8Array(h.buffer),name,data); cen.push(new Uint8Array(c.buffer),name);
+    off+=30+name.length+data.length;
+  }
+  const cenLen=cen.reduce((a,b)=>a+b.length,0), e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true);
+  e.setUint32(12,cenLen,true); e.setUint32(16,off,true);
+  const all=parts.concat(cen,[new Uint8Array(e.buffer)]), out=new Uint8Array(off+cenLen+22); let p=0;
+  for(const a of all){ out.set(a,p); p+=a.length; }
+  return out;
+}
+/* Uint8Array -> [{name, method, data, size, crc}], read from the central directory. */
+function unzip(u8){
+  const v=new DataView(u8.buffer,u8.byteOffset,u8.byteLength); let e=-1;
+  for(let i=u8.length-22;i>=Math.max(0,u8.length-65557);i--) if(v.getUint32(i,true)===0x06054b50){ e=i; break; }
+  if(e<0) throw new Error('not a zip file');
+  const n=v.getUint16(e+10,true), dec=new TextDecoder(), out=[]; let p=v.getUint32(e+16,true);
+  for(let k=0;k<n;k++){
+    if(v.getUint32(p,true)!==0x02014b50) throw new Error('damaged zip');
+    const method=v.getUint16(p+10,true), crc=v.getUint32(p+16,true), csize=v.getUint32(p+20,true), size=v.getUint32(p+24,true);
+    const nl=v.getUint16(p+28,true), xl=v.getUint16(p+30,true), cl=v.getUint16(p+32,true), lo=v.getUint32(p+42,true);
+    const name=dec.decode(u8.subarray(p+46,p+46+nl));
+    const d0=lo+30+v.getUint16(lo+26,true)+v.getUint16(lo+28,true);
+    out.push({name,method,crc,size,data:u8.subarray(d0,d0+csize)});
+    p+=46+nl+xl+cl;
+  }
+  for(const f of out) if(f.method===0&&crc32(f.data)!==f.crc) throw new Error(f.name+' is damaged');
+  return out;
+}
+const safeName=(s,def)=>(String(s||'').split(/[\\/]/).pop().replace(/[^\w.\- ]+/g,'_').trim()||def);
+function traceToGPX(name,pts){
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Creature Cycles Pump Track Designer" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>${xmlEsc(name||'Trace')}</name><trkseg>
+${pts.map(p=>`    <trkpt lat="${(+p.lat).toFixed(8)}" lon="${(+p.lon).toFixed(8)}">${p.ele!=null?`<ele>${(+p.ele).toFixed(2)}</ele>`:''}</trkpt>`).join('\n')}
+  </trkseg></trk>
+</gpx>
+`;
+}
+/* design: the design object. photo: {name, data: Uint8Array} or null.
+   gpx: {name, text} or null. The photo goes in as a file, not inside the
+   JSON; the JSON says which file. A trace with no original file is written
+   out from its points. */
+function packDesign(design,photo,gpx,when){
+  const d=JSON.parse(JSON.stringify(design)), files=[];
+  if(d.cfg&&d.cfg.bg&&photo){
+    const nm='photo/'+safeName(photo.name,'site-photo.jpg'); delete d.cfg.bg.src; d.cfg.bg.file=nm;
+    files.push({name:nm,data:photo.data});
+  }
+  if(d.cfg&&d.cfg.gpx){
+    const g=gpx&&gpx.text?gpx:{name:(d.cfg.gpx.name||'trace')+'.gpx',text:traceToGPX(d.cfg.gpx.name,d.cfg.gpx.pts||[])};
+    const nm='gpx/'+safeName(g.name,'trace.gpx'); d.cfg.gpx.file=nm; files.push({name:nm,data:g.text});
+  }
+  const name=(d._meta&&d._meta.name)||'Pump track';
+  files.unshift({name:'design.json',data:JSON.stringify(d,null,2)});
+  files.push({name:'README.txt',data:`${name}\nCreature Cycles Pump Track Designer design.\n\n`+
+    `Open this zip in the Pump Track Designer (Open) to carry on working on it.\n`+
+    `design.json  the track, its features and settings\n`+
+    (d.cfg&&d.cfg.bg&&d.cfg.bg.file?`${d.cfg.bg.file}  the site photo as loaded\n`:'')+
+    (d.cfg&&d.cfg.gpx?`${d.cfg.gpx.file}  the GPX trace layer\n`:'')+
+    `\nhttps://creaturecycles.co.uk/apps/pump-track-designer/\n`});
+  return zipStore(files,when);
+}
+/* entries: unzip() output with every entry already inflated (method 0).
+   -> {design, photo:{name,data}|null, gpx:{name,text}|null} */
+function readBundle(entries){
+  const by=new Map(entries.map(f=>[f.name.replace(/^\/+/,''),f])), dec=new TextDecoder();
+  let dj=by.get('design.json');
+  if(!dj) dj=entries.find(f=>/(^|\/)design\.json$/i.test(f.name))||entries.find(f=>/\.json$/i.test(f.name));
+  if(!dj) throw new Error('no design.json in this zip');
+  const design=JSON.parse(dec.decode(dj.data)), base=dj.name.includes('/')?dj.name.replace(/[^/]*$/,''):'';
+  const get=nm=>nm&&(by.get(nm)||by.get(base+nm));
+  const bg=design.cfg&&design.cfg.bg, gx=design.cfg&&design.cfg.gpx;
+  const pf=bg&&get(bg.file), gf=gx&&get(gx.file);
+  return {design,photo:pf?{name:pf.name.split('/').pop(),data:pf.data}:null,
+    gpx:gf?{name:gf.name.split('/').pop(),text:dec.decode(gf.data)}:null};
+}
 // ==ENGINE-END==
 
 /* ====================================================================
@@ -2455,7 +2562,7 @@ document.addEventListener('keydown',e=>{
   const mod=e.ctrlKey||e.metaKey;
   if(mod&&e.key.toLowerCase()==='z'&&!typing){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
   if(mod&&e.key.toLowerCase()==='y'&&!typing){ e.preventDefault(); redo(); return; }
-  if(mod&&e.key.toLowerCase()==='s'){ e.preventDefault(); saveJSON(); return; }
+  if(mod&&e.key.toLowerCase()==='s'){ e.preventDefault(); saveBundle(); return; }
   if(typing) return;
   if(e.key==='Escape'&&delTarget!=null){ delTarget=null; draw(); return; }
   if(e.key==='Escape'){ if(armed) disarm(); else if(mode) endMode(); else if(document.querySelector('dialog[open]')) return; else setSel(null); }
@@ -2509,8 +2616,72 @@ function download(name,blob){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),1500);   // Safari starts the save asynchronously
 }
-function saveJSON(){ download(slug('.json'),new Blob([JSON.stringify(designOut(true),null,2)],{type:'application/json'})); toast('Design saved',true); }
-$('b-save').onclick=saveJSON;
+function saveJSON(){ download(slug('.json'),new Blob([JSON.stringify(designOut(true),null,2)],{type:'application/json'})); toast('Design file saved',true); }
+
+/* ---------- original layer files ----------
+   The design keeps a shrunk photo for drawing and the trace as points. The
+   files as loaded are kept here, and in IndexedDB so a reload keeps them,
+   for Save to put in the zip. Each carries the id of the layer it belongs
+   to (cfg.bg.id, cfg.gpx.id), so a file never ends up with the wrong design. */
+const ORIG={photo:null,gpx:null};
+const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+let idbP=null;
+function idb(){
+  if(!idbP) idbP=new Promise((res,rej)=>{
+    try{ const r=indexedDB.open('creature-pump-track',1);
+      r.onupgradeneeded=()=>r.result.createObjectStore('files');
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }catch(e){ rej(e); }
+  });
+  return idbP;
+}
+async function keepOrig(kind,rec){
+  ORIG[kind]=rec;
+  try{ const db=await idb(); const tx=db.transaction('files','readwrite');
+    if(rec) tx.objectStore('files').put(rec,kind); else tx.objectStore('files').delete(kind); }catch(_){}
+}
+async function restoreOrig(){
+  try{ const db=await idb();
+    for(const kind of ['photo','gpx']){
+      const rec=await new Promise(res=>{ const r=db.transaction('files').objectStore('files').get(kind);
+        r.onsuccess=()=>res(r.result||null); r.onerror=()=>res(null); });
+      if(rec&&!ORIG[kind]) ORIG[kind]=rec;
+    }
+  }catch(_){}
+}
+const origFor=kind=>{ const o=ORIG[kind], l=kind==='photo'?D.cfg.bg:D.cfg.gpx; return o&&l&&l.id&&o.id===l.id?o:null; };
+
+/* Save: one zip with the design and the layer files as loaded. */
+async function saveBundle(){
+  try{
+    const op=origFor('photo'), og=origFor('gpx');
+    const photo=op?{name:op.name,data:new Uint8Array(await op.blob.arrayBuffer())}:null;
+    const z=packDesign(designOut(true),photo,og?{name:og.name,text:og.text}:null,new Date());
+    download(slug('.zip'),new Blob([z],{type:'application/zip'}));
+    toast('Design saved'+(D.cfg.bg||D.cfg.gpx?' with its '+[D.cfg.bg&&'photo',D.cfg.gpx&&'GPX trace'].filter(Boolean).join(' and '):''),true);
+  }catch(err){ toast('Could not save: '+err.message); }
+}
+$('b-save').onclick=saveBundle;
+$('x-json').onclick=saveJSON;
+async function inflate(u8){
+  if(typeof DecompressionStream==='undefined') throw new Error('this browser cannot open compressed zips');
+  return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+}
+async function openBundle(u8){
+  const entries=unzip(u8);
+  for(const f of entries){
+    if(f.method===8) f.data=await inflate(f.data);
+    else if(f.method!==0) throw new Error(f.name+' uses a compression this tool cannot read');
+  }
+  const b=readBundle(entries), c=b.design.cfg||(b.design.cfg={});
+  if(c.bg&&b.photo){
+    const type=/\.png$/i.test(b.photo.name)?'image/png':'image/jpeg', blob=new Blob([b.photo.data],{type});
+    c.bg.src=await photoForDrawing(blob); c.bg.id=newId();
+    await keepOrig('photo',{id:c.bg.id,name:b.photo.name,type,blob});
+  }
+  if(c.gpx&&b.gpx){ c.gpx.id=newId(); await keepOrig('gpx',{id:c.gpx.id,name:b.gpx.name,text:b.gpx.text}); }
+  if(c.bg) delete c.bg.file; if(c.gpx) delete c.gpx.file;
+  loadDesign(b.design);
+}
 let saveT=0;
 function autosave(){
   clearTimeout(saveT);
@@ -2536,12 +2707,18 @@ function fileInput(accept){
   return inp;
 }
 function openFile(){
-  const inp=fileInput('.json,.gpx,.csv,.txt,.xml,application/json,text/csv');
+  const inp=fileInput('.zip,.json,.gpx,.csv,.txt,.xml,application/zip,application/json,text/csv');
   inp.onchange=()=>{
     const file=inp.files[0]; if(!file) return;
     const r=new FileReader();
-    r.onload=()=>{
-      const text=String(r.result), name=file.name.toLowerCase(), head=text.trimStart().slice(0,1);
+    r.onload=async()=>{
+      const u8=new Uint8Array(r.result), name=file.name.toLowerCase();
+      if(name.endsWith('.zip')||(u8[0]===0x50&&u8[1]===0x4b&&u8[2]===3&&u8[3]===4)){
+        try{ await openBundle(u8); commit(); toast('Opened '+file.name,true); }
+        catch(err){ toast('Could not open '+file.name+': '+err.message); }
+        return;
+      }
+      const text=new TextDecoder().decode(u8), head=text.trimStart().slice(0,1);
       try{
         if(name.endsWith('.json')||head==='{'){ loadDesign(JSON.parse(text)); }
         else if(name.endsWith('.gpx')||name.endsWith('.xml')||head==='<'){
@@ -2554,7 +2731,7 @@ function openFile(){
         commit(); if(D.geom) toast('Opened '+file.name,true);
       }catch(err){ toast('Could not open '+file.name+': '+err.message); }
     };
-    r.readAsText(file);
+    r.readAsArrayBuffer(file);
   };
   inp.click();
 }
@@ -2659,33 +2836,37 @@ function syncImageDlg(){
   $('i-move').setAttribute('aria-pressed',String(mode==='img'));
 }
 function openPhotoDlg(){ syncImageDlg(); $('dlg-image').showModal(); }
+/* The copy the plan draws (and autosave keeps) is shrunk to 2400 px; the
+   original goes in the saved zip. */
+function photoForDrawing(blob){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(blob), im=new Image();
+    im.onload=()=>{
+      const s=Math.min(1,2400/Math.max(im.width,im.height)), cv=document.createElement('canvas');
+      cv.width=Math.round(im.width*s); cv.height=Math.round(im.height*s);
+      cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);
+      URL.revokeObjectURL(url); res(cv.toDataURL('image/jpeg',.85));
+    };
+    im.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('that image could not be read')); };
+    im.src=url;
+  });
+}
 function loadPhoto(){
   const inp=fileInput('image/*');
-  inp.onchange=()=>{
+  inp.onchange=async()=>{
     const file=inp.files[0]; if(!file) return;
-    const r=new FileReader();
-    r.onload=()=>{
-      const im=new Image();
-      im.onload=()=>{
-        // Kept inside the design file, so it is shrunk to a sensible size first.
-        const s=Math.min(1,2400/Math.max(im.width,im.height)), cv=document.createElement('canvas');
-        cv.width=Math.round(im.width*s); cv.height=Math.round(im.height*s);
-        cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);
-        const e=extentOf(T);
-        D.cfg.bg={src:cv.toDataURL('image/jpeg',.85),x:(e.x0+e.x1)/2,y:(e.y0+e.y1)/2,
-          w:Math.max(40,(e.x1-e.x0)*1.5),rot:0,opacity:.6};
-        D.cfg.layers.photo=true; bgImg.src=D.cfg.bg.src; syncImageDlg(); syncLayers(); autosave(); draw();
-        toast('Photo loaded. Use Set scale to size it from a known distance.',true);
-      };
-      im.onerror=()=>toast('That image could not be read.');
-      im.src=r.result;
-    };
-    r.readAsDataURL(file);
+    try{
+      const src=await photoForDrawing(file), e=extentOf(T), id=newId();
+      D.cfg.bg={src,id,x:(e.x0+e.x1)/2,y:(e.y0+e.y1)/2,w:Math.max(40,(e.x1-e.x0)*1.5),rot:0,opacity:.6};
+      keepOrig('photo',{id,name:file.name,type:file.type||'image/jpeg',blob:file});
+      D.cfg.layers.photo=true; bgImg.src=src; syncImageDlg(); syncLayers(); autosave(); draw();
+      toast('Photo loaded. Use Set scale to size it from a known distance.',true);
+    }catch(err){ toast('That image could not be read.'); }
   };
   inp.click();
 }
 $('i-load').onclick=loadPhoto;
-$('i-remove').onclick=()=>{ D.cfg.bg=null; if(mode==='img') endMode(); syncImageDlg(); syncLayers(); autosave(); draw(); };
+$('i-remove').onclick=()=>{ D.cfg.bg=null; keepOrig('photo',null); if(mode==='img') endMode(); syncImageDlg(); syncLayers(); autosave(); draw(); };
 $('i-w').oninput=e=>{ const v=parseFloat(e.target.value); if(D.cfg.bg&&v>0){ D.cfg.bg.w=v; draw(); autosave(); } };
 const setRot=v=>{ if(D.cfg.bg&&Number.isFinite(v)){ D.cfg.bg.rot=v; $('i-rot').value=Math.round(v); $('i-rot-r').value=v; draw(); autosave(); } };
 $('i-rot').oninput=e=>setRot(parseFloat(e.target.value)); $('i-rot-r').oninput=e=>setRot(+e.target.value);
@@ -2745,7 +2926,7 @@ $('help-x').onclick=()=>setHelpOpen(false);
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('help').hidden){ setHelpOpen(false); e.stopImmediatePropagation(); } },true);
 $('ly-photo-act').onclick=()=>D.cfg.bg?openPhotoDlg():loadPhoto();
 $('ly-gpx-act').onclick=()=>{
-  if(D.cfg.gpx){ D.cfg.gpx=null; refCache.key=''; syncLayers(); autosave(); draw(); return; }
+  if(D.cfg.gpx){ D.cfg.gpx=null; keepOrig('gpx',null); refCache.key=''; syncLayers(); autosave(); draw(); return; }
   const inp=fileInput('.gpx,.xml,application/gpx+xml');
   inp.onchange=()=>{
     const file=inp.files[0]; if(!file) return;
@@ -2764,7 +2945,9 @@ $('ly-gpx-act').onclick=()=>{
         // a phone logs a point a second; thin very long traces to 8 cm
         let xy=src.map(p=>Object.assign(fromLatLon(geo,p),{lat:p.lat,lon:p.lon}));
         if(xy.length>3000) xy=rdp(xy,0.08);
-        D.cfg.gpx={name:file.name.replace(/\.[^.]+$/,''),pts:xy.map(p=>({lat:rnd(p.lat,8),lon:rnd(p.lon,8)}))};
+        const gid=newId();
+        D.cfg.gpx={id:gid,name:file.name.replace(/\.[^.]+$/,''),pts:xy.map(p=>({lat:rnd(p.lat,8),lon:rnd(p.lon,8)}))};
+        keepOrig('gpx',{id:gid,name:file.name,text:String(r.result)});
         D.cfg.layers.gpx=true; refCache.key='';
         const ref=refLocal(), c=ref[Math.floor(ref.length/2)], e=extentOf(T);
         const far=Math.hypot(c.x-(e.x0+e.x1)/2,c.y-(e.y0+e.y1)/2);
@@ -2808,6 +2991,7 @@ try{
   [PW,PH]=sizeCanvas(plan,pctx); [QW,QH]=sizeCanvas(prof,qctx);
   if(PW>50){ fitView(); fitted=true; }
   drawNow();
+  restoreOrig();
   // web fonts arrive after the first draw: redraw the canvases and icons in them
   if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ buildPalette(); drawNow(); });
 }catch(err){ toast('Start-up failed: '+err.message); console.error(err); }

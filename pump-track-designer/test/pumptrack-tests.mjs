@@ -5,7 +5,7 @@ const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==
 const m=new Function(eng+'\nreturn {DEG,FEATURES,SIZES,TEMPLATES,buildTrack,pointAt,polyline,project,projectLeg,'+
   'spansOf,findSlot,issuesOf,zAt,profileOf,profZ,profHeight,defaultParams,sizedParams,normParams,statsOf,'+
   'insertNode,removeNode,toLatLon,fromLatLon,toGPX,parseGPX,gpxToDesign,traceTrack,toCSV,parseCSV,profileCSV,'+
-  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip,setCornerKind,cornerPoint};')();
+  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip,setCornerKind,cornerPoint,crc32,zipStore,unzip,packDesign,readBundle};')();
 
 let fails=0;
 const ok=(name,cond,info='')=>{console.log((cond?'  pass  ':'  FAIL  ')+name+(info?'   '+info:''));if(!cond)fails++};
@@ -263,6 +263,29 @@ ok('profile CSV has a row every 0.25 m', m.profileCSV(T,sp,null).trim().split('\
 /* ---- design file ---- */
 const old=m.normGeom({closed:true,nodes:[{x:0,y:0},{x:10,y:0},{x:5,y:8}],features:[{type:'nope',leg:0},{type:'roller',leg:9,t:3}]});
 ok('an old or odd file is normalised, not rejected', old.width===1.5&&old.features.length===1&&old.features[0].leg===2&&old.features[0].t===1);
+
+/* ---- design bundle (.zip) ---- */
+ok('crc32 matches the standard check value', m.crc32(new TextEncoder().encode('123456789'))===0xCBF43926);
+const bin=new Uint8Array(3000).map((_,i)=>(i*37)&255);
+const zz=m.unzip(m.zipStore([{name:'a.txt',data:'hello é'},{name:'dir/b.bin',data:bin}]));
+ok('zip round trips text and binary', zz.length===2&&new TextDecoder().decode(zz[0].data)==='hello é'&&
+   zz[1].name==='dir/b.bin'&&zz[1].data.every((b,i)=>b===bin[i]));
+const bad=m.zipStore([{name:'a.txt',data:'hello'}]); bad[30+5]^=1;
+let threw=false; try{ m.unzip(bad); }catch(e){ threw=/damaged/.test(e.message); }
+ok('a damaged zip entry is refused', threw);
+const dsg={_meta:{name:'Site A'},geom:m.normGeom(rect),cfg:{geo,bg:{src:'data:image/jpeg;base64,xx',x:1,y:2,w:40,rot:0,opacity:.6},
+  gpx:{name:'walk',pts:[{lat:51.6,lon:-3.9},{lat:51.6001,lon:-3.9001}]}}};
+const photo={name:'IMG 001.jpg',data:bin}, gpxIn={name:'walk.gpx',text:'<gpx>original</gpx>'};
+const zb=m.packDesign(dsg,photo,gpxIn), rb=m.readBundle(m.unzip(zb));
+ok('a saved zip holds the design, the original photo and the original GPX',
+   rb.design._meta.name==='Site A'&&rb.photo&&rb.photo.name==='IMG 001.jpg'&&rb.photo.data.every((b,i)=>b===bin[i])&&
+   rb.gpx&&rb.gpx.text==='<gpx>original</gpx>');
+ok('the photo is kept as a file, not inside the JSON', !rb.design.cfg.bg.src&&rb.design.cfg.bg.file==='photo/IMG 001.jpg'&&rb.design.cfg.bg.w===40);
+const zn=m.readBundle(m.unzip(m.packDesign(dsg,null,null)));
+ok('with no original GPX the trace is written out from its points', zn.gpx&&m.parseGPX(zn.gpx.text).pts.length===2);
+ok('with no original photo the embedded copy stays in the JSON', zn.design.cfg.bg.src==='data:image/jpeg;base64,xx'&&!zn.photo);
+const nested=m.unzip(m.zipStore(m.unzip(zb).map(f=>({name:'Site A/'+f.name,data:f.data}))));
+ok('a bundle re-zipped inside a folder still opens', m.readBundle(nested).photo.name==='IMG 001.jpg');
 
 /* ---- quantities ---- */
 const st=m.statsOf(m.buildTrack(m.normGeom(rect)),rect,[]);
