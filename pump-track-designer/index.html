@@ -407,7 +407,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
   <div id="sel-panel"></div>
   <div id="track-panel">
     <div id="lines-list" role="list" aria-label="Lines"></div>
-    <div class="btnrow" id="lines-add"><button type="button" id="ln-loop">+ Loop</button><button type="button" id="ln-line">+ Line</button></div>
+    <div class="btnrow" id="lines-add"><button type="button" id="ln-new">New track</button></div>
     <div class="seg" role="group" aria-label="Layout" style="margin-top:12px">
       <button id="t-loop" aria-pressed="true">Loop</button>
       <button id="t-line" aria-pressed="false">Line</button>
@@ -445,7 +445,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     <h2>Lines</h2>
     <ul>
       <li>A design can hold several lines: a pump track and a jump line on the same hill, say. They are listed at the top right.</li>
-      <li><b>+ Loop</b> and <b>+ Line</b> add one where you are looking. Tap a line on the plan, or its row, to edit it; the others fade back.</li>
+      <li><b>New track</b> adds a loop where you are looking; Loop / Line below it switches it to a line. Tap a line on the plan, or its row, to edit it; the others fade back.</li>
       <li>The swatch sets a line's colour; tap the name to rename it. Templates, the profile, the panel and the CSV and build sheet exports work on the line you are editing. Save and GPX carry every line.</li>
     </ul>
 
@@ -2802,7 +2802,7 @@ function addLine(closed){
   const n=D.lines.length+1, t=TEMPLATES.find(z=>z.name===(closed?'Empty loop':'Empty line'));
   const g=placeGeom(normGeom(clone(t.geom)));
   const used=D.lines.map(l=>l.color), color=LINE_COLS.find(c=>!used.includes(c))||LINE_COLS[n%LINE_COLS.length];
-  D.lines.push(newLine(g,(closed?'Loop ':'Line ')+n,color));
+  D.lines.push(newLine(g,'Track '+n,color));
   D.active=D.lines.length-1; sel=null; recompute(); buildInspector(); commit();
   toast('Added '+D.lines[D.active].name+'. Drag its corners to shape it.',true);
 }
@@ -2818,8 +2818,7 @@ function placeGeom(g){
   for(const nd of g.nodes){ nd.x=rnd(nd.x+dx,4); nd.y=rnd(nd.y+dy,4); }
   return g;
 }
-$('ln-loop').onclick=()=>addLine(true);
-$('ln-line').onclick=()=>addLine(false);
+$('ln-new').onclick=()=>addLine(true);   // a loop; Loop/Line below switches it
 function refreshTrackPanel(){
   syncLines();
   const g=D.geom;

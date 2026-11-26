@@ -85,8 +85,8 @@ path works on one track as before; the engine is unchanged and single track.
   (`otherLines`, cached on their JSON; `drawBody` inside `drawPlan`). A tap
   on one makes it active (`setActive`). `color: null` means the theme's edge.
 - The lines list sits at the top of the track panel (`syncLines`): swatch
-  (`<input type=color>`), name, length, delete. `+ Loop` / `+ Line` add an
-  empty one where the view is (`placeGeom`).
+  (`<input type=color>`), name, length, delete. `New track` adds an
+  empty loop where the view is (`placeGeom`); Loop/Line switches it.
 - Undo snapshots `D.lines`; which line is active is not an undo step.
 - Files: `lines` and `active` in the JSON, with `geom` (the active line) kept
   for older readers; an old file opens as one line (`linesOf`). GPX writes a
