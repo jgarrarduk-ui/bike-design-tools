@@ -123,7 +123,8 @@ All read by the one **Open** button (by extension, then by first character).
 
 ## Layers
 
-A small Illustrator-style panel on the plan, top of the list draws on top:
+A small Illustrator-style panel, opened by the stacked-squares icon above the
+zoom buttons (`setLayersOpen`); top of the list draws on top:
 **Labels**, **GPX trace**, **Design**, **Photo**. **Labels** is the corner
 numbers, start/end tags and + handles; hidden, they are neither drawn nor
 hit-tested (a corner can still be dragged by its berm). Each has an eye toggle; visibility is
@@ -163,6 +164,14 @@ Autosave writes the same JSON to `localStorage` (key
 `creature-pump-track-v1`), without the photo if quota is short.
 
 ## UI notes
+
+- Chrome, type and controls match the suspension designer: Inter for words,
+  JetBrains Mono for numbers, sizes 11/12/14, weights 400/600, 3 px corners.
+  Templates, Open, Save, Export, undo/redo and Dims sit in the top bar after
+  the title; theme and all tools on the right. Canvas controls (layers, zoom,
+  fit) and the help **?** are the `.iconctl` outline set (`--icon-*` tokens).
+- **?** (bottom right; at the foot of the page on a phone) opens `#help`, the
+  read me. Keep it in step when behaviour changes.
 
 - Canvas 2D, not SVG: the plan, profile, icons, template thumbnails and
   build sheet all share `drawPlan`/`drawProfile`. Only a call with

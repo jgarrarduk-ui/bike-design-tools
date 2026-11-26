@@ -47,6 +47,10 @@
 }
 </script>
 <style>
+/* Type as the suspension designer: Inter for words, JetBrains Mono for
+   numbers only. Three sizes (11 small headings and notes, 12 everything
+   else, 14 the title) and two weights (400, 600). */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap');
 /* Same two themes as the suspension designer: dark is the frame designer's
    green, light is the blue. The track colours are extra tokens on top. Each
    feature colour means one thing everywhere it appears (plan, profile,
@@ -62,8 +66,10 @@
   --berm:#8fb6cf; --berm-tick:#134463; --berm-face:rgba(31,95,139,.30);
   --sel:#c026a3; --bad:#c0261a; --handle:#fff; --handle-berm:#1f5f8b; --handle-ink:#16202a; --ref:#7c3aed; --warn:#d97706;
   --label-bg:rgba(255,255,255,.94); --label-ink:#16202a;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  /* Icon buttons (canvas controls, help): monochrome, as the suspension designer. */
+  --icon-off-bg:#ffffff; --icon-off-fg:#1f5f8b; --icon-on-bg:#1f5f8b; --icon-on-fg:#ffffff; --icon-line:#1f5f8b;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 [data-theme="dark"]{
   --paper:#28272a; --grid:#2f2e33; --grid2:#3a453d;
@@ -75,10 +81,11 @@
   --berm:#166534; --berm-tick:#86efac; --berm-face:rgba(74,222,128,.30);
   --sel:#f0abfc; --bad:#f87171; --handle:#1a191c; --handle-berm:#16a34a; --handle-ink:#dcfce7; --ref:#38bdf8; --warn:#fbbf24;
   --label-bg:rgba(20,20,22,.9); --label-ink:#dcfce7;
+  --icon-off-bg:#1a191c; --icon-off-fg:#4ade80; --icon-on-bg:#4ade80; --icon-on-fg:#052e16; --icon-line:#4ade80;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.45 var(--sans);
+body{margin:0;background:var(--paper);color:var(--ink);font:12px/1.45 var(--sans);
   -webkit-text-size-adjust:100%}
 #app{display:grid;grid-template-columns:236px minmax(420px,1fr) 320px;
   grid-template-rows:auto minmax(0,1fr);height:100vh;height:100dvh}
@@ -88,20 +95,26 @@ body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.45 var(--sans
 #stage{display:flex;flex-direction:column;min-width:0;min-height:0}
 
 /* ---- page chrome, as the suspension designer ---- */
-#tools-nav{grid-column:1 / -1;display:flex;align-items:center;gap:8px 10px;
-  min-height:34px;padding:5px 10px 6px;background:var(--panel);border-bottom:1px solid var(--rule)}
-#tools-nav h1{margin:0;font-size:14px;font-weight:700;letter-spacing:.2px;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
+#tools-nav{grid-column:1 / -1;display:flex;align-items:center;flex-wrap:nowrap;gap:8px 10px;
+  min-height:32px;padding:5px 10px 6px;min-width:0;background:var(--panel);border-bottom:1px solid var(--rule)}
+#tools-nav h1{margin:0;font-size:14px;font-weight:600;letter-spacing:.2px;white-space:nowrap;
+  min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}
+/* File and edit actions sit straight after the title; theme and all tools
+   are pushed to the far right, as in the suspension designer. */
+#nav-left{display:flex;align-items:center;gap:6px;flex:none;margin-left:6px}
+#nav-right{margin-left:auto;display:flex;align-items:center;gap:6px;flex:none}
+.navsep{width:1px;height:18px;background:var(--rule);margin:0 4px;flex:none}
+#nav-left .ic{min-width:26px;font-size:14px;line-height:1;padding:3px 6px}
 #tools-nav .brand-logo{height:16px;width:auto;flex:none;filter:url(#creature-logo-blue)}
 [data-theme="dark"] #tools-nav .brand-logo{filter:url(#creature-logo-green)}
-a.all-tools{color:var(--ink);text-decoration:none;font-size:13px;white-space:nowrap;
-  padding:4px 8px;border-radius:3px;flex:none;margin-left:auto}
+a.all-tools{color:var(--ink);text-decoration:none;font:12px var(--sans);letter-spacing:.2px;white-space:nowrap;
+  padding:4px 8px;border-radius:3px;flex:none}
 a.all-tools:hover{background:var(--btn-hover)}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
   clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
 
 /* ---- controls ---- */
-button{font:600 13px var(--sans);padding:6px 10px;border:1px solid var(--rule);border-radius:4px;
+button{font:12px var(--sans);padding:4px 6px;border:1px solid var(--rule);border-radius:3px;
   background:var(--btn);color:var(--ink);cursor:pointer;white-space:nowrap;
   -webkit-tap-highlight-color:transparent}
 button:hover{background:var(--btn-hover)}
@@ -110,30 +123,25 @@ button[aria-pressed=true]{background:var(--press);border-color:var(--press);colo
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button.primary:hover{background:var(--accent-hi)}
 button.danger{color:var(--bad)}
-input[type=number],input[type=text],select{font:600 13px var(--mono);padding:5px 6px;
-  border:1px solid var(--rule);border-radius:4px;background:var(--field);color:var(--ink);width:72px}
+input[type=number],input[type=text],select{font:12px var(--mono);padding:3px 5px;
+  border:1px solid var(--rule);border-radius:3px;background:var(--field);color:var(--ink);width:72px}
 input[type=text]{font-family:var(--sans);width:100%}
 input:focus,select:focus{outline:2px solid var(--press);outline-offset:-1px}
 input[type=range]{accent-color:var(--press);width:100%;margin:0;height:22px}
-h2{font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.8px;
-  margin:16px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--rule);
+h2{font-size:11px;font-weight:600;color:var(--ink-soft);
+  margin:18px 0 7px;padding-bottom:4px;border-bottom:1px solid var(--rule);
   display:flex;align-items:center;justify-content:space-between;gap:8px}
 h2:first-child{margin-top:2px}
-.note{font-size:12px;color:var(--ink-soft);margin:8px 0 0}
+#track-panel .seg{margin-top:2px}
+.note{font-size:11px;color:var(--ink-soft);margin:8px 0 0}
 .seg{display:flex;gap:0}
 .seg button{flex:1;border-radius:0;margin-left:-1px}
-.seg button:first-child{border-radius:4px 0 0 4px;margin-left:0}
-.seg button:last-child{border-radius:0 4px 4px 0}
+.seg button:first-child{border-radius:3px 0 0 3px;margin-left:0}
+.seg button:last-child{border-radius:0 3px 3px 0}
 .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 2px}
 .btnrow button{flex:1;min-width:84px}
 
-/* ---- toolbar above the plan ---- */
-#bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 10px;
-  border-bottom:1px solid var(--rule);background:var(--panel)}
-#bar .sep{width:1px;height:22px;background:var(--rule);margin:0 4px}
-#bar .grow{flex:1}
-#bar .ic{min-width:36px;font-size:16px;line-height:1;padding:5px 8px}
-#theme-switch{display:flex;gap:4px}
+#theme-switch{display:flex;gap:6px;flex:none}
 
 /* ---- plan ---- */
 #canvas{flex:1;position:relative;min-height:240px}
@@ -141,39 +149,41 @@ h2:first-child{margin-top:2px}
   user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:default}
 #plan.grab{cursor:grab} #plan.grabbing{cursor:grabbing} #plan.place{cursor:copy}
 #plan.cross{cursor:crosshair}
-#zoomctl{position:absolute;bottom:12px;right:12px;display:flex;flex-direction:column;gap:6px;z-index:5}
-#zoomctl button{width:38px;height:38px;padding:0;font-size:18px;line-height:1;
-  box-shadow:0 2px 8px rgba(0,0,0,.25)}
+#zoomctl{position:absolute;bottom:10px;right:10px;display:flex;flex-direction:column;gap:4px;z-index:6}
+.iconctl{width:26px;height:26px;padding:0;font-size:14px;line-height:1;
+  display:grid;place-items:center;background:var(--icon-off-bg);color:var(--icon-off-fg);
+  border:1px solid var(--icon-line);border-radius:3px;-webkit-tap-highlight-color:transparent}
+.iconctl:hover{background:var(--icon-off-bg);filter:brightness(1.15)}
+.iconctl[aria-expanded=true],.iconctl[aria-expanded=true]:hover{background:var(--icon-on-bg);color:var(--icon-on-fg)}
+.iconctl svg{width:16px;height:16px;display:block}
+#layers-btn{margin-bottom:6px}
 #hint{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;
   display:none;align-items:center;gap:8px;max-width:calc(100% - 24px);
   background:var(--label-bg);color:var(--label-ink);border:1px solid var(--rule);
   border-left:4px solid var(--press);border-radius:6px;padding:8px 10px 8px 12px;
-  font-weight:600;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+  font-weight:600;font-size:12px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
 #hint.on{display:flex}
 #hint input{width:80px}
 #hint button{padding:4px 9px}
 
 /* Layers panel, Illustrator style: top of the list draws on top. */
-#layers{position:absolute;top:12px;left:12px;z-index:5;width:232px;max-width:calc(100% - 70px);
-  background:var(--label-bg);color:var(--label-ink);border:1px solid var(--rule);border-radius:8px;
-  box-shadow:0 6px 22px rgba(0,0,0,.25);overflow:hidden}
-#layers-head{display:flex;align-items:center;justify-content:space-between;width:100%;border:0;border-radius:0;
-  background:transparent;color:var(--ink-soft);font:800 12px var(--sans);letter-spacing:.8px;text-transform:uppercase;padding:8px 10px}
-#layers-head:hover{background:var(--btn-hover)}
-#layers-head i{font-style:normal;transition:transform .15s}
-#layers:not(.open) #layers-head i{transform:rotate(-90deg)}
-#layers:not(.open) #layers-list{display:none}
+#layers{position:absolute;bottom:10px;right:46px;z-index:7;width:232px;max-width:calc(100% - 66px);
+  max-height:calc(100% - 20px);overflow-y:auto;
+  background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-bottom:2px solid var(--accent);
+  border-radius:3px;box-shadow:0 6px 22px rgba(0,0,0,.25)}
+#layers:not(.open){display:none}
+#layers-title{font-size:11px;font-weight:600;color:var(--ink-soft);padding:7px 10px 6px}
 .lyr{display:flex;align-items:center;gap:7px;padding:5px 7px 5px 4px;border-top:1px solid var(--rule)}
-.lyr .eye,.lyr .eye[aria-pressed]{width:32px;height:32px;padding:0;display:grid;place-items:center;flex:none;
-  background:transparent;border-color:transparent;color:var(--label-ink)}
+.lyr .eye,.lyr .eye[aria-pressed]{width:28px;height:28px;padding:0;display:grid;place-items:center;flex:none;
+  background:transparent;border-color:transparent;color:var(--ink)}
 .lyr .eye:hover{background:var(--btn-hover)}
 .lyr .eye[aria-pressed=true] .slash{display:none}
 .lyr .eye[aria-pressed=false]{color:var(--ink-soft)}
 .lyr .eye:disabled{opacity:.25}
 .lyr .sw{width:20px;height:20px;border-radius:4px;flex:none;border:1px solid var(--rule);background-size:cover;background-position:center}
-.lyr .nm{flex:1;min-width:0;font-weight:700;font-size:13px;line-height:1.2}
-.lyr .nm small{display:block;font-weight:500;font-size:11px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lyr .act{padding:4px 8px;font-size:12px;flex:none}
+.lyr .nm{flex:1;min-width:0;font-weight:600;font-size:12px;line-height:1.2}
+.lyr .nm small{display:block;font-weight:400;font-size:11px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lyr .act{flex:none}
 .lyr.empty .nm>span,.lyr.off .nm>span{opacity:.5}
 
 /* ---- profile strip ---- */
@@ -183,8 +193,8 @@ h2:first-child{margin-top:2px}
 /* ---- palette ---- */
 #palette{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .tile{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px 7px;
-  border:1px solid var(--rule);border-radius:6px;background:var(--btn);cursor:grab;
-  font:700 12px var(--sans);color:var(--ink);text-align:center;touch-action:pan-y;
+  border:1px solid var(--rule);border-radius:3px;background:var(--btn);cursor:grab;
+  font:12px var(--sans);color:var(--ink);text-align:center;touch-action:pan-y;
   user-select:none;-webkit-user-select:none;transition:border-color .12s,background .12s}
 .tile:hover{border-color:var(--press);background:var(--btn-hover)}
 .tile.armed{border-color:var(--press);box-shadow:0 0 0 2px var(--press) inset}
@@ -192,72 +202,85 @@ h2:first-child{margin-top:2px}
 .tile span{pointer-events:none;line-height:1.15}
 #ghost{position:fixed;z-index:50;pointer-events:none;display:none;transform:translate(-50%,-115%);
   background:var(--label-bg);border:2px solid var(--press);border-radius:8px;padding:6px 8px;
-  font:700 13px var(--sans);color:var(--label-ink);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  font:600 12px var(--sans);color:var(--label-ink);box-shadow:0 8px 24px rgba(0,0,0,.35)}
 #ghost canvas{width:88px;height:34px;display:block}
 
 /* ---- inspector ---- */
 .prm{display:grid;grid-template-columns:1fr 74px 18px;gap:4px 8px;align-items:center;margin:9px 0}
-.prm>span{font-size:13px;font-weight:600}
+.prm>span{font-size:12px}
 .prm input[type=range]{grid-column:1 / -1}
-.prm i{font-style:normal;font-size:12px;color:var(--ink-soft)}
-.stat{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dotted var(--rule);font-size:14px}
-.stat b{font:700 15px var(--mono)}
+.prm i{font-style:normal;font-size:11px;color:var(--ink-soft)}
+.stat{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px dotted var(--rule);font-size:12px}
+.stat b{font:600 12px var(--mono)}
 .stat.bad b,.bad{color:var(--bad)}
 /* Problems: a badge in the plan's corner, red for errors and amber for
    warnings, that opens a floating log. */
 #issue-btn{position:absolute;top:12px;right:12px;z-index:6;width:38px;height:38px;padding:0;border-radius:50%;
-  font:900 20px/1 var(--sans);display:grid;place-items:center;border:2px solid var(--paper);
+  font:600 18px/1 var(--sans);display:grid;place-items:center;border:2px solid var(--paper);
   background:var(--warn);color:#1a1a1a;box-shadow:0 4px 14px rgba(0,0,0,.3)}
 #issue-btn.err{background:var(--bad);color:#fff}
 #issue-btn[hidden],#issue-log[hidden]{display:none}
 #issue-n{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;
-  background:var(--ink);color:var(--paper);font:800 11px/18px var(--sans)}
+  background:var(--ink);color:var(--paper);font:600 11px/18px var(--sans)}
 #issue-n:empty{display:none}
 #issue-log{position:absolute;top:58px;right:12px;z-index:8;width:min(330px,calc(100% - 24px));max-height:calc(100% - 120px);
   overflow-y:auto;overscroll-behavior:contain;background:var(--panel);border:1px solid var(--rule);border-radius:8px;
   box-shadow:0 12px 36px rgba(0,0,0,.4)}
-#issue-log .dlg-hdr{font-size:14px;padding:9px 12px}
+#issue-log .dlg-hdr{padding:9px 12px}
 #issue-list{padding:4px 10px 10px}
-#issue-list button{display:block;width:100%;text-align:left;white-space:normal;margin:6px 0 0;font-weight:600;
+#issue-list button{display:block;width:100%;text-align:left;white-space:normal;margin:6px 0 0;
   border-left:5px solid var(--bad)}
 #issue-list button.warn{border-left-color:var(--warn)}
-#issue-list b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--bad)}
+#issue-list b{display:block;font-size:11px;font-weight:600;color:var(--bad)}
 #issue-list .warn b{color:var(--warn)}
 .lyr .sw-lbl{border-radius:50%;background:var(--handle-berm);border:2px solid #fff;color:#fff;
-  font:800 11px/1 var(--sans);display:grid;place-items:center}
+  font:600 11px/1 var(--sans);display:grid;place-items:center}
 .sel-hdr{display:flex;align-items:center;gap:10px;margin:0 0 10px}
 .sel-hdr canvas{width:72px;height:28px;flex:none}
-.sel-hdr h3{margin:0;font-size:17px;font-weight:800;flex:1;min-width:0}
-.sel-hdr .x{padding:2px 10px;font-size:18px}
+.sel-hdr h3{margin:0;font-size:14px;font-weight:600;flex:1;min-width:0}
+.sel-hdr .x{padding:1px 8px;font-size:14px}
 #diagram{width:100%;height:150px;display:block;margin:10px 0 4px;border:1px solid var(--rule);
-  border-radius:6px;background:var(--paper)}
-.fitmsg{font-size:13px;font-weight:600;margin:6px 0}
+  border-radius:3px;background:var(--paper)}
+.fitmsg{font-size:12px;margin:6px 0}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.row2 label{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:var(--ink-soft)}
+.row2 label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--ink-soft)}
 .row2 input{width:100%}
-.lbl{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:600;color:var(--ink-soft);margin:8px 0}
-.check{display:flex;align-items:center;gap:8px;font-weight:600;margin:10px 0 0;cursor:pointer}
-.check input{width:18px;height:18px;accent-color:var(--press)}
+.lbl{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--ink-soft);margin:8px 0}
+.check{display:flex;align-items:center;gap:8px;margin:10px 0 0;cursor:pointer}
+.check input{width:15px;height:15px;accent-color:var(--press)}
 
 /* ---- dialogs ---- */
-dialog{border:1px solid var(--rule);border-radius:8px;padding:0;background:var(--panel);color:var(--ink);
+dialog{border:1px solid var(--rule);border-radius:4px;padding:0;background:var(--panel);color:var(--ink);
   width:min(560px,94vw);max-height:88vh;box-shadow:0 20px 60px rgba(0,0,0,.4)}
 dialog::backdrop{background:rgba(10,12,14,.5)}
-.dlg-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px;
-  border-bottom:1px solid var(--rule);font-size:16px;font-weight:800;position:sticky;top:0;
+.dlg-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;
+  border-bottom:1px solid var(--rule);font-size:11px;font-weight:600;color:var(--ink-soft);position:sticky;top:0;
   background:var(--panel);z-index:1}
 .dlg-body{padding:4px 16px 18px}
 #tpl-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding-top:12px}
 .tpl{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:8px;text-align:left;white-space:normal}
 .tpl canvas{width:100%;height:96px;display:block;border-radius:4px;background:var(--paper)}
-.tpl b{font-size:14px}
-.tpl small{font-weight:500;color:var(--ink-soft);font-size:12px;line-height:1.3}
+.tpl b{font-size:12px;font-weight:600}
+.tpl small{color:var(--ink-soft);font-size:11px;line-height:1.3}
 
 #msg{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:7;display:none;text-align:center;
   background:var(--label-bg);color:var(--label-ink);border:1px solid var(--rule);border-left:4px solid var(--bad);
-  border-radius:6px;padding:9px 14px;font-weight:600;box-shadow:0 8px 28px rgba(0,0,0,.35);max-width:calc(100% - 120px)}
+  border-radius:3px;padding:7px 12px;font-size:12px;box-shadow:0 8px 28px rgba(0,0,0,.35);max-width:calc(100% - 120px)}
 #msg.on{display:block}
 #msg.ok{border-left-color:var(--press)}
+
+#help-btn{position:fixed;right:10px;bottom:10px;z-index:20;font-weight:600}
+#help{position:fixed;right:10px;bottom:44px;z-index:21;width:min(420px,calc(100vw - 20px));
+  max-height:min(72vh,calc(100vh - 100px));overflow-y:auto;overscroll-behavior:contain;
+  background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-bottom:2px solid var(--accent);
+  border-radius:4px;box-shadow:0 12px 36px rgba(0,0,0,.4)}
+#help[hidden]{display:none}
+#help .dlg-body{padding:2px 14px 14px}
+#help h2{margin-top:14px}
+#help p,#help li{margin:5px 0}
+#help ul{margin:4px 0;padding-left:18px}
+#help kbd{font:11px var(--mono);border:1px solid var(--rule);border-radius:3px;padding:0 4px;background:var(--field)}
+#help .x{padding:1px 8px;font-size:14px}
 
 @media (max-width:900px){
   /* minmax(0,…) so the palette strip's full width can't widen the page */
@@ -268,16 +291,21 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
   .rail{overflow:visible}
   .rail.left{border-right:none;border-top:1px solid var(--rule);padding:10px 0 10px 10px;
     position:sticky;bottom:0;z-index:8;box-shadow:0 -6px 18px rgba(0,0,0,.18)}
-  .rail.left h2{display:none}
   .rail.right{border-left:none;border-top:1px solid var(--rule);padding-bottom:30vh}
   #palette{display:flex;gap:8px;overflow-x:auto;padding-right:10px;scrollbar-width:none}
   #palette::-webkit-scrollbar{display:none}
   .tile{flex:none;width:96px;touch-action:pan-x}
   #canvas{height:56vh;height:56svh;min-height:300px;flex:none}
   #profile-wrap{height:112px}
-  #bar{gap:5px;padding:6px 8px}
-  #bar .sep{display:none}
-  #hint{top:58px}
+  #tools-nav{flex-wrap:wrap}
+  #nav-left{order:3;width:100%;margin-left:0;flex-wrap:wrap}
+  #nav-left .navsep{display:none}
+  .iconctl{width:34px;height:34px;font-size:17px}
+  .iconctl svg{width:19px;height:19px}
+  #layers{right:54px}
+  /* the help button sits at the foot of the page on a phone, not over the palette */
+  #help-btn{position:static;margin:16px 0 0 auto;display:grid}
+  #help{bottom:auto;top:10px;max-height:calc(100vh - 20px)}
   /* A selection opens as a sheet over the bottom of the screen, so the
      plan stays in view while you size the thing you just tapped. */
   body.has-sel #sel-panel{position:fixed;left:0;right:0;bottom:0;z-index:30;max-height:52vh;overflow-y:auto;
@@ -302,34 +330,36 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
 </svg>
 <div id="app">
 
-<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles" onerror="this.remove()"><h1>Pump Track Designer</h1><p class="sr-only">Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.</p><a class="all-tools" href="https://creaturecycles.co.uk/apps/">&#9664; all tools</a></div>
-
-<div class="rail left">
-  <h2>Drag onto the track</h2>
-  <div id="palette"></div>
-</div>
-
-<div id="stage">
-  <div id="bar">
-    <button id="b-tpl">Templates</button>
-    <button id="b-open">Open</button>
-    <button id="b-save">Save</button>
-    <button id="b-export">Export</button>
-    <span class="sep"></span>
-    <button id="b-undo" class="ic" title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;</button>
-    <button id="b-redo" class="ic" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">&#8631;</button>
-    <span class="sep"></span>
-    <button id="b-dims" aria-pressed="false" title="Show dimensions on the plan">Dims</button>
-    <span class="grow"></span>
+<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles" onerror="this.remove()"><h1>Pump Track Designer</h1><p class="sr-only">Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.</p>
+  <div id="nav-left">
+    <button type="button" id="b-tpl">Templates</button>
+    <button type="button" id="b-open">Open</button>
+    <button type="button" id="b-save">Save</button>
+    <button type="button" id="b-export">Export</button>
+    <span class="navsep" aria-hidden="true"></span>
+    <button type="button" id="b-undo" class="ic" title="Undo (Ctrl+Z)" aria-label="Undo">&#8630;</button>
+    <button type="button" id="b-redo" class="ic" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">&#8631;</button>
+    <span class="navsep" aria-hidden="true"></span>
+    <button type="button" id="b-dims" aria-pressed="false" title="Show dimensions on the plan">Dims</button>
+  </div>
+  <div id="nav-right">
     <div id="theme-switch" role="group" aria-label="Theme">
       <button type="button" id="theme-light" aria-pressed="false">light</button>
       <button type="button" id="theme-dark" aria-pressed="true">dark</button>
     </div>
+    <a class="all-tools" href="https://creaturecycles.co.uk/apps/">&#9664; all tools</a>
   </div>
+</div>
+
+<div class="rail left">
+  <div id="palette" aria-label="Drag onto the track"></div>
+</div>
+
+<div id="stage">
   <div id="canvas">
     <canvas id="plan" aria-label="Track plan"></canvas>
-    <div id="layers" class="open">
-      <button id="layers-head" aria-expanded="true" aria-controls="layers-list">Layers<i>&#9662;</i></button>
+    <div id="layers" role="dialog" aria-label="Layers">
+      <div id="layers-title">Layers</div>
       <div id="layers-list">
         <div class="lyr" data-l="labels"><button class="eye" aria-label="Show labels"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
           <span class="sw sw-lbl">1</span>
@@ -347,9 +377,10 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     </div>
     <div id="hint" role="status"><span id="hint-text"></span><span id="hint-extra"></span><button id="hint-x" aria-label="Cancel">&times;</button></div>
     <div id="zoomctl">
-      <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
-      <button id="zout" title="Zoom out" aria-label="Zoom out">&minus;</button>
-      <button id="zfit" title="Fit the track" aria-label="Fit the track">&#9974;</button>
+      <button type="button" class="iconctl" id="layers-btn" aria-expanded="false" aria-controls="layers" title="Layers" aria-label="Layers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 8 12 13l9.5-5z"/><path d="m2.5 12 9.5 5 9.5-5"/><path d="m2.5 16 9.5 5 9.5-5"/></svg></button>
+      <button type="button" class="iconctl" id="zin" title="Zoom in" aria-label="Zoom in">+</button>
+      <button type="button" class="iconctl" id="zout" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <button type="button" class="iconctl" id="zfit" title="Fit the track" aria-label="Fit the track">&#9974;</button>
     </div>
     <button id="issue-btn" hidden aria-label="Show problems" aria-expanded="false" aria-controls="issue-log">!<span id="issue-n"></span></button>
     <div id="issue-log" hidden role="dialog" aria-label="Problems">
@@ -364,7 +395,6 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
 <div class="rail right">
   <div id="sel-panel"></div>
   <div id="track-panel">
-    <h2>Track</h2>
     <div class="seg" role="group" aria-label="Layout">
       <button id="t-loop" aria-pressed="true">Loop</button>
       <button id="t-line" aria-pressed="false">Line</button>
@@ -375,13 +405,76 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     <h2>Design</h2>
     <label class="lbl">Name<input type="text" id="d-name" placeholder="Untitled track" autocomplete="off"></label>
     <label class="lbl">Designer<input type="text" id="d-designer" autocomplete="off"></label>
-    <p class="note">Drag elements onto the track. Drag a numbered corner to reshape and tap it to change the berm. Hold a corner or a feature to delete it. <b>+</b> adds a corner, as does double-clicking a straight.</p>
   </div>
+  <button type="button" class="iconctl" id="help-btn" aria-expanded="false" aria-controls="help" title="How it works" aria-label="How it works">?</button>
 </div>
 
 </div>
 
 <div id="ghost"></div>
+
+<div id="help" hidden role="dialog" aria-label="How it works">
+  <div class="dlg-hdr">How it works<button type="button" class="x" id="help-x" aria-label="Close">&times;</button></div>
+  <div class="dlg-body">
+    <p>Lay out a pump track or a dirt jump line, see its height profile, and take the dimensions, GPS line and a build sheet out to the site. Everything is in metres. Your work saves itself in this browser as you go.</p>
+
+    <h2>Start</h2>
+    <ul>
+      <li><b>Templates</b> loads a starting track: ovals, a figure eight, a flow loop, jump lines. It replaces what is on the plan; Undo brings it back.</li>
+      <li><b>Loop</b> or <b>Line</b> on the right sets whether the track joins up. Set the track width there too.</li>
+    </ul>
+
+    <h2>Shape the track</h2>
+    <ul>
+      <li>The track is straights joined by corners. Each numbered handle is the <b>centre of a corner's circle</b>; the track wraps round it. Drag a handle and only that corner moves.</li>
+      <li>Tap a corner to change its radius, berm height or type: <b>Berm</b> (banked), <b>Flat</b>, <b>Auto</b> (banked once it turns more than 35°) or <b>Hip</b>.</li>
+      <li><b>+</b> on a straight adds a corner. Drag it out and it bends the track, growing to a 4&nbsp;m radius. Double-clicking a straight adds one too.</li>
+      <li>Hold a corner or a feature still for half a second and a red <b>&times;</b> appears. Tap it to delete.</li>
+      <li>Two corners turning opposite ways pushed so close their circles overlap are shrunk to fit and outlined red.</li>
+    </ul>
+
+    <h2>Add features</h2>
+    <ul>
+      <li>Drag a tile from the left onto a straight, or tap a tile and then tap the track. Rollers, table tops, doubles, step ups and downs, drops, a wooden drop and a start hill go on straights.</li>
+      <li><b>Berm</b> and <b>Berm + roller</b> go on a corner. <b>Hip</b> on a corner turns it into a hip jump; on a straight it adds a 45° hip there.</li>
+      <li>Tap a feature to set its size (S, M, L, XL) or each dimension. The diagram shows its side view. Drag it along the track to move it.</li>
+      <li>Features keep their place on their straight as you reshape the track.</li>
+    </ul>
+
+    <h2>Read the plan</h2>
+    <ul>
+      <li>Colours mean the same everywhere: <b>amber</b> goes up, <b>green</b> comes down, pale is a flat deck, near black is a gap you fly over, brown is timber.</li>
+      <li>The strip under the plan is the height profile along the track, with the corners marked. Heights are exaggerated to fit; the factor is in its header.</li>
+      <li><b>Dims</b> shows the length of every straight and the radius of every corner.</li>
+      <li>A <b>!</b> badge top right means something doesn't fit or overlaps. Tap it for the list; tap an entry to go to it.</li>
+      <li>On the right: length, footprint, a rough dirt volume and the feature count.</li>
+    </ul>
+
+    <h2>Layers</h2>
+    <ul>
+      <li>The stacked squares above the zoom buttons open Layers. The eye shows or hides each one.</li>
+      <li><b>Photo</b>: load an aerial photo or site plan, set its scale from a distance you know, and draw over it.</li>
+      <li><b>GPX trace</b>: load a ride or a walk round the site as a reference line, at true scale.</li>
+      <li><b>Design</b> is the track itself. Hidden, it can't be edited. <b>Labels</b> are the corner numbers and + handles.</li>
+    </ul>
+
+    <h2>Files</h2>
+    <ul>
+      <li><b>Save</b> downloads the design file (.json, photo included). <b>Open</b> reads it back, and also opens GPX and dimensions CSV files.</li>
+      <li><b>Export</b>: a build sheet (A4 PNG with plan, profile and dimensions), a dimensions CSV for a spreadsheet, a profile CSV (height every 25&nbsp;cm), and GPX for a phone or GPS on site once you set the site location.</li>
+    </ul>
+
+    <h2>Keys</h2>
+    <ul>
+      <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo, <kbd>Ctrl</kbd>+<kbd>S</kbd> save.</li>
+      <li>Arrow keys nudge the selection 10&nbsp;cm, with <kbd>Shift</kbd> 1&nbsp;m. <kbd>Delete</kbd> removes it, <kbd>Esc</kbd> lets go.</li>
+      <li>Scroll or pinch to zoom; drag empty ground to pan.</li>
+    </ul>
+
+    <h2>Sizes</h2>
+    <p>Default sizes follow common build guidance, not a standard: rollers about 0.3–0.8&nbsp;m high with crests roughly ten times their height apart, berm radius around 3&nbsp;m for a pumpable 180°, lips 25–45°, landings 25–30°. The dirt figure is a rough builder's quantity. Check the design with whoever will build and ride it.</p>
+  </div>
+</div>
 
 <dialog id="dlg-tpl">
   <div class="dlg-hdr">Templates<button class="x" data-close>&times;</button></div>
@@ -1320,8 +1413,8 @@ const TEMPLATES=[
    ==================================================================== */
 const $=id=>document.getElementById(id);
 const clone=o=>JSON.parse(JSON.stringify(o));
-const SANS='system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif';
-const MONO='ui-monospace,"SF Mono",Menlo,Consolas,monospace';
+const SANS='Inter,system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif';
+const MONO='"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace';
 const AUTOSAVE_KEY='creature-pump-track-v1';
 const PALETTE=['roller','berm','bermroller','hip','tabletop','double','stepup','stepdown','drop','woodendrop','starthill'];
 const PAL_NAME={berm:'Berm',bermroller:'Berm + roller',hip:'Hip'};
@@ -1391,7 +1484,7 @@ function drawNow(){
 function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r);
   ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 function pill(ctx,text,x,y,o={}){
-  const sz=o.size||12; ctx.font=`700 ${sz}px ${SANS}`;
+  const sz=o.size||12; ctx.font=`600 ${sz}px ${SANS}`;
   const w=ctx.measureText(text).width+12, h=sz+9;
   roundRect(ctx,x-w/2,y-h/2,w,h,5); ctx.fillStyle=o.bg||COL['label-bg']; ctx.fill();
   ctx.lineWidth=1.5; ctx.strokeStyle=o.edge||COL.rule; ctx.stroke();
@@ -1414,7 +1507,7 @@ function drawScaleBar(ctx,W,H,k,x=14,y){
   const L=niceStep(0,k,70), px=L*k;
   ctx.save(); ctx.lineWidth=3; ctx.strokeStyle=COL.ink; ctx.lineCap='butt';
   ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+px,y); ctx.moveTo(x,y-6); ctx.lineTo(x,y+1); ctx.moveTo(x+px,y-6); ctx.lineTo(x+px,y+1); ctx.stroke();
-  ctx.font=`700 12px ${SANS}`; ctx.fillStyle=COL.ink; ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.font=`600 12px ${SANS}`; ctx.fillStyle=COL.ink; ctx.textAlign='left'; ctx.textBaseline='bottom';
   ctx.fillText(L+' m',x+px+6,y+5); ctx.restore();
 }
 function strip(ctx,X,Y,s0,u0,u1,hwf,step){
@@ -1666,7 +1759,7 @@ function drawPlan(ctx,W,H,vw,o){
       if(c.end) roundRect(ctx,x-R,y-R,2*R,2*R,4); else ctx.arc(x,y,R,0,7);
       ctx.fillStyle=hip?COL.up:berm?COL['handle-berm']:COL.handle; ctx.fill();
       ctx.lineWidth=2; ctx.strokeStyle=c.tight?COL.bad:hip?'#1a1a1a':(berm?'#fff':COL['handle-ink']); ctx.stroke();
-      ctx.fillStyle=hip?'#1a1a1a':berm?'#fff':COL['handle-ink']; ctx.font=`800 ${tagsOnly?11:13}px ${SANS}`;
+      ctx.fillStyle=hip?'#1a1a1a':berm?'#fff':COL['handle-ink']; ctx.font=`600 ${tagsOnly?11:13}px ${SANS}`;
       ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(c.end?(c.i===0?'S':'E'):cornerLabel(c.i),x,y+.5);
       hnd.corners.push({i:c.i,x,y,end:c.end});
     });
@@ -1724,7 +1817,7 @@ function drawProfile(ctx,W,H,o){
   const X=s=>padL+s*hk, Y=z=>H-padB-z*vk, base=Y(0);
   if(o.main) PX={padL,hk};
   // berm zones, numbered like the plan
-  ctx.font=`800 11px ${SANS}`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font=`600 11px ${SANS}`; ctx.textAlign='center'; ctx.textBaseline='middle';
   for(const a of T.arcs){ if(!a.berm||a.len<.05) continue;
     const x0=X(a.s0), x1=X(a.s0+a.len), sel=o.sel&&o.sel.kind==='node'&&o.sel.i===a.i;
     ctx.save(); ctx.globalAlpha=.45; ctx.fillStyle=COL['berm-face']; ctx.fillRect(x0,padT-14,x1-x0,base-padT+14); ctx.restore();
@@ -1751,16 +1844,16 @@ function drawProfile(ctx,W,H,o){
     ctx.strokeRect(X(s0),padT-14,sp.pr.len*hk,base-padT+14); ctx.restore();
   }
   // feature codes over their peaks
-  ctx.font=`800 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='bottom';
+  ctx.font=`600 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='bottom';
   for(const sp of spans){ if(!sp||sp.pr.len*hk<20) continue;
     let s0=sp.s0; if(T.closed&&s0<0) s0+=T.length;
     const zt=profHeight(sp.pr); ctx.fillText(FEATURES[sp.f.type].short,X(s0+sp.pr.len/2),Math.max(padT-1,Y(zt)-4)); }
   for(const h of T.hips){ if(h.pr.len*hk<20) continue; let s0=h.s0; if(T.closed&&s0<0) s0+=T.length;
     ctx.fillText('HIP',X(s0+h.pr.len/2),Math.max(padT-1,Y(profHeight(h.pr))-4)); }
   // chainage
-  const st=niceStep(0,hk,64); ctx.font=`700 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='top';
+  const st=niceStep(0,hk,64); ctx.font=`600 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='top';
   for(let s=0;s<=T.length+1e-6;s+=st){ const x=X(s); ctx.fillRect(x,base,1,5); ctx.textAlign=s===0?'left':'center'; ctx.fillText(s===0?'0 m':String(s),x,base+6); }
-  const ex=vk/hk; ctx.textAlign='left'; ctx.textBaseline='top'; ctx.font=`700 11px ${SANS}`;
+  const ex=vk/hk; ctx.textAlign='left'; ctx.textBaseline='top'; ctx.font=`600 11px ${SANS}`;
   ctx.fillText('Profile · '+f1(T.length)+' m · '+(Math.abs(ex-1)<.05?'true scale':'height ×'+Math.round(ex)),padL,4);
 }
 
@@ -2254,7 +2347,7 @@ function drawDiagram(cv,pr){
   c.beginPath(); for(let i=0;i<=200;i++){ const u=pr.len*i/200; i?c.lineTo(X(u),Y(profZ(pr,u))):c.moveTo(X(u),Y(profZ(pr,u))); }
   c.strokeStyle=COL.ink; c.lineWidth=2; c.stroke();
   c.beginPath(); c.moveTo(6,gy+.5); c.lineTo(W-6,gy+.5); c.strokeStyle=COL['ink-soft']; c.lineWidth=1; c.stroke();
-  const ink=COL.ink; c.strokeStyle=ink; c.fillStyle=ink; c.lineWidth=1.3; c.font=`700 12px ${SANS}`; c.textBaseline='middle';
+  const ink=COL.ink; c.strokeStyle=ink; c.fillStyle=ink; c.lineWidth=1.3; c.font=`600 12px ${SANS}`; c.textBaseline='middle';
   const arrow=(x0,y0,x1,y1)=>{ c.beginPath(); c.moveTo(x0,y0); c.lineTo(x1,y1); c.stroke();
     const a=Math.atan2(y1-y0,x1-x0); for(const [x,y,s] of [[x0,y0,1],[x1,y1,-1]]){ c.beginPath(); c.moveTo(x,y);
       c.lineTo(x+s*6*Math.cos(a)-3*Math.sin(a)*s,y+s*6*Math.sin(a)+3*Math.cos(a)*s); c.lineTo(x+s*6*Math.cos(a)+3*Math.sin(a)*s,y+s*6*Math.sin(a)-3*Math.cos(a)*s); c.closePath(); c.fill(); } };
@@ -2521,14 +2614,14 @@ function buildSheet(){
   try{
     c.fillStyle='#fff'; c.fillRect(0,0,W,H);
     c.fillStyle=COL.ink; c.textBaseline='alphabetic'; c.textAlign='left';
-    c.font=`800 72px ${SANS}`; c.fillText(D._meta.name||'Pump track',M,M+60);
+    c.font=`600 72px ${SANS}`; c.fillText(D._meta.name||'Pump track',M,M+60);
     c.font=`600 34px ${SANS}`; c.fillStyle=COL['ink-soft'];
     c.fillText([D._meta.designer,new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),'Creature Cycles Pump Track Designer'].filter(Boolean).join('  ·  '),M,M+112);
     const facts=[['Length',f1(stats.length)+' m'],['Track width',f1(T.width)+' m'],['Footprint',Math.round(stats.w)+' × '+Math.round(stats.h)+' m'],
       ['Dirt, rough',Math.round(stats.volume)+' m³']];
     let fx=W-M; c.textAlign='right';
     for(let i=facts.length-1;i>=0;i--){ const [l,v]=facts[i];
-      c.font=`800 52px ${MONO}`; c.fillStyle=COL.ink; c.fillText(v,fx,M+60);
+      c.font=`600 52px ${MONO}`; c.fillStyle=COL.ink; c.fillText(v,fx,M+60);
       const w1=c.measureText(v).width; c.font=`600 28px ${SANS}`; c.fillStyle=COL['ink-soft']; c.fillText(l,fx,M+108);
       fx-=Math.max(w1,c.measureText(l).width)+90; }
     const top=M+170, profH=480, planH=H-top-profH-M-120;
@@ -2543,12 +2636,12 @@ function buildSheet(){
     // north arrow
     { const x=W-M-80, y=top+100, r=(D.cfg.geo.rot||0)*DEG; c.save(); c.translate(x,y); c.rotate(-r);
       c.fillStyle=COL.ink; c.beginPath(); c.moveTo(0,-46); c.lineTo(20,20); c.lineTo(0,8); c.lineTo(-20,20); c.closePath(); c.fill();
-      c.font=`800 32px ${SANS}`; c.textAlign='center'; c.fillText('N',0,-58); c.restore(); }
+      c.font=`600 32px ${SANS}`; c.textAlign='center'; c.fillText('N',0,-58); c.restore(); }
     c.save(); c.translate(M,top+planH+40); c.scale(S,S); drawProfile(c,(W-2*M)/S,profH/S,{}); c.restore();
     c.strokeRect(M,top+planH+40,W-2*M,profH);
     const leg=[['up','Takeoff / up'],['down','Landing / down'],['flat','Deck'],['gap','Air'],['wood','Timber'],['berm','Berm']];
     if(D.cfg.layers.gpx!==false&&refLocal()) leg.push(['ref','GPX trace']);
-    let lx=M; const ly=H-M+10; c.textAlign='left'; c.textBaseline='middle'; c.font=`700 30px ${SANS}`;
+    let lx=M; const ly=H-M+10; c.textAlign='left'; c.textBaseline='middle'; c.font=`600 30px ${SANS}`;
     for(const [k,l] of leg){ c.fillStyle=k==='berm'?COL.berm:kcol(k); c.fillRect(lx,ly-18,44,36); c.strokeStyle=COL.ink; c.lineWidth=2; c.strokeRect(lx,ly-18,44,36);
       c.fillStyle=COL.ink; c.fillText(l,lx+58,ly); lx+=58+c.measureText(l).width+60; }
     c.textAlign='right'; c.fillStyle=COL['ink-soft']; c.font=`600 26px ${SANS}`;
@@ -2643,7 +2736,13 @@ document.querySelectorAll('.lyr .eye').forEach(b=>b.onclick=()=>{
   if(k!=='photo') delTarget=null;
   syncLayers(); autosave(); draw();
 });
-$('layers-head').onclick=()=>{ const o=$('layers').classList.toggle('open'); $('layers-head').setAttribute('aria-expanded',String(o)); };
+function setLayersOpen(o){ $('layers').classList.toggle('open',o); $('layers-btn').setAttribute('aria-expanded',String(o)); }
+$('layers-btn').onclick=()=>setLayersOpen(!$('layers').classList.contains('open'));
+/* Help: the ? in the bottom-right corner opens the read me. */
+function setHelpOpen(o){ $('help').hidden=!o; $('help-btn').setAttribute('aria-expanded',String(o)); }
+$('help-btn').onclick=()=>setHelpOpen($('help').hidden);
+$('help-x').onclick=()=>setHelpOpen(false);
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('help').hidden){ setHelpOpen(false); e.stopImmediatePropagation(); } },true);
 $('ly-photo-act').onclick=()=>D.cfg.bg?openPhotoDlg():loadPhoto();
 $('ly-gpx-act').onclick=()=>{
   if(D.cfg.gpx){ D.cfg.gpx=null; refCache.key=''; syncLayers(); autosave(); draw(); return; }
@@ -2670,7 +2769,7 @@ $('ly-gpx-act').onclick=()=>{
         const ref=refLocal(), c=ref[Math.floor(ref.length/2)], e=extentOf(T);
         const far=Math.hypot(c.x-(e.x0+e.x1)/2,c.y-(e.y0+e.y1)/2);
         // on a phone, fold the panel away so the trace just loaded is in view
-        if(window.matchMedia('(max-width:900px)').matches){ $('layers').classList.remove('open'); $('layers-head').setAttribute('aria-expanded','false'); }
+        if(window.matchMedia('(max-width:900px)').matches) setLayersOpen(false);
         fitView(); syncLayers(); autosave();
         toast(anchored?'GPX trace placed over the track at true scale. The site location now comes from it.'
           :far>2000?`GPX trace added. It is ${f1(far/1000)} km from the site location.`
@@ -2704,12 +2803,13 @@ try{
   try{ const s=localStorage.getItem(AUTOSAVE_KEY); if(s){ loadDesign(JSON.parse(s),{fit:false}); restored=true; } }catch(_){ restored=false; }
   if(!restored){ D._meta.name=''; D.geom=normGeom(clone(TEMPLATES[0].geom)); recompute(); }
   lastSnap=snap(); syncUndo();
-  if(window.matchMedia('(max-width:900px)').matches){ $('layers').classList.remove('open'); $('layers-head').setAttribute('aria-expanded','false'); }
   buildPalette(); buildInspector(); syncLayers();
   $('b-dims').setAttribute('aria-pressed',String(!!D.cfg.dims));
   [PW,PH]=sizeCanvas(plan,pctx); [QW,QH]=sizeCanvas(prof,qctx);
   if(PW>50){ fitView(); fitted=true; }
   drawNow();
+  // web fonts arrive after the first draw: redraw the canvases and icons in them
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ buildPalette(); drawNow(); });
 }catch(err){ toast('Start-up failed: '+err.message); console.error(err); }
 </script>
 </body>
