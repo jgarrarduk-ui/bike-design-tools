@@ -1,4 +1,4 @@
-# Pump Track Designer — working notes
+# Bike Track Designer (pump-track-designer/) — working notes
 
 Single-file browser tool for laying out a pump track or a dirt jump line.
 No build step, no dependencies. `index.html` only; the wordmark comes from

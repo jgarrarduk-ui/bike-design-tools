@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Pump Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles</title>
+<title>Bike Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles</title>
 <meta name="description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.">
 <link rel="canonical" href="https://creaturecycles.co.uk/apps/pump-track-designer/">
 <meta property="og:site_name" content="Creature Cycles">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Pump Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles">
+<meta property="og:title" content="Bike Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles">
 <meta property="og:description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.">
 <meta property="og:url" content="https://creaturecycles.co.uk/apps/pump-track-designer/">
 <meta property="og:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
 <meta property="og:image:alt" content="Creature Cycles">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Pump Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles">
+<meta name="twitter:title" content="Bike Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles">
 <meta name="twitter:description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.">
 <meta name="twitter:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
 <script type="application/ld+json">
@@ -24,7 +24,7 @@
     {
       "@type": "WebApplication",
       "@id": "https://creaturecycles.co.uk/apps/pump-track-designer/#app",
-      "name": "Pump Track Designer",
+      "name": "Bike Track Designer",
       "url": "https://creaturecycles.co.uk/apps/pump-track-designer/",
       "description": "Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.",
       "applicationCategory": "DesignApplication",
@@ -40,7 +40,7 @@
       "itemListElement": [
         { "@type": "ListItem", "position": 1, "name": "Creature Cycles", "item": "https://creaturecycles.co.uk/" },
         { "@type": "ListItem", "position": 2, "name": "Bike Design Tools", "item": "https://creaturecycles.co.uk/apps/" },
-        { "@type": "ListItem", "position": 3, "name": "Pump Track Designer", "item": "https://creaturecycles.co.uk/apps/pump-track-designer/" }
+        { "@type": "ListItem", "position": 3, "name": "Bike Track Designer", "item": "https://creaturecycles.co.uk/apps/pump-track-designer/" }
       ]
     }
   ]
@@ -97,7 +97,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font:12px/1.45 var(--sans
 /* ---- page chrome, as the suspension designer ---- */
 #tools-nav{grid-column:1 / -1;display:flex;align-items:center;flex-wrap:nowrap;gap:8px 10px;
   min-height:32px;padding:5px 10px 6px;min-width:0;background:var(--panel);border-bottom:1px solid var(--rule)}
-#tools-nav h1{margin:0;font-size:14px;font-weight:600;letter-spacing:.2px;white-space:nowrap;
+#tools-nav h1{margin:0;font-size:11.2px;font-weight:600;letter-spacing:.2px;white-space:nowrap;
   min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}
 /* File and edit actions sit straight after the title; theme and all tools
    are pushed to the far right, as in the suspension designer. */
@@ -105,7 +105,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font:12px/1.45 var(--sans
 #nav-right{margin-left:auto;display:flex;align-items:center;gap:6px;flex:none}
 .navsep{width:1px;height:18px;background:var(--rule);margin:0 4px;flex:none}
 #nav-left .ic{min-width:26px;font-size:14px;line-height:1;padding:3px 6px}
-#tools-nav .brand-logo{height:16px;width:auto;flex:none;filter:url(#creature-logo-blue)}
+#tools-nav .brand-logo{height:17.6px;width:auto;flex:none;filter:url(#creature-logo-blue)}
 [data-theme="dark"] #tools-nav .brand-logo{filter:url(#creature-logo-green)}
 a.all-tools{color:var(--ink);text-decoration:none;font:12px var(--sans);letter-spacing:.2px;white-space:nowrap;
   padding:4px 8px;border-radius:3px;flex:none}
@@ -341,7 +341,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
 </svg>
 <div id="app">
 
-<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles" onerror="this.remove()"><h1>Pump Track Designer</h1><p class="sr-only">Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.</p>
+<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles" onerror="this.remove()"><h1>Bike Track Designer</h1><p class="sr-only">Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.</p>
   <div id="nav-left">
     <button type="button" id="b-tpl">Templates</button>
     <button type="button" id="b-open">Open</button>
@@ -1248,7 +1248,7 @@ function toGPX(design,T,spans,stamp){
   for(const tk of tracks){ const r=gpxTrack(tk.T,tk.spans,ll,ele,tk.name||name); w.push(...r.w); trks.push(r.trk); }
   const json=JSON.stringify({geom:design.geom,lines:design.lines,active:design.active,geo}).replace(/]]>/g,']]]]><![CDATA[>');
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Creature Cycles Pump Track Designer" xmlns="http://www.topografix.com/GPX/1/1" xmlns:ptd="https://creaturecycles.co.uk/apps/pump-track-designer/">
+<gpx version="1.1" creator="Creature Cycles Bike Track Designer" xmlns="http://www.topografix.com/GPX/1/1" xmlns:ptd="https://creaturecycles.co.uk/apps/pump-track-designer/">
   <metadata><name>${xmlEsc(name)}</name><time>${stamp||new Date().toISOString()}</time></metadata>
 ${w.join('\n')}
 ${trks.join('\n')}
@@ -1359,7 +1359,7 @@ const CSV_HEAD=['kind','ref','type','x_m','y_m','radius_m','corner','turn','hip_
 function cornerName(b){ return b==='berm'||b===true?'berm':b==='flat'||b===false?'flat':b==='hip'?'hip':'auto'; }
 function toCSV(geom,T,spans){
   const row=o=>CSV_HEAD.map(h=>o[h]==null?'':String(o[h])).join(',');
-  const lines=['# Creature Cycles Pump Track Designer - dimensions. Metres and degrees. Plan x east, y north.',
+  const lines=['# Creature Cycles Bike Track Designer - dimensions. Metres and degrees. Plan x east, y north.',
     '# x_m,y_m is the centre of the corner circle (the point itself for ends, hips and radius 0). turn is the way the track goes round it.',
     '# leg N runs from node N to the next node. start_m is from the end of the corner before it to the feature start.',
     '# ground rows: the ground height (ground_m) at the start, the end, and points on a leg or a corner (type), start_m along it.',
@@ -1605,7 +1605,7 @@ function unzip(u8){
 const safeName=(s,def)=>(String(s||'').split(/[\\/]/).pop().replace(/[^\w.\- ]+/g,'_').trim()||def);
 function traceToGPX(name,pts){
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Creature Cycles Pump Track Designer" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="Creature Cycles Bike Track Designer" xmlns="http://www.topografix.com/GPX/1/1">
   <trk><name>${xmlEsc(name||'Trace')}</name><trkseg>
 ${pts.map(p=>`    <trkpt lat="${(+p.lat).toFixed(8)}" lon="${(+p.lon).toFixed(8)}">${p.ele!=null?`<ele>${(+p.ele).toFixed(2)}</ele>`:''}</trkpt>`).join('\n')}
   </trkseg></trk>
@@ -1628,8 +1628,8 @@ function packDesign(design,photo,gpx,when){
   }
   const name=(d._meta&&d._meta.name)||'Pump track';
   files.unshift({name:'design.json',data:JSON.stringify(d,null,2)});
-  files.push({name:'README.txt',data:`${name}\nCreature Cycles Pump Track Designer design.\n\n`+
-    `Open this zip in the Pump Track Designer (Open) to carry on working on it.\n`+
+  files.push({name:'README.txt',data:`${name}\nCreature Cycles Bike Track Designer design.\n\n`+
+    `Open this zip in the Bike Track Designer (Open) to carry on working on it.\n`+
     `design.json  the track, its features and settings\n`+
     (d.cfg&&d.cfg.bg&&d.cfg.bg.file?`${d.cfg.bg.file}  the site photo as loaded\n`:'')+
     (d.cfg&&d.cfg.gpx?`${d.cfg.gpx.file}  the GPX trace layer\n`:'')+
@@ -3167,7 +3167,7 @@ function buildSheet(){
     c.fillStyle=COL.ink; c.textBaseline='alphabetic'; c.textAlign='left';
     c.font=`600 72px ${SANS}`; c.fillText(D._meta.name||'Pump track',M,M+60);
     c.font=`600 34px ${SANS}`; c.fillStyle=COL['ink-soft'];
-    c.fillText([D._meta.designer,new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),'Creature Cycles Pump Track Designer'].filter(Boolean).join('  ·  '),M,M+112);
+    c.fillText([D._meta.designer,new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),'Creature Cycles Bike Track Designer'].filter(Boolean).join('  ·  '),M,M+112);
     const facts=[['Length',f1(stats.length)+' m'],['Track width',f1(T.width)+' m'],['Footprint',Math.round(stats.w)+' × '+Math.round(stats.h)+' m'],
       ['Dirt, rough',Math.round(stats.volume)+' m³']];
     let fx=W-M; c.textAlign='right';
