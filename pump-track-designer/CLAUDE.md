@@ -172,6 +172,12 @@ saved in `cfg.layers` and respected by the build sheet.
   so the trace's middle sits over the track; from then on it is fixed. Traces
   over 3000 points are thinned to 8 cm (RDP). Loading a GPX with **Open**
   still replaces the design; the layer's **Load** never does.
+- Trace points keep their GPX height (`ele`). The profile strip plots the
+  ones within 5 m of the active line (`traceOnTrack`) as dots, relative to
+  `geo.ele`, shown with the layer's eye. No fitting: the user drags ground
+  points to match. `traceDatum` sets `geo.ele` from the trace point nearest
+  the line start if it was 0; `fillTraceEle` recovers heights from the kept
+  original file for traces loaded before heights were stored.
 - It draws above the track surface (so you can see the design against it)
   and below handles and labels (so editing is never blocked).
 - Hiding **Design** also stops it being edited: no hit tests, no drops.

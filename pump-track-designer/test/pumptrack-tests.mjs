@@ -5,7 +5,7 @@ const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==
 const m=new Function(eng+'\nreturn {DEG,FEATURES,SIZES,TEMPLATES,buildTrack,pointAt,polyline,project,projectLeg,'+
   'spansOf,findSlot,issuesOf,zAt,profileOf,profZ,profHeight,defaultParams,sizedParams,normParams,statsOf,'+
   'insertNode,removeNode,toLatLon,fromLatLon,toGPX,parseGPX,gpxToDesign,traceTrack,toCSV,parseCSV,profileCSV,'+
-  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip,setCornerKind,cornerPoint,crc32,zipStore,unzip,packDesign,readBundle,groundAt,zTop,placeAtS};')();
+  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip,setCornerKind,cornerPoint,crc32,zipStore,unzip,packDesign,readBundle,groundAt,zTop,placeAtS,traceOnTrack};')();
 
 let fails=0;
 const ok=(name,cond,info='')=>{console.log((cond?'  pass  ':'  FAIL  ')+name+(info?'   '+info:''));if(!cond)fails++};
@@ -303,6 +303,13 @@ ok('GPX heights include the ground', near(gg.pts[gg.pts.length-1].ele,95,0.01)&&
 ok('profile CSV has ground, feature and total columns', m.profileCSV(TG,spG,null).startsWith('chainage_m,x_m,y_m,ground_m,feature_m,z_m'));
 const su0=m.profileOf({type:'stepup',p:{h:.8,gap:0,lh:1.3,deck:2,lip:45,land:25}});
 ok('a step up can have no gap', su0.p.gap===0&&!su0.segs.some(q=>q.kind==='gap')&&near(m.profZ(su0,su0.len),0,0.01));
+
+// GPX heights along the track
+const tl=m.normGeom(m.TEMPLATES.find(t=>t.name==='Empty line').geom), TT3=m.buildTrack(tl);
+const walk=[{x:0,y:1,ele:101},{x:10,y:-2,ele:102.5},{x:20,y:9,ele:150},{x:30,y:.5,ele:103},{x:40,y:0}];
+const on=m.traceOnTrack(TT3,walk,100,5);
+ok('GPX heights are placed along the track by distance', on.length===3&&near(on[1].s,10,1e-9)&&near(on[1].z,2.5,1e-9));
+ok('trace points far from the track or without a height are left out', !on.some(q=>q.i===2||q.i===4));
 
 /* ---- design bundle (.zip) ---- */
 ok('crc32 matches the standard check value', m.crc32(new TextEncoder().encode('123456789'))===0xCBF43926);

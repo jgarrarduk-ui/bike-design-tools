@@ -471,7 +471,8 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
       <li>The strip under the plan is the side view along the track. The shaded area is the <b>ground</b>; features sit on top of it.</li>
       <li>Set the ground height at the start and end on the right (a loop ends where it started). In between it runs in a straight line.</li>
       <li>In the strip, <b>tap the dashed ground line</b> to add a point, <b>drag</b> a point up, down or along, and <b>hold</b> one to remove it. Squares are the start and end.</li>
-      <li>Heights are metres above the site ground level set under Export. Lip and landing angles are measured from the slope a feature is built on.</li>
+      <li>With a GPX trace loaded, its heights show as blue dots in the strip wherever the walk passed within 5&nbsp;m of the line. Drag your ground points to match them, ignoring obvious GPS jumps. The trace layer's eye shows and hides them too.</li>
+      <li>Heights are metres above the site ground level set under Export (the first trace with heights sets it, if it was 0). Lip and landing angles are measured from the slope a feature is built on.</li>
     </ul>
 
     <h2>Read the plan</h2>
@@ -1107,6 +1108,20 @@ function normGround(g,legsN,n){
     return null;
   }).filter(Boolean);
   return {z0:z(g.z0),z1:z(g.z1),pts};
+}
+/* GPX heights along a track: every trace point (plan x,y with ele) within
+   `tol` metres of the centreline, as {s, z, d, i}, z relative to `datum`
+   (the site ground level). i is the point's place in the trace, so the
+   caller can join points the walk took one after another. Sorted by i. */
+function traceOnTrack(T,xy,datum,tol=5){
+  const out=[];
+  if(!T||!T.ok) return out;
+  xy.forEach((p,i)=>{
+    if(p.ele==null||!Number.isFinite(+p.ele)) return;
+    const pj=project(T,p); if(!pj||pj.d>tol) return;
+    out.push({s:pj.s,z:+p.ele-(+datum||0),d:pj.d,i});
+  });
+  return out;
 }
 /* chainage of a ground point, or null if its straight or corner is gone */
 function groundS(T,p){
@@ -1833,11 +1848,36 @@ function outsideNormalSign(){
 }
 function cornerLabel(i){ return String(i+1); }
 let refCache={key:'',xy:null};
+/* GPX heights are above sea level; the design measures from the site ground
+   level (geo.ele). If that has never been set, take it from the trace point
+   nearest the start of the line being edited, so the dots land on the
+   profile. Returns the level it set, or null. */
+function traceDatum(){
+  const g=D.cfg.gpx, geo=D.cfg.geo;
+  if(!g||+geo.ele||!g.pts.some(p=>Number.isFinite(p.ele))) return null;
+  const xy=refLocal(); if(!xy||!T||!T.ok) return null;
+  const st=pointAt(T,0); let best=null;
+  xy.forEach(p=>{ if(!Number.isFinite(p.ele)) return; const d=dist(p,st); if(!best||d<best.d) best={d,ele:p.ele}; });
+  if(!best) return null;
+  geo.ele=rnd(best.ele,1); autosave(); return geo.ele;
+}
+/* A trace loaded before heights were kept: read them back from the
+   original file, matching points by position. */
+function fillTraceEle(){
+  const g=D.cfg.gpx, o=origFor('gpx');
+  if(!g||!o||g.pts.some(p=>p.ele!=null)) return;
+  try{
+    const src=parseGPX(o.text), all=src.pts.length>1?src.pts:src.wpts, by=new Map();
+    for(const p of all) if(Number.isFinite(p.ele)) by.set(rnd(p.lat,8).toFixed(8)+','+rnd(p.lon,8).toFixed(8),p.ele);
+    let n=0; for(const p of g.pts){ const e=by.get((+p.lat).toFixed(8)+','+(+p.lon).toFixed(8)); if(e!=null){ p.ele=rnd(e,2); n++; } }
+    if(n){ refCache.key=''; traceDatum(); autosave(); draw(); }
+  }catch(_){}
+}
 function refLocal(){
   const g=D.cfg.gpx, geo=D.cfg.geo;
   if(!g||!g.pts||g.pts.length<2||!Number.isFinite(geo.lat)||!Number.isFinite(geo.lon)) return null;
   const key=[g.pts.length,g.pts[0].lat,g.pts[0].lon,geo.lat,geo.lon,geo.rot].join('|');
-  if(refCache.key!==key) refCache={key,xy:refPolyline(geo,g.pts)};
+  if(refCache.key!==key) refCache={key,xy:refPolyline(geo,g.pts).map((p,i)=>Object.assign(p,{ele:g.pts[i].ele}))};
   return refCache.xy;
 }
 /* The GPX trace sits above the track surface so it can be compared against
@@ -2084,7 +2124,11 @@ function drawProfile(ctx,W,H,o){
   // Height is exaggerated to be readable, but capped: past about 10x a row of
   // rollers reads as spikes rather than humps. While a ground point is being
   // dragged the scale is held, so the strip doesn't rescale under the finger.
+  // GPX heights along this line, when the trace layer is showing
+  const ref=(D.cfg.layers||{}).gpx!==false?refLocal():null;
+  const tr=ref?traceOnTrack(T,ref,D.cfg.geo.ele,5):[];
   let zmin=Math.min(...gz), zmax=Math.max(...gz.map((g,i)=>g+fz[i]));
+  for(const q of tr){ zmin=Math.min(zmin,q.z); zmax=Math.max(zmax,q.z); }
   const hk=(W-padL-padR)/T.length;
   let vk=Math.min((H-padT-padB)/Math.max(.6,zmax-zmin),hk*10);
   if(o.main&&gAct&&gAct.frozen){ zmin=gAct.frozen.zmin; vk=gAct.frozen.vk; }
@@ -2122,6 +2166,17 @@ function drawProfile(ctx,W,H,o){
     ctx.save(); ctx.strokeStyle=COL.sel; ctx.lineWidth=2.5; ctx.setLineDash([5,4]);
     ctx.strokeRect(X(s0),padT-14,sp.pr.len*hk,bot-padT+14); ctx.restore();
   }
+  // GPX heights: dots, joined where the walk went straight on along the track
+  if(tr.length){
+    ctx.save(); ctx.strokeStyle=COL.ref; ctx.fillStyle=COL.ref; ctx.lineWidth=1.2; ctx.globalAlpha=.9;
+    ctx.beginPath();
+    for(let k=1;k<tr.length;k++){ const a=tr[k-1], b=tr[k];
+      if(b.i-a.i<=3&&Math.abs(b.s-a.s)<6){ ctx.moveTo(X(a.s),Y(a.z)); ctx.lineTo(X(b.s),Y(b.z)); } }
+    ctx.stroke();
+    const r=tr.length>400?1.4:2.2;
+    for(const q of tr){ ctx.beginPath(); ctx.arc(X(q.s),Y(q.z),r,0,7); ctx.fill(); }
+    ctx.restore();
+  }
   // feature codes over their peaks
   ctx.font=`600 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='bottom'; ctx.textAlign='center';
   for(const sp of spans){ if(!sp||sp.pr.len*hk<20) continue;
@@ -2152,6 +2207,9 @@ function drawProfile(ctx,W,H,o){
   ctx.textAlign='left'; ctx.textBaseline='top'; ctx.font=`600 11px ${SANS}`;
   ctx.fillText((D.lines.length>1&&!o.sheetName?D.lines[D.active].name+' · ':'')+'Profile · '+f1(T.length)+' m · '+(Math.abs(ex-1)<.05?'true scale':'height ×'+Math.round(ex))+
     (T.closed||Math.abs(g1-g0)<.005?'':' · ground '+(g1<g0?'falls ':'rises ')+f1(Math.abs(g1-g0))+' m'),padL,4);
+  if(tr.length){ const t0=ctx.measureText((D.lines.length>1&&!o.sheetName?D.lines[D.active].name+' · ':'')+'Profile · '+f1(T.length)+' m · '+
+      (Math.abs(ex-1)<.05?'true scale':'height ×'+Math.round(ex))+(T.closed||Math.abs(g1-g0)<.005?'':' · ground '+(g1<g0?'falls ':'rises ')+f1(Math.abs(g1-g0))+' m')).width;
+    ctx.fillStyle=COL.ref; ctx.fillText(' · GPX heights',padL+t0,4); }
 }
 
 /* ---------- icons ---------- */
@@ -2993,7 +3051,7 @@ async function openBundle(u8){
   }
   if(c.gpx&&b.gpx){ c.gpx.id=newId(); await keepOrig('gpx',{id:c.gpx.id,name:b.gpx.name,text:b.gpx.text}); }
   if(c.bg) delete c.bg.file; if(c.gpx) delete c.gpx.file;
-  loadDesign(b.design);
+  loadDesign(b.design); fillTraceEle();
 }
 let saveT=0;
 function autosave(){
@@ -3079,7 +3137,7 @@ function fillGeo(){ const g=D.cfg.geo;
   $('g-lat').value=g.lat==null?'':g.lat; $('g-lon').value=g.lon==null?'':g.lon; $('g-rot').value=g.rot||0; $('g-ele').value=g.ele||0; }
 $('b-export').onclick=()=>{ fillGeo(); $('dlg-export').showModal(); };
 for(const [id,k] of [['g-lat','lat'],['g-lon','lon'],['g-rot','rot'],['g-ele','ele']])
-  $(id).oninput=e=>{ const v=parseFloat(e.target.value); D.cfg.geo[k]=Number.isFinite(v)?v:(k==='lat'||k==='lon'?null:0); autosave(); };
+  $(id).oninput=e=>{ const v=parseFloat(e.target.value); D.cfg.geo[k]=Number.isFinite(v)?v:(k==='lat'||k==='lon'?null:0); autosave(); draw(); };
 $('g-here').onclick=()=>{
   if(!navigator.geolocation){ toast('Location is not available in this browser.'); return; }
   navigator.geolocation.getCurrentPosition(p=>{
@@ -3260,17 +3318,20 @@ $('ly-gpx-act').onclick=()=>{
           Object.assign(geo,anchorGeo(src,{x:(e.x0+e.x1)/2,y:(e.y0+e.y1)/2},geo.rot||0)); anchored=true;
         }
         // a phone logs a point a second; thin very long traces to 8 cm
-        let xy=src.map(p=>Object.assign(fromLatLon(geo,p),{lat:p.lat,lon:p.lon}));
+        let xy=src.map(p=>Object.assign(fromLatLon(geo,p),{lat:p.lat,lon:p.lon,ele:p.ele}));
         if(xy.length>3000) xy=rdp(xy,0.08);
         const gid=newId();
-        D.cfg.gpx={id:gid,name:file.name.replace(/\.[^.]+$/,''),pts:xy.map(p=>({lat:rnd(p.lat,8),lon:rnd(p.lon,8)}))};
+        D.cfg.gpx={id:gid,name:file.name.replace(/\.[^.]+$/,''),
+          pts:xy.map(p=>Object.assign({lat:rnd(p.lat,8),lon:rnd(p.lon,8)},Number.isFinite(p.ele)?{ele:rnd(p.ele,2)}:{}))};
         keepOrig('gpx',{id:gid,name:file.name,text:String(r.result)});
         D.cfg.layers.gpx=true; refCache.key='';
+        const lvl=traceDatum();
         const ref=refLocal(), c=ref[Math.floor(ref.length/2)], e=extentOf(T);
         const far=Math.hypot(c.x-(e.x0+e.x1)/2,c.y-(e.y0+e.y1)/2);
         // on a phone, fold the panel away so the trace just loaded is in view
         if(window.matchMedia('(max-width:900px)').matches) setLayersOpen(false);
         fitView(); syncLayers(); autosave();
+        if(lvl!=null) setTimeout(()=>toast(`Site ground level set to ${f1(lvl)} m from the trace, so its heights line up with the profile. Change it under Export.`,true),3300);
         toast(anchored?'GPX trace placed over the track at true scale. The site location now comes from it.'
           :far>2000?`GPX trace added. It is ${f1(far/1000)} km from the site location.`
           :'GPX trace added at its real position.',true);
@@ -3308,7 +3369,7 @@ try{
   [PW,PH]=sizeCanvas(plan,pctx); [QW,QH]=sizeCanvas(prof,qctx);
   if(PW>50){ fitView(); fitted=true; }
   drawNow();
-  restoreOrig();
+  restoreOrig().then(fillTraceEle);
   // web fonts arrive after the first draw: redraw the canvases and icons in them
   if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ buildPalette(); drawNow(); });
 }catch(err){ toast('Start-up failed: '+err.message); console.error(err); }
