@@ -19,15 +19,38 @@ globals; the test lifts it out with `new Function`. Keep it that way.
 
 ## Model
 
-- **Track** = a polygon of corner nodes, each corner filleted with a true
-  circular arc of the node's radius (`buildTrack`). Straights are "legs":
-  leg N runs from node N to node N+1. A loop has as many legs as nodes; a
-  line has one fewer and its end nodes have no arc.
+- **Track** = corner circles joined by straights (`buildTrack`). Each corner
+  node `{x,y}` is the **centre** of a circle of radius `r`; `turn` is +1 if
+  the track goes round it to the left, -1 right. Straights are the tangent
+  lines from one circle to the next, like a belt round pulleys. Ends, hips
+  and `r = 0` corners are points the track passes through. Leg N runs from
+  node N to node N+1; a loop has as many legs as nodes (two round corners is
+  enough: an oval), a line has one fewer.
+- **Dragging a corner moves only that corner.** The other circles stay put;
+  their arcs just get longer or shorter. The handle is drawn at the centre
+  (the selected corner shows its circle, dashed). `turn` is remembered on the
+  node (`recompute` writes it back) so a corner never flips side mid-drag,
+  unless it is pulled right through and would wrap more than `FLIP_DEG`
+  (290°). Tested on every template corner.
+- Only overlapping circles with no tangent between them (an S-bend pushed
+  together, or one circle inside a neighbour) are shrunk to fit (`tight`),
+  reported, and outlined red.
+- A corner added with + or a double click is a point on the straight
+  (`r 0`, `rWant 4`), so nothing moves; its radius grows to `rWant` as it is
+  first dragged out.
 - **A berm is a corner**, not an object. `node.berm` is `berm`, `flat`,
-  `auto` (banked above 35° of turn) or `hip` (see Hips below). `bh` is berm height, `rh` a roller in
-  the middle of the berm (0 = none). Changing the radius changes the plan.
-- Radii too big for their straights are shrunk to fit (`tight`), reported
-  as an issue, and the handle is outlined red. Nothing jams.
+  `auto` (banked above 35° of turn) or `hip` (see Hips below). `bh` is berm
+  height, `rh` a roller in the middle of the berm (0 = none). Changing the
+  radius keeps the centre, so the berm grows outwards.
+- `setCornerKind` switches corner types. Round to hip moves the node to
+  where the straights meet (`cornerPoint`); hip to round fits the circle back
+  in (`filletCentre`). Either way the straights stay on their lines.
+- **Version 2 files.** Before this, a node was the point where its straights
+  met, filleted inside. `normGeom` converts anything without `v:2`
+  (`toCentres`), and `mergeShared` joins two old 90° corners that share one
+  circle into a single 180° corner. Templates are still written as corner
+  points and converted. The CSV marks centres with `ref=centres` on the
+  track row and has a `turn` column; an old CSV is converted.
 - **Features** sit on legs: `{type, leg, t, p}`. `t` is the fraction of the
   leg where the feature's centre is, so stretching a straight spaces its
   features with it. `insertNode`/`removeNode` remap `t` so nothing moves on
@@ -67,7 +90,7 @@ through `normHip`). It is a jump that turns the track:
   (pit between, takeoff and landing heights). `side` is +1 left, -1 right.
   `w` is the takeoff width; the landing is `w * flare`.
 - `setHipTurn(geom,i,deg,side)` sets the angle by swinging the next straight
-  round the hip, keeping its length. The angle slider and the Left/Right
+  round the hip, keeping its length (the next corner's circle moves with it). The angle slider and the Left/Right
   switch both use it; dragging the corner still works. Over 90° is a warning.
 - Dropped on a corner it takes that corner's turn; dropped on a straight it
   inserts a corner there and turns 45° towards the side it was dropped on.

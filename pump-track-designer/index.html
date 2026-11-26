@@ -594,8 +594,16 @@ function profKind(pr,u){ for(const s of pr.segs) if(u<=s.u1) return s.kind; retu
 function flareAt(pr,u){ return pr.flare?pr.flare(u):1; }
 function profHeight(pr){ let m=0; for(let u=0;u<=pr.len;u+=pr.len/200) m=Math.max(m,profZ(pr,u)); return m; }
 
-/* ---------- track geometry ---------- */
+/* ---------- track geometry ----------
+   Each corner node is the centre of a circle of radius r that the track
+   wraps round, turning left (turn +1, centre on the left of travel) or right
+   (turn -1). The straights are the tangent lines from one circle to the
+   next, like a belt round pulleys. So moving a corner moves only that
+   corner: the straights either side of it swing, and its neighbours' arcs get
+   longer or shorter on circles that stay where they are. Ends, hips and
+   r = 0 corners are points the track passes through. */
 const AUTO_BERM_DEG=35;   // an "auto" corner is banked once it turns more than this
+const FLIP_DEG=290;       // wrapped further than this, a corner has been dragged through: it turns the other way
 function cornerIsBerm(node,deflDeg){
   if(node.berm==='hip') return false;
   if(node.berm==='berm'||node.berm===true) return true;
@@ -603,56 +611,158 @@ function cornerIsBerm(node,deflDeg){
   return Math.abs(deflDeg)>AUTO_BERM_DEG;
 }
 function buildTrack(geom){
-  const N=geom.nodes||[], n=N.length, closed=!!geom.closed&&n>=3;
-  const out={closed,width:+geom.width||1.5,legs:[],arcs:[],els:[],length:0,corners:[],ok:n>=2};
+  const N=geom.nodes||[], n=N.length, closed=!!geom.closed&&n>=2;   // two circles make an oval
+  const out={closed,width:+geom.width||1.5,legs:[],arcs:[],els:[],length:0,corners:[],hips:[],ok:n>=2};
   if(n<2) return out;
-  const cor=N.map((p,i)=>{
-    if(!closed&&(i===0||i===n-1)) return {i,end:true,T:0,r:0,defl:0,P:V(p.x,p.y)};
-    const a=N[(i-1+n)%n], c=N[(i+1)%n];
-    const din=unit(sub(p,a)), dout=unit(sub(c,p));
-    let defl=Math.atan2(cross(din,dout),dot(din,dout));
-    // a reversal has no fillet; keep it just short of one so tan() stays finite
-    defl=clamp(defl,-179*DEG,179*DEG);
-    const r=p.berm==='hip'?0:Math.max(0,+p.r||0);
-    return {i,end:false,din,dout,defl,r,T:r*Math.tan(Math.abs(defl)/2),P:V(p.x,p.y)};
+  const legsN=closed?n:n-1, end=i=>!closed&&(i===0||i===n-1);
+  const P=N.map(p=>V(+p.x||0,+p.y||0));
+  const rad=N.map((p,i)=>end(i)||p.berm==='hip'?0:Math.max(0,+p.r||0));
+  // turn side: stored on the node, else read from the polygon of centres
+  const side=N.map((p,i)=>{
+    if(p.turn===1||p.turn===-1) return p.turn;
+    if(end(i)) return 1;
+    return cross(sub(P[i],P[(i-1+n)%n]),sub(P[(i+1)%n],P[i]))<0?-1:1;
   });
-  const legsN=closed?n:n-1, scale=cor.map(()=>1);
-  for(let k=0;k<legsN;k++){
-    const a=cor[k], b=cor[(k+1)%n], L=dist(N[k],N[(k+1)%n]), need=a.T+b.T;
-    if(need>L&&need>1e-9){ const f=L/need; scale[a.i]=Math.min(scale[a.i],f); scale[b.i]=Math.min(scale[b.i],f); }
+  const scale=N.map(()=>1), kk=i=>side[i]*rad[i]*scale[i];
+  let tan=[];
+  // tangent from circle a to circle b: b - a = len*d + (kb - ka)*left(d)
+  const tangents=()=>{
+    tan=[];
+    for(let j=0;j<legsN;j++){
+      const a=j, b=(j+1)%n, D=sub(P[b],P[a]), m=Math.hypot(D.x,D.y), dk=kk(b)-kk(a);
+      if(m<1e-9){ tan.push({d:null,pa:P[a],pb:P[b],len:0,m,dk,bad:Math.abs(dk)>1e-9}); continue; }
+      const u=mulv(D,1/m), w=leftOf(u), s=clamp(-dk/m,-1,1), c=Math.sqrt(1-s*s);
+      const d=V(u.x*c+w.x*s,u.y*c+w.y*s), nl=leftOf(d);
+      tan.push({d,pa:sub(P[a],mulv(nl,kk(a))),pb:sub(P[b],mulv(nl,kk(b))),len:m*c,m,dk,bad:Math.abs(dk)>m*(1+1e-9)});
+    }
+    // two corners on one circle: the zero-length straight sits halfway round it
+    tan.forEach((t,j)=>{
+      if(t.d) return;
+      const pv=tan[(j-1+legsN)%legsN], nx=tan[(j+1)%legsN], a=j;
+      let d=V(1,0);
+      if(pv&&nx&&pv.d&&nx.d&&legsN>2){
+        let sw=Math.atan2(cross(pv.d,nx.d),dot(pv.d,nx.d))*side[a]; if(sw<0) sw+=2*Math.PI;
+        const ang=Math.atan2(pv.d.y,pv.d.x)+side[a]*sw/2; d=V(Math.cos(ang),Math.sin(ang));
+      } else if(pv&&pv.d) d=pv.d;
+      t.d=d; t.pa=t.pb=sub(P[a],mulv(leftOf(d),kk(a)));
+    });
+  };
+  // circles that overlap (or one inside the other) have no tangent: shrink both
+  const fit=()=>{
+    for(let pass=0;pass<12;pass++){
+      tangents(); let any=false;
+      tan.forEach((t,j)=>{ if(!t.bad) return; any=true;
+        const f=t.m*0.999/Math.abs(t.dk); scale[j]*=f; scale[(j+1)%n]*=f; });
+      if(!any) return;
+    }
+    tan.forEach((t,j)=>{ if(t.bad){ scale[j]=0; scale[(j+1)%n]=0; } });
+    tangents();
+  };
+  const sweep=N.map(()=>0);
+  for(let it=0;it<4;it++){
+    scale.fill(1); fit();
+    let flipped=false;
+    for(let i=0;i<n;i++){
+      if(end(i)) continue;
+      const din=tan[(i-1+n)%n].d, dout=tan[i].d, df=Math.atan2(cross(din,dout),dot(din,dout));
+      if(rad[i]*scale[i]<1e-9){ side[i]=df<0?-1:1; sweep[i]=Math.abs(df); continue; }
+      let sw=side[i]>0?df:-df; if(sw<0) sw+=2*Math.PI; if(sw>2*Math.PI-1e-7) sw=0;
+      if(sw>FLIP_DEG*DEG&&it<3){ side[i]=-side[i]; flipped=true; }
+      sweep[i]=sw;
+    }
+    if(!flipped) break;
   }
-  for(const c of cor){
-    c.tight=scale[c.i]<0.999; c.reff=c.r*scale[c.i]; c.T*=scale[c.i];
-    if(c.end){ c.A=c.B=c.P; continue; }
-    c.A=sub(c.P,mulv(c.din,c.T)); c.B=addv(c.P,mulv(c.dout,c.T));
-  }
+  const cor=N.map((p,i)=>{
+    if(end(i)) return {i,end:true,r:0,reff:0,defl:0,s:1,tight:false,P:P[i],A:P[i],B:P[i]};
+    const tin=tan[(i-1+n)%n], tout=tan[i];
+    return {i,end:false,din:tin.d,dout:tout.d,defl:side[i]*sweep[i],s:side[i],r:rad[i],reff:rad[i]*scale[i],
+      tight:rad[i]>0&&scale[i]<0.999,P:P[i],A:tin.pb,B:tout.pa};
+  });
   out.corners=cor;
   let s=0;
   const pushArc=c=>{
-    if(c.end) return;
-    const node=N[c.i], sg=c.defl>=0?1:-1, berm=cornerIsBerm(node,c.defl/DEG);
-    const arc={kind:'arc',i:c.i,r:c.reff,sg,sweepAbs:Math.abs(c.defl),defl:c.defl,s0:s,len:c.reff*Math.abs(c.defl),
-      A:c.A,B:c.B,P:c.P,tight:c.tight,berm,bh:berm?(+node.bh||0):0,rh:node.berm==='hip'?0:+node.rh||0,hip:node.berm==='hip'};
+    const node=N[c.i], sg=c.s, sw=Math.abs(c.defl), berm=cornerIsBerm(node,c.defl/DEG);
+    const arc={kind:'arc',i:c.i,r:c.reff,sg,sweepAbs:sw,defl:c.defl,s0:s,len:c.reff*sw,
+      A:c.A,B:c.B,P:c.P,C:c.P,tight:c.tight,berm,bh:berm?(+node.bh||0):0,rh:node.berm==='hip'?0:+node.rh||0,hip:node.berm==='hip'};
     if(arc.len>1e-9){
-      arc.C=addv(c.A,mulv(leftOf(c.din),c.reff*sg));
-      arc.a0=Math.atan2(c.A.y-arc.C.y,c.A.x-arc.C.x);
-      const am=arc.a0+sg*arc.sweepAbs/2;
-      arc.M=V(arc.C.x+arc.r*Math.cos(am),arc.C.y+arc.r*Math.sin(am));
-    } else { arc.C=c.P; arc.a0=0; arc.M=c.P; }
+      arc.a0=Math.atan2(c.A.y-c.P.y,c.A.x-c.P.x);
+      const am=arc.a0+sg*sw/2;
+      arc.M=V(c.P.x+c.reff*Math.cos(am),c.P.y+c.reff*Math.sin(am));
+    } else { arc.a0=0; arc.M=c.A; }
     out.arcs.push(arc); out.els.push(arc); s+=arc.len;
   };
-  for(let k=0;k<legsN;k++){
-    const a=cor[k], b=cor[(k+1)%n];
-    const pa=a.end?a.P:a.B, pb=b.end?b.P:b.A, L=dist(pa,pb);
-    const dir=L>1e-9?unit(sub(pb,pa)):unit(sub(N[(k+1)%n],N[k]));
-    const leg={kind:'leg',k,a:pa,b:pb,dir,len:L,s0:s};
-    out.legs.push(leg); out.els.push(leg); s+=L;
-    if(closed||k+1<n-1) pushArc(b);
+  for(let j=0;j<legsN;j++){
+    const t=tan[j], leg={kind:'leg',k:j,a:t.pa,b:t.pb,dir:t.d,len:t.len,s0:s};
+    out.legs.push(leg); out.els.push(leg); s+=t.len;
+    if(closed||j+1<n-1) pushArc(cor[(j+1)%n]);
   }
   out.length=s;
-  out.hips=[];
   for(const a of out.arcs) if(a.hip) out.hips.push(hipOf(out,N[a.i],a,n));
   return out;
+}
+/* Centre of a circle of radius r that fits in the corner at P between
+   directions din and dout (the old corner-point model), and its turn. */
+function filletCentre(P,din,dout,r,maxDeg=179){
+  const th=clamp(Math.atan2(cross(din,dout),dot(din,dout)),-maxDeg*DEG,maxDeg*DEG);
+  if(Math.abs(th)<1e-6) return {C:addv(P,mulv(leftOf(din),r)),turn:1};   // straight: circle touching at P
+  return {C:addv(P,mulv(unit(sub(dout,din)),r/Math.cos(th/2))),turn:th<0?-1:1};
+}
+/* Where the two straights at corner i meet if extended. Turns past 170°
+   meet a long way off, so those use the middle of the arc. */
+function cornerPoint(T,i){
+  const c=T.corners[i]; if(!c) return null; if(c.end||c.reff<1e-9) return V(c.P.x,c.P.y);
+  const den=cross(c.din,c.dout), a=T.arcs.find(z=>z.i===i);
+  if(Math.abs(c.defl)>170*DEG||Math.abs(den)<1e-6) return a?V(a.M.x,a.M.y):V(c.P.x,c.P.y);
+  return addv(c.A,mulv(c.din,cross(sub(c.B,c.A),c.dout)/den));
+}
+/* Change a corner to `kind`. A hip is a point the straights meet at, so a
+   round corner going to a hip moves its node to that meeting point, and a
+   hip going round fits its radius back into the corner: either way the
+   straights stay where they were. */
+function setCornerKind(geom,T,i,kind){
+  const nd=geom.nodes[i], c=T.corners[i]; if(!nd||!c||c.end) return false;
+  const wasHip=nd.berm==='hip';
+  if(kind==='hip'&&!wasHip){
+    const q=cornerPoint(T,i); nd.x=rnd(q.x,3); nd.y=rnd(q.y,3);
+    nd.hip=normHip(Object.assign({w:T.width},nd.hip,{side:c.defl<0?-1:1}));
+  } else if(kind!=='hip'&&wasHip){
+    if(!(nd.r>0)) nd.r=4;
+    const f=filletCentre(c.P,c.din,c.dout,nd.r,170); nd.x=rnd(f.C.x,3); nd.y=rnd(f.C.y,3); nd.turn=f.turn;
+  }
+  nd.berm=kind; delete nd.rWant;
+  return true;
+}
+/* Files before version 2 stored each corner as the point where its straights
+   meet, filleted inside with radius r (shrunk if its straights were short).
+   This turns that into circle centres giving the same track. */
+function toCentres(g){
+  const N=g.nodes||[], n=N.length, closed=!!g.closed&&n>=3;
+  const cor=N.map((p,i)=>{
+    if(n<2||(!closed&&(i===0||i===n-1))) return null;
+    const a=N[(i-1+n)%n], c=N[(i+1)%n];
+    if(dist(a,p)<1e-9||dist(p,c)<1e-9) return null;
+    const din=unit(sub(p,a)), dout=unit(sub(c,p));
+    const defl=clamp(Math.atan2(cross(din,dout),dot(din,dout)),-179*DEG,179*DEG);
+    const r=p.berm==='hip'?0:Math.max(0,+p.r||0);
+    return {din,dout,defl,r,T:r*Math.tan(Math.abs(defl)/2)};
+  });
+  const scale=N.map(()=>1), legsN=closed?n:Math.max(0,n-1);
+  for(let k=0;k<legsN;k++){
+    const a=cor[k], b=cor[(k+1)%n], L=dist(N[k],N[(k+1)%n]), need=(a?a.T:0)+(b?b.T:0);
+    if(need>L&&need>1e-9){ const f=L/need; if(a) scale[k]=Math.min(scale[k],f); if(b) scale[(k+1)%n]=Math.min(scale[(k+1)%n],f); }
+  }
+  const nodes=N.map((p,i)=>{
+    const o=Object.assign({},p), c=cor[i]; delete o.turn;
+    if(!c) return o;
+    o.turn=c.defl<0?-1:1;
+    if(c.r>0){
+      const reff=c.r*scale[i];
+      if(reff<1e-6) o.r=0;
+      else { const f=filletCentre(p,c.din,c.dout,reff); o.x=rnd(f.C.x,4); o.y=rnd(f.C.y,4); o.r=rnd(reff,4); o.turn=f.turn; }
+    }
+    return o;
+  });
+  return Object.assign({},g,{nodes,v:2});
 }
 /* Where a hip's takeoff and landing sit, its centreline profile (unrolled
    round the corner) and the lengths of straight it uses either side. */
@@ -676,14 +786,17 @@ function hipOf(T,node,arc,n){
     fits:!!legIn&&!!legOut&&legIn.len>=zIn-0.02&&legOut.len>=zOut-0.02,needIn:zIn,needOut:zOut};
 }
 /* Turn a hip corner to `deg` (0-90) towards `side` (+1 left, -1 right) by
-   swinging the next straight round it, keeping that straight's length. */
+   swinging the next straight round it, keeping that straight's length. The
+   next corner's circle moves with the straight; nothing else moves. */
 function setHipTurn(geom,i,deg,side){
-  const N=geom.nodes, n=N.length, closed=!!geom.closed&&n>=3;
+  const N=geom.nodes, n=N.length, closed=!!geom.closed&&n>=2;
   if(!closed&&(i<=0||i>=n-1)) return false;
-  const A=N[(i-1+n)%n], Pn=N[i], C=N[(i+1)%n];
-  const din=unit(sub(Pn,A)), L=dist(Pn,C), a=clamp(deg,0,179)*DEG*(side<0?-1:1);
+  const T=buildTrack(geom), lin=T.legs.find(l=>l.k===(i-1+n)%n), lout=T.legs.find(l=>l.k===i);
+  if(!lin||!lout) return false;
+  const j=(i+1)%n, nx=T.corners[j], Pn=N[i], din=lin.dir, a=clamp(deg,0,179)*DEG*(side<0?-1:1);
   const d=V(din.x*Math.cos(a)-din.y*Math.sin(a),din.x*Math.sin(a)+din.y*Math.cos(a));
-  C.x=rnd(Pn.x+d.x*L,3); C.y=rnd(Pn.y+d.y*L,3);
+  const tp=addv(Pn,mulv(d,lout.len)), C=addv(tp,mulv(leftOf(d),nx.end?0:nx.s*nx.r));
+  N[j].x=rnd(C.x,3); N[j].y=rnd(C.y,3); if(!nx.end) N[j].turn=nx.s;
   Pn.hip=Object.assign(normHip(Pn.hip),{side:side<0?-1:1});
   return true;
 }
@@ -775,7 +888,7 @@ function findSlot(T,spans,leg,c,len,skip){
 function issuesOf(T,geom,spans){
   const out=[];
   for(const c of T.corners) if(c.tight) out.push({kind:'tight',node:c.i,
-    msg:`Corner ${c.i+1} is too big for its straights (radius ${rnd(c.reff,1)} m fits)`});
+    msg:`Corner ${c.i+1} overlaps the corner next to it (radius ${rnd(c.reff,1)} m fits)`});
   for(const sp of spans) if(sp&&!sp.fits) out.push({kind:'fit',feature:sp.i,
     msg:`${FEATURES[sp.f.type].name} ${sp.i+1} is longer than its straight`});
   for(let a=0;a<spans.length;a++) for(let b=a+1;b<spans.length;b++){
@@ -851,7 +964,11 @@ function statsOf(T,geom,spans){
 function insertNode(geom,T,leg,along,extra){
   const L=T.legs[leg]; if(!L) return -1;
   const d=clamp(along,0,L.len), at=leg+1, q=addv(L.a,mulv(L.dir,d));
-  geom.nodes.splice(at,0,Object.assign({x:q.x,y:q.y,r:4,berm:'auto',bh:1.2,rh:0},extra||{}));
+  // A new corner starts as a point on the straight, so nothing moves. Its
+  // radius grows towards rWant as it is first dragged out (see the page).
+  const nd=Object.assign({x:q.x,y:q.y,r:0,berm:'auto',bh:1.2,rh:0,rWant:4},extra||{});
+  if(nd.berm==='hip') delete nd.rWant;
+  geom.nodes.splice(at,0,nd);
   for(const f of geom.features){
     if(f.leg>leg) f.leg++;
     else if(f.leg===leg){
@@ -864,7 +981,8 @@ function insertNode(geom,T,leg,along,extra){
 }
 function removeNode(geom,T,i){
   const n=geom.nodes.length, closed=T.closed;
-  if(n<=(closed?3:2)) return false;
+  if(n<=2) return false;
+  if(closed&&n===3&&geom.nodes.filter((q,j)=>j!==i).some(q=>!(q.r>0)||q.berm==='hip')) return false;   // a two-corner loop needs two round corners
   const p=(i-1+n)%n, newIdx=j=>j>i?j-1:j;
   const isEnd=!closed&&(i===0||i===n-1);
   if(isEnd){
@@ -1009,7 +1127,7 @@ function gpxToDesign(g,width){
   const geo={lat:g.pts[0].lat,lon:g.pts[0].lon,rot:0,ele:g.pts[0].ele!=null?g.pts[0].ele:0};
   const xy=g.pts.map(p=>fromLatLon(geo,p));
   const tr=traceTrack(xy); if(!tr) throw new Error('track too short');
-  const geom={closed:tr.closed,width:width||1.5,nodes:tr.nodes,features:[]};
+  const geom=normGeom({closed:tr.closed,width:width||1.5,nodes:tr.nodes,features:[]});   // traced as corner points
   const T=buildTrack(geom);
   for(const w of g.wpts){
     if(!FEATURES[w.type]) continue;
@@ -1025,18 +1143,21 @@ function gpxToDesign(g,width){
 const CSV_PARAMS=[['h','height_m'],['L','roller_length_m'],['n','count'],['deck','deck_m'],['gap','gap_m'],
   ['lh','landing_height_m'],['lip','lip_deg'],['land','landing_deg'],['app','approach_deg'],['kick','kick_deg'],
   ['flare','flare_x'],['ang','rollin_deg']];
-const CSV_HEAD=['kind','ref','type','x_m','y_m','radius_m','corner','hip_style','hip_side','berm_height_m','berm_roller_m','width_m',
+const CSV_HEAD=['kind','ref','type','x_m','y_m','radius_m','corner','turn','hip_style','hip_side','berm_height_m','berm_roller_m','width_m',
   'leg','start_m','length_m'].concat(CSV_PARAMS.map(c=>c[1]));
 function cornerName(b){ return b==='berm'||b===true?'berm':b==='flat'||b===false?'flat':b==='hip'?'hip':'auto'; }
 function toCSV(geom,T,spans){
   const row=o=>CSV_HEAD.map(h=>o[h]==null?'':String(o[h])).join(',');
   const lines=['# Creature Cycles Pump Track Designer - dimensions. Metres and degrees. Plan x east, y north.',
+    '# x_m,y_m is the centre of the corner circle (the point itself for ends, hips and radius 0). turn is the way the track goes round it.',
     '# leg N runs from node N to the next node. start_m is from the end of the corner before it to the feature start.',
     CSV_HEAD.join(',')];
-  lines.push(row({kind:'track',type:geom.closed?'loop':'line',width_m:rnd(geom.width,3)}));
+  lines.push(row({kind:'track',ref:'centres',type:geom.closed?'loop':'line',width_m:rnd(geom.width,3)}));
   geom.nodes.forEach((p,i)=>{
-    const o={kind:'node',ref:'N'+(i+1),x_m:rnd(p.x,3),y_m:rnd(p.y,3),
-      radius_m:rnd(+p.r||0,3),corner:cornerName(p.berm),berm_height_m:rnd(+p.bh||0,3),berm_roller_m:rnd(+p.rh||0,3)};
+    const c=T.corners[i];
+    const o={kind:'node',ref:'N'+(i+1),x_m:rnd(p.x,4),y_m:rnd(p.y,4),
+      radius_m:rnd(+p.r||0,4),corner:cornerName(p.berm),turn:c&&!c.end?(c.s<0?'right':'left'):null,
+      berm_height_m:rnd(+p.bh||0,3),berm_roller_m:rnd(+p.rh||0,3)};
     if(p.berm==='hip'){ const h=normHip(p.hip); o.hip_style=h.style; o.hip_side=h.side<0?'right':'left';
       o.width_m=rnd(h.w,3); for(const [k,c] of CSV_PARAMS) if(k in h) o[c]=rnd(h[k],3); }
     lines.push(row(o));
@@ -1066,12 +1187,16 @@ function parseCSV(text){
   for(const r of rows) if(r.kind==='node'){
     const nd={x:num(r.x_m,0),y:num(r.y_m,0),r:num(r.radius_m,0),
       berm:cornerName(r.corner||'auto'),bh:num(r.berm_height_m,1.2),rh:num(r.berm_roller_m,0)};
+    if(r.turn==='left'||r.turn==='right') nd.turn=r.turn==='right'?-1:1;
     if(nd.berm==='hip'){ const h={style:r.hip_style,side:r.hip_side==='right'?-1:1,w:num(r.width_m,NaN)};
       for(const [k,c] of CSV_PARAMS){ const v=parseFloat(r[c]); if(Number.isFinite(v)) h[k]=v; }
       nd.hip=normHip(h); }
     geom.nodes.push(nd);
   }
   if(geom.nodes.length<2) throw new Error('needs at least two node rows');
+  // files written before corners were circle centres hold corner points
+  if(tr.ref==='centres') geom.v=2;
+  Object.assign(geom,normGeom(geom));
   const T=buildTrack(geom);
   for(const r of rows){
     if(r.kind!=='feature'||!FEATURES[r.type]) continue;
@@ -1098,17 +1223,46 @@ function profileCSV(T,spans,geo){
    over the defaults on load so an older file keeps working. */
 function normGeom(g){
   g=g||{};
-  const nodes=(Array.isArray(g.nodes)?g.nodes:[]).map(p=>{
+  const normNode=p=>{
     const o={x:+p.x||0,y:+p.y||0,r:Math.max(0,+p.r||0),
       berm:cornerName(p.berm),bh:Number.isFinite(+p.bh)?+p.bh:1.2,rh:Math.max(0,+p.rh||0)};
+    if(p.turn===1||p.turn===-1) o.turn=p.turn;
+    if(+p.rWant>0) o.rWant=+p.rWant;
     if(p.hip||o.berm==='hip') o.hip=normHip(p.hip);
     return o;
-  });
-  const legsN=g.closed&&nodes.length>=3?nodes.length:Math.max(0,nodes.length-1);
-  const features=(Array.isArray(g.features)?g.features:[])
+  };
+  let nodes=(Array.isArray(g.nodes)?g.nodes:[]).map(normNode);
+  // version 2: a corner node is its circle's centre. Older files are converted.
+  let feats=Array.isArray(g.features)?g.features.map(f=>Object.assign({},f)):[];
+  if(g.v!==2){
+    nodes=toCentres({closed:g.closed,nodes}).nodes.map(normNode);
+    mergeShared(!!g.closed,nodes,feats);
+  }
+  const legsN=g.closed&&nodes.length>=2?nodes.length:Math.max(0,nodes.length-1);
+  const features=feats
     .filter(f=>f&&FEATURES[f.type]&&legsN>0)
     .map(f=>({type:f.type,leg:clamp(Math.round(+f.leg||0),0,legsN-1),t:clamp(+f.t||0,0,1),p:normParams(f.type,f.p)}));
-  return {closed:!!g.closed,width:clamp(+g.width||1.5,0.6,6),nodes,features};
+  return {v:2,closed:!!g.closed,width:clamp(+g.width||1.5,0.6,6),nodes,features};
+}
+/* An old hairpin was often two 90° corners whose fillets share one circle.
+   As circle centres they would sit on top of each other, so they become one
+   corner. Features keep their straights. */
+function mergeShared(closed,nodes,feats){
+  for(let guard=0;guard<100;guard++){
+    const n=nodes.length; if(n<3) return;
+    const legsN=closed?n:n-1; let i=-1;
+    for(let k=0;k<legsN;k++){
+      const a=nodes[k], b=nodes[(k+1)%n];
+      if(!closed&&(k===0||k+1===n-1)) continue;
+      if(a.berm==='hip'||b.berm==='hip'||!(a.r>0)||!(b.r>0)) continue;
+      if(dist(a,b)<2e-3&&Math.abs(a.r-b.r)<2e-3&&a.turn===b.turn){ i=k; break; }
+    }
+    if(i<0) return;
+    const j=(i+1)%n, ni=k=>k>j?k-1:k;
+    for(const f of feats){ const L=Math.round(+f.leg||0);
+      if(L===i){ f.leg=ni(i); f.t=0; } else if(L===j) f.leg=ni(i); else f.leg=ni(L); }
+    nodes.splice(j,1);
+  }
 }
 
 /* ---------- templates ----------
@@ -1117,14 +1271,15 @@ function normGeom(g){
    park line. Feature positions are given as metres from the start of their
    straight, then converted to the stored fraction. */
 function tpl(name,note,closed,width,nodes,feats){
-  const geom={closed,width,nodes:nodes.map(([x,y,r=3.5,berm='berm',bh=1.2,rh=0,hip])=>
+  // laid out as corner points (where the straights meet), then converted to circle centres
+  const g1={closed,width,nodes:nodes.map(([x,y,r=3.5,berm='berm',bh=1.2,rh=0,hip])=>
     Object.assign({x,y,r,berm,bh,rh},hip?{hip:normHip(hip)}:{})),features:[]};
-  const T=buildTrack(geom);
-  geom.features=feats.map(([type,leg,at,p])=>{
+  const T=buildTrack(toCentres(g1));
+  g1.features=feats.map(([type,leg,at,p])=>{
     const f={type,leg,t:0,p:normParams(type,Object.assign(defaultParams(type),p||{}))};
     f.t=(at+profileOf(f).len/2)/T.legs[leg].len; return f;
   });
-  return {name,note,geom};
+  return {name,note,geom:normGeom(g1)};
 }
 const TEMPLATES=[
   tpl('Flow loop','Asphalt-style loop, 7 berms, about 120 m',true,2,
@@ -1188,12 +1343,16 @@ let T=null, spans=[], issues=[], stats=null;
 let sel=null;                 // {kind:'feature'|'node', i}
 let view={cx:0,cy:0,k:10};
 let delTarget=null;          // {kind:'node'|'feature', i}: what is showing its long-press delete button
-let preview=null, armed=null, mode=null, calPts=[], act=null, polyShow=false;
+let preview=null, armed=null, mode=null, calPts=[], act=null;
 let HND={corners:[],plus:[]};
 const bgImg=new Image(); bgImg.onload=()=>draw();
 
 function recompute(){
-  T=buildTrack(D.geom); spans=spansOf(T,D.geom);
+  T=buildTrack(D.geom);
+  // remember which way each corner wraps, so dragging it never flips it
+  // unless it is pulled right through (see FLIP_DEG)
+  D.geom.nodes.forEach((n,i)=>{ const c=T.corners[i]; if(c&&!c.end&&!(n.rWant>0)) n.turn=c.s; });
+  spans=spansOf(T,D.geom);
   issues=issuesOf(T,D.geom,spans); stats=statsOf(T,D.geom,spans);
   draw();
 }
@@ -1223,7 +1382,7 @@ let rafId=0;
 function draw(){ if(!rafId) rafId=requestAnimationFrame(drawNow); }
 function drawNow(){
   rafId=0; if(!T) return;
-  drawPlan(pctx,PW,PH,view,{main:true,grid:true,bg:true,handles:true,dims:D.cfg.dims,sel,preview,poly:polyShow,cal:calPts});
+  drawPlan(pctx,PW,PH,view,{main:true,grid:true,bg:true,handles:true,dims:D.cfg.dims,sel,preview,cal:calPts});
   drawProfile(qctx,QW,QH,{main:true,sel});
   updateLive();
 }
@@ -1440,11 +1599,15 @@ function drawPlan(ctx,W,H,vw,o){
     bad:!h.fits||issues.some(q=>q.node===h.i&&q.kind==='overlap')});
   if(o.preview&&o.preview.sp) drawFeature(ctx,X,Y,k,o.preview.sp.s0,o.preview.sp.pr,{alpha:.7,sel:true});
   drawRef(ctx,X,Y,LY);
-  // control polygon while a corner is being dragged
-  if(o.poly){
-    const N=D.geom.nodes; ctx.save(); ctx.setLineDash([5,5]); ctx.strokeStyle=COL['ink-soft']; ctx.lineWidth=1.2;
-    ctx.beginPath(); N.forEach((p,i)=>i?ctx.lineTo(X(p.x),Y(p.y)):ctx.moveTo(X(p.x),Y(p.y))); if(T.closed) ctx.closePath(); ctx.stroke();
-    ctx.restore();
+  // the selected corner's circle: its handle is the centre the track wraps round
+  if(o.main&&o.handles&&LY.labels!==false&&o.sel&&o.sel.kind==='node'){
+    const a=T.arcs.find(z=>z.i===o.sel.i);
+    if(a&&a.r>0.05){
+      ctx.save(); ctx.setLineDash([5,5]); ctx.strokeStyle=COL['ink-soft']; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.arc(X(a.C.x),Y(a.C.y),a.r*k,0,7); ctx.stroke();
+      ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(X(a.C.x),Y(a.C.y)); ctx.lineTo(X(a.M.x),Y(a.M.y)); ctx.stroke();
+      ctx.restore();
+    }
   }
   // dimensions
   const labels=[];
@@ -1468,7 +1631,7 @@ function drawPlan(ctx,W,H,vw,o){
     const sp=spans[selF], p=pointAt(T,sp.s0+sp.pr.len/2), nl=mulv(leftOf(p.dir),out), off=w/2*flareAt(sp.pr,sp.pr.len/2)+22/k;
     labels.push([FEATURES[sp.f.type].name+' · '+f1(sp.pr.len)+' m',X(p.x+nl.x*off),Y(p.y+nl.y*off),{size:13,edge:COL.sel}]);
   }
-  // corner handles: on the track at the middle of each corner, numbered
+  // corner handles: at the centre of each corner's circle (on the track for ends, hips and sharp corners), numbered
   const hnd={corners:[],plus:[]};
   if(o.main) HND=hnd;
   if(o.handles&&LY.labels!==false){
@@ -1496,7 +1659,7 @@ function drawPlan(ctx,W,H,vw,o){
     const N=D.geom.nodes;
     T.corners.forEach(c=>{
       const a=c.end?null:T.arcs.find(z=>z.i===c.i);
-      const pos=c.end?c.P:a.M, x=X(pos.x), y=Y(pos.y), isSel=o.sel&&o.sel.kind==='node'&&o.sel.i===c.i;
+      const pos=c.P, x=X(pos.x), y=Y(pos.y), isSel=o.sel&&o.sel.kind==='node'&&o.sel.i===c.i;
       const berm=a&&a.berm, hip=a&&a.hip;
       if(isSel){ ctx.beginPath(); ctx.arc(x,y,R+6,0,7); ctx.lineWidth=3.5; ctx.strokeStyle=COL.sel; ctx.stroke(); }
       ctx.beginPath();
@@ -1512,7 +1675,7 @@ function drawPlan(ctx,W,H,vw,o){
   // long-press delete button, next to the corner or feature being held
   const dt=o.main?delTarget:null;
   const dpos=!dt?null:dt.kind==='feature'?(spans[dt.i]?pointAt(T,spans[dt.i].s0+spans[dt.i].pr.len/2):null)
-    :T.corners[dt.i]?(c=>{ const a=c.end?null:T.arcs.find(z=>z.i===c.i); return c.end||!a?c.P:a.M; })(T.corners[dt.i]):null;
+    :T.corners[dt.i]?T.corners[dt.i].P:null;
   if(dpos){
     const pos=dpos;
     const x=clamp(X(pos.x)+30,20,W-20), y=clamp(Y(pos.y)-30,20,H-20);
@@ -1652,7 +1815,7 @@ function buildPalette(){
 /* ---------- placing from the palette ---------- */
 function nearestCorner(q){
   let best=null;
-  for(const a of T.arcs){ const d=dist(q,a.M); if(!best||d<best.d) best={i:a.i,d}; }
+  for(const a of T.arcs){ const d=Math.min(dist(q,a.M),dist(q,a.C)); if(!best||d<best.d) best={i:a.i,d}; }
   return best;
 }
 function previewFor(type,q){
@@ -1684,8 +1847,8 @@ function placeAt(type,q){
   if(type==='hip'){
     let i=pv.corner;
     if(i!=null){
-      const nd=D.geom.nodes[i], c=T.corners[i];
-      nd.berm='hip'; nd.hip=normHip(Object.assign({w:T.width},nd.hip,{side:c.defl<0?-1:1}));
+      const c=T.corners[i];
+      setCornerKind(D.geom,T,i,'hip');
       if(Math.abs(c.defl)>90.5*DEG) toast('That corner turns more than 90°. Set the hip angle to 90° or less.');
     } else {
       i=insertNode(D.geom,T,pv.leg,pv.along,{berm:'hip',r:0,hip:normHip({w:T.width,side:pv.side})});
@@ -1781,7 +1944,7 @@ const ptrs=new Map(); let lastTap={t:0,x:0,y:0};
 function holdToDelete(kind,i){
   act.timer=setTimeout(()=>{
     if(!act||act.kind!==kind||act.i!==i||act.moved) return;
-    act=null; plan.classList.remove('grabbing'); polyShow=false;
+    act=null; plan.classList.remove('grabbing');
     delTarget={kind:kind==='feat'?'feature':'node',i};
     if(sel){ sel=null; buildInspector(); }   // keep the phone sheet out of the way
     try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
@@ -1797,7 +1960,7 @@ plan.addEventListener('pointerdown',e=>{
     if(act&&act.moved&&act.kind!=='pan') commit();
     const [a,b]=[...ptrs.values()];
     act={kind:'pinch',d0:Math.hypot(a.x-b.x,a.y-b.y)||1,k0:view.k,m0:s2w((a.x+b.x)/2,(a.y+b.y)/2)};
-    polyShow=false; return;
+    return;
   }
   if(ptrs.size>2) return;
   const q=s2w(x,y);
@@ -1814,7 +1977,7 @@ plan.addEventListener('pointerdown',e=>{
   const h=hitTest(x,y,q);
   if(h.kind==='plus'){
     const i=insertNode(D.geom,T,h.leg,T.legs[h.leg].len/2); recompute(); setSel({kind:'node',i});
-    const n=D.geom.nodes[i]; act={kind:'node',i,x0:x,y0:y,n0:{x:n.x,y:n.y},moved:true}; polyShow=true;
+    const n=D.geom.nodes[i]; act={kind:'node',i,x0:x,y0:y,n0:{x:n.x,y:n.y},moved:true};
   } else if(h.kind==='node'){
     setSel({kind:'node',i:h.i}); const n=D.geom.nodes[h.i];
     act={kind:'node',i:h.i,x0:x,y0:y,n0:{x:n.x,y:n.y},moved:false,tol:e.pointerType==='touch'?9:4};
@@ -1853,8 +2016,14 @@ plan.addEventListener('pointermove',e=>{
   if(act.kind==='pan'){ view.cx=act.c0.cx-dx/view.k; view.cy=act.c0.cy+dy/view.k; draw(); }
   else if(act.kind==='img'){ D.cfg.bg.x=act.bx+dx/view.k; D.cfg.bg.y=act.by-dy/view.k; draw(); }
   else if(act.kind==='node'){
-    polyShow=true; const n=D.geom.nodes[act.i];
-    n.x=rnd(act.n0.x+dx/view.k,3); n.y=rnd(act.n0.y-dy/view.k,3); recompute(); updateInspector();
+    // only this corner moves: the others are circles that stay put
+    const n=D.geom.nodes[act.i];
+    n.x=rnd(act.n0.x+dx/view.k,3); n.y=rnd(act.n0.y-dy/view.k,3);
+    if(n.rWant>0){   // a new corner grows its radius as it is pulled out
+      const g=Math.min(n.rWant,0.4*Math.hypot(dx,dy)/view.k); if(g>n.r) n.r=rnd(g,2);
+      if(n.r>=n.rWant) delete n.rWant;
+    }
+    recompute(); updateInspector();
   } else if(act.kind==='feat'){
     const f=D.geom.features[act.i], pl=projectLeg(T,s2w(x,y)); if(!pl) return;
     const len=spans[act.i].pr.len, want=pl.along+(pl.leg===act.leg?act.off:0);
@@ -1866,7 +2035,7 @@ function endPointer(e){
   ptrs.delete(e.pointerId);
   if(!act) return;
   if(act.kind==='pinch'){ if(ptrs.size<2) act=null; return; }
-  const a=act; act=null; clearTimeout(a.timer); plan.classList.remove('grabbing'); polyShow=false;
+  const a=act; act=null; clearTimeout(a.timer); plan.classList.remove('grabbing');
   if(a.kind==='node'||a.kind==='feat'){ if(a.moved) commit(); draw(); return; }
   if(a.kind==='img'){ autosave(); return; }
   if(a.kind==='pan'&&!a.moved){
@@ -1985,15 +2154,14 @@ function buildNodePanel(P){
   const a=T.arcs.find(z=>z.i===i);
   hdr(P,(a&&a.berm?'Berm ':'Corner ')+(i+1),a&&a.berm?'berm':null);
   segBtns(P,[['berm','Berm'],['flat','Flat'],['auto','Auto'],['hip','Hip']],n.berm,v=>{
-    if(v==='hip') n.hip=normHip(Object.assign({w:T.width},n.hip,{side:c.defl<0?-1:1}));
-    n.berm=v; if(v==='berm'&&!(n.bh>0)) n.bh=1.2; recompute(); commit(); buildInspector(); },'Corner type');
+    setCornerKind(D.geom,T,i,v); if(v==='berm'&&!(n.bh>0)) n.bh=1.2; recompute(); commit(); buildInspector(); },'Corner type');
   if(a&&a.berm){
     const cur=Object.keys(BERM_SIZES).find(s=>BERM_SIZES[s].r===n.r&&BERM_SIZES[s].bh===n.bh)||null;
     const s=segBtns(P,Object.keys(BERM_SIZES).map(s=>[s,s]),cur,v=>{
-      Object.assign(n,BERM_SIZES[v]); recompute(); commit(); buildInspector(); },'Berm size');
+      Object.assign(n,BERM_SIZES[v]); delete n.rWant; recompute(); commit(); buildInspector(); },'Berm size');
     s.style.marginTop='8px';
   }
-  liveRows.push(prmRow(P,P_('Radius','m',.5,25,.1),()=>n.r,v=>{ n.r=v; recompute(); updateInspector(); }));
+  liveRows.push(prmRow(P,P_('Radius','m',.5,25,.1),()=>n.r,v=>{ n.r=v; delete n.rWant; recompute(); updateInspector(); }));
   if(a&&a.berm) liveRows.push(prmRow(P,P_('Berm height','m',.3,3,.05),()=>n.bh,v=>{ n.bh=v; recompute(); updateInspector(); }));
   const ck=document.createElement('label'); ck.className='check';
   const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=n.rh>0;
@@ -2001,7 +2169,7 @@ function buildNodePanel(P){
   ck.append(cb,document.createTextNode('Roller in the middle')); P.appendChild(ck);
   if(n.rh>0) liveRows.push(prmRow(P,P_('Roller height','m',.15,1,.05),()=>n.rh,v=>{ n.rh=v; recompute(); updateInspector(); }));
   const m=document.createElement('div'); m.id='fitmsg'; m.className='fitmsg'; P.appendChild(m);
-  xyRows(P,n);
+  xyRows(P,n,true);
   const br=document.createElement('div'); br.className='btnrow';
   const del=document.createElement('button'); del.textContent='Delete corner'; del.className='danger'; del.onclick=deleteSel;
   br.appendChild(del); P.appendChild(br);
@@ -2012,7 +2180,7 @@ function buildHipPanel(P,i,n){
   hdr(P,'Hip '+(i+1),'hip');
   segBtns(P,[['berm','Berm'],['flat','Flat'],['auto','Auto'],['hip','Hip']],'hip',v=>{
     if(v==='hip') return;
-    n.berm=v; if(!(n.r>0)) n.r=4; if(v==='berm'&&!(n.bh>0)) n.bh=1.2; recompute(); commit(); buildInspector(); },'Corner type');
+    setCornerKind(D.geom,T,i,v); if(v==='berm'&&!(n.bh>0)) n.bh=1.2; recompute(); commit(); buildInspector(); },'Corner type');
   const row=el=>{ el.style.marginTop='8px'; return el; };
   row(segBtns(P,[['table','Table'],['double','Double']],h().style,v=>{ h().style=v; recompute(); commit(); buildInspector(); },'Hip style'));
   row(segBtns(P,[['1','Turn left'],['-1','Turn right']],String(h().side),v=>{
@@ -2033,10 +2201,10 @@ function buildHipPanel(P,i,n){
   updateInspector();
 }
 function P_(label,unit,min,max,step){ return {label,unit,min,max,step}; }
-function xyRows(P,n){
+function xyRows(P,n,centre){
   const r=document.createElement('div'); r.className='row2'; r.style.marginTop='10px';
   for(const k of ['x','y']){
-    const l=document.createElement('label'); l.textContent=(k==='x'?'East':'North')+' (m)';
+    const l=document.createElement('label'); l.textContent=(centre?(k==='x'?'Centre east':'Centre north'):(k==='x'?'East':'North'))+' (m)';
     const inp=document.createElement('input'); inp.type='number'; inp.step='.1'; inp.dataset.xy=k;
     inp.oninput=()=>{ const v=parseFloat(inp.value); if(Number.isFinite(v)){ n[k]=v; recompute(); } };
     inp.onchange=commit; l.appendChild(inp); r.appendChild(l);
@@ -2065,7 +2233,7 @@ function updateInspector(){
       m.className='fitmsg'+(iss&&issueIsError(iss)?' bad':'');
       m.textContent=iss?iss.msg+'.':`Turns ${Math.round(hh.theta/DEG)}°. Uses ${f1(hh.needIn)} m of straight before the corner and ${f1(hh.needOut)} m after.`;
     } else if(m&&a){ m.className='fitmsg'+(a.tight?' bad':'');
-      m.textContent=(a.tight?`Too big for its straights: ${f1(a.r)} m fits. `:'')+`Turns ${Math.round(Math.abs(a.defl)/DEG)}°, ${f1(a.len)} m of track.`; }
+      m.textContent=(a.tight?`Overlaps the corner next to it: ${f1(a.r)} m fits. `:'')+`Turns ${Math.round(Math.abs(a.defl)/DEG)}°, ${f1(a.len)} m of track.`; }
     else if(m) m.textContent='';
   }
 }
@@ -2141,7 +2309,7 @@ $('issue-list').addEventListener('click',e=>{
 
 /* ---------- edits ---------- */
 function deleteNode(i){
-  if(!removeNode(D.geom,T,i)){ toast(T.closed?'A loop needs at least three corners.':'A line needs two ends.'); draw(); return; }
+  if(!removeNode(D.geom,T,i)){ toast(T.closed?'A loop needs three corners, or two round ones.':'A line needs two ends.'); draw(); return; }
   sel=null; delTarget=null; recompute(); commit(); buildInspector();
   toast('Corner deleted. Undo brings it back.',true);
 }

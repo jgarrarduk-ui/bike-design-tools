@@ -5,7 +5,7 @@ const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==
 const m=new Function(eng+'\nreturn {DEG,FEATURES,SIZES,TEMPLATES,buildTrack,pointAt,polyline,project,projectLeg,'+
   'spansOf,findSlot,issuesOf,zAt,profileOf,profZ,profHeight,defaultParams,sizedParams,normParams,statsOf,'+
   'insertNode,removeNode,toLatLon,fromLatLon,toGPX,parseGPX,gpxToDesign,traceTrack,toCSV,parseCSV,profileCSV,'+
-  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip};')();
+  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip,setCornerKind,cornerPoint};')();
 
 let fails=0;
 const ok=(name,cond,info='')=>{console.log((cond?'  pass  ':'  FAIL  ')+name+(info?'   '+info:''));if(!cond)fails++};
@@ -13,8 +13,11 @@ const near=(a,b,t)=>Math.abs(a-b)<=t;
 const clone=o=>JSON.parse(JSON.stringify(o));
 
 /* ---- geometry ---- */
-// 20 x 10 rectangle, every corner r=3: perimeter minus 8 tangent lengths plus a full circle
-const rect={closed:true,width:1.5,features:[],nodes:[[0,0],[20,0],[20,10],[0,10]].map(([x,y])=>({x,y,r:3,berm:'berm',bh:1.2,rh:0}))};
+// 20 x 10 rectangle, every corner r=3: perimeter minus 8 tangent lengths plus a full circle.
+// Laid out the old way (corner points); normGeom turns it into circle centres.
+const rectOld={closed:true,width:1.5,features:[],nodes:[[0,0],[20,0],[20,10],[0,10]].map(([x,y])=>({x,y,r:3,berm:'berm',bh:1.2,rh:0}))};
+const rect=m.normGeom(rectOld);
+ok('an old corner-point file becomes circle centres', rect.v===2&&near(rect.nodes[1].x,17,1e-9)&&near(rect.nodes[1].y,3,1e-9)&&rect.nodes[1].turn===1);
 let T=m.buildTrack(rect);
 const want=2*(20+10)-8*3+2*Math.PI*3;
 ok('filleted loop length is exact', near(T.length,want,1e-9), T.length.toFixed(4)+' vs '+want.toFixed(4));
@@ -37,18 +40,57 @@ const pj=m.project(T,{x:10,y:-2});
 ok('project finds the bottom straight', near(pj.s,7,1e-9)&&near(pj.d,2,1e-9), 's '+pj.s.toFixed(3));
 ok('project gives right-hand offsets as negative', pj.side<0);
 
-// radii too big for the straights are shrunk and flagged
+// radii big enough to make the straights short are fine now: a straight between
+// two same-way circles only needs them not to sit inside each other
 const big=clone(rect); big.nodes.forEach(n=>n.r=8);
 T=m.buildTrack(big);
-ok('oversized corners are flagged tight', T.corners.every(c=>c.tight));
-ok('and shrunk to fit their straights', T.legs.every(l=>l.len>-1e-9), T.legs.map(l=>l.len.toFixed(2)).join('/'));
-ok('a tight corner raises an issue', m.issuesOf(T,big,[]).some(i=>i.kind==='tight'));
+ok('big radii on a loop are not shrunk', T.corners.every(c=>!c.tight&&c.reff===8));
+// two opposite-way circles that overlap have no straight between them: shrunk and flagged
+const sb={v:2,closed:false,width:1.5,features:[],nodes:[{x:0,y:0,r:0},{x:10,y:3,r:3,turn:1,berm:'berm'},{x:13,y:3,r:3,turn:-1,berm:'berm'},{x:25,y:0,r:0}]};
+T=m.buildTrack(sb);
+ok('overlapping S-bend corners are flagged tight', T.corners[1].tight&&T.corners[2].tight&&T.corners[1].reff<3);
+let sbJump=0, sbPts=m.polyline(T,0.05,true);
+for(let i=1;i<sbPts.length;i++) sbJump=Math.max(sbJump,m.dist(sbPts[i],sbPts[i-1]));
+ok('and the shrunk S-bend is still continuous', sbJump<0.06, sbJump.toFixed(3)+' m');
+ok('a tight corner raises an issue', m.issuesOf(T,sb,[]).some(i=>i.kind==='tight'));
+
+/* ---- dragging a corner moves only that corner ---- */
+for(const t of m.TEMPLATES){
+  const g0=m.normGeom(t.geom), T0=m.buildTrack(g0);
+  g0.nodes.forEach((nd,i)=>{
+    const g1=clone(g0); g1.nodes[i].x+=1.7; g1.nodes[i].y-=1.1;
+    const T1=m.buildTrack(g1);
+    const still=T0.corners.every((c,j)=>j===i||(m.dist(c.P,T1.corners[j].P)<1e-12&&c.reff===T1.corners[j].reff&&c.s===T1.corners[j].s));
+    if(!still) ok(`${t.name}: moving corner ${i+1} moves no other corner`,false);
+  });
+}
+ok('moving any corner of any template moves no other corner', true);
+const gm=m.normGeom(m.TEMPLATES[0].geom), Tm0=m.buildTrack(gm); gm.nodes[3].x+=2;
+const Tm1=m.buildTrack(gm);
+ok('the moved corner keeps its radius and its arc stays on its circle',
+   near(m.dist(Tm1.arcs.find(a=>a.i===3).M,gm.nodes[3]),Tm0.corners[3].reff,1e-9)&&Tm1.corners[3].reff===Tm0.corners[3].reff);
+// dragged across the line of its neighbours, a berm keeps wrapping the same way
+const hp={v:2,closed:false,width:1.5,features:[],nodes:[{x:0,y:0,r:0},{x:20,y:4,r:4,turn:1,berm:'berm'},{x:0,y:8,r:0}]};
+const sw0=m.buildTrack(hp).corners[1].defl; hp.nodes[1].x=-3;
+const sw1=m.buildTrack(hp).corners[1].defl;
+ok('a hairpin dragged back past its straights keeps turning the same way', sw0>0&&sw1>0, (sw0/m.DEG).toFixed(0)+'° then '+(sw1/m.DEG).toFixed(0)+'°');
+// old hairpins made of two 90° corners on one circle become one 180° corner
+const oval=m.normGeom(m.TEMPLATES.find(t=>t.name==='Backyard oval').geom), To=m.buildTrack(oval);
+ok('an old two-corner hairpin becomes one corner', oval.nodes.length===2&&To.arcs.every(a=>near(Math.abs(a.defl)/m.DEG,180,1e-6)));
+ok('a two-corner loop will not drop to one', m.removeNode(clone(oval),To,0)===false);
+// switching to a hip and back keeps the straights where they were
+const sq=m.normGeom(m.TEMPLATES.find(t=>t.name==='Empty loop').geom), Ts0=m.buildTrack(sq);
+m.setCornerKind(sq,Ts0,1,'hip'); const Ts1=m.buildTrack(sq);
+const sameLine=(A,B)=>near(A.dir.x,B.dir.x,1e-6)&&near(A.dir.y,B.dir.y,1e-6)&&Math.abs(A.dir.x*(B.a.y-A.a.y)-A.dir.y*(B.a.x-A.a.x))<1e-3;
+ok('a corner made a hip keeps both straights on their lines', sq.nodes[1].berm==='hip'&&sameLine(Ts0.legs[0],Ts1.legs[0])&&sameLine(Ts0.legs[1],Ts1.legs[1]));
+m.setCornerKind(sq,Ts1,1,'berm'); const Ts2=m.buildTrack(sq);
+ok('and made round again it is the corner it was', near(Ts2.length,Ts0.length,1e-3)&&near(Ts2.corners[1].reff,Ts0.corners[1].reff,1e-9));
 
 // auto berms
 const auto=clone(rect); auto.nodes.forEach(n=>n.berm='auto'); auto.nodes[2].x=20.5;
 T=m.buildTrack(auto);
 ok('auto corner banks a 90 degree turn', T.arcs.find(a=>a.i===1).berm===true);
-const shallow={closed:false,width:1,features:[],nodes:[{x:0,y:0,r:0},{x:10,y:0,r:5,berm:'auto'},{x:20,y:3,r:0}]};
+const shallow=m.normGeom({closed:false,width:1,features:[],nodes:[{x:0,y:0,r:0},{x:10,y:0,r:5,berm:'auto'},{x:20,y:3,r:0}]});
 ok('auto corner leaves a gentle bend flat', m.buildTrack(shallow).arcs[0].berm===false);
 
 /* ---- feature profiles ---- */
@@ -81,7 +123,7 @@ ok('params are clamped to their range', m.normParams('roller',{h:9,n:2.6}).h===1
 /* ---- hips ---- */
 // a line: in from the west, hip at (30,0), out again
 const hipLine=(deg,side,hip)=>{
-  const g={closed:false,width:1.5,features:[],nodes:[{x:0,y:0,r:0},{x:30,y:0,r:3,berm:'hip',hip:Object.assign({gap:3,h:1,lh:1.2},hip)},{x:55,y:0,r:0}]};
+  const g=m.normGeom({closed:false,width:1.5,features:[],nodes:[{x:0,y:0,r:0},{x:30,y:0,r:3,berm:'hip',hip:Object.assign({gap:3,h:1,lh:1.2},hip)},{x:55,y:0,r:0}]});
   m.setHipTurn(g,1,deg,side); return g;
 };
 for(const deg of [0,30,60,90]){
@@ -90,7 +132,7 @@ for(const deg of [0,30,60,90]){
      near(h.theta/m.DEG,deg,0.01)&&near(m.dist(h.lip,h.knuckle),3,1e-9), m.dist(h.lip,h.knuckle).toFixed(4)+' m');
 }
 let gH=hipLine(45,1), TH=m.buildTrack(gH), H=TH.hips[0];
-ok('a hip has no fillet', TH.arcs[0].len===0&&TH.corners[1].T===0&&TH.arcs[0].berm===false);
+ok('a hip has no fillet', TH.arcs[0].len===0&&TH.corners[1].reff===0&&TH.arcs[0].berm===false);
 ok('setHipTurn keeps the next straight its length', near(m.dist(gH.nodes[1],gH.nodes[2]),25,1e-3));
 ok('hip turns left for side +1', TH.corners[1].defl>0);
 m.setHipTurn(gH,1,45,-1); TH=m.buildTrack(gH);
@@ -108,7 +150,7 @@ const spH=m.spansOf(TH,gH), sl=m.findSlot(TH,spH,0,29,4,-1);
 ok('findSlot keeps a feature off the hip takeoff', sl.ok&&sl.c+2<=TH.legs[0].len-TH.hips[0].needIn+1e-9, 'centre '+sl.c.toFixed(2));
 gH.features=[{type:'roller',leg:1,t:.02,p:{}}];
 ok('a feature on the hip landing is an overlap', m.issuesOf(TH,gH,m.spansOf(TH,gH)).some(i=>i.kind==='overlap'&&i.node===1));
-const short={closed:false,width:1.5,features:[],nodes:[{x:0,y:0},{x:3,y:0,berm:'hip',hip:{}},{x:20,y:0}]};
+const short=m.normGeom({closed:false,width:1.5,features:[],nodes:[{x:0,y:0},{x:3,y:0,berm:'hip',hip:{}},{x:20,y:0}]});
 ok('a hip without enough straight is reported', m.issuesOf(m.buildTrack(short),short,[]).some(i=>i.kind==='fit'&&i.node===1));
 const wide=hipLine(120,1);
 ok('a hip past 90° is a warning', m.issuesOf(m.buildTrack(wide),wide,[]).some(i=>i.kind==='hipangle'));
@@ -147,6 +189,7 @@ const before=m.spansOf(T,ed).map(s=>m.pointAt(T,s.s0+s.pr.len/2));
 const ni=m.insertNode(ed,T,0,7);
 const T2=m.buildTrack(ed), after=m.spansOf(T2,ed).map(s=>m.pointAt(T2,s.s0+s.pr.len/2));
 ok('insert splits the straight at the point', ni===1&&ed.nodes.length===5&&near(ed.nodes[1].x,10,1e-9));
+ok('a new corner starts as a point, so the track does not move', ed.nodes[1].r===0&&ed.nodes[1].rWant===4&&near(T2.length,T.length,1e-9));
 ok('insert leaves every feature where it was', before.every((p,i)=>m.dist(p,after[i])<1e-6),
    before.map((p,i)=>m.dist(p,after[i]).toFixed(4)).join(','));
 ok('insert moves later features to the new straight', ed.features[1].leg===1&&ed.features[2].leg===3);
@@ -154,7 +197,9 @@ m.removeNode(ed,T2,1);
 const T3=m.buildTrack(ed), back=m.spansOf(T3,ed).map(s=>m.pointAt(T3,s.s0+s.pr.len/2));
 ok('remove undoes insert', before.every((p,i)=>m.dist(p,back[i])<1e-6)&&ed.nodes.length===4);
 const tri=clone(rect); tri.nodes.pop(); T=m.buildTrack(tri);
-ok('a loop will not drop below three corners', m.removeNode(tri,T,0)===false);
+ok('a three-corner loop can drop to two round corners', m.removeNode(clone(tri),T,0)===true);
+tri.nodes[2].r=0;
+ok('but not when one left would be a sharp point', m.removeNode(tri,T,0)===false);
 
 /* ---- GPS ---- */
 const geo={lat:51.6,lon:-3.9,rot:30,ele:12};
@@ -210,6 +255,8 @@ for(const t of m.TEMPLATES){
 }
 const hand='kind,ref,type,x_m,y_m,radius_m,corner,leg,start_m,height_m\ntrack,,line\nnode,N1,,0,0\nnode,N2,,30,0\nfeature,F1,tabletop,,,,,1,5,1.4\n';
 const hg=m.parseCSV(hand), hT=m.buildTrack(hg), hs=m.spansOf(hT,hg);
+const oldCsv='kind,ref,type,x_m,y_m,radius_m,corner\ntrack,,loop\nnode,N1,,0,0,3,berm\nnode,N2,,20,0,3,berm\nnode,N3,,20,10,3,berm\nnode,N4,,0,10,3,berm\n';
+ok('an old CSV of corner points opens as the same track', near(m.buildTrack(m.parseCSV(oldCsv)).length,want,1e-6));
 ok('a hand-written CSV with missing columns opens', hg.nodes.length===2&&near(hs[0].s0,5,1e-9)&&hs[0].pr.p.h===1.4);
 ok('profile CSV has a row every 0.25 m', m.profileCSV(T,sp,null).trim().split('\n').length>T.length/0.25);
 
