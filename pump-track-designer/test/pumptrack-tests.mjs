@@ -5,7 +5,7 @@ const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==
 const m=new Function(eng+'\nreturn {DEG,FEATURES,SIZES,TEMPLATES,buildTrack,pointAt,polyline,project,projectLeg,'+
   'spansOf,findSlot,issuesOf,zAt,profileOf,profZ,profHeight,defaultParams,sizedParams,normParams,statsOf,'+
   'insertNode,removeNode,toLatLon,fromLatLon,toGPX,parseGPX,gpxToDesign,traceTrack,toCSV,parseCSV,profileCSV,'+
-  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip,setCornerKind,cornerPoint,crc32,zipStore,unzip,packDesign,readBundle};')();
+  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip,setCornerKind,cornerPoint,crc32,zipStore,unzip,packDesign,readBundle,groundAt,zTop,placeAtS};')();
 
 let fails=0;
 const ok=(name,cond,info='')=>{console.log((cond?'  pass  ':'  FAIL  ')+name+(info?'   '+info:''));if(!cond)fails++};
@@ -263,6 +263,38 @@ ok('profile CSV has a row every 0.25 m', m.profileCSV(T,sp,null).trim().split('\
 /* ---- design file ---- */
 const old=m.normGeom({closed:true,nodes:[{x:0,y:0},{x:10,y:0},{x:5,y:8}],features:[{type:'nope',leg:0},{type:'roller',leg:9,t:3}]});
 ok('an old or odd file is normalised, not rejected', old.width===1.5&&old.features.length===1&&old.features[0].leg===2&&old.features[0].t===1);
+
+/* ---- ground line ---- */
+const ln=m.normGeom(m.TEMPLATES.find(t=>t.name==='Empty line').geom);   // 40 m straight
+let TG=m.buildTrack(ln);
+ok('a new design has flat ground', ln.ground.z0===0&&ln.ground.z1===0&&ln.ground.pts.length===0&&m.groundAt(TG,20)===0);
+ln.ground.z1=-5; TG=m.buildTrack(ln);
+ok('the ground runs straight from start to end', near(m.groundAt(TG,20),-2.5,1e-9)&&near(m.groundAt(TG,40),-5,1e-9));
+ln.ground.pts.push({leg:0,t:.25,z:2}); TG=m.buildTrack(ln);
+ok('a ground point bends the line through it', near(m.groundAt(TG,10),2,1e-9)&&near(m.groundAt(TG,5),1,1e-9)&&near(m.groundAt(TG,25),-1.5,1e-9));
+ln.features=[{type:'roller',leg:0,t:.75,p:{h:.5,L:4,n:1}}];
+const spG=m.spansOf(TG,ln);
+ok('features sit on top of the ground', near(m.zTop(TG,spG,30),m.groundAt(TG,30)+.5,1e-9));
+const lpG=m.normGeom(m.TEMPLATES.find(t=>t.name==='Empty loop').geom); lpG.ground={z0:1,z1:9,pts:[{leg:1,t:.5,z:3}]};
+const lg=m.normGeom(lpG), TL=m.buildTrack(lg);
+ok('a loop ends at its start height', near(m.groundAt(TL,0),1,1e-9)&&near(m.groundAt(TL,TL.length),1,1e-9)&&near(m.groundAt(TL,TL.length+.001),1,1e-3));
+const gs0=m.placeAtS(TL,TL.legs[1].s0+TL.legs[1].len/2);
+ok('placeAtS finds the straight and how far along', gs0.leg===1&&near(gs0.t,.5,1e-9));
+const sAt=(T,g)=>g.ground.pts.map(q=>q.leg!=null?T.legs[q.leg].s0+q.t*T.legs[q.leg].len:T.arcs.find(a=>a.i===q.corner).s0+q.t*T.arcs.find(a=>a.i===q.corner).len);
+lg.ground.pts.push({corner:2,t:.5,z:4});
+const TL1=m.buildTrack(lg), pos0=sAt(TL1,lg).map(s=>m.pointAt(TL1,s));
+m.insertNode(lg,TL1,1,2); const TL2=m.buildTrack(lg), pos1=sAt(TL2,lg).map(s=>m.pointAt(TL2,s));
+ok('adding a corner leaves the ground points where they were', pos0.every((p,i)=>m.dist(p,pos1[i])<1e-6)&&lg.ground.pts[1].corner===3);
+m.removeNode(lg,TL2,3); const TL3=m.buildTrack(lg);
+const L1d=TL2.legs[2].len, L2d=TL2.legs[3].len;
+ok('deleting a corner moves its ground point to where the corner was', lg.ground.pts[1].leg===2&&near(lg.ground.pts[1].t,L1d/(L1d+L2d),1e-9)&&lg.ground.pts.length===2);
+const gcsv=m.parseCSV(m.toCSV(ln,TG,spG)), TGc=m.buildTrack(gcsv);
+ok('the ground line round trips through the CSV', gcsv.ground.z1===-5&&gcsv.ground.pts.length===1&&near(m.groundAt(TGc,10),2,1e-6));
+const gg=m.parseGPX(m.toGPX({_meta:{},geom:ln,cfg:{geo:{lat:51.6,lon:-3.9,rot:0,ele:100}}},TG,spG));
+ok('GPX heights include the ground', near(gg.pts[gg.pts.length-1].ele,95,0.01)&&near(gg.pts[0].ele,100,0.01));
+ok('profile CSV has ground, feature and total columns', m.profileCSV(TG,spG,null).startsWith('chainage_m,x_m,y_m,ground_m,feature_m,z_m'));
+const su0=m.profileOf({type:'stepup',p:{h:.8,gap:0,lh:1.3,deck:2,lip:45,land:25}});
+ok('a step up can have no gap', su0.p.gap===0&&!su0.segs.some(q=>q.kind==='gap')&&near(m.profZ(su0,su0.len),0,0.01));
 
 /* ---- design bundle (.zip) ---- */
 ok('crc32 matches the standard check value', m.crc32(new TextEncoder().encode('123456789'))===0xCBF43926);

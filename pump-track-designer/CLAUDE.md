@@ -62,6 +62,16 @@ globals; the test lifts it out with `new Function`. Keep it that way.
   footprint (a hip's landing).
 - `zAt` is the centreline height: the max of the feature profiles, plus berm
   rollers. Berm banking is lateral and is not in the centreline profile.
+- **Ground line** (`geom.ground = {z0, z1, pts}`): heights along the track,
+  straight between points. `z0` at the start, `z1` at the end of a line (a
+  loop ends at `z0`). A point is `{leg,t,z}` or `{corner,t,z}`, pinned like a
+  feature; `insertNode`/`removeNode` keep points in place (tested).
+  `buildTrack` stores the sorted line as `T.ground`; `groundAt` reads it and
+  `zTop` = ground + `zAt`. Features sit on the slope, so their angles are
+  from the ground. Edited in the profile strip (`gAct`: drag, tap the dashed
+  line to add, hold to remove) and as start/end in the track panel. GPX
+  heights, the profile CSV (`ground_m, feature_m, z_m`) and the dimensions
+  CSV (`kind=ground` rows) carry it.
 - Dirt is a rough builder's quantity: feature body across the width plus
   1:1 batters, berms as a bank rising to `bh` with a 1:1 back. Labelled
   "rough" on purpose.

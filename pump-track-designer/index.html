@@ -188,7 +188,7 @@ h2:first-child{margin-top:2px}
 
 /* ---- profile strip ---- */
 #profile-wrap{height:156px;flex:none;position:relative;border-top:1px solid var(--rule);background:var(--panel)}
-#profile{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y}
+#profile{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 
 /* ---- palette ---- */
 #palette{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -401,6 +401,11 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     </div>
     <div class="prm"><span>Track width</span><input type="number" id="t-width" step="0.1" min="0.6" max="6"><i>m</i>
       <input type="range" id="t-width-r" min="0.6" max="4" step="0.1" aria-label="Track width"></div>
+    <div class="row2" style="margin-top:10px">
+      <label>Ground at start (m)<input type="number" id="t-g0" step="0.1"></label>
+      <label id="t-g1-l">Ground at end (m)<input type="number" id="t-g1" step="0.1"></label>
+    </div>
+    <p class="note">Shape the ground in the profile strip: drag a point, tap the dashed line to add one, hold a point to remove it.</p>
     <div id="stats"></div>
     <h2>Design</h2>
     <label class="lbl">Name<input type="text" id="d-name" placeholder="Untitled track" autocomplete="off"></label>
@@ -441,10 +446,18 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
       <li>Features keep their place on their straight as you reshape the track.</li>
     </ul>
 
+    <h2>Ground and height</h2>
+    <ul>
+      <li>The strip under the plan is the side view along the track. The shaded area is the <b>ground</b>; features sit on top of it.</li>
+      <li>Set the ground height at the start and end on the right (a loop ends where it started). In between it runs in a straight line.</li>
+      <li>In the strip, <b>tap the dashed ground line</b> to add a point, <b>drag</b> a point up, down or along, and <b>hold</b> one to remove it. Squares are the start and end.</li>
+      <li>Heights are metres above the site ground level set under Export. Lip and landing angles are measured from the slope a feature is built on.</li>
+    </ul>
+
     <h2>Read the plan</h2>
     <ul>
       <li>Colours mean the same everywhere: <b>amber</b> goes up, <b>green</b> comes down, pale is a flat deck, near black is a gap you fly over, brown is timber.</li>
-      <li>The strip under the plan is the height profile along the track, with the corners marked. Heights are exaggerated to fit; the factor is in its header.</li>
+      <li>The profile strip marks the corners. Heights are exaggerated to fit; the factor is in its header.</li>
       <li><b>Dims</b> shows the length of every straight and the radius of every corner.</li>
       <li>A <b>!</b> badge top right means something doesn't fit or overlaps. Tap it for the list; tap an entry to go to it.</li>
       <li>On the right: length, footprint, a rough dirt volume and the feature count.</li>
@@ -570,6 +583,7 @@ function seq(){
    backside of the takeoff and the face of the landing are the faces you fly
    over; where they would cross below ground the pit is level ground. */
 function gapZone(S,h,gap,lh,backDeg,frontDeg){
+  if(!(gap>0)) return S;   // no gap: the lip runs straight into the landing deck
   const tb=Math.tan(Math.min(89.9,backDeg)*DEG), tf=Math.tan(Math.min(89.9,frontDeg)*DEG);
   return S.add('gap',gap,x=>Math.max(0,h-x*tb,lh-(gap-x)*tf));
 }
@@ -595,7 +609,7 @@ const FEATURES={
       S.add('up',u.len,u.z); gapZone(S,p.h,p.gap,p.lh,55,55);
       return S.add('down',d.len,x=>p.lh-d.z(x));}},
   stepup:{name:'Step up',short:'SU',
-    params:[P('h','Takeoff height','m',.3,2.5,.05,.8),P('gap','Gap','m',.3,6,.1,1.8),
+    params:[P('h','Takeoff height','m',.3,2.5,.05,.8),P('gap','Gap','m',0,6,.1,1.8),
             P('lh','Landing height','m',.4,3,.05,1.4),P('deck','Landing deck','m',.5,8,.1,2.5),
             P('lip','Lip angle','°',15,70,1,45),P('land','Roll-down angle','°',10,45,1,25)],
     build(p){const S=seq(),u=arcUp(p.h,p.lip*DEG),d=cosRamp(p.lh,p.land*DEG);
@@ -794,6 +808,7 @@ function buildTrack(geom){
   }
   out.length=s;
   for(const a of out.arcs) if(a.hip) out.hips.push(hipOf(out,N[a.i],a,n));
+  out.ground=groundLine(out,geom);
   return out;
 }
 /* Centre of a circle of radius r that fits in the corner at P between
@@ -1056,6 +1071,53 @@ function statsOf(T,geom,spans){
     features:spans.filter(Boolean).length+(T.hips||[]).length,berms:T.arcs.filter(a=>a.berm).length};
 }
 
+/* ---------- ground line ----------
+   The ground under the track, as heights along it: z0 at the start, z1 at
+   the end of a line (a loop ends where it started, at z0), and points in
+   between, straight lines between them. A point is pinned to a straight
+   ({leg,t}) or a corner ({corner,t}) like a feature, so reshaping the plan
+   keeps it on the same bit of track. Features sit on top of the ground, so a
+   lip angle is measured from the slope it is built on. Heights are metres
+   above the site ground level (geo.ele). */
+function normGround(g,legsN,n){
+  g=g||{}; const z=v=>clamp(Number.isFinite(+v)?+v:0,-500,500);
+  const pts=(Array.isArray(g.pts)?g.pts:[]).map(p=>{
+    if(p&&Number.isFinite(+p.leg)&&legsN>0) return {leg:clamp(Math.round(+p.leg),0,legsN-1),t:clamp(+p.t||0,0,1),z:z(p.z)};
+    if(p&&Number.isFinite(+p.corner)&&n>0) return {corner:clamp(Math.round(+p.corner),0,n-1),t:clamp(+p.t||0,0,1),z:z(p.z)};
+    return null;
+  }).filter(Boolean);
+  return {z0:z(g.z0),z1:z(g.z1),pts};
+}
+/* chainage of a ground point, or null if its straight or corner is gone */
+function groundS(T,p){
+  if(p.leg!=null){ const L=T.legs[p.leg]; return L?L.s0+p.t*L.len:null; }
+  const a=T.arcs.find(z=>z.i===p.corner); return a?a.s0+p.t*a.len:null;
+}
+/* [{s,z,k}] sorted, ends included; k is the index in ground.pts, or 'z0'/'z1' */
+function groundLine(T,geom){
+  const g=geom.ground||{z0:0,z1:0,pts:[]}, L=T.length, out=[{s:0,z:+g.z0||0,k:'z0'}];
+  (g.pts||[]).forEach((p,k)=>{ const s=groundS(T,p); if(s!=null&&s>1e-6&&s<L-1e-6) out.push({s,z:p.z,k}); });
+  out.sort((a,b)=>a.s-b.s);
+  out.push({s:L,z:T.closed?(+g.z0||0):(+g.z1||0),k:T.closed?'z0':'z1'});
+  return out;
+}
+function groundAt(T,s){
+  const gl=T.ground; if(!gl||!gl.length) return 0;
+  s=T.closed?wrapS(T,s):clamp(s,0,T.length);
+  for(let i=1;i<gl.length;i++) if(s<=gl[i].s){
+    const a=gl[i-1], b=gl[i], d=b.s-a.s; return d>1e-9?a.z+(b.z-a.z)*(s-a.s)/d:b.z; }
+  return gl[gl.length-1].z;
+}
+/* ground plus whatever is built on it */
+function zTop(T,spans,s){ return groundAt(T,s)+zAt(T,spans,s); }
+/* where chainage s falls: a straight or a corner, and how far along it */
+function placeAtS(T,s){
+  s=T.closed?wrapS(T,s):clamp(s,0,T.length);
+  for(const e of T.els) if(s<=e.s0+e.len+1e-9&&e.len>1e-9){
+    const t=clamp((s-e.s0)/e.len,0,1); return e.kind==='leg'?{leg:e.k,t}:{corner:e.i,t}; }
+  return {leg:Math.max(0,T.legs.length-1),t:1};
+}
+
 /* ---------- editing that keeps features where they were ---------- */
 function insertNode(geom,T,leg,along,extra){
   const L=T.legs[leg]; if(!L) return -1;
@@ -1065,7 +1127,9 @@ function insertNode(geom,T,leg,along,extra){
   const nd=Object.assign({x:q.x,y:q.y,r:0,berm:'auto',bh:1.2,rh:0,rWant:4},extra||{});
   if(nd.berm==='hip') delete nd.rWant;
   geom.nodes.splice(at,0,nd);
-  for(const f of geom.features){
+  const gp=(geom.ground&&geom.ground.pts)||[];
+  for(const p of gp) if(p.corner!=null&&p.corner>=at) p.corner++;
+  for(const f of geom.features.concat(gp.filter(p=>p.leg!=null))){
     if(f.leg>leg) f.leg++;
     else if(f.leg===leg){
       const c=f.t*L.len;
@@ -1081,18 +1145,25 @@ function removeNode(geom,T,i){
   if(closed&&n===3&&geom.nodes.filter((q,j)=>j!==i).some(q=>!(q.r>0)||q.berm==='hip')) return false;   // a two-corner loop needs two round corners
   const p=(i-1+n)%n, newIdx=j=>j>i?j-1:j;
   const isEnd=!closed&&(i===0||i===n-1);
+  const G=geom.ground; let gp=(G&&G.pts)||[];
   if(isEnd){
     const gone=i===0?0:n-2;
     geom.features=geom.features.filter(f=>f.leg!==gone);
-    for(const f of geom.features) if(i===0) f.leg--;
+    gp=gp.filter(q=>q.leg!==gone);
+    for(const f of geom.features.concat(gp.filter(q=>q.leg!=null))) if(i===0) f.leg--;
+    for(const q of gp) if(q.corner!=null) q.corner=newIdx(q.corner);
   } else {
     const L1=T.legs[p].len, L2=T.legs[i].len, tot=Math.max(1e-6,L1+L2);
-    for(const f of geom.features){
+    // a point on the corner going away moves to where that corner was
+    for(const q of gp) if(q.corner===i){ delete q.corner; q.leg=p; q.t=1; }
+      else if(q.corner!=null) q.corner=newIdx(q.corner);
+    for(const f of geom.features.concat(gp.filter(q=>q.leg!=null))){
       if(f.leg===p){ f.t=f.t*L1/tot; f.leg=newIdx(p); }
       else if(f.leg===i){ f.t=(L1+f.t*L2)/tot; f.leg=newIdx(p); }
       else f.leg=newIdx(f.leg);
     }
   }
+  if(G) G.pts=gp;
   geom.nodes.splice(i,1);
   return true;
 }
@@ -1138,9 +1209,9 @@ function toGPX(design,T,spans,stamp){
   const pts=polyline(T,0.5,true); if(T.closed&&pts.length) pts.push(Object.assign({},pts[0],{s:T.length}));
   const w=spans.filter(Boolean).map(sp=>{
     const p=pointAt(T,sp.s0+sp.pr.len/2);
-    return `  <wpt ${ll(p)}><ele>${ele(profHeight(sp.pr))}</ele><name>${xmlEsc(featureLabel(sp.f))}</name><type>${sp.f.type}</type></wpt>`;
-  }).concat((T.hips||[]).map(h=>`  <wpt ${ll(h.P)}><ele>${ele(Math.max(h.hp.h,h.table?h.hp.h:h.hp.lh))}</ele><name>Hip ${h.hp.style} ${Math.round(h.theta/DEG)}° ${h.hp.gap.toFixed(1)} m</name><type>hip</type></wpt>`));
-  const trk=pts.map(p=>`      <trkpt ${ll(p)}><ele>${ele(zAt(T,spans,p.s))}</ele></trkpt>`);
+    return `  <wpt ${ll(p)}><ele>${ele(groundAt(T,sp.s0+sp.pr.len/2)+profHeight(sp.pr))}</ele><name>${xmlEsc(featureLabel(sp.f))}</name><type>${sp.f.type}</type></wpt>`;
+  }).concat((T.hips||[]).map(h=>`  <wpt ${ll(h.P)}><ele>${ele(groundAt(T,h.s0+h.pr.len/2)+Math.max(h.hp.h,h.table?h.hp.h:h.hp.lh))}</ele><name>Hip ${h.hp.style} ${Math.round(h.theta/DEG)}° ${h.hp.gap.toFixed(1)} m</name><type>hip</type></wpt>`));
+  const trk=pts.map(p=>`      <trkpt ${ll(p)}><ele>${ele(zTop(T,spans,p.s))}</ele></trkpt>`);
   const json=JSON.stringify({geom:design.geom,geo}).replace(/]]>/g,']]]]><![CDATA[>');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Creature Cycles Pump Track Designer" xmlns="http://www.topografix.com/GPX/1/1" xmlns:ptd="https://creaturecycles.co.uk/apps/pump-track-designer/">
@@ -1240,13 +1311,14 @@ const CSV_PARAMS=[['h','height_m'],['L','roller_length_m'],['n','count'],['deck'
   ['lh','landing_height_m'],['lip','lip_deg'],['land','landing_deg'],['app','approach_deg'],['kick','kick_deg'],
   ['flare','flare_x'],['ang','rollin_deg']];
 const CSV_HEAD=['kind','ref','type','x_m','y_m','radius_m','corner','turn','hip_style','hip_side','berm_height_m','berm_roller_m','width_m',
-  'leg','start_m','length_m'].concat(CSV_PARAMS.map(c=>c[1]));
+  'leg','start_m','length_m','ground_m'].concat(CSV_PARAMS.map(c=>c[1]));
 function cornerName(b){ return b==='berm'||b===true?'berm':b==='flat'||b===false?'flat':b==='hip'?'hip':'auto'; }
 function toCSV(geom,T,spans){
   const row=o=>CSV_HEAD.map(h=>o[h]==null?'':String(o[h])).join(',');
   const lines=['# Creature Cycles Pump Track Designer - dimensions. Metres and degrees. Plan x east, y north.',
     '# x_m,y_m is the centre of the corner circle (the point itself for ends, hips and radius 0). turn is the way the track goes round it.',
     '# leg N runs from node N to the next node. start_m is from the end of the corner before it to the feature start.',
+    '# ground rows: the ground height (ground_m) at the start, the end, and points on a leg or a corner (type), start_m along it.',
     CSV_HEAD.join(',')];
   lines.push(row({kind:'track',ref:'centres',type:geom.closed?'loop':'line',width_m:rnd(geom.width,3)}));
   geom.nodes.forEach((p,i)=>{
@@ -1257,6 +1329,14 @@ function toCSV(geom,T,spans){
     if(p.berm==='hip'){ const h=normHip(p.hip); o.hip_style=h.style; o.hip_side=h.side<0?'right':'left';
       o.width_m=rnd(h.w,3); for(const [k,c] of CSV_PARAMS) if(k in h) o[c]=rnd(h[k],3); }
     lines.push(row(o));
+  });
+  const G=geom.ground||{z0:0,z1:0,pts:[]};
+  lines.push(row({kind:'ground',ref:'start',ground_m:rnd(G.z0,3)}));
+  if(!geom.closed) lines.push(row({kind:'ground',ref:'end',ground_m:rnd(G.z1,3)}));
+  (G.pts||[]).forEach((q,i)=>{
+    const el=q.leg!=null?T.legs[q.leg]:T.arcs.find(a=>a.i===q.corner); if(!el) return;
+    lines.push(row({kind:'ground',ref:'G'+(i+1),type:q.leg!=null?'leg':'corner',leg:(q.leg!=null?q.leg:q.corner)+1,
+      start_m:rnd(q.t*el.len,3),ground_m:rnd(q.z,3)}));
   });
   spans.forEach((sp,i)=>{ if(!sp) return;
     const o={kind:'feature',ref:'F'+(i+1),type:sp.f.type,leg:sp.f.leg+1,
@@ -1302,12 +1382,24 @@ function parseCSV(text){
     f.t=L>0?(num(r.start_m,0)+len/2)/L:.5;
     geom.features.push(f);
   }
+  const G={z0:0,z1:0,pts:[]};
+  for(const r of rows){
+    if(r.kind!=='ground') continue;
+    const z=num(r.ground_m,0);
+    if(r.ref==='start') G.z0=z; else if(r.ref==='end') G.z1=z;
+    else { const k=Math.round(num(r.leg,1))-1, el=r.type==='corner'?T.arcs.find(a=>a.i===k):T.legs[k]; if(!el) continue;
+      const t=el.len>0?clamp(num(r.start_m,0)/el.len,0,1):0;
+      G.pts.push(r.type==='corner'?{corner:k,t,z}:{leg:k,t,z}); }
+  }
+  geom.ground=normGround(G,T.legs.length,geom.nodes.length);
   return geom;
 }
 function profileCSV(T,spans,geo){
-  const lines=['chainage_m,x_m,y_m,z_m'+(geo&&geo.lat!=null?',lat,lon':'')];
+  // ground_m is the ground line, feature_m what is built on it, z_m the two added
+  const lines=['chainage_m,x_m,y_m,ground_m,feature_m,z_m'+(geo&&geo.lat!=null?',lat,lon':'')];
   for(const p of polyline(T,0.25,true)){
-    let l=[rnd(p.s,3),rnd(p.x,3),rnd(p.y,3),rnd(zAt(T,spans,p.s),3)].join(',');
+    const g=groundAt(T,p.s), f=zAt(T,spans,p.s);
+    let l=[rnd(p.s,3),rnd(p.x,3),rnd(p.y,3),rnd(g,3),rnd(f,3),rnd(g+f,3)].join(',');
     if(geo&&geo.lat!=null){ const q=toLatLon(geo,p); l+=','+q.lat.toFixed(8)+','+q.lon.toFixed(8); }
     lines.push(l);
   }
@@ -1338,7 +1430,8 @@ function normGeom(g){
   const features=feats
     .filter(f=>f&&FEATURES[f.type]&&legsN>0)
     .map(f=>({type:f.type,leg:clamp(Math.round(+f.leg||0),0,legsN-1),t:clamp(+f.t||0,0,1),p:normParams(f.type,f.p)}));
-  return {v:2,closed:!!g.closed,width:clamp(+g.width||1.5,0.6,6),nodes,features};
+  return {v:2,closed:!!g.closed,width:clamp(+g.width||1.5,0.6,6),nodes,features,
+    ground:normGround(g.ground,legsN,nodes.length)};
 }
 /* An old hairpin was often two 90° corners whose fillets share one circle.
    As circle centres they would sit on top of each other, so they become one
@@ -1900,7 +1993,9 @@ function drawPlan(ctx,W,H,vw,o){
 }
 
 /* ---------- profile strip ---------- */
-let PX={padL:14,hk:1};
+let PX={padL:14,hk:1,zmin:0,vk:1,H:1,padB:0,pts:[]};
+let gAct=null;   // a ground point being dragged in the profile strip
+let gUsed=0;     // when a ground gesture last ended: the click that follows it is not a selection
 function kindAt(s){
   const Lt=T.length, loc=s0=>{let u=s-s0; if(T.closed) u=((u%Lt)+Lt)%Lt; return u;};
   let best=null,bz=-1;
@@ -1916,52 +2011,79 @@ function drawProfile(ctx,W,H,o){
   ctx.fillStyle=COL.panel; ctx.fillRect(0,0,W,H);
   if(!T||T.length<.1) return;
   const padL=14,padR=14,padT=32,padB=24, n=Math.max(60,Math.min(2400,Math.round(W*1.5)));
-  const zs=[], ks=[];
-  for(let i=0;i<=n;i++){ const s=T.length*i/n; zs.push(zAt(T,spans,s)); ks.push(kindAt(s)); }
+  const gz=[], fz=[], ks=[];
+  for(let i=0;i<=n;i++){ const s=T.length*i/n; gz.push(groundAt(T,s)); fz.push(zAt(T,spans,s)); ks.push(kindAt(s)); }
   // Height is exaggerated to be readable, but capped: past about 10x a row of
-  // rollers reads as spikes rather than humps.
-  const zmax=Math.max(.6,...zs), hk=(W-padL-padR)/T.length, vk=Math.min((H-padT-padB)/zmax,hk*10);
-  const X=s=>padL+s*hk, Y=z=>H-padB-z*vk, base=Y(0);
-  if(o.main) PX={padL,hk};
+  // rollers reads as spikes rather than humps. While a ground point is being
+  // dragged the scale is held, so the strip doesn't rescale under the finger.
+  let zmin=Math.min(...gz), zmax=Math.max(...gz.map((g,i)=>g+fz[i]));
+  const hk=(W-padL-padR)/T.length;
+  let vk=Math.min((H-padT-padB)/Math.max(.6,zmax-zmin),hk*10);
+  if(o.main&&gAct&&gAct.frozen){ zmin=gAct.frozen.zmin; vk=gAct.frozen.vk; }
+  const X=s=>padL+s*hk, Y=z=>H-padB-(z-zmin)*vk, bot=H-padB;
+  if(o.main) PX={padL,hk,zmin,vk,H,padB,pts:[]};
   // berm zones, numbered like the plan
   ctx.font=`600 11px ${SANS}`; ctx.textAlign='center'; ctx.textBaseline='middle';
   for(const a of T.arcs){ if(!a.berm||a.len<.05) continue;
     const x0=X(a.s0), x1=X(a.s0+a.len), sel=o.sel&&o.sel.kind==='node'&&o.sel.i===a.i;
-    ctx.save(); ctx.globalAlpha=.45; ctx.fillStyle=COL['berm-face']; ctx.fillRect(x0,padT-14,x1-x0,base-padT+14); ctx.restore();
-    if(sel){ ctx.strokeStyle=COL.sel; ctx.lineWidth=2; ctx.strokeRect(x0+1,padT-13,x1-x0-2,base-padT+12); }
+    ctx.save(); ctx.globalAlpha=.45; ctx.fillStyle=COL['berm-face']; ctx.fillRect(x0,padT-14,x1-x0,bot-padT+14); ctx.restore();
+    if(sel){ ctx.strokeStyle=COL.sel; ctx.lineWidth=2; ctx.strokeRect(x0+1,padT-13,x1-x0-2,bot-padT+12); }
     if(x1-x0>14){ ctx.beginPath(); ctx.arc((x0+x1)/2,padT-4,8,0,7); ctx.fillStyle=COL['handle-berm']; ctx.fill();
       ctx.fillStyle='#fff'; ctx.fillText(cornerLabel(a.i),(x0+x1)/2,padT-3.5); }
   }
-  // fill by kind, run by run
+  // the ground: earth below the line
+  const xs=i=>X(T.length*i/n);
+  ctx.beginPath(); ctx.moveTo(xs(0),bot); gz.forEach((g,i)=>ctx.lineTo(xs(i),Y(g))); ctx.lineTo(xs(n),bot); ctx.closePath();
+  ctx.save(); ctx.globalAlpha=.55; ctx.fillStyle=COL.trk; ctx.fill(); ctx.restore();
+  // features on the ground, filled by kind, run by run
   let i=0;
   while(i<n){
     const kd=ks[i]; let j=i; while(j<n&&ks[j+1]===kd) j++;
-    if(kd){ ctx.beginPath(); ctx.moveTo(X(T.length*i/n),base);
-      for(let m=i;m<=Math.min(n,j+1);m++) ctx.lineTo(X(T.length*m/n),Y(zs[m]));
-      ctx.lineTo(X(T.length*Math.min(n,j+1)/n),base); ctx.closePath(); ctx.fillStyle=kcol(kd); ctx.fill(); }
+    if(kd){ const e=Math.min(n,j+1); ctx.beginPath(); ctx.moveTo(xs(i),Y(gz[i]));
+      for(let m=i;m<=e;m++) ctx.lineTo(xs(m),Y(gz[m]+fz[m]));
+      for(let m=e;m>=i;m--) ctx.lineTo(xs(m),Y(gz[m]));
+      ctx.closePath(); ctx.fillStyle=kcol(kd); ctx.fill(); }
     i=j+1;
   }
-  ctx.beginPath(); zs.forEach((z,m)=>m?ctx.lineTo(X(T.length*m/n),Y(z)):ctx.moveTo(X(0),Y(z)));
+  ctx.beginPath(); gz.forEach((g,m)=>m?ctx.lineTo(xs(m),Y(g+fz[m])):ctx.moveTo(xs(0),Y(g+fz[m])));
   ctx.strokeStyle=COL.ink; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(padL,base+.5); ctx.lineTo(W-padR,base+.5); ctx.strokeStyle=COL['ink-soft']; ctx.lineWidth=1; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(padL,bot+.5); ctx.lineTo(W-padR,bot+.5); ctx.strokeStyle=COL['ink-soft']; ctx.lineWidth=1; ctx.stroke();
   // selection band
   if(o.sel&&o.sel.kind==='feature'&&spans[o.sel.i]){
     const sp=spans[o.sel.i]; let s0=sp.s0; if(T.closed&&s0<0) s0+=T.length;
     ctx.save(); ctx.strokeStyle=COL.sel; ctx.lineWidth=2.5; ctx.setLineDash([5,4]);
-    ctx.strokeRect(X(s0),padT-14,sp.pr.len*hk,base-padT+14); ctx.restore();
+    ctx.strokeRect(X(s0),padT-14,sp.pr.len*hk,bot-padT+14); ctx.restore();
   }
   // feature codes over their peaks
-  ctx.font=`600 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='bottom';
+  ctx.font=`600 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='bottom'; ctx.textAlign='center';
   for(const sp of spans){ if(!sp||sp.pr.len*hk<20) continue;
-    let s0=sp.s0; if(T.closed&&s0<0) s0+=T.length;
-    const zt=profHeight(sp.pr); ctx.fillText(FEATURES[sp.f.type].short,X(s0+sp.pr.len/2),Math.max(padT-1,Y(zt)-4)); }
-  for(const h of T.hips){ if(h.pr.len*hk<20) continue; let s0=h.s0; if(T.closed&&s0<0) s0+=T.length;
-    ctx.fillText('HIP',X(s0+h.pr.len/2),Math.max(padT-1,Y(profHeight(h.pr))-4)); }
+    let s0=sp.s0; if(T.closed&&s0<0) s0+=T.length; const sm=s0+sp.pr.len/2;
+    ctx.fillText(FEATURES[sp.f.type].short,X(sm),Math.max(padT-1,Y(groundAt(T,sm)+profHeight(sp.pr))-4)); }
+  for(const h of T.hips){ if(h.pr.len*hk<20) continue; let s0=h.s0; if(T.closed&&s0<0) s0+=T.length; const sm=s0+h.pr.len/2;
+    ctx.fillText('HIP',X(sm),Math.max(padT-1,Y(groundAt(T,sm)+profHeight(h.pr))-4)); }
+  // ground handles: square ends, round points; drag to move, tap the line to add
+  {
+    const flat=T.ground.every(q=>Math.abs(q.z)<1e-9);
+    ctx.save(); ctx.setLineDash([4,3]); ctx.strokeStyle=COL['ink-soft']; ctx.lineWidth=1.2;
+    ctx.beginPath(); T.ground.forEach((q,m)=>m?ctx.lineTo(X(q.s),Y(q.z)):ctx.moveTo(X(q.s),Y(q.z))); ctx.stroke(); ctx.restore();
+    for(const q of T.ground){
+      if(T.closed&&q.k==='z0'&&q.s>0) continue;   // a loop's start and end are one point
+      const x=X(q.s), y=Y(q.z), act=o.main&&gAct&&gAct.k===q.k, end=typeof q.k==='string', r=act?6:4.5;
+      if(o.main){ ctx.beginPath(); if(end) ctx.rect(x-r,y-r,2*r,2*r); else ctx.arc(x,y,r,0,7);
+        ctx.fillStyle=act?COL.sel:COL.handle; ctx.fill(); ctx.lineWidth=1.5; ctx.strokeStyle=act?COL.sel:COL.ink; ctx.stroke(); }
+      if(!flat||act){ ctx.font=`400 11px ${MONO}`; ctx.fillStyle=act?COL.sel:COL.ink; ctx.textBaseline='top';
+        ctx.textAlign=q.s<1e-6?'left':q.s>T.length-1e-6?'right':'center';
+        ctx.lineJoin='round'; ctx.lineWidth=3; ctx.strokeStyle=COL.panel; ctx.strokeText(f2(q.z)+' m',x,Math.min(y+7,bot-13)); ctx.fillText(f2(q.z)+' m',x,Math.min(y+7,bot-13)); }
+      if(o.main) PX.pts.push({k:q.k,x,y,s:q.s});
+    }
+  }
   // chainage
   const st=niceStep(0,hk,64); ctx.font=`600 11px ${SANS}`; ctx.fillStyle=COL['ink-soft']; ctx.textBaseline='top';
-  for(let s=0;s<=T.length+1e-6;s+=st){ const x=X(s); ctx.fillRect(x,base,1,5); ctx.textAlign=s===0?'left':'center'; ctx.fillText(s===0?'0 m':String(s),x,base+6); }
-  const ex=vk/hk; ctx.textAlign='left'; ctx.textBaseline='top'; ctx.font=`600 11px ${SANS}`;
-  ctx.fillText('Profile · '+f1(T.length)+' m · '+(Math.abs(ex-1)<.05?'true scale':'height ×'+Math.round(ex)),padL,4);
+  for(let s=0;s<=T.length+1e-6;s+=st){ const x=X(s); ctx.fillRect(x,bot,1,5); ctx.textAlign=s===0?'left':'center'; ctx.fillText(s===0?'0 m':String(s),x,bot+6); }
+  const ex=vk/hk, g0=T.ground[0].z, g1=T.ground[T.ground.length-1].z;
+  ctx.textAlign='left'; ctx.textBaseline='top'; ctx.font=`600 11px ${SANS}`;
+  ctx.fillText('Profile · '+f1(T.length)+' m · '+(Math.abs(ex-1)<.05?'true scale':'height ×'+Math.round(ex))+
+    (T.closed||Math.abs(g1-g0)<.005?'':' · ground '+(g1<g0?'falls ':'rises ')+f1(Math.abs(g1-g0))+' m'),padL,4);
 }
 
 /* ---------- icons ---------- */
@@ -2263,9 +2385,61 @@ plan.addEventListener('wheel',e=>{
 function zoomBy(f){ view.k=clamp(view.k*f,.5,400); draw(); }
 $('zin').onclick=()=>zoomBy(1.3); $('zout').onclick=()=>zoomBy(1/1.3); $('zfit').onclick=fitView;
 
+/* Profile strip: drag a ground point (squares are the ends) up and down, or
+   along the track; tap the dashed ground line to add a point; hold a point
+   to remove it. Anything else selects what was tapped, as before. */
+const profXY=e=>{ const r=prof.getBoundingClientRect(); return [e.clientX-r.left,e.clientY-r.top]; };
+const profZ_=y=>PX.zmin+(PX.H-PX.padB-y)/PX.vk, profS=x=>(x-PX.padL)/PX.hk;
+function groundHit(x,y,tol){
+  let best=null; for(const q of PX.pts){ const d=Math.hypot(q.x-x,q.y-y); if(d<=tol&&(!best||d<best.d)) best={k:q.k,d}; }
+  return best;
+}
+prof.addEventListener('pointerdown',e=>{
+  if(!T||!T.ok) return;
+  const [x,y]=profXY(e), tol=e.pointerType==='touch'?16:9, s=profS(x);
+  let h=groundHit(x,y,tol);
+  if(!h&&s>0&&s<T.length&&Math.abs(y-(PX.H-PX.padB-(groundAt(T,s)-PX.zmin)*PX.vk))<=tol*.8){
+    // on the ground line: a new point there
+    const G=D.geom.ground; G.pts.push(Object.assign(placeAtS(T,s),{z:rnd(groundAt(T,s),2)}));
+    recompute(); h={k:G.pts.length-1}; gAct={k:h.k,x0:x,y0:y,moved:true,added:true};
+  } else if(h) gAct={k:h.k,x0:x,y0:y,moved:false};
+  else { gAct=null; return; }
+  gAct.frozen={zmin:PX.zmin,vk:PX.vk}; gAct.z0=profZ_(y);
+  const G=D.geom.ground; gAct.zStart=h.k==='z0'?G.z0:h.k==='z1'?G.z1:G.pts[h.k].z;
+  try{ prof.setPointerCapture(e.pointerId); }catch(_){}
+  if(typeof h.k==='number'&&!gAct.added) gAct.timer=setTimeout(()=>{
+    if(!gAct||gAct.moved) return;
+    D.geom.ground.pts.splice(gAct.k,1); gAct=null; gUsed=performance.now(); recompute(); commit();
+    try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
+    toast('Ground point removed. Undo brings it back.',true);
+  },550);
+  e.preventDefault(); draw();
+});
+prof.addEventListener('pointermove',e=>{
+  const [x,y]=profXY(e);
+  if(!gAct){
+    if(e.pointerType==='mouse'&&T&&T.ok){ const s=profS(x), onLine=s>0&&s<T.length&&Math.abs(y-(PX.H-PX.padB-(groundAt(T,s)-PX.zmin)*PX.vk))<=7;
+      prof.style.cursor=groundHit(x,y,9)?'grab':onLine?'copy':''; }
+    return;
+  }
+  if(!gAct.moved&&Math.hypot(x-gAct.x0,y-gAct.y0)<(e.pointerType==='touch'?8:3)) return;
+  gAct.moved=true; clearTimeout(gAct.timer);
+  const G=D.geom.ground, z=rnd(gAct.zStart+(gAct.y0-y)/gAct.frozen.vk,2);
+  if(gAct.k==='z0') G.z0=z; else if(gAct.k==='z1') G.z1=z;
+  else { const s=clamp(profS(x),0.01,T.length-0.01); Object.assign(G.pts[gAct.k],placeAtS(T,s),{z});
+    if(G.pts[gAct.k].leg!=null) delete G.pts[gAct.k].corner; else delete G.pts[gAct.k].leg; }
+  recompute();
+});
+function endProf(e){
+  if(!gAct) return;
+  const a=gAct; gAct=null; clearTimeout(a.timer); gUsed=performance.now();
+  if(a.moved) commit(); draw();
+}
+prof.addEventListener('pointerup',endProf); prof.addEventListener('pointercancel',endProf);
 prof.addEventListener('click',e=>{
-  const r=prof.getBoundingClientRect(), s=(e.clientX-r.left-PX.padL)/PX.hk;
-  if(!T||s<0||s>T.length) return;
+  if(!T||performance.now()-gUsed<400) return;
+  const [x,y]=profXY(e), s=profS(x);
+  if(groundHit(x,y,e.pointerType==='touch'?16:9)||s<0||s>T.length) return;
   const Lt=T.length;
   for(const sp of spans){ if(!sp) continue; let u=s-sp.s0; if(T.closed) u=((u%Lt)+Lt)%Lt;
     if(u>=0&&u<=sp.pr.len){ setSel({kind:'feature',i:sp.i}); return; } }
@@ -2425,7 +2599,9 @@ function updateInspector(){
     drawDiagram($('diagram'),sp.pr);
     const legLen=sp.leg.len, iss=issues.find(q=>q.feature===sp.i);
     if(m){ m.className='fitmsg'+(iss?' bad':'');
-      m.textContent=iss?iss.msg+'.':`${f1(sp.pr.len)} m long on a ${f1(legLen)} m straight. Starts ${f1(Math.max(0,sp.c-sp.pr.len/2))} m after corner ${T.closed||sp.f.leg>0?sp.f.leg+1:'S'}.`; }
+      const sm=sp.s0+sp.pr.len/2, slope=(groundAt(T,sm+1)-groundAt(T,sm-1))/2*100;
+      m.textContent=iss?iss.msg+'.':`${f1(sp.pr.len)} m long on a ${f1(legLen)} m straight. Starts ${f1(Math.max(0,sp.c-sp.pr.len/2))} m after corner ${T.closed||sp.f.leg>0?sp.f.leg+1:'S'}.`+
+        (Math.abs(slope)>=.5?` Built on a ${f1(Math.abs(slope))}% ${slope<0?'downslope':'upslope'}; its angles are from that slope.`:''); }
   } else {
     const a=T.arcs.find(z=>z.i===sel.i), hh=T.hips.find(z=>z.i===sel.i);
     if(m&&hh){
@@ -2470,6 +2646,9 @@ function refreshTrackPanel(){
   const g=D.geom;
   $('t-loop').setAttribute('aria-pressed',String(!!g.closed)); $('t-line').setAttribute('aria-pressed',String(!g.closed));
   if(document.activeElement!==$('t-width')) $('t-width').value=f1(g.width); $('t-width-r').value=g.width;
+  if(document.activeElement!==$('t-g0')) $('t-g0').value=f2(g.ground.z0);
+  if(document.activeElement!==$('t-g1')) $('t-g1').value=f2(g.ground.z1);
+  $('t-g1-l').style.visibility=g.closed?'hidden':'';
   if(document.activeElement!==$('d-name')) $('d-name').value=D._meta.name||'';
   if(document.activeElement!==$('d-designer')) $('d-designer').value=D._meta.designer||'';
   updateLive();
@@ -2538,6 +2717,10 @@ $('t-width').oninput=e=>{ setWidth(parseFloat(e.target.value)); $('t-width-r').v
 $('t-width').onchange=()=>{ refreshTrackPanel(); commit(); };
 $('t-width-r').oninput=e=>{ setWidth(+e.target.value); $('t-width').value=f1(D.geom.width); };
 $('t-width-r').onchange=commit;
+for(const [id,k] of [['t-g0','z0'],['t-g1','z1']]){
+  $(id).oninput=e=>{ const v=parseFloat(e.target.value); if(Number.isFinite(v)){ D.geom.ground[k]=clamp(v,-500,500); recompute(); } };
+  $(id).onchange=commit;
+}
 $('d-name').oninput=e=>{ D._meta.name=e.target.value; autosave(); };
 $('d-designer').oninput=e=>{ D._meta.designer=e.target.value; autosave(); };
 $('b-dims').onclick=()=>{ D.cfg.dims=!D.cfg.dims; $('b-dims').setAttribute('aria-pressed',String(D.cfg.dims)); autosave(); draw(); };
