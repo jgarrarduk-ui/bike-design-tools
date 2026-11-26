@@ -132,7 +132,18 @@ h2{font-size:11px;font-weight:600;color:var(--ink-soft);
   margin:18px 0 7px;padding-bottom:4px;border-bottom:1px solid var(--rule);
   display:flex;align-items:center;justify-content:space-between;gap:8px}
 h2:first-child{margin-top:2px}
-#track-panel .seg{margin-top:2px}
+/* Lines: one row each, the active one marked. Swatch, name, delete. */
+#lines-list{display:flex;flex-direction:column;gap:4px}
+.ln-row{display:flex;align-items:center;gap:6px;padding:3px 4px;border:1px solid var(--rule);border-radius:3px;cursor:pointer}
+.ln-row.on{border-color:var(--press);box-shadow:inset 3px 0 0 var(--press)}
+.ln-row input[type=color]{width:22px;height:22px;padding:0;border:1px solid var(--rule);border-radius:3px;background:none;flex:none;cursor:pointer}
+.ln-row input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+.ln-row input[type=color]::-webkit-color-swatch{border:none;border-radius:2px}
+.ln-row input[type=text]{flex:1;min-width:0;border-color:transparent;background:transparent}
+.ln-row input[type=text]:focus{border-color:var(--rule);background:var(--field)}
+.ln-row small{color:var(--ink-soft);font-size:11px;flex:none}
+.ln-row .x{padding:1px 7px;flex:none}
+#lines-add{margin-top:6px}
 .note{font-size:11px;color:var(--ink-soft);margin:8px 0 0}
 .seg{display:flex;gap:0}
 .seg button{flex:1;border-radius:0;margin-left:-1px}
@@ -395,7 +406,9 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
 <div class="rail right">
   <div id="sel-panel"></div>
   <div id="track-panel">
-    <div class="seg" role="group" aria-label="Layout">
+    <div id="lines-list" role="list" aria-label="Lines"></div>
+    <div class="btnrow" id="lines-add"><button type="button" id="ln-loop">+ Loop</button><button type="button" id="ln-line">+ Line</button></div>
+    <div class="seg" role="group" aria-label="Layout" style="margin-top:12px">
       <button id="t-loop" aria-pressed="true">Loop</button>
       <button id="t-line" aria-pressed="false">Line</button>
     </div>
@@ -427,6 +440,13 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     <ul>
       <li><b>Templates</b> loads a starting track: ovals, a figure eight, a flow loop, jump lines. It replaces what is on the plan; Undo brings it back.</li>
       <li><b>Loop</b> or <b>Line</b> on the right sets whether the track joins up. Set the track width there too.</li>
+    </ul>
+
+    <h2>Lines</h2>
+    <ul>
+      <li>A design can hold several lines: a pump track and a jump line on the same hill, say. They are listed at the top right.</li>
+      <li><b>+ Loop</b> and <b>+ Line</b> add one where you are looking. Tap a line on the plan, or its row, to edit it; the others fade back.</li>
+      <li>The swatch sets a line's colour; tap the name to rename it. Templates, the profile, the panel and the CSV and build sheet exports work on the line you are editing. Save and GPX carry every line.</li>
     </ul>
 
     <h2>Shape the track</h2>
@@ -1202,29 +1222,37 @@ function featureLabel(f){
 }
 /* The design rides along inside <extensions>, so a GPX written here opens
    again exactly; any other GPX is traced into nodes instead. */
+/* T and spans are one track, or T is a list of {name, T, spans}: one <trk>
+   per line, waypoints for all of them. */
 function toGPX(design,T,spans,stamp){
   const geo=design.cfg.geo, name=(design._meta&&design._meta.name)||'Pump track';
   const ll=p=>{const q=toLatLon(geo,p);return `lat="${q.lat.toFixed(8)}" lon="${q.lon.toFixed(8)}"`;};
   const ele=z=>((+geo.ele||0)+z).toFixed(2);
+  const tracks=Array.isArray(T)?T:[{name,T,spans}];
+  const w=[], trks=[];
+  for(const tk of tracks){ const r=gpxTrack(tk.T,tk.spans,ll,ele,tk.name||name); w.push(...r.w); trks.push(r.trk); }
+  const json=JSON.stringify({geom:design.geom,lines:design.lines,active:design.active,geo}).replace(/]]>/g,']]]]><![CDATA[>');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Creature Cycles Pump Track Designer" xmlns="http://www.topografix.com/GPX/1/1" xmlns:ptd="https://creaturecycles.co.uk/apps/pump-track-designer/">
+  <metadata><name>${xmlEsc(name)}</name><time>${stamp||new Date().toISOString()}</time></metadata>
+${w.join('\n')}
+${trks.join('\n')}
+  <extensions><ptd:design><![CDATA[${json}]]></ptd:design></extensions>
+</gpx>
+`;
+}
+function gpxTrack(T,spans,ll,ele,name){
   const pts=polyline(T,0.5,true); if(T.closed&&pts.length) pts.push(Object.assign({},pts[0],{s:T.length}));
   const w=spans.filter(Boolean).map(sp=>{
     const p=pointAt(T,sp.s0+sp.pr.len/2);
     return `  <wpt ${ll(p)}><ele>${ele(groundAt(T,sp.s0+sp.pr.len/2)+profHeight(sp.pr))}</ele><name>${xmlEsc(featureLabel(sp.f))}</name><type>${sp.f.type}</type></wpt>`;
   }).concat((T.hips||[]).map(h=>`  <wpt ${ll(h.P)}><ele>${ele(groundAt(T,h.s0+h.pr.len/2)+Math.max(h.hp.h,h.table?h.hp.h:h.hp.lh))}</ele><name>Hip ${h.hp.style} ${Math.round(h.theta/DEG)}° ${h.hp.gap.toFixed(1)} m</name><type>hip</type></wpt>`));
   const trk=pts.map(p=>`      <trkpt ${ll(p)}><ele>${ele(zTop(T,spans,p.s))}</ele></trkpt>`);
-  const json=JSON.stringify({geom:design.geom,geo}).replace(/]]>/g,']]]]><![CDATA[>');
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Creature Cycles Pump Track Designer" xmlns="http://www.topografix.com/GPX/1/1" xmlns:ptd="https://creaturecycles.co.uk/apps/pump-track-designer/">
-  <metadata><name>${xmlEsc(name)}</name><time>${stamp||new Date().toISOString()}</time></metadata>
-${w.join('\n')}
-  <trk><name>${xmlEsc(name)}</name><type>${T.closed?'loop':'line'}</type>
+  return {w,trk:`  <trk><name>${xmlEsc(name)}</name><type>${T.closed?'loop':'line'}</type>
     <trkseg>
 ${trk.join('\n')}
     </trkseg>
-  </trk>
-  <extensions><ptd:design><![CDATA[${json}]]></ptd:design></extensions>
-</gpx>
-`;
+  </trk>`};
 }
 function parseGPX(text){
   const attr=(s,k)=>{const m=new RegExp('\\b'+k+'\\s*=\\s*["\']([^"\']+)["\']').exec(s);return m?+m[1]:NaN;};
@@ -1289,7 +1317,8 @@ function traceTrack(xy,opts={}){
   return {closed:closed&&n>=3,nodes};
 }
 function gpxToDesign(g,width){
-  if(g.design&&g.design.geom) return {geom:normGeom(g.design.geom),geo:Object.assign({lat:null,lon:null,rot:0,ele:0},g.design.geo||{})};
+  if(g.design&&g.design.geom) return {geom:normGeom(g.design.geom),geo:Object.assign({lat:null,lon:null,rot:0,ele:0},g.design.geo||{}),
+    lines:Array.isArray(g.design.lines)?g.design.lines:null,active:+g.design.active||0};
   if(g.pts.length<2) throw new Error('no track points in this GPX');
   const geo={lat:g.pts[0].lat,lon:g.pts[0].lon,rot:0,ele:g.pts[0].ele!=null?g.pts[0].ele:0};
   const xy=g.pts.map(p=>fromLatLon(geo,p));
@@ -1631,7 +1660,20 @@ const kcol=k=>COL[k]||COL.flat;
 
 const DEF_CFG={geo:{lat:null,lon:null,rot:0,ele:0},bg:null,gpx:null,dims:false,
   layers:{labels:true,design:true,gpx:true,photo:true}};
-let D={_meta:{name:'',designer:''},geom:normGeom(TEMPLATES[0].geom),cfg:clone(DEF_CFG)};
+/* A design holds one or more lines (a pump track and a jump line on the same
+   hill, say), each with its own name, colour and track. One is active: that
+   is the one edited, shown in the profile and the side panel. D.geom is the
+   active line's track, so everything that edits a track works unchanged. */
+const LINE_COLS=['#38bdf8','#f472b6','#facc15','#a78bfa','#fb923c','#2dd4bf','#f87171'];
+const lineId=()=>Math.random().toString(36).slice(2,10);
+const okColour=c=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c)?c:null;
+function newLine(geom,name,color){ return {id:lineId(),name:name||'Track',color:okColour(color),geom}; }
+function makeD(meta,lines,active,cfg){
+  const d={_meta:meta,lines,active:clamp(active|0,0,lines.length-1),cfg};
+  Object.defineProperty(d,'geom',{get(){ return this.lines[this.active].geom; },set(g){ this.lines[this.active].geom=g; }});
+  return d;
+}
+let D=makeD({name:'',designer:''},[newLine(normGeom(TEMPLATES[0].geom),'Track 1',null)],0,clone(DEF_CFG));
 let T=null, spans=[], issues=[], stats=null;
 let sel=null;                 // {kind:'feature'|'node', i}
 let view={cx:0,cy:0,k:10};
@@ -1811,12 +1853,27 @@ function drawRef(ctx,X,Y,LY){
   ctx.restore();
 }
 function extentAll(){
-  const e=T&&T.ok?extentOf(T):null, r=D.cfg.layers.gpx!==false?refLocal():null;
+  let e=T&&T.ok?extentOf(T):null; const r=D.cfg.layers.gpx!==false?refLocal():null;
+  for(const L of otherLines()){ const o=extentOf(L.T);
+    e=e?{x0:Math.min(e.x0,o.x0),y0:Math.min(e.y0,o.y0),x1:Math.max(e.x1,o.x1),y1:Math.max(e.y1,o.y1)}:o; }
   if(!r) return e||{x0:-10,y0:-10,x1:10,y1:10};
   const b=e?Object.assign({},e):{x0:Infinity,y0:Infinity,x1:-Infinity,y1:-Infinity};
   for(const p of r){ b.x0=Math.min(b.x0,p.x); b.x1=Math.max(b.x1,p.x); b.y0=Math.min(b.y0,p.y); b.y1=Math.max(b.y1,p.y); }
   return b;
 }
+/* The lines that are not being edited, built for drawing and hit tests.
+   Cached on their JSON, so a drag on the active line doesn't rebuild them. */
+let otherCache={key:'',list:[]};
+function otherLines(){
+  const key=D.active+'|'+JSON.stringify(D.lines.map((l,i)=>i===D.active?null:[l.color,l.geom]));
+  if(key!==otherCache.key){
+    otherCache={key,list:D.lines.map((l,i)=>{ if(i===D.active) return null;
+      const T=buildTrack(l.geom); return {i,T,spans:spansOf(T,l.geom),edge:lineEdge(l)}; }).filter(L=>L&&L.T.ok)};
+  }
+  otherCache.list.forEach(L=>L.edge=lineEdge(D.lines[L.i]));
+  return otherCache.list;
+}
+const lineEdge=l=>(l&&l.color)||COL['trk-edge'];
 function drawPlan(ctx,W,H,vw,o){
   const k=vw.k, X=x=>(x-vw.cx)*k+W/2, Y=y=>H/2-(y-vw.cy)*k;
   ctx.fillStyle=COL.paper; ctx.fillRect(0,0,W,H);
@@ -1831,7 +1888,9 @@ function drawPlan(ctx,W,H,vw,o){
     drawRef(ctx,X,Y,LY); if(o.main) HND={corners:[],plus:[]};
     if(o.grid) drawScaleBar(ctx,W,H,k); return;
   }
-  const w=T.width, out=outsideNormalSign();
+  // The other lines first, faded, each in its own colour; then the active one.
+  const drawBody=(o,edge)=>{
+  const w=T.width;
   // berm banks outside the corner, hachured downhill
   for(const a of T.arcs){
     if(!a.berm||a.len<.05) continue;
@@ -1851,7 +1910,7 @@ function drawPlan(ctx,W,H,vw,o){
   const pts=polyline(T,Math.max(.1,2/k));
   const path=()=>{ ctx.beginPath(); pts.forEach((p,i)=>i?ctx.lineTo(X(p.x),Y(p.y)):ctx.moveTo(X(p.x),Y(p.y))); if(T.closed) ctx.closePath(); };
   ctx.lineJoin='round'; ctx.lineCap='butt';
-  path(); ctx.strokeStyle=COL['trk-edge']; ctx.lineWidth=w*k+5; ctx.stroke();
+  path(); ctx.strokeStyle=edge; ctx.lineWidth=w*k+5; ctx.stroke();
   path(); ctx.strokeStyle=COL.trk; ctx.lineWidth=Math.max(1,w*k-.5); ctx.stroke();
   // banking on the berm's riding surface: darker toward the high side
   for(const a of T.arcs){
@@ -1891,6 +1950,15 @@ function drawPlan(ctx,W,H,vw,o){
   for(const h of T.hips) drawHip(ctx,X,Y,k,h,{sel:o.sel&&o.sel.kind==='node'&&o.sel.i===h.i,
     bad:!h.fits||issues.some(q=>q.node===h.i&&q.kind==='overlap')});
   if(o.preview&&o.preview.sp) drawFeature(ctx,X,Y,k,o.preview.sp.s0,o.preview.sp.pr,{alpha:.7,sel:true});
+  };
+  if(o.main||o.sheet) otherLines().forEach(L=>{
+    const keep={T,spans,issues}; T=L.T; spans=L.spans; issues=[];
+    ctx.save(); ctx.globalAlpha=o.sheet?.8:.5; drawBody({},L.edge); ctx.restore();
+    ({T,spans,issues}=keep);
+  });
+  drawBody(o,lineEdge(D.lines[D.active]));
+  const w=T.width, out=outsideNormalSign();
+  const selF=o.sel&&o.sel.kind==='feature'?o.sel.i:-1;
   drawRef(ctx,X,Y,LY);
   // the selected corner's circle: its handle is the centre the track wraps round
   if(o.main&&o.handles&&LY.labels!==false&&o.sel&&o.sel.kind==='node'){
@@ -2082,7 +2150,7 @@ function drawProfile(ctx,W,H,o){
   for(let s=0;s<=T.length+1e-6;s+=st){ const x=X(s); ctx.fillRect(x,bot,1,5); ctx.textAlign=s===0?'left':'center'; ctx.fillText(s===0?'0 m':String(s),x,bot+6); }
   const ex=vk/hk, g0=T.ground[0].z, g1=T.ground[T.ground.length-1].z;
   ctx.textAlign='left'; ctx.textBaseline='top'; ctx.font=`600 11px ${SANS}`;
-  ctx.fillText('Profile · '+f1(T.length)+' m · '+(Math.abs(ex-1)<.05?'true scale':'height ×'+Math.round(ex))+
+  ctx.fillText((D.lines.length>1&&!o.sheetName?D.lines[D.active].name+' · ':'')+'Profile · '+f1(T.length)+' m · '+(Math.abs(ex-1)<.05?'true scale':'height ×'+Math.round(ex))+
     (T.closed||Math.abs(g1-g0)<.005?'':' · ground '+(g1<g0?'falls ':'rises ')+f1(Math.abs(g1-g0))+' m'),padL,4);
 }
 
@@ -2310,6 +2378,10 @@ plan.addEventListener('pointerdown',e=>{
       tol:e.pointerType==='touch'?9:4};
     holdToDelete('feat',h.i);
   } else {
+    if(h.kind==='empty'&&D.cfg.layers.design!==false){
+      for(const L of otherLines()){ const pj=project(L.T,q);
+        if(pj&&pj.d<=L.T.width/2+(L.T.arcs.some(a=>a.berm)?1:0)+10/view.k){ setActive(L.i); toast(D.lines[L.i].name+' is the line you are editing.',true); return; } }
+    }
     act={kind:'pan',x0:x,y0:y,c0:{cx:view.cx,cy:view.cy},moved:false,hit:h};
   }
   plan.classList.add('grabbing');
@@ -2642,7 +2714,56 @@ function drawDiagram(cv,pr){
   const gs=pr.segs.find(s=>s.kind==='gap'&&pr.type!=='starthill');
   if(gs&&pr.p.gap>0){ const y=Y(zm)-14; arrow(X(gs.u0),y,X(gs.u1),y); txt('gap '+f1(gs.u1-gs.u0),(X(gs.u0)+X(gs.u1))/2,y); }
 }
+/* ---------- lines ---------- */
+function setActive(i){
+  if(i===D.active||!D.lines[i]) return;
+  D.active=i; sel=null; delTarget=null; recompute(); buildInspector(); autosave();
+}
+let linesKey='';
+function syncLines(){
+  const key=JSON.stringify([D.active,D.lines.map(l=>[l.id,l.name,l.color])])+document.documentElement.dataset.theme;
+  if(key===linesKey) return; linesKey=key;
+  const L=$('lines-list'); L.innerHTML='';
+  D.lines.forEach((l,i)=>{
+    const row=document.createElement('div'); row.className='ln-row'+(i===D.active?' on':''); row.setAttribute('role','listitem');
+    const col=document.createElement('input'); col.type='color'; col.value=lineEdge(l); col.title='Line colour'; col.setAttribute('aria-label','Colour of '+l.name);
+    col.oninput=()=>{ l.color=col.value; draw(); }; col.onchange=()=>{ l.color=col.value; linesKey=''; commit(); draw(); };
+    const nm=document.createElement('input'); nm.type='text'; nm.value=l.name; nm.setAttribute('aria-label','Line name');
+    nm.oninput=()=>{ l.name=nm.value.slice(0,40); autosave(); }; nm.onchange=()=>{ commit(); linesKey=''; };
+    nm.onfocus=()=>setActive(i);
+    const info=document.createElement('small'); const Tl=i===D.active?T:buildTrack(l.geom);
+    info.textContent=f1(Tl.length)+' m '+(Tl.closed?'loop':'line');
+    row.append(col,nm,info);
+    if(D.lines.length>1){ const x=document.createElement('button'); x.type='button'; x.className='x'; x.innerHTML='&times;';
+      x.title='Delete '+l.name; x.setAttribute('aria-label','Delete '+l.name); x.onclick=ev=>{ ev.stopPropagation(); deleteLine(i); }; row.append(x); }
+    row.onclick=ev=>{ if(ev.target===row||ev.target===info) setActive(i); };
+    L.appendChild(row);
+  });
+}
+function addLine(closed){
+  const n=D.lines.length+1, t=TEMPLATES.find(z=>z.name===(closed?'Empty loop':'Empty line'));
+  const g=placeGeom(normGeom(clone(t.geom)));
+  const used=D.lines.map(l=>l.color), color=LINE_COLS.find(c=>!used.includes(c))||LINE_COLS[n%LINE_COLS.length];
+  D.lines.push(newLine(g,(closed?'Loop ':'Line ')+n,color));
+  D.active=D.lines.length-1; sel=null; recompute(); buildInspector(); commit();
+  toast('Added '+D.lines[D.active].name+'. Drag its corners to shape it.',true);
+}
+function deleteLine(i){
+  if(D.lines.length<2) return;
+  const nm=D.lines[i].name; D.lines.splice(i,1);
+  if(D.active>=i&&D.active>0) D.active--; sel=null; delTarget=null; recompute(); buildInspector(); commit();
+  toast(nm+' deleted. Undo brings it back.',true);
+}
+/* A track for a second line goes where you are looking, not on top of the first. */
+function placeGeom(g){
+  const T0=buildTrack(g), e=extentOf(T0), dx=view.cx-(e.x0+e.x1)/2, dy=view.cy-(e.y0+e.y1)/2;
+  for(const nd of g.nodes){ nd.x=rnd(nd.x+dx,4); nd.y=rnd(nd.y+dy,4); }
+  return g;
+}
+$('ln-loop').onclick=()=>addLine(true);
+$('ln-line').onclick=()=>addLine(false);
 function refreshTrackPanel(){
+  syncLines();
   const g=D.geom;
   $('t-loop').setAttribute('aria-pressed',String(!!g.closed)); $('t-line').setAttribute('aria-pressed',String(!g.closed));
   if(document.activeElement!==$('t-width')) $('t-width').value=f1(g.width); $('t-width-r').value=g.width;
@@ -2661,6 +2782,8 @@ function updateLive(){
     st('Dirt, rough',(stats.volume<10?f1(stats.volume):Math.round(stats.volume))+' m³')+
     st('Features · berms',stats.features+' · '+stats.berms);
   if(h!==lastStatsHtml){ lastStatsHtml=h; $('stats').innerHTML=h; }
+  const li=document.querySelector('.ln-row.on small'), lt=f1(T.length)+' m '+(T.closed?'loop':'line');
+  if(li&&li.textContent!==lt) li.textContent=lt;
   syncIssues();
   const dsub=f1(T.length)+' m '+(T.closed?'loop':'line'); if($('ly-design-sub').textContent!==dsub) $('ly-design-sub').textContent=dsub;
 }
@@ -2727,13 +2850,13 @@ $('b-dims').onclick=()=>{ D.cfg.dims=!D.cfg.dims; $('b-dims').setAttribute('aria
 
 /* ---------- undo ---------- */
 let undoS=[], redoS=[], lastSnap=null;
-const snap=()=>JSON.stringify(D.geom);
+const snap=()=>JSON.stringify(D.lines);   // which line is active is not an undo step
 function commit(){
   const s=snap(); if(s===lastSnap) return;
   if(lastSnap!=null){ undoS.push(lastSnap); if(undoS.length>200) undoS.shift(); }
   redoS=[]; lastSnap=s; syncUndo(); autosave();
 }
-function restore(s){ delTarget=null; D.geom=JSON.parse(s); lastSnap=s; validSel(); recompute(); buildInspector(); syncUndo(); autosave(); }
+function restore(s){ delTarget=null; D.lines=JSON.parse(s); D.active=clamp(D.active,0,D.lines.length-1); lastSnap=s; validSel(); recompute(); buildInspector(); syncUndo(); autosave(); }
 function undo(){ if(!undoS.length) return; redoS.push(lastSnap); restore(undoS.pop()); }
 function redo(){ if(!redoS.length) return; undoS.push(lastSnap); restore(redoS.pop()); }
 function syncUndo(){ $('b-undo').disabled=!undoS.length; $('b-redo').disabled=!redoS.length; }
@@ -2775,16 +2898,23 @@ function toast(t,ok){ const m=$('msg'); m.textContent=t; m.className='on'+(ok?' 
    Same file shape as the suspension designer: _meta, then the design. */
 function designOut(withImage=true){
   const cfg=clone(D.cfg); if(!withImage) cfg.bg=null;
-  return {_meta:{name:D._meta.name||'',designer:D._meta.designer||'',date:new Date().toISOString(),version:'1.0',
-    tool:'pump-track-designer'},geom:D.geom,cfg};
+  // geom is the active line, so a reader that only knows one line still gets a track
+  return {_meta:{name:D._meta.name||'',designer:D._meta.designer||'',date:new Date().toISOString(),version:'1.1',
+    tool:'pump-track-designer'},lines:clone(D.lines),active:D.active,geom:D.geom,cfg};
+}
+function linesOf(data){
+  const raw=Array.isArray(data.lines)&&data.lines.length?data.lines:data.geom?[{name:'Track 1',geom:data.geom}]:[];
+  const lines=raw.filter(l=>l&&l.geom&&Array.isArray(l.geom.nodes)).map((l,i)=>newLine(normGeom(l.geom),String(l.name||'Track '+(i+1)).slice(0,40),l.color))
+    .filter(l=>l.geom.nodes.length>=2);
+  if(!lines.length) throw new Error('no track in it');
+  return lines;
 }
 function loadDesign(data,{fit=true}={}){
-  if(!data||!data.geom||!Array.isArray(data.geom.nodes)) throw new Error('missing geom');
-  const g=normGeom(data.geom); if(g.nodes.length<2) throw new Error('needs at least two nodes');
-  const c=data.cfg||{};
-  D={_meta:{name:(data._meta&&data._meta.name)||'',designer:(data._meta&&data._meta.designer)||''},geom:g,
-    cfg:Object.assign(clone(DEF_CFG),c,{geo:Object.assign(clone(DEF_CFG.geo),c.geo||{}),
-      layers:Object.assign(clone(DEF_CFG.layers),c.layers||{})})};
+  if(!data) throw new Error('missing design');
+  const lines=linesOf(data), c=data.cfg||{};
+  D=makeD({name:(data._meta&&data._meta.name)||'',designer:(data._meta&&data._meta.designer)||''},lines,+data.active||0,
+    Object.assign(clone(DEF_CFG),c,{geo:Object.assign(clone(DEF_CFG.geo),c.geo||{}),
+      layers:Object.assign(clone(DEF_CFG.layers),c.layers||{})}));
   if(D.cfg.gpx&&!(Array.isArray(D.cfg.gpx.pts)&&D.cfg.gpx.pts.length>1)) D.cfg.gpx=null;
   if(D.cfg.bg&&D.cfg.bg.src) bgImg.src=D.cfg.bg.src; else D.cfg.bg=null;
   sel=null; delTarget=null; refCache.key=''; recompute(); if(fit) fitView(); buildInspector(); syncLayers();
@@ -2906,7 +3036,9 @@ function openFile(){
         if(name.endsWith('.json')||head==='{'){ loadDesign(JSON.parse(text)); }
         else if(name.endsWith('.gpx')||name.endsWith('.xml')||head==='<'){
           const g=parseGPX(text), out=gpxToDesign(g,D.geom.width);
-          D.geom=out.geom; D.cfg.geo=Object.assign(clone(DEF_CFG.geo),out.geo); sel=null;
+          if(out.lines&&out.lines.length){ D.lines=linesOf({lines:out.lines}); D.active=clamp(out.active,0,D.lines.length-1); }
+          else D.geom=out.geom;
+          D.cfg.geo=Object.assign(clone(DEF_CFG.geo),out.geo); sel=null;
           if(!g.design&&g.pts.length) D._meta.name=D._meta.name||file.name.replace(/\.[^.]+$/,'');
           recompute(); fitView(); buildInspector();
           if(!g.design) toast('Traced '+D.geom.nodes.length+' corners from the GPX track.',true);
@@ -2939,7 +3071,7 @@ $('b-tpl').onclick=()=>{
     const cv=document.createElement('canvas'); const nm=document.createElement('b'); nm.textContent=t.name;
     const sm=document.createElement('small'); sm.textContent=t.note;
     b.append(cv,nm,sm); L.appendChild(b); thumb(cv,normGeom(t.geom));
-    b.onclick=()=>{ D.geom=normGeom(clone(t.geom)); sel=null; recompute(); fitView(); buildInspector(); commit(); dlg.close();
+    b.onclick=()=>{ const g=normGeom(clone(t.geom)); D.geom=D.lines.length>1?placeGeom(g):g; sel=null; recompute(); if(D.lines.length<2) fitView(); buildInspector(); commit(); dlg.close();
       toast(t.name+' loaded. Undo to go back.',true); };
   });
 };
@@ -2959,12 +3091,14 @@ $('g-here').onclick=()=>{
 $('x-gpx').onclick=()=>{
   const g=D.cfg.geo;
   if(g.lat==null||g.lon==null||!Number.isFinite(g.lat)||!Number.isFinite(g.lon)){ toast('Set the site latitude and longitude first.'); $('g-lat').focus(); return; }
-  download(slug('.gpx'),new Blob([toGPX(designOut(false),T,spans)],{type:'application/gpx+xml'}));
+  const all=D.lines.map((l,i)=>{ const Tl=i===D.active?T:buildTrack(l.geom); return {name:l.name,T:Tl,spans:i===D.active?spans:spansOf(Tl,l.geom)}; });
+  download(slug('.gpx'),new Blob([toGPX(designOut(false),all.length>1?all:T,spans)],{type:'application/gpx+xml'}));
 };
-$('x-csv').onclick=()=>download(slug('-dimensions.csv'),new Blob([toCSV(D.geom,T,spans)],{type:'text/csv'}));
+const lineSlug=()=>D.lines.length>1?'-'+(D.lines[D.active].name||'line').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,''):'';
+$('x-csv').onclick=()=>download(slug(lineSlug()+'-dimensions.csv'),new Blob([toCSV(D.geom,T,spans)],{type:'text/csv'}));
 $('x-prof').onclick=()=>{ const g=D.cfg.geo;
-  download(slug('-profile.csv'),new Blob([profileCSV(T,spans,g.lat!=null&&g.lon!=null?g:null)],{type:'text/csv'})); };
-$('x-png').onclick=()=>{ const cv=buildSheet(); cv.toBlob(b=>download(slug('-build-sheet.png'),b),'image/png'); };
+  download(slug(lineSlug()+'-profile.csv'),new Blob([profileCSV(T,spans,g.lat!=null&&g.lon!=null?g:null)],{type:'text/csv'})); };
+$('x-png').onclick=()=>{ const cv=buildSheet(); cv.toBlob(b=>download(slug(lineSlug()+'-build-sheet.png'),b),'image/png'); };
 
 /* A4 landscape at 300 dpi, drawn in the light theme so it prints. */
 function buildSheet(){
@@ -2990,7 +3124,7 @@ function buildSheet(){
     const S=2.6, pw=(W-2*M)/S, ph=planH/S;
     c.save(); c.translate(M,top); c.scale(S,S);
     c.beginPath(); c.rect(0,0,pw,ph); c.clip();
-    drawPlan(c,pw,ph,fitBox(extentAll(),pw,ph,1.12),{grid:true,bg:true,handles:'tags',dims:true});
+    drawPlan(c,pw,ph,fitBox(extentAll(),pw,ph,1.12),{grid:true,bg:true,handles:'tags',dims:true,sheet:true});
     c.restore();
     c.strokeStyle=COL.rule; c.lineWidth=3; c.strokeRect(M,top,W-2*M,planH);
     // north arrow

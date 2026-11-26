@@ -76,6 +76,23 @@ globals; the test lifts it out with `new Function`. Keep it that way.
   1:1 batters, berms as a bank rising to `bh` with a 1:1 back. Labelled
   "rough" on purpose.
 
+## Lines
+
+A design holds `D.lines = [{id, name, color, geom}]` and `D.active`. `D.geom`
+is a getter/setter for the active line's track (`makeD`), so every editing
+path works on one track as before; the engine is unchanged and single track.
+- The other lines are drawn first, faded, in their own colours
+  (`otherLines`, cached on their JSON; `drawBody` inside `drawPlan`). A tap
+  on one makes it active (`setActive`). `color: null` means the theme's edge.
+- The lines list sits at the top of the track panel (`syncLines`): swatch
+  (`<input type=color>`), name, length, delete. `+ Loop` / `+ Line` add an
+  empty one where the view is (`placeGeom`).
+- Undo snapshots `D.lines`; which line is active is not an undo step.
+- Files: `lines` and `active` in the JSON, with `geom` (the active line) kept
+  for older readers; an old file opens as one line (`linesOf`). GPX writes a
+  `<trk>` per line. Dimensions CSV, profile CSV and the build sheet are the
+  active line, named in the file name when there are several.
+
 ## Defaults and research
 
 Sizes come from common build guidance, not a standard (there isn't one):

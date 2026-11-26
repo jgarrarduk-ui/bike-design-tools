@@ -233,6 +233,14 @@ const loopG=m.normGeom(m.TEMPLATES[0].geom), Tl=m.buildTrack(loopG);
 const fl=m.gpxToDesign(m.parseGPX(m.toGPX({_meta:{},geom:loopG,cfg:{geo}},Tl,m.spansOf(Tl,loopG)).replace(/<extensions>[\s\S]*<\/extensions>/,'')),2);
 ok('a traced loop is detected as closed', fl.geom.closed===true, Math.abs(m.buildTrack(fl.geom).length-Tl.length).toFixed(2)+' m length error');
 
+// two lines in one design: one <trk> each, and the design inside reopens both
+const l2=m.normGeom(m.TEMPLATES.find(t=>t.name==='Empty loop').geom), T2l=m.buildTrack(l2);
+const two={_meta:{name:'Hill'},lines:[{name:'Jump line',color:'#f472b6',geom:dj},{name:'Pump track',color:null,geom:l2}],active:1,geom:l2,cfg:{geo}};
+const gx2=m.toGPX(two,[{name:'Jump line',T,spans:sp},{name:'Pump track',T:T2l,spans:[]}],[],'2026-01-01T00:00:00Z');
+ok('a two-line GPX has a track for each line', (gx2.match(/<trk>/g)||[]).length===2&&gx2.includes('<name>Jump line</name>')&&gx2.includes('<name>Pump track</name>'));
+const back3=m.gpxToDesign(m.parseGPX(gx2));
+ok('and reopens with both lines', back3.lines.length===2&&back3.lines[0].color==='#f472b6'&&back3.active===1);
+
 /* ---- GPX trace layer ---- */
 const tracePts=m.parseGPX(foreign).pts;
 for(const rot of [0,35]){
