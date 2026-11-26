@@ -3189,9 +3189,9 @@ const setRot=v=>{ if(D.cfg.bg&&Number.isFinite(v)){ D.cfg.bg.rot=v; $('i-rot').v
 $('i-rot').oninput=e=>setRot(parseFloat(e.target.value)); $('i-rot-r').oninput=e=>setRot(+e.target.value);
 const setOp=v=>{ if(D.cfg.bg&&Number.isFinite(v)){ D.cfg.bg.opacity=clamp(v,5,100)/100; $('i-op').value=Math.round(v); $('i-op-r').value=v; draw(); autosave(); } };
 $('i-op').oninput=e=>setOp(parseFloat(e.target.value)); $('i-op-r').oninput=e=>setOp(+e.target.value);
-$('i-cal').onclick=()=>{ $('dlg-image').close(); if(armed) disarm(); mode='cal'; calPts=[]; plan.classList.add('cross');
+$('i-cal').onclick=()=>{ $('dlg-image').close(); setLayersOpen(false); if(armed) disarm(); mode='cal'; calPts=[]; plan.classList.add('cross');
   showHint('Tap one end of a distance you know on the photo'); };
-$('i-move').onclick=()=>{ $('dlg-image').close(); if(armed) disarm(); mode='img'; plan.classList.add('grab');
+$('i-move').onclick=()=>{ $('dlg-image').close(); setLayersOpen(false); if(armed) disarm(); mode='img'; plan.classList.add('grab');
   const done=document.createElement('button'); done.textContent='Done'; done.className='primary'; done.onclick=endMode;
   showHint('Drag the photo to line it up',done); };
 function askCalDistance(){
