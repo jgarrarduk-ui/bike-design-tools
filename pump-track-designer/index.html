@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Bike Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles</title>
-<meta name="description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.">
+<meta name="description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a plan image.">
 <link rel="canonical" href="https://creaturecycles.co.uk/apps/pump-track-designer/">
 <meta property="og:site_name" content="Creature Cycles">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Bike Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles">
-<meta property="og:description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.">
+<meta property="og:description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a plan image.">
 <meta property="og:url" content="https://creaturecycles.co.uk/apps/pump-track-designer/">
 <meta property="og:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
 <meta property="og:image:alt" content="Creature Cycles">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Bike Track Designer — Pump Track &amp; Dirt Jump Layout | Creature Cycles">
-<meta name="twitter:description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.">
+<meta name="twitter:description" content="Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a plan image.">
 <meta name="twitter:image" content="https://creaturecycles.co.uk/apps/assets/creature-logo.png">
 <script type="application/ld+json">
 {
@@ -26,7 +26,7 @@
       "@id": "https://creaturecycles.co.uk/apps/pump-track-designer/#app",
       "name": "Bike Track Designer",
       "url": "https://creaturecycles.co.uk/apps/pump-track-designer/",
-      "description": "Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.",
+      "description": "Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a plan image.",
       "applicationCategory": "DesignApplication",
       "operatingSystem": "Any",
       "browserRequirements": "Requires a modern browser with JavaScript",
@@ -54,7 +54,7 @@
 /* Same two themes as the suspension designer: dark is the frame designer's
    green, light is the blue. The track colours are extra tokens on top. Each
    feature colour means one thing everywhere it appears (plan, profile,
-   palette icons, build sheet): amber goes up, green comes down, pale is a
+   palette icons, PNG export): amber goes up, green comes down, pale is a
    deck, near-black is air, brown is timber. */
 :root, [data-theme="light"]{
   --paper:#eef1f3; --grid:#dfe5e9; --grid2:#cad4db;
@@ -209,6 +209,23 @@ h2:first-child{margin-top:2px}
 .lyr .nm small{display:block;font-weight:400;font-size:11px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lyr .act{flex:none}
 .lyr.empty .nm>span,.lyr.off .nm>span{opacity:.5}
+.lyr .act.sub{padding:3px 5px;display:grid;place-items:center}
+.lyr .act.sub svg{display:block}
+/* Environment sub-layers: a floating window over everything, top of the list draws on top. */
+#dlg-envl{position:fixed;top:64px;left:50%;transform:translateX(-50%);margin:0;z-index:60;width:min(340px,94vw);
+  max-height:calc(100vh - 90px);overflow-y:auto;overscroll-behavior:contain}
+#envl-moves{display:flex;gap:6px;margin:10px 0 8px}
+#envl-moves button{flex:1}
+.elyr{display:flex;align-items:center;gap:8px;padding:3px 6px 3px 2px;border:1px solid transparent;border-top-color:var(--rule);cursor:pointer;user-select:none}
+.elyr.on{border-color:var(--press);box-shadow:inset 3px 0 0 var(--press);background:var(--btn-hover)}
+.elyr .eye{width:28px;height:28px;padding:0;display:grid;place-items:center;flex:none;background:transparent;border-color:transparent;color:var(--ink)}
+.elyr .eye:hover{background:var(--btn-hover)}
+.elyr .eye[aria-pressed=true] .slash{display:none}
+.elyr .eye[aria-pressed=false]{color:var(--ink-soft)}
+.elyr canvas{width:44px;height:20px;flex:none}
+.elyr .nm{flex:1;min-width:0;font-weight:600}
+.elyr small{color:var(--ink-soft);font-size:11px;flex:none}
+.elyr.off .nm,.elyr.off canvas{opacity:.45}
 
 /* ---- profile strip ---- */
 #profile-wrap{height:156px;flex:none;position:relative;border-top:1px solid var(--rule);background:var(--panel)}
@@ -363,7 +380,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
 </svg>
 <div id="app">
 
-<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles" onerror="this.remove()"><h1>Bike Track Designer</h1><p class="sr-only">Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a build sheet.</p>
+<div id="tools-nav"><img class="brand-logo" src="../assets/creature-wordmark.png" alt="Creature Cycles" onerror="this.remove()"><h1>Bike Track Designer</h1><p class="sr-only">Design a pump track or dirt jump line in your browser. Drag rollers, berms, table tops, doubles and drops onto a track, trace a site photo, and export dimensions, GPX and a plan image.</p>
   <div id="nav-left">
     <button type="button" id="b-tpl">Templates</button>
     <button type="button" id="b-open">Open</button>
@@ -401,7 +418,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
       <div id="layers-list">
         <div class="lyr" data-l="labels"><button class="eye" aria-label="Show labels"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
           <span class="sw sw-lbl">1</span>
-          <span class="nm"><span>Labels</span><small>Corner numbers and +</small></span></div>
+          <span class="nm"><span>Labels</span><small>Corner numbers, + and steep tags</small></span></div>
         <div class="lyr" data-l="gpx"><button class="eye" aria-label="Show GPX trace"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
           <span class="sw" style="background:var(--ref)"></span>
           <span class="nm"><span>GPX trace</span><small id="ly-gpx-sub"></small></span><button class="act" id="ly-gpx-act"></button></div>
@@ -410,7 +427,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
           <span class="nm"><span>Design</span><small id="ly-design-sub"></small></span></div>
         <div class="lyr" data-l="env"><button class="eye" aria-label="Show environment"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
           <span class="sw" style="background:var(--env-grass);border:3px solid var(--env-tree)"></span>
-          <span class="nm"><span>Environment</span><small id="ly-env-sub"></small></span></div>
+          <span class="nm"><span>Environment</span><small id="ly-env-sub"></small></span><button class="act sub" id="ly-env-act" title="Environment layers: order and visibility" aria-label="Environment layers" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 8 12 13l9.5-5z"/><path d="m2.5 12 9.5 5 9.5-5"/><path d="m2.5 16 9.5 5 9.5-5"/></svg></button></div>
         <div class="lyr" data-l="photo"><button class="eye" aria-label="Show photo"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
           <span class="sw" id="ly-photo-sw"></span>
           <span class="nm"><span>Photo</span><small id="ly-photo-sub"></small></span><button class="act" id="ly-photo-act"></button></div>
@@ -464,7 +481,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
 <div id="help" hidden role="dialog" aria-label="How it works">
   <div class="dlg-hdr">How it works<button type="button" class="x" id="help-x" aria-label="Close">&times;</button></div>
   <div class="dlg-body">
-    <p>Lay out a pump track or a dirt jump line, see its height profile, and take the dimensions, GPS line and a build sheet out to the site. Everything is in metres. Your work saves itself in this browser as you go.</p>
+    <p>Lay out a pump track or a dirt jump line, see its height profile, and take the dimensions, GPS line and a plan image out to the site. Everything is in metres. Your work saves itself in this browser as you go.</p>
 
     <h2>Start</h2>
     <ul>
@@ -476,7 +493,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     <ul>
       <li>A design can hold several lines: a pump track and a jump line on the same hill, say. They are listed at the top right.</li>
       <li><b>New track</b> adds a loop where you are looking; Loop / Line below it switches it to a line. Tap a line on the plan, or its row, to edit it; the others fade back.</li>
-      <li>The swatch sets a line's colour; tap the name to rename it. Templates, the profile, the panel and the CSV and build sheet exports work on the line you are editing. Save and GPX carry every line.</li>
+      <li>The swatch sets a line's colour; tap the name to rename it. Templates, the profile, the panel and the CSV exports work on the line you are editing. Save and GPX carry every line.</li>
     </ul>
 
     <h2>Shape the track</h2>
@@ -501,8 +518,8 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
       <li>The <b>Environment</b> tab at the top left holds what is already on the site: trees, rocks, fences, walls, water, steep ground and terrain. They draw under the track.</li>
       <li>While that tab is open you edit the environment and the track is locked; <b>Track features</b> switches back.</li>
       <li>Trees and rocks: drag a tile onto the plan, or tap a tile and keep tapping the plan to plant several. Drag one to move it.</li>
-      <li>Fences, walls and rivers: tap the tile, then <b>drag on the plan to draw the line</b>, or tap for a straight piece. Drop one by the end of a fence of the same kind and it carries on from there. Drag a post to move it, a <b>+</b> between posts to add one, or the <b>+</b> past an end to extend it. Drag an end onto another end to join two lines, or onto its own other end to close it round.</li>
-      <li>Lakes, steep ground and terrain: tap the tile, then <b>drag round the outline to paint the area</b>, or tap for a ready-made shape. Tap an area to select it, then drag it to move it or drag its points to reshape it. <b>Redraw</b> paints a new outline.</li>
+      <li>Fences and walls: tap the tile, then <b>drag on the plan to draw the line</b>, or tap for a straight piece. Drop one by the end of a fence of the same kind and it carries on from there. Drag a post to move it, a <b>+</b> between posts to add one, or the <b>+</b> past an end to extend it. Drag an end onto another end to join two lines, or onto its own other end to close it round.</li>
+      <li>Water, steep ground and terrain: tap the tile, then <b>drag round the outline to paint the area</b>, or tap for a ready-made shape. Tap an area to select it, then drag it to move it or drag its points to reshape it. <b>Redraw</b> paints a new outline.</li>
       <li>The panel on the right sets the kind, size or scale, rotation and flip. Hold an object, or a post, to delete it.</li>
       <li>If the track runs into a tree, rock, fence, wall, water or steep ground, the <b>!</b> badge says so. Riding over terrain is fine.</li>
     </ul>
@@ -537,7 +554,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     <h2>Files</h2>
     <ul>
       <li><b>Save</b> downloads one zip: the design, the site photo and the GPX trace exactly as you loaded them. Keep it anywhere (Dropbox, Drive, iCloud, email) and <b>Open</b> it to carry on. Open also reads a design .json, a GPX and a dimensions CSV.</li>
-      <li><b>Export</b>: a build sheet (A4 PNG with plan, profile and dimensions), a dimensions CSV for a spreadsheet, a profile CSV (height every 25&nbsp;cm), and GPX for a phone or GPS on site once you set the site location.</li>
+      <li><b>Export</b>: a PNG of the plan exactly as you see it (frame it first; hidden layers and labels stay hidden), a dimensions CSV for a spreadsheet, a profile CSV (height every 25&nbsp;cm), and GPX for a phone or GPS on site once you set the site location.</li>
     </ul>
 
     <h2>Keys</h2>
@@ -560,8 +577,9 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
 <dialog id="dlg-export">
   <div class="dlg-hdr">Export<button class="x" data-close>&times;</button></div>
   <div class="dlg-body">
-    <h2>Build sheet</h2>
-    <div class="btnrow"><button id="x-png" class="primary">Build sheet (PNG)</button></div>
+    <h2>Image</h2>
+    <div class="btnrow"><button id="x-png" class="primary">Plan view (PNG)</button></div>
+    <p class="note">Exactly what the plan shows now: the same view, zoom, theme and layers. Zoom and pan to frame it first.</p>
     <h2>Design file</h2>
     <div class="btnrow"><button id="x-json">Design only (.json)</button></div>
     <p class="note">Save makes a zip with the design, the original site photo and the GPX trace. This is the design alone in one file, with a reduced copy of the photo inside.</p>
@@ -577,6 +595,15 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
     </div>
     <div class="btnrow"><button id="g-here">Use my location</button><button id="x-gpx" class="primary">GPX</button></div>
     <p class="note">The site location is the plan's 0,0. GPX carries the centreline with heights and a waypoint per feature.</p>
+  </div>
+</dialog>
+
+<dialog id="dlg-envl" aria-label="Environment layers">
+  <div class="dlg-hdr">Environment layers<button class="x" data-close aria-label="Close">&times;</button></div>
+  <div class="dlg-body">
+    <p class="note">Top of the list draws on top. Tap a layer, then move it up or down. The eye shows or hides it.</p>
+    <div id="envl-moves"><button type="button" id="envl-up">&#9650; Up</button><button type="button" id="envl-down">&#9660; Down</button></div>
+    <div id="envl-list" role="listbox" aria-label="Environment layers"></div>
   </div>
 </dialog>
 
@@ -1697,8 +1724,8 @@ function readBundle(entries){
    What is already on the site, drawn under the track. Every object has a
    place and a pose {x, y, rot (degrees, anticlockwise), s (scale), flip
    (mirror across its own y axis)}. A point object (tree, rock) is a shape of
-   `base` metres across at s = 1. A line (fence, wall, river) or an area
-   (lake, steep ground, terrain) also has `pts` in its own frame, so rotating,
+   `base` metres across at s = 1. A line (fence, wall) or an area
+   (water, steep ground, terrain) also has `pts` in its own frame, so rotating,
    scaling and flipping the whole thing is just the pose. */
 const ENV={
   conifer:   {cat:'tree', geo:'point',name:'Conifer',      base:5},
@@ -1711,8 +1738,7 @@ const ENV={
   wirefence: {cat:'fence',geo:'line', name:'Post and wire',len:8},
   stonewall: {cat:'wall', geo:'line', name:'Stone wall',   len:6, w:.6},
   brickwall: {cat:'wall', geo:'line', name:'Brick wall',   len:6, w:.35},
-  river:     {cat:'water',geo:'line', name:'River',        w:3},
-  lake:      {cat:'water',geo:'area', name:'Lake',         rx:5, ry:3.5},
+  lake:      {cat:'water',geo:'area', name:'Water',         rx:5, ry:3.5},
   steepup:   {cat:'steep',geo:'area', name:'Steep up',     rx:5, ry:2.2, h:2},
   steepdown: {cat:'steep',geo:'area', name:'Steep down',   rx:5, ry:2.2, h:2},
   grass:     {cat:'terrain',geo:'area',name:'Grass',       rx:7, ry:5},
@@ -1735,8 +1761,7 @@ function makeEnv(type,at,seed){
   seed=(seed>>>0)||1;
   const o={type,x:rnd(at.x,3),y:rnd(at.y,3),rot:0,s:1,flip:false,seed};
   if(E.geo==='line'){
-    if(type==='river') o.pts=[V(-9,-1.5),V(-3,1.5),V(3,-1),V(9,1)];
-    else o.pts=[V(-E.len/2,0),V(E.len/2,0)];
+    o.pts=[V(-E.len/2,0),V(E.len/2,0)];
     o.closed=false;
   } else if(E.geo==='area') o.pts=envBlob(seed,E.rx,E.ry);
   if(E.w) o.w=E.w;
@@ -1889,7 +1914,7 @@ function readColours(){
 const kcol=k=>COL[k]||COL.flat;
 
 const DEF_CFG={geo:{lat:null,lon:null,rot:0,ele:0},bg:null,gpx:null,dims:false,
-  layers:{labels:true,design:true,env:true,gpx:true,photo:true}};
+  layers:{labels:true,design:true,env:true,gpx:true,photo:true},envStack:null,envHidden:{}};
 /* A design holds one or more lines (a pump track and a jump line on the same
    hill, say), each with its own name, colour and track. One is active: that
    is the one edited, shown in the profile and the side panel. D.geom is the
@@ -1923,7 +1948,7 @@ function recompute(){
   D.geom.nodes.forEach((n,i)=>{ const c=T.corners[i]; if(c&&!c.end&&!(n.rWant>0)) n.turn=c.s; });
   spans=spansOf(T,D.geom);
   issues=issuesOf(T,D.geom,spans); stats=statsOf(T,D.geom,spans);
-  if(D.cfg.layers.env!==false) issues=issues.concat(envClashes(T,D.env));
+  if(D.cfg.layers.env!==false) issues=issues.concat(envClashes(T,D.env).filter(q=>!envHidden(D.env[q.env].type)));
   draw();
 }
 
@@ -2116,7 +2141,7 @@ function extentAll(){
   let e=T&&T.ok?extentOf(T):null; const r=D.cfg.layers.gpx!==false?refLocal():null;
   for(const L of otherLines()){ const o=extentOf(L.T);
     e=e?{x0:Math.min(e.x0,o.x0),y0:Math.min(e.y0,o.y0),x1:Math.max(e.x1,o.x1),y1:Math.max(e.y1,o.y1)}:o; }
-  if(D.cfg.layers.env!==false) for(const o of D.env){ const x=envExtent(o);
+  if(D.cfg.layers.env!==false) for(const o of D.env){ if(envHidden(o.type)) continue; const x=envExtent(o);
     e=e?{x0:Math.min(e.x0,x.x0),y0:Math.min(e.y0,x.y0),x1:Math.max(e.x1,x.x1),y1:Math.max(e.y1,x.y1)}:x; }
   if(!r) return e||{x0:-10,y0:-10,x1:10,y1:10};
   const b=e?Object.assign({},e):{x0:Infinity,y0:Infinity,x1:-Infinity,y1:-Infinity};
@@ -2146,7 +2171,7 @@ function drawPlan(ctx,W,H,vw,o){
     const wp=bg.w*k, hp=wp*bgImg.naturalHeight/bgImg.naturalWidth;
     ctx.drawImage(bgImg,-wp/2,-hp/2,wp,hp); ctx.restore();
   }
-  const showEnv=(o.main||o.sheet)&&LY.env!==false;
+  const showEnv=(o.main||o.exp)&&LY.env!==false;
   if(showEnv) drawEnv(ctx,X,Y,k,o);
   if(LY.design===false||!T||!T.ok||T.length<.01){
     drawRef(ctx,X,Y,LY); if(o.main) HND={corners:[],plus:[],env:null};
@@ -2216,9 +2241,9 @@ function drawPlan(ctx,W,H,vw,o){
     bad:!h.fits||issues.some(q=>q.node===h.i&&q.kind==='overlap')});
   if(o.preview&&o.preview.sp) drawFeature(ctx,X,Y,k,o.preview.sp.s0,o.preview.sp.pr,{alpha:.7,sel:true});
   };
-  if(o.main||o.sheet) otherLines().forEach(L=>{
+  if(o.main||o.exp) otherLines().forEach(L=>{
     const keep={T,spans,issues}; T=L.T; spans=L.spans; issues=[];
-    ctx.save(); ctx.globalAlpha=o.sheet?.8:.5; drawBody({},L.edge); ctx.restore();
+    ctx.save(); ctx.globalAlpha=.5; drawBody({},L.edge); ctx.restore();
     ({T,spans,issues}=keep);
   });
   drawBody(o,lineEdge(D.lines[D.active]));
@@ -2332,13 +2357,29 @@ function drawPlan(ctx,W,H,vw,o){
    track (drawEnv). The selection outline, its handles and a shape being
    painted sit on top (drawEnvTop), so they are never hidden by the track. */
 const ENV_SHORT={conifer:'Conifer',deciduous:'Deciduous',bush:'Bush',boulder:'Boulder',outcrop:'Outcrop',
-  woodfence:'Wooden',metalfence:'Metal',wirefence:'Wire',stonewall:'Stone',brickwall:'Brick',river:'River',lake:'Lake',
+  woodfence:'Wooden',metalfence:'Metal',wirefence:'Wire',stonewall:'Stone',brickwall:'Brick',lake:'Water',
   steepup:'Up',steepdown:'Down',grass:'Grass',dirt:'Dirt',loosestone:'Loose stone'};
 const newSeed=()=>(Math.random()*1e9)>>>0||1;
 const isLink=o=>o&&(ENV[o.type].cat==='fence'||ENV[o.type].cat==='wall');
 let envIconMode=false;
+/* Stacking: cfg.envStack lists every kind bottom to top; cfg.envHidden the
+   kinds switched off. Both are view settings, like the layers, not undo steps. */
+const DEF_ENV_STACK=Object.keys(ENV).map((t,i)=>[t,i]).sort((a,b)=>ENV_LAYER[ENV[a[0]].cat]-ENV_LAYER[ENV[b[0]].cat]||a[1]-b[1]).map(z=>z[0]);
+function envStack(){
+  const c=D.cfg, have=Array.isArray(c.envStack)?c.envStack.filter((t,i,a)=>ENV[t]&&a.indexOf(t)===i):[];
+  if(have.length!==DEF_ENV_STACK.length){
+    // a kind the saved order doesn't know goes in at its usual place
+    for(const t of DEF_ENV_STACK) if(!have.includes(t)){
+      const below=DEF_ENV_STACK.slice(0,DEF_ENV_STACK.indexOf(t)).reverse().find(u=>have.includes(u));
+      have.splice(below?have.indexOf(below)+1:0,0,t);
+    }
+  }
+  c.envStack=have; return have;
+}
+const envHidden=t=>!!(D.cfg.envHidden&&D.cfg.envHidden[t]);
 function envOrder(list=D.env){
-  return list.map((_,i)=>i).sort((a,b)=>ENV_LAYER[ENV[list[a].type].cat]-ENV_LAYER[ENV[list[b].type].cat]||a-b);
+  const st=envStack(), rank={}; st.forEach((t,i)=>rank[t]=i);
+  return list.map((_,i)=>i).filter(i=>!envHidden(list[i].type)).sort((a,b)=>rank[list[a].type]-rank[list[b].type]||a-b);
 }
 /* Catmull-Rom through the points, so an organic outline passes through
    every handle. Returns dense plan points. */
@@ -2455,12 +2496,7 @@ function drawEnvLine(ctx,X,Y,k,o){
   const E=ENV[o.type], w=envPts(o), cl=!!o.closed;
   if(w.length<2) return;
   ctx.save(); ctx.lineJoin='round'; ctx.lineCap='round';
-  if(o.type==='river'){
-    const d=crDense(w,false,Math.max(.25,3/k)), W=Math.max(2,envWidth(o)*k);
-    linePath(ctx,X,Y,d,false); ctx.strokeStyle=COL['env-water-edge']; ctx.lineWidth=W+3; ctx.stroke();
-    linePath(ctx,X,Y,d,false); ctx.strokeStyle=COL['env-water']; ctx.lineWidth=W; ctx.stroke();
-    if(W>12){ ctx.setLineDash([W*.5,W*1.5]); linePath(ctx,X,Y,d,false); ctx.strokeStyle=COL['env-wave']; ctx.lineWidth=1.5; ctx.stroke(); }
-  } else if(E.cat==='wall'){
+  if(E.cat==='wall'){
     const W=Math.max(3,envWidth(o)*k), brick=o.type==='brickwall', ed=COL[brick?'env-brick-edge':'env-wall-edge'];
     ctx.lineCap='square'; ctx.lineJoin='miter';
     linePath(ctx,X,Y,w,cl); ctx.strokeStyle=ed; ctx.lineWidth=W+2.5; ctx.stroke();
@@ -2535,7 +2571,7 @@ function drawEnvArea(ctx,X,Y,k,o){
         ctx.closePath(); ctx.fill();
       }
     }
-    if(!envIconMode){
+    if(!envIconMode&&D.cfg.layers.labels!==false){   // the up/down tag is a label
       const c=envCentre(o);
       pill(ctx,(up?'▲ up ':'▼ down ')+f1(o.h)+' m',X(c.x),Y(c.y),{size:11,edge:COL['env-steep']});
     }
@@ -2573,7 +2609,7 @@ function drawEnvTop(ctx,X,Y,k,o,show){
     if(E.geo==='point'){ ctx.beginPath(); ctx.arc(X(s.x),Y(s.y),Math.max(3,envRadius(s)*k)+5,0,7); ctx.stroke(); ctx.setLineDash([]); }
     else {
       const w=envPts(s), cl=E.geo==='area'||!!s.closed, n=w.length;
-      linePath(ctx,X,Y,E.geo==='area'||s.type==='river'?crDense(w,cl,Math.max(.25,3/k)):w,cl); ctx.stroke(); ctx.setLineDash([]);
+      linePath(ctx,X,Y,E.geo==='area'?crDense(w,cl,Math.max(.25,3/k)):w,cl); ctx.stroke(); ctx.setLineDash([]);
       if(envMode()){
         const plus=(x,y,r,dash)=>{ ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fillStyle=COL.handle; ctx.fill();
           if(dash) ctx.setLineDash([3,3]); ctx.lineWidth=1.5; ctx.strokeStyle=COL.sel; ctx.stroke(); ctx.setLineDash([]);
@@ -2614,7 +2650,6 @@ function envIcon(type,c,W,H){
   const E=ENV[type], o=makeEnv(type,V(0,0),type.length*101+3);
   let k;
   if(E.geo==='point') k=Math.min((H-4)/E.base,(W-10)/(E.base*(type==='outcrop'?1.3:1)));
-  else if(type==='river') k=(W-14)/18;
   else if(E.geo==='line'){ o.pts=[V(-5,0),V(5,0)]; k=(W-14)/10; }
   else k=Math.min((W-6)/(2*E.rx*1.15),(H-4)/(2*E.ry*1.15));
   const X=x=>W/2+x*k, Y=y=>H/2-y*k;
@@ -2637,7 +2672,7 @@ $('tab-track').onclick=()=>setPalTab('track');
 $('tab-env').onclick=()=>setPalTab('env');
 /* A fence or wall dropped by the free end of one of the same kind carries it on. */
 function envExtendAt(type,q){
-  const E=ENV[type]; if(!E||E.geo!=='line'||type==='river') return null;
+  const E=ENV[type]; if(!E||E.geo!=='line') return null;
   const tol=18/view.k; let best=null;
   D.env.forEach((o,i)=>{
     if(o.type!==type||o.closed) return;
@@ -2654,8 +2689,10 @@ function envPreview(type,q){
   const ext=envExtendAt(type,q);
   return ext?{env:ext.obj,ext}:{env:makeEnv(type,q,envSeed)};
 }
+function showKind(type){ if(envHidden(type)){ delete D.cfg.envHidden[type]; syncEnvLayers(); autosave(); } }
 function placeEnv(type,q,select=true){
   if(D.cfg.layers.env===false){ toast('The environment layer is hidden. Show it in Layers to edit it.'); return false; }
+  showKind(type);
   if(D.env.length>=ENV_MAX){ toast('That is as many objects as one design can hold.'); return false; }
   const ext=envExtendAt(type,q);
   if(ext){ D.env[ext.i]=ext.obj; recompute(); commit(); setSel({kind:'env',i:ext.i});
@@ -2716,7 +2753,7 @@ function finishPaint(a){
   if(!o){ toast('Too small to make a shape. Drag out a bigger one.'); draw(); return; }
   if(a.type){
     if(D.env.length>=ENV_MAX){ toast('That is as many objects as one design can hold.'); draw(); return; }
-    D.env.push(o); envSeed=newSeed(); disarm(); recompute(); commit(); setSel({kind:'env',i:D.env.length-1});
+    showKind(type); D.env.push(o); envSeed=newSeed(); disarm(); recompute(); commit(); setSel({kind:'env',i:D.env.length-1});
   } else {
     const old=D.env[a.target]; if(old.w!=null) o.w=rnd(old.w*old.s,3); if(old.h!=null) o.h=old.h; o.seed=old.seed;
     D.env[a.target]=o; endMode(); recompute(); commit(); buildInspector(); toast('Shape redrawn.',true);
@@ -2758,7 +2795,7 @@ function buildEnvPanel(P){
   if(o.w!=null){ const wall=E.cat==='wall';
     liveRows.push(prmRow(P,P_(wall?'Thickness':'Width','m',wall?.1:.3,wall?2:40,.05),()=>envWidth(o),v=>{ o.w=v/o.s; recompute(); updateInspector(); })); }
   if(o.h!=null) liveRows.push(prmRow(P,P_(o.type==='steepup'?'Rises':'Drops','m',.2,30,.1),()=>o.h,v=>{ o.h=v; recompute(); updateInspector(); }));
-  if(E.geo==='line'&&o.type!=='river'){
+  if(E.geo==='line'){
     const ck=document.createElement('label'); ck.className='check';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!o.closed; cb.disabled=o.pts.length<3;
     cb.onchange=()=>{ o.closed=cb.checked&&o.pts.length>=3; recompute(); commit(); buildInspector(); };
@@ -2781,7 +2818,7 @@ function envReadout(o){
   if(E.geo==='point') return f1(E.base*o.s)+' m across.';
   const w=envPts(o);
   if(E.geo==='line'){ const L=polyLen(o.closed?w.concat([w[0]]):w);
-    return f1(L)+' m long, '+w.length+(E.cat==='water'?' points.':' posts.')+(E.cat==='fence'||E.cat==='wall'?' Drag an end onto another end to join them.':''); }
+    return f1(L)+' m long, '+w.length+' posts.'+(E.cat==='fence'||E.cat==='wall'?' Drag an end onto another end to join them.':''); }
   return 'About '+Math.round(polyArea(crDense(w,true,.5)))+' m², '+w.length+' points.';
 }
 
@@ -3594,7 +3631,7 @@ function updateLive(){
   syncIssues();
   const dsub=f1(T.length)+' m '+(T.closed?'loop':'line'); if($('ly-design-sub').textContent!==dsub) $('ly-design-sub').textContent=dsub;
   const esub=D.env.length?D.env.length+(D.env.length>1?' objects':' object'):'Trees, rocks, water, ground';
-  if($('ly-env-sub').textContent!==esub) $('ly-env-sub').textContent=esub;
+  if($('ly-env-sub').textContent!==esub){ $('ly-env-sub').textContent=esub; syncEnvLayers(); }
 }
 /* A corner too big for its straights is shrunk to fit, so it is a warning.
    A feature that overflows or overlaps is a real error. */
@@ -3670,7 +3707,7 @@ const snap=()=>JSON.stringify({lines:D.lines,env:D.env});   // which line is act
 function commit(){
   const s=snap(); if(s===lastSnap) return;
   if(lastSnap!=null){ undoS.push(lastSnap); if(undoS.length>200) undoS.shift(); }
-  redoS=[]; lastSnap=s; syncUndo(); autosave();
+  redoS=[]; lastSnap=s; syncUndo(); autosave(); syncEnvLayers();
 }
 function restore(s){ delTarget=null; const u=JSON.parse(s); D.lines=u.lines; D.env=u.env||[]; D.active=clamp(D.active,0,D.lines.length-1); lastSnap=s; validSel(); recompute(); buildInspector(); syncUndo(); autosave(); }
 function undo(){ if(!undoS.length) return; redoS.push(lastSnap); restore(undoS.pop()); }
@@ -3735,7 +3772,8 @@ function loadDesign(data,{fit=true}={}){
       layers:Object.assign(clone(DEF_CFG.layers),c.layers||{})}),normEnv(data.env));
   if(D.cfg.gpx&&!(Array.isArray(D.cfg.gpx.pts)&&D.cfg.gpx.pts.length>1)) D.cfg.gpx=null;
   if(D.cfg.bg&&D.cfg.bg.src) bgImg.src=D.cfg.bg.src; else D.cfg.bg=null;
-  sel=null; delTarget=null; refCache.key=''; recompute(); if(fit) fitView(); buildInspector(); syncLayers();
+  if(!D.cfg.envHidden||typeof D.cfg.envHidden!=='object') D.cfg.envHidden={};
+  sel=null; delTarget=null; refCache.key=''; recompute(); if(fit) fitView(); buildInspector(); syncLayers(); syncEnvLayers();
   $('b-dims').setAttribute('aria-pressed',String(!!D.cfg.dims));
 }
 function slug(ext){
@@ -3917,61 +3955,17 @@ const lineSlug=()=>D.lines.length>1?'-'+(D.lines[D.active].name||'line').trim().
 $('x-csv').onclick=()=>download(slug(lineSlug()+'-dimensions.csv'),new Blob([toCSV(D.geom,T,spans)],{type:'text/csv'}));
 $('x-prof').onclick=()=>{ const g=D.cfg.geo;
   download(slug(lineSlug()+'-profile.csv'),new Blob([profileCSV(T,spans,g.lat!=null&&g.lon!=null?g:null)],{type:'text/csv'})); };
-$('x-png').onclick=()=>{ const cv=buildSheet(); cv.toBlob(b=>download(slug(lineSlug()+'-build-sheet.png'),b),'image/png'); };
+$('x-png').onclick=()=>{ const cv=exportView(); cv.toBlob(b=>download(slug('-plan.png'),b),'image/png'); };
 
-/* A4 landscape at 300 dpi, drawn in the light theme so it prints. */
-function buildSheet(){
-  const W=3508,H=2480,M=110, cv=document.createElement('canvas'); cv.width=W; cv.height=H;
-  const c=cv.getContext('2d'), root=document.documentElement, was=root.getAttribute('data-theme');
-  root.setAttribute('data-theme','light'); readColours();
-  try{
-    c.fillStyle='#fff'; c.fillRect(0,0,W,H);
-    c.fillStyle=COL.ink; c.textBaseline='alphabetic'; c.textAlign='left';
-    c.font=`600 72px ${SANS}`; c.fillText(D._meta.name||'Pump track',M,M+60);
-    c.font=`600 34px ${SANS}`; c.fillStyle=COL['ink-soft'];
-    c.fillText([D._meta.designer,new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}),'Creature Cycles Bike Track Designer'].filter(Boolean).join('  ·  '),M,M+112);
-    const facts=[['Length',f1(stats.length)+' m'],['Track width',f1(T.width)+' m'],['Footprint',Math.round(stats.w)+' × '+Math.round(stats.h)+' m'],
-      ['Dirt, rough',Math.round(stats.volume)+' m³']];
-    let fx=W-M; c.textAlign='right';
-    for(let i=facts.length-1;i>=0;i--){ const [l,v]=facts[i];
-      c.font=`600 52px ${MONO}`; c.fillStyle=COL.ink; c.fillText(v,fx,M+60);
-      const w1=c.measureText(v).width; c.font=`600 28px ${SANS}`; c.fillStyle=COL['ink-soft']; c.fillText(l,fx,M+108);
-      fx-=Math.max(w1,c.measureText(l).width)+90; }
-    const top=M+170, profH=480, planH=H-top-profH-M-120;
-    // Drawn at print scale so labels, strokes and tags read on paper the way
-    // they do on screen.
-    const S=2.6, pw=(W-2*M)/S, ph=planH/S;
-    c.save(); c.translate(M,top); c.scale(S,S);
-    c.beginPath(); c.rect(0,0,pw,ph); c.clip();
-    drawPlan(c,pw,ph,fitBox(extentAll(),pw,ph,1.12),{grid:true,bg:true,handles:'tags',dims:true,sheet:true});
-    c.restore();
-    c.strokeStyle=COL.rule; c.lineWidth=3; c.strokeRect(M,top,W-2*M,planH);
-    // what the environment symbols are, in the plan's bottom-right corner
-    const cats=D.cfg.layers.env!==false?ENV_CATS.filter(([cat])=>D.env.some(o=>ENV[o.type].cat===cat)):[];
-    if(cats.length){
-      const sw={tree:'env-tree',rock:'env-rock',fence:'wood',wall:'env-wall',water:'env-water',steep:'env-steep',terrain:'env-grass'};
-      const rowH=50, bw=420, bh=cats.length*rowH+40, bx=W-M-bw-24, by=top+planH-bh-24;
-      c.fillStyle='rgba(255,255,255,.92)'; c.fillRect(bx,by,bw,bh); c.strokeStyle=COL.rule; c.lineWidth=2; c.strokeRect(bx,by,bw,bh);
-      c.textAlign='left'; c.textBaseline='middle'; c.font=`600 28px ${SANS}`;
-      cats.forEach(([cat,label],j)=>{ const y=by+20+rowH*j+rowH/2;
-        c.fillStyle=COL[sw[cat]]; c.fillRect(bx+24,y-16,44,32); c.strokeStyle=COL.ink; c.lineWidth=2; c.strokeRect(bx+24,y-16,44,32);
-        const kinds=[...new Set(D.env.filter(o=>ENV[o.type].cat===cat).map(o=>ENV_SHORT[o.type].toLowerCase()))].join(', ');
-        c.fillStyle=COL.ink; c.fillText(label+(kinds?' · '+kinds:''),bx+86,y,bw-100); });
-    }
-    // north arrow
-    { const x=W-M-80, y=top+100, r=(D.cfg.geo.rot||0)*DEG; c.save(); c.translate(x,y); c.rotate(-r);
-      c.fillStyle=COL.ink; c.beginPath(); c.moveTo(0,-46); c.lineTo(20,20); c.lineTo(0,8); c.lineTo(-20,20); c.closePath(); c.fill();
-      c.font=`600 32px ${SANS}`; c.textAlign='center'; c.fillText('N',0,-58); c.restore(); }
-    c.save(); c.translate(M,top+planH+40); c.scale(S,S); drawProfile(c,(W-2*M)/S,profH/S,{}); c.restore();
-    c.strokeRect(M,top+planH+40,W-2*M,profH);
-    const leg=[['up','Takeoff / up'],['down','Landing / down'],['flat','Deck'],['gap','Air'],['wood','Timber'],['berm','Berm']];
-    if(D.cfg.layers.gpx!==false&&refLocal()) leg.push(['ref','GPX trace']);
-    let lx=M; const ly=H-M+10; c.textAlign='left'; c.textBaseline='middle'; c.font=`600 30px ${SANS}`;
-    for(const [k,l] of leg){ c.fillStyle=k==='berm'?COL.berm:kcol(k); c.fillRect(lx,ly-18,44,36); c.strokeStyle=COL.ink; c.lineWidth=2; c.strokeRect(lx,ly-18,44,36);
-      c.fillStyle=COL.ink; c.fillText(l,lx+58,ly); lx+=58+c.measureText(l).width+60; }
-    c.textAlign='right'; c.fillStyle=COL['ink-soft']; c.font=`600 26px ${SANS}`;
-    c.fillText('Heights and dirt are estimates. Check the ground, drainage and access before building.',W-M,ly);
-  } finally { root.setAttribute('data-theme',was); readColours(); drawNow(); }
+/* The plan exactly as it is on screen: the same view, theme and layers, with
+   labels only if the Labels layer is showing. Nothing outside the view, and
+   none of the editing marks (selection, delete button, the hint). Drawn at 3x
+   (less for a huge window) so it stays sharp. */
+function exportView(){
+  const S=Math.min(3,8000/Math.max(PW,PH)), cv=document.createElement('canvas');
+  cv.width=Math.round(PW*S); cv.height=Math.round(PH*S);
+  const c=cv.getContext('2d'); c.scale(S,S);
+  drawPlan(c,PW,PH,view,{exp:true,grid:true,bg:true,handles:envMode()?'tags':true,dims:D.cfg.dims});
   return cv;
 }
 
@@ -4068,6 +4062,42 @@ document.querySelectorAll('.lyr .eye').forEach(b=>b.onclick=()=>{
   if(k!=='photo') delTarget=null;
   syncLayers(); autosave(); draw();
 });
+/* ---------- environment sub-layers ---------- */
+let envlSel=null;
+const EYE_SVG=document.querySelector('.lyr .eye svg').outerHTML;
+function syncEnvLayers(){
+  const L=$('envl-list'); if(!$('dlg-envl').open) return;
+  L.innerHTML='';
+  const st=envStack();
+  for(const t of st.slice().reverse()){
+    const n=D.env.filter(o=>o.type===t).length, on=!envHidden(t);
+    const r=document.createElement('div'); r.className='elyr'+(t===envlSel?' on':'')+(on?'':' off');
+    r.setAttribute('role','option'); r.setAttribute('aria-selected',String(t===envlSel)); r.dataset.t=t;
+    const eye=document.createElement('button'); eye.type='button'; eye.className='eye'; eye.innerHTML=EYE_SVG;
+    eye.setAttribute('aria-pressed',String(on)); eye.setAttribute('aria-label',(on?'Hide ':'Show ')+ENV[t].name);
+    eye.onclick=ev=>{ ev.stopPropagation(); const H=D.cfg.envHidden||(D.cfg.envHidden={});
+      if(on) H[t]=true; else delete H[t];
+      if(on&&sel&&sel.kind==='env'&&D.env[sel.i]&&D.env[sel.i].type===t) setSel(null);
+      delTarget=null; recompute(); autosave(); syncEnvLayers(); };
+    const cv=document.createElement('canvas'); iconCanvas(t,cv,44,20);
+    const nm=document.createElement('span'); nm.className='nm'; nm.textContent=ENV[t].name;
+    const c=document.createElement('small'); c.textContent=n?String(n):'';
+    r.append(eye,cv,nm,c);
+    r.onclick=()=>{ envlSel=t; syncEnvLayers(); };
+    L.appendChild(r);
+  }
+  const i=envlSel?st.indexOf(envlSel):-1;
+  $('envl-up').disabled=i<0||i===st.length-1; $('envl-down').disabled=i<=0;
+}
+function moveKind(d){
+  const st=envStack(), i=st.indexOf(envlSel), j=i+d; if(i<0||j<0||j>=st.length) return;
+  [st[i],st[j]]=[st[j],st[i]]; autosave(); draw(); syncEnvLayers();
+  const row=$('envl-list').querySelector('.elyr.on'); if(row) row.scrollIntoView({block:'nearest'});
+}
+$('envl-up').onclick=()=>moveKind(1);     // up the list is up the stack
+$('envl-down').onclick=()=>moveKind(-1);
+$('ly-env-act').onclick=()=>{ const d=$('dlg-envl'); if(d.open){ d.close(); return; } d.show(); syncEnvLayers(); };
+
 function setLayersOpen(o){ $('layers').classList.toggle('open',o); $('layers-btn').setAttribute('aria-expanded',String(o)); }
 $('layers-btn').onclick=()=>setLayersOpen(!$('layers').classList.contains('open'));
 /* Help: the ? in the bottom-right corner opens the read me. */
@@ -4124,7 +4154,7 @@ function setUiTheme(name){
   document.documentElement.setAttribute('data-theme',name);
   $('theme-light').setAttribute('aria-pressed',String(name==='light'));
   $('theme-dark').setAttribute('aria-pressed',String(name==='dark'));
-  readColours(); buildPalette(); buildInspector(); syncLayers(); drawNow();
+  readColours(); buildPalette(); buildInspector(); syncLayers(); syncEnvLayers(); drawNow();
   try{ localStorage.setItem('creature-pump-track-theme',name); }catch(_){}
 }
 $('theme-light').onclick=()=>setUiTheme('light');

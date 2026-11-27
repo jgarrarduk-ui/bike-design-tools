@@ -90,7 +90,7 @@ path works on one track as before; the engine is unchanged and single track.
 - Undo snapshots `D.lines` and `D.env`; which line is active is not an undo step.
 - Files: `lines` and `active` in the JSON, with `geom` (the active line) kept
   for older readers; an old file opens as one line (`linesOf`). GPX writes a
-  `<trk>` per line. Dimensions CSV, profile CSV and the build sheet are the
+  `<trk>` per line. Dimensions CSV and profile CSV are the
   active line, named in the file name when there are several.
 
 ## Environment
@@ -98,11 +98,22 @@ path works on one track as before; the engine is unchanged and single track.
 What is already on the site: `D.env = [{type, x, y, rot, s, flip, seed, pts?, w?, h?, closed?}]`,
 one list per design (not per line), drawn under the track. Types and their
 category, geometry and defaults are `ENV` in the engine (`ENV_CATS` for the
-palette groups, `ENV_LAYER` for draw order: terrain, water, steep, rocks,
-walls, fences, trees).
+palette groups, `ENV_LAYER` for the default draw order: terrain, water,
+steep, rocks, walls, fences, trees). The `lake` type is shown as "Water"
+(the id stays `lake` so files keep working). There is no river any more;
+`normEnv` drops one from an old file.
+- **Sub-layers**: the stacked-squares button on the Environment layer row
+  opens `#dlg-envl`, a non-modal floating window listing every kind, top of
+  the list on top. Tap a row, then Up/Down (`moveKind`); the eye hides that
+  kind. Stored as `cfg.envStack` (every type, bottom to top, filled in by
+  `envStack()`) and `cfg.envHidden` — view settings, not undo steps.
+  `envOrder` sorts by the stack and leaves hidden kinds out, so they are
+  neither drawn, hit-tested, clash-checked nor fitted. Placing a hidden kind
+  shows it again.
+- The steep up/down tag is a label: hidden with the Labels layer.
 - Geometry is `point` (trees, rocks: a seeded shape `base` m across at s=1),
-  `line` (fences, walls, river: `pts`, optional `closed`, `w` width) or
-  `area` (lake, steep up/down with height `h`, grass/dirt/loose stone).
+  `line` (fences, walls: `pts`, optional `closed`, `w` width) or
+  `area` (water, steep up/down with height `h`, grass/dirt/loose stone).
   `pts` are in the object's own frame; the pose (`envToWorld`/`envToLocal`)
   does rotate, scale and flip, so a post drag converts back through it.
 - The left rail has two tabs (`setPalTab`, remembered in localStorage).
@@ -125,8 +136,7 @@ walls, fences, trees).
   Terrain never clashes. Skipped while the Environment layer is hidden.
 - Undo snapshots `{lines, env}`. Files carry `env` (JSON, zip, the design
   inside GPX); `normEnv` clamps on load. Layers has an **Environment** row
-  (`cfg.layers.env`). The build sheet draws it and adds a key in the plan's
-  bottom right.
+  (`cfg.layers.env`).
 - Terrain texture is a 4 m repeating canvas pattern fixed to the ground via
   `CanvasPattern.setTransform`; below 4 px/m it is a flat fill.
 
@@ -189,9 +199,11 @@ All read by the one **Open** button (by extension, then by first character).
 - **Dimensions CSV**: track row, one row per node, one per feature. Reads
   back what it writes; columns may be missing in a hand-made file.
 - **Profile CSV**: chainage, x, y, z every 0.25 m (plus lat/lon if set).
-- **Build sheet PNG**: A4 landscape at 300 dpi, always drawn in the light
-  theme, with plan, dimensions, profile and legend. Drawn at 2.6× so screen
-  sized text reads on paper.
+- **Plan view PNG** (`exportView`): exactly the main canvas — same view,
+  zoom, theme, layers, Dims and Labels — at up to 3x resolution, without
+  editing marks (selection, delete button). `drawPlan` with `exp:true`
+  draws what `main:true` draws but records no hit-test handles. It replaced
+  the old A4 build sheet.
 
 ## Layers
 
@@ -200,7 +212,7 @@ zoom buttons (`setLayersOpen`); top of the list draws on top:
 **Labels**, **GPX trace**, **Design**, **Environment**, **Photo**. **Labels** is the corner
 numbers, start/end tags and + handles; hidden, they are neither drawn nor
 hit-tested (a corner can still be dragged by its berm). Each has an eye toggle; visibility is
-saved in `cfg.layers` and respected by the build sheet.
+saved in `cfg.layers` and respected by the PNG export.
 
 - **GPX trace** (`cfg.gpx = {name, pts:[{lat,lon}]}`) is a reference line,
   not the design. It is stored as lat/lon so it is fixed to the ground at true
@@ -252,9 +264,9 @@ Autosave writes the same JSON to `localStorage` (key
   read me. Keep it in step when behaviour changes.
 
 - Canvas 2D, not SVG: the plan, profile, icons, template thumbnails and
-  build sheet all share `drawPlan`/`drawProfile`. Only a call with
+  PNG export all share `drawPlan`/`drawProfile`. Only a call with
   `main:true` records hit-test handles and the profile's x mapping, so a
-  thumbnail or the sheet can't corrupt the live view.
+  thumbnail or the export can't corrupt the live view.
 - Palette tiles: drag onto the plan, or tap to arm then tap the track
   (phone friendly). Tiles use `touch-action: pan-x` on phones so the strip
   still scrolls sideways and a vertical drag picks the tile up.

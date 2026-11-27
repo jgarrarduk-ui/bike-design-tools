@@ -342,8 +342,9 @@ ok('a bundle re-zipped inside a folder still opens', m.readBundle(nested).photo.
   ok('environment pose: plan to own frame and back', near(back.x,1.2,1e-3)&&near(back.y,-.7,1e-3));
   const t=m.makeEnv('conifer',{x:1,y:2},9);
   ok('a new tree is a point with no outline', t.type==='conifer'&&!t.pts&&t.s===1&&t.x===1);
-  const lake=m.makeEnv('lake',{x:0,y:0},4), river=m.makeEnv('river',{x:0,y:0},4), wall=m.makeEnv('stonewall',{x:0,y:0},4);
-  ok('new areas and lines get outlines, widths and heights', lake.pts.length>=3&&river.pts.length>=2&&river.w===3&&wall.w===.6&&m.makeEnv('steepup',{x:0,y:0},1).h===2);
+  const lake=m.makeEnv('lake',{x:0,y:0},4), fence=m.makeEnv('woodfence',{x:0,y:0},4), wall=m.makeEnv('stonewall',{x:0,y:0},4);
+  ok('new areas and lines get outlines, widths and heights', lake.pts.length>=3&&fence.pts.length===2&&wall.w===.6&&m.makeEnv('steepup',{x:0,y:0},1).h===2);
+  ok('rivers are gone: one in an old file is dropped, and water is called Water', !m.ENV.river&&m.normEnv([{type:'river',pts:[{x:0,y:0},{x:5,y:0}]}]).length===0&&m.ENV.lake.name==='Water');
   const n=m.normEnv([{type:'nope'},{type:'lake',pts:[{x:0,y:0}]},{type:'boulder',x:'3',s:999,flip:1},null,{type:'woodfence',pts:[{x:0,y:0},{x:1,y:0}],closed:true}]);
   ok('loading clamps a bad environment list', n.length===3&&n[0].pts.length>=3&&n[1].x===3&&n[1].s===20&&n[1].flip===true&&n[2].closed===false);
   const sq=[{x:0,y:0},{x:4,y:0},{x:4,y:4},{x:0,y:4}];
