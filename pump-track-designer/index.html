@@ -66,6 +66,13 @@
   --berm:#8fb6cf; --berm-tick:#134463; --berm-face:rgba(31,95,139,.30);
   --sel:#c026a3; --bad:#c0261a; --handle:#fff; --handle-berm:#1f5f8b; --handle-ink:#16202a; --ref:#7c3aed; --warn:#d97706;
   --label-bg:rgba(255,255,255,.94); --label-ink:#16202a;
+  /* Environment: what is already on the site, drawn under the track. */
+  --env-tree:#4a8a3f; --env-tree-hi:#78b35a; --env-conifer:#2d6438; --env-trunk:#6b4a2b; --env-shadow:rgba(20,30,20,.18);
+  --env-rock:#a3abb0; --env-rock-hi:#cfd5d8; --env-rock-edge:#5a646b;
+  --env-water:#86c5ea; --env-water-edge:#2b7bb9; --env-wave:rgba(255,255,255,.7);
+  --env-grass:#c3dd9c; --env-grass-ink:#6f9a45; --env-dirt:#dcc196; --env-dirt-ink:#9c7444; --env-stone:#d2cfc6; --env-stone-ink:#7d7a70;
+  --env-steep:#b4553a; --env-steep-fill:rgba(180,85,58,.13);
+  --env-metal:#5f6b74; --env-wall:#8f918b; --env-wall-edge:#4f514c; --env-brick:#a5523a; --env-brick-edge:#5e2a1b;
   /* Icon buttons (canvas controls, help): monochrome, as the suspension designer. */
   --icon-off-bg:#ffffff; --icon-off-fg:#1f5f8b; --icon-on-bg:#1f5f8b; --icon-on-fg:#ffffff; --icon-line:#1f5f8b;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -81,6 +88,12 @@
   --berm:#166534; --berm-tick:#86efac; --berm-face:rgba(74,222,128,.30);
   --sel:#f0abfc; --bad:#f87171; --handle:#1a191c; --handle-berm:#16a34a; --handle-ink:#dcfce7; --ref:#38bdf8; --warn:#fbbf24;
   --label-bg:rgba(20,20,22,.9); --label-ink:#dcfce7;
+  --env-tree:#2f6a35; --env-tree-hi:#4f8f45; --env-conifer:#1f4d2b; --env-trunk:#7a5634; --env-shadow:rgba(0,0,0,.35);
+  --env-rock:#737a7e; --env-rock-hi:#a0a8ab; --env-rock-edge:#2a2f32;
+  --env-water:#2a6c96; --env-water-edge:#6cc0ee; --env-wave:rgba(200,235,255,.45);
+  --env-grass:#33492c; --env-grass-ink:#5c8a45; --env-dirt:#55432f; --env-dirt-ink:#93714a; --env-stone:#4a4945; --env-stone-ink:#8c897f;
+  --env-steep:#f08a5d; --env-steep-fill:rgba(240,138,93,.12);
+  --env-metal:#aab5bd; --env-wall:#8d8f89; --env-wall-edge:#2c2d2a; --env-brick:#b8614a; --env-brick-edge:#3d1a10;
   --icon-off-bg:#1a191c; --icon-off-fg:#4ade80; --icon-on-bg:#4ade80; --icon-on-fg:#052e16; --icon-line:#4ade80;
 }
 *{box-sizing:border-box}
@@ -202,7 +215,14 @@ h2:first-child{margin-top:2px}
 #profile{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 
 /* ---- palette ---- */
-#palette{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#pal-tabs{margin:0 0 12px}
+#pal-tabs button{flex:1}
+#palette,#env-palette{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#palette[hidden],#env-palette[hidden]{display:none}
+.pal-h{grid-column:1 / -1;font-size:11px;font-weight:600;color:var(--ink-soft);margin:6px 0 -2px;
+  padding-bottom:3px;border-bottom:1px solid var(--rule)}
+.pal-h:first-child{margin-top:0}
+#env-note{grid-column:1 / -1;margin:4px 0 0}
 .tile{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px 7px;
   border:1px solid var(--rule);border-radius:3px;background:var(--btn);cursor:grab;
   font:12px var(--sans);color:var(--ink);text-align:center;touch-action:pan-y;
@@ -303,8 +323,10 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
   .rail.left{border-right:none;border-top:1px solid var(--rule);padding:10px 0 10px 10px;
     position:sticky;bottom:0;z-index:8;box-shadow:0 -6px 18px rgba(0,0,0,.18)}
   .rail.right{border-left:none;border-top:1px solid var(--rule);padding-bottom:30vh}
-  #palette{display:flex;gap:8px;overflow-x:auto;padding-right:10px;scrollbar-width:none}
-  #palette::-webkit-scrollbar{display:none}
+  #palette,#env-palette{display:flex;gap:8px;overflow-x:auto;padding-right:10px;scrollbar-width:none}
+  #palette::-webkit-scrollbar,#env-palette::-webkit-scrollbar{display:none}
+  #pal-tabs{margin:0 10px 8px 0}
+  .pal-h,#env-note{display:none}
   .tile{flex:none;width:96px;touch-action:pan-x}
   #canvas{height:56vh;height:56svh;min-height:300px;flex:none}
   #profile-wrap{height:112px}
@@ -363,7 +385,12 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
 </div>
 
 <div class="rail left">
+  <div class="seg" id="pal-tabs" role="group" aria-label="Palette">
+    <button type="button" id="tab-track" aria-pressed="true">Track features</button>
+    <button type="button" id="tab-env" aria-pressed="false">Environment</button>
+  </div>
   <div id="palette" aria-label="Drag onto the track"></div>
+  <div id="env-palette" aria-label="Drag onto the plan" hidden></div>
 </div>
 
 <div id="stage">
@@ -381,6 +408,9 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
         <div class="lyr" data-l="design"><button class="eye" aria-label="Show design"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
           <span class="sw" style="background:var(--trk);border:3px solid var(--trk-edge)"></span>
           <span class="nm"><span>Design</span><small id="ly-design-sub"></small></span></div>
+        <div class="lyr" data-l="env"><button class="eye" aria-label="Show environment"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+          <span class="sw" style="background:var(--env-grass);border:3px solid var(--env-tree)"></span>
+          <span class="nm"><span>Environment</span><small id="ly-env-sub"></small></span></div>
         <div class="lyr" data-l="photo"><button class="eye" aria-label="Show photo"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
           <span class="sw" id="ly-photo-sw"></span>
           <span class="nm"><span>Photo</span><small id="ly-photo-sub"></small></span><button class="act" id="ly-photo-act"></button></div>
@@ -466,6 +496,17 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
       <li>Features keep their place on their straight as you reshape the track.</li>
     </ul>
 
+    <h2>Environment</h2>
+    <ul>
+      <li>The <b>Environment</b> tab at the top left holds what is already on the site: trees, rocks, fences, walls, water, steep ground and terrain. They draw under the track.</li>
+      <li>While that tab is open you edit the environment and the track is locked; <b>Track features</b> switches back.</li>
+      <li>Trees and rocks: drag a tile onto the plan, or tap a tile and keep tapping the plan to plant several. Drag one to move it.</li>
+      <li>Fences, walls and rivers: tap the tile, then <b>drag on the plan to draw the line</b>, or tap for a straight piece. Drop one by the end of a fence of the same kind and it carries on from there. Drag a post to move it, a <b>+</b> between posts to add one, or the <b>+</b> past an end to extend it. Drag an end onto another end to join two lines, or onto its own other end to close it round.</li>
+      <li>Lakes, steep ground and terrain: tap the tile, then <b>drag round the outline to paint the area</b>, or tap for a ready-made shape. Tap an area to select it, then drag it to move it or drag its points to reshape it. <b>Redraw</b> paints a new outline.</li>
+      <li>The panel on the right sets the kind, size or scale, rotation and flip. Hold an object, or a post, to delete it.</li>
+      <li>If the track runs into a tree, rock, fence, wall, water or steep ground, the <b>!</b> badge says so. Riding over terrain is fine.</li>
+    </ul>
+
     <h2>Ground and height</h2>
     <ul>
       <li>The strip under the plan is the side view along the track. The shaded area is the <b>ground</b>; features sit on top of it.</li>
@@ -490,6 +531,7 @@ dialog::backdrop{background:rgba(10,12,14,.5)}
       <li><b>Photo</b>: load an aerial photo or site plan, set its scale from a distance you know, and draw over it.</li>
       <li><b>GPX trace</b>: load a ride or a walk round the site as a reference line, at true scale.</li>
       <li><b>Design</b> is the track itself. Hidden, it can't be edited. <b>Labels</b> are the corner numbers and + handles.</li>
+      <li><b>Environment</b> is the trees, rocks, fences, water and ground. Hidden, it can't be edited and isn't checked against the track.</li>
     </ul>
 
     <h2>Files</h2>
@@ -1333,7 +1375,7 @@ function traceTrack(xy,opts={}){
 }
 function gpxToDesign(g,width){
   if(g.design&&g.design.geom) return {geom:normGeom(g.design.geom),geo:Object.assign({lat:null,lon:null,rot:0,ele:0},g.design.geo||{}),
-    lines:Array.isArray(g.design.lines)?g.design.lines:null,active:+g.design.active||0};
+    lines:Array.isArray(g.design.lines)?g.design.lines:null,active:+g.design.active||0,env:Array.isArray(g.design.env)?normEnv(g.design.env):null};
   if(g.pts.length<2) throw new Error('no track points in this GPX');
   const geo={lat:g.pts[0].lat,lon:g.pts[0].lon,rot:0,ele:g.pts[0].ele!=null?g.pts[0].ele:0};
   const xy=g.pts.map(p=>fromLatLon(geo,p));
@@ -1650,6 +1692,176 @@ function readBundle(entries){
   return {design,photo:pf?{name:pf.name.split('/').pop(),data:pf.data}:null,
     gpx:gf?{name:gf.name.split('/').pop(),text:dec.decode(gf.data)}:null};
 }
+
+/* ---- environment: trees, rocks, fences, walls, water, steep ground, terrain ----
+   What is already on the site, drawn under the track. Every object has a
+   place and a pose {x, y, rot (degrees, anticlockwise), s (scale), flip
+   (mirror across its own y axis)}. A point object (tree, rock) is a shape of
+   `base` metres across at s = 1. A line (fence, wall, river) or an area
+   (lake, steep ground, terrain) also has `pts` in its own frame, so rotating,
+   scaling and flipping the whole thing is just the pose. */
+const ENV={
+  conifer:   {cat:'tree', geo:'point',name:'Conifer',      base:5},
+  deciduous: {cat:'tree', geo:'point',name:'Deciduous',    base:7},
+  bush:      {cat:'tree', geo:'point',name:'Bush',         base:2},
+  boulder:   {cat:'rock', geo:'point',name:'Boulder',      base:1.5},
+  outcrop:   {cat:'rock', geo:'point',name:'Outcrop',      base:5},
+  woodfence: {cat:'fence',geo:'line', name:'Wooden fence', len:8},
+  metalfence:{cat:'fence',geo:'line', name:'Metal fence',  len:8},
+  wirefence: {cat:'fence',geo:'line', name:'Post and wire',len:8},
+  stonewall: {cat:'wall', geo:'line', name:'Stone wall',   len:6, w:.6},
+  brickwall: {cat:'wall', geo:'line', name:'Brick wall',   len:6, w:.35},
+  river:     {cat:'water',geo:'line', name:'River',        w:3},
+  lake:      {cat:'water',geo:'area', name:'Lake',         rx:5, ry:3.5},
+  steepup:   {cat:'steep',geo:'area', name:'Steep up',     rx:5, ry:2.2, h:2},
+  steepdown: {cat:'steep',geo:'area', name:'Steep down',   rx:5, ry:2.2, h:2},
+  grass:     {cat:'terrain',geo:'area',name:'Grass',       rx:7, ry:5},
+  dirt:      {cat:'terrain',geo:'area',name:'Dirt',        rx:7, ry:5},
+  loosestone:{cat:'terrain',geo:'area',name:'Loose stone', rx:6, ry:4.5}
+};
+const ENV_CATS=[['tree','Trees'],['rock','Rocks'],['fence','Fences'],['wall','Walls'],['water','Water'],['steep','Steep ground'],['terrain','Terrain']];
+// drawn bottom to top; hit tests go top to bottom
+const ENV_LAYER={terrain:0,water:1,steep:2,rock:3,wall:4,fence:5,tree:6};
+const ENV_MAX=600;
+function rng32(seed){ let a=seed>>>0||1; return ()=>{ a=(a+0x6D2B79F5)>>>0; let t=a; t=Math.imul(t^(t>>>15),t|1);
+  t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; }; }
+function envBlob(seed,rx,ry,n=10){
+  const r=rng32(seed), ph=r()*6.28, out=[];
+  for(let i=0;i<n;i++){ const a=ph+2*Math.PI*i/n, j=.82+.3*r(); out.push(V(rnd(Math.cos(a)*rx*j,3),rnd(Math.sin(a)*ry*j,3))); }
+  return out;
+}
+function makeEnv(type,at,seed){
+  const E=ENV[type]; if(!E) return null;
+  seed=(seed>>>0)||1;
+  const o={type,x:rnd(at.x,3),y:rnd(at.y,3),rot:0,s:1,flip:false,seed};
+  if(E.geo==='line'){
+    if(type==='river') o.pts=[V(-9,-1.5),V(-3,1.5),V(3,-1),V(9,1)];
+    else o.pts=[V(-E.len/2,0),V(E.len/2,0)];
+    o.closed=false;
+  } else if(E.geo==='area') o.pts=envBlob(seed,E.rx,E.ry);
+  if(E.w) o.w=E.w;
+  if(E.h) o.h=E.h;
+  return o;
+}
+/* Clamp a loaded list (a file may be old, hand edited or from a newer tool). */
+function normEnv(list){
+  if(!Array.isArray(list)) return [];
+  const num=(v,d,lo,hi)=>Number.isFinite(+v)&&v!==null&&v!==''?clamp(+v,lo,hi):d;
+  const out=[];
+  for(const o of list){
+    if(!o||!ENV[o.type]||out.length>=ENV_MAX) continue;
+    const E=ENV[o.type];
+    const n={type:o.type,x:num(o.x,0,-1e5,1e5),y:num(o.y,0,-1e5,1e5),rot:num(o.rot,0,-360,360),
+      s:num(o.s,1,.05,20),flip:!!o.flip,seed:(o.seed>>>0)||1};
+    if(E.geo!=='point'){
+      const pts=Array.isArray(o.pts)?o.pts.filter(p=>p&&Number.isFinite(+p.x)&&Number.isFinite(+p.y)).slice(0,2000).map(p=>V(+p.x,+p.y)):[];
+      const min=E.geo==='area'?3:2;
+      n.pts=pts.length>=min?pts:makeEnv(o.type,V(0,0),n.seed).pts;
+      if(E.geo==='line') n.closed=!!o.closed&&n.pts.length>=3;
+    }
+    if(E.w) n.w=num(o.w,E.w,.05,60);
+    if(E.h) n.h=num(o.h,E.h,.1,50);
+    out.push(n);
+  }
+  return out;
+}
+/* Pose: own frame to plan, and back. */
+function envToWorld(o,p){
+  const c=Math.cos(o.rot*DEG), s=Math.sin(o.rot*DEG), px=p.x*o.s*(o.flip?-1:1), py=p.y*o.s;
+  return V(o.x+px*c-py*s, o.y+px*s+py*c);
+}
+function envToLocal(o,w){
+  const c=Math.cos(o.rot*DEG), s=Math.sin(o.rot*DEG), dx=w.x-o.x, dy=w.y-o.y;
+  const rx=dx*c+dy*s, ry=-dx*s+dy*c;
+  return V(rnd(rx/o.s*(o.flip?-1:1),4), rnd(ry/o.s,4));
+}
+function envPts(o){ return o.pts?o.pts.map(p=>envToWorld(o,p)):[]; }
+function envRadius(o){ const E=ENV[o.type]; return E.geo==='point'?E.base*o.s/2:0; }
+function envWidth(o){ return o.w!=null?o.w*o.s:0; }
+function polyArea(pts){ let a=0; for(let i=0;i<pts.length;i++){ const p=pts[i], q=pts[(i+1)%pts.length]; a+=p.x*q.y-q.x*p.y; } return Math.abs(a)/2; }
+function inPoly(p,pts){
+  let c=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){ const a=pts[i], b=pts[j];
+    if((a.y>p.y)!==(b.y>p.y)&&p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x) c=!c; }
+  return c;
+}
+function polyDist(p,pts,closed){
+  let d=Infinity; const n=pts.length;
+  for(let i=0;i<n-(closed?0:1);i++) d=Math.min(d,segDist(p,pts[i],pts[(i+1)%n]));
+  return n===1?dist(p,pts[0]):d;
+}
+function envCentre(o){
+  if(!o.pts) return V(o.x,o.y);
+  const w=envPts(o); let x=0,y=0; for(const p of w){ x+=p.x; y+=p.y; } return V(x/w.length,y/w.length);
+}
+function envExtent(o){
+  if(!o.pts){ const r=envRadius(o); return {x0:o.x-r,y0:o.y-r,x1:o.x+r,y1:o.y+r}; }
+  const w=envPts(o), h=envWidth(o)/2, e={x0:Infinity,y0:Infinity,x1:-Infinity,y1:-Infinity};
+  for(const p of w){ e.x0=Math.min(e.x0,p.x-h); e.y0=Math.min(e.y0,p.y-h); e.x1=Math.max(e.x1,p.x+h); e.y1=Math.max(e.y1,p.y+h); }
+  return e;
+}
+function envLabel(o,i){ return ENV[o.type].name+(i!=null?' '+(i+1):''); }
+/* Where the track runs into something it can't go through. Terrain is
+   ground cover, so riding over it is fine. Each is a warning: the site may
+   be cleared or the fence moved, but the designer should know. */
+function envClashes(T,env){
+  const out=[]; if(!T||!T.ok||!env||!env.length) return out;
+  const pts=polyline(T,.5,true), hw=T.width/2;
+  const ex=extentOf(T);
+  env.forEach((o,i)=>{
+    const E=ENV[o.type]; if(!E||E.cat==='terrain') return;
+    const e=envExtent(o), pad=hw+1;
+    if(e.x1<ex.x0-pad||e.x0>ex.x1+pad||e.y1<ex.y0-pad||e.y0>ex.y1+pad) return;
+    let hit=false;
+    if(E.geo==='point'){
+      // a tree is in the way at its trunk; a bush or rock across most of its width
+      const R=envRadius(o), reach=E.cat==='tree'&&o.type!=='bush'?clamp(R*.18,.2,1):R*.8, c=V(o.x,o.y);
+      hit=pts.some(p=>dist(p,c)<hw+reach);
+    } else if(E.geo==='line'){
+      const w=envPts(o), reach=hw+envWidth(o)/2;
+      hit=pts.some(p=>polyDist(p,w,o.closed)<reach);
+    } else {
+      const w=envPts(o);
+      hit=pts.some(p=>inPoly(p,w)||polyDist(p,w,true)<hw*.5);
+    }
+    if(!hit) return;
+    const nm=envLabel(o,i).toLowerCase();
+    const msg=E.cat==='fence'||E.cat==='wall'?`The track crosses ${nm}`
+      :E.cat==='water'?`The track runs into ${nm}`
+      :E.cat==='steep'?`The track runs over ${nm}, which can't be ridden`
+      :`The track runs into ${nm}`;
+    out.push({kind:'env',env:i,msg});
+  });
+  return out;
+}
+/* Bake the pose into plain plan points, centred on their middle. */
+function envBake(o){
+  const w=envPts(o), c=envCentre(o);
+  return Object.assign({},o,{x:rnd(c.x,3),y:rnd(c.y,3),rot:0,s:1,flip:false,
+    w:o.w!=null?rnd(o.w*o.s,3):undefined,pts:w.map(p=>V(rnd(p.x-c.x,4),rnd(p.y-c.y,4)))});
+}
+/* Join two lines end to end: aEnd and bEnd are 0 (first point) or 1 (last).
+   The result keeps a's type and pose-free points; the shared post appears once. */
+function joinEnvLines(a,aEnd,b,bEnd){
+  let pa=envPts(a), pb=envPts(b);
+  if(aEnd===0) pa=pa.reverse();
+  if(bEnd===1) pb=pb.reverse();
+  const all=pa.concat(dist(pa[pa.length-1],pb[0])<1e-3?pb.slice(1):pb);
+  const o=Object.assign({},a,{x:0,y:0,rot:0,s:1,flip:false,closed:false,pts:all});
+  if(a.w!=null) o.w=a.w*a.s;
+  return envBake(o);
+}
+/* A shape drawn freehand on the plan: simplified, then centred. */
+function envFromStroke(type,stroke,eps,seed){
+  const E=ENV[type]; if(!E||E.geo==='point'||stroke.length<2) return null;
+  let p=rdp(stroke.map(q=>V(q.x,q.y)),eps);
+  if(E.geo==='area'){
+    if(p.length>3&&dist(p[0],p[p.length-1])<eps*4) p=p.slice(0,-1);
+    if(p.length<3||polyArea(p)<.05) return null;
+  } else if(p.length<2||polyLen(p)<.2) return null;
+  const o=makeEnv(type,V(0,0),seed); o.pts=p;
+  return envBake(o);
+}
 // ==ENGINE-END==
 
 /* ====================================================================
@@ -1670,11 +1882,14 @@ function readColours(){
   for(const k of ['paper','grid','grid2','ink','ink-soft','rule','panel','press','trk','trk-edge','chev','up','down',
     'flat','gap','wood','wood-line','berm','berm-tick','berm-face','sel','bad','handle','handle-berm','handle-ink',
     'label-bg','label-ink','ref']) COL[k]=cs.getPropertyValue('--'+k).trim();
+  for(const k of ['tree','tree-hi','conifer','trunk','shadow','rock','rock-hi','rock-edge','water','water-edge','wave',
+    'grass','grass-ink','dirt','dirt-ink','stone','stone-ink','steep','steep-fill','metal','wall','wall-edge','brick','brick-edge'])
+    COL['env-'+k]=cs.getPropertyValue('--env-'+k).trim();
 }
 const kcol=k=>COL[k]||COL.flat;
 
 const DEF_CFG={geo:{lat:null,lon:null,rot:0,ele:0},bg:null,gpx:null,dims:false,
-  layers:{labels:true,design:true,gpx:true,photo:true}};
+  layers:{labels:true,design:true,env:true,gpx:true,photo:true}};
 /* A design holds one or more lines (a pump track and a jump line on the same
    hill, say), each with its own name, colour and track. One is active: that
    is the one edited, shown in the profile and the side panel. D.geom is the
@@ -1683,18 +1898,22 @@ const LINE_COLS=['#38bdf8','#f472b6','#facc15','#a78bfa','#fb923c','#2dd4bf','#f
 const lineId=()=>Math.random().toString(36).slice(2,10);
 const okColour=c=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c)?c:null;
 function newLine(geom,name,color){ return {id:lineId(),name:name||'Track',color:okColour(color),geom}; }
-function makeD(meta,lines,active,cfg){
-  const d={_meta:meta,lines,active:clamp(active|0,0,lines.length-1),cfg};
+function makeD(meta,lines,active,cfg,env){
+  const d={_meta:meta,lines,active:clamp(active|0,0,lines.length-1),cfg,env:env||[]};
   Object.defineProperty(d,'geom',{get(){ return this.lines[this.active].geom; },set(g){ this.lines[this.active].geom=g; }});
   return d;
 }
 let D=makeD({name:'',designer:''},[newLine(normGeom(TEMPLATES[0].geom),'Track 1',null)],0,clone(DEF_CFG));
 let T=null, spans=[], issues=[], stats=null;
-let sel=null;                 // {kind:'feature'|'node', i}
+let sel=null;                 // {kind:'feature'|'node'|'env', i}
+let palTab='track';           // which palette is open; 'env' edits the environment and locks the track
+const envMode=()=>palTab==='env';
+let paintPts=null;            // a shape being drawn freehand on the plan
+let envSeed=(Math.random()*1e9)>>>0||1;   // the shape the next tree, rock or area gets (the preview shows it)
 let view={cx:0,cy:0,k:10};
 let delTarget=null;          // {kind:'node'|'feature', i}: what is showing its long-press delete button
 let preview=null, armed=null, mode=null, calPts=[], act=null;
-let HND={corners:[],plus:[]};
+let HND={corners:[],plus:[],env:null};
 const bgImg=new Image(); bgImg.onload=()=>draw();
 
 function recompute(){
@@ -1704,6 +1923,7 @@ function recompute(){
   D.geom.nodes.forEach((n,i)=>{ const c=T.corners[i]; if(c&&!c.end&&!(n.rWant>0)) n.turn=c.s; });
   spans=spansOf(T,D.geom);
   issues=issuesOf(T,D.geom,spans); stats=statsOf(T,D.geom,spans);
+  if(D.cfg.layers.env!==false) issues=issues.concat(envClashes(T,D.env));
   draw();
 }
 
@@ -1732,7 +1952,7 @@ let rafId=0;
 function draw(){ if(!rafId) rafId=requestAnimationFrame(drawNow); }
 function drawNow(){
   rafId=0; if(!T) return;
-  drawPlan(pctx,PW,PH,view,{main:true,grid:true,bg:true,handles:true,dims:D.cfg.dims,sel,preview,cal:calPts});
+  drawPlan(pctx,PW,PH,view,{main:true,grid:true,bg:true,handles:envMode()?'tags':true,dims:D.cfg.dims,sel,preview,cal:calPts});
   drawProfile(qctx,QW,QH,{main:true,sel});
   updateLive();
 }
@@ -1896,6 +2116,8 @@ function extentAll(){
   let e=T&&T.ok?extentOf(T):null; const r=D.cfg.layers.gpx!==false?refLocal():null;
   for(const L of otherLines()){ const o=extentOf(L.T);
     e=e?{x0:Math.min(e.x0,o.x0),y0:Math.min(e.y0,o.y0),x1:Math.max(e.x1,o.x1),y1:Math.max(e.y1,o.y1)}:o; }
+  if(D.cfg.layers.env!==false) for(const o of D.env){ const x=envExtent(o);
+    e=e?{x0:Math.min(e.x0,x.x0),y0:Math.min(e.y0,x.y0),x1:Math.max(e.x1,x.x1),y1:Math.max(e.y1,x.y1)}:x; }
   if(!r) return e||{x0:-10,y0:-10,x1:10,y1:10};
   const b=e?Object.assign({},e):{x0:Infinity,y0:Infinity,x1:-Infinity,y1:-Infinity};
   for(const p of r){ b.x0=Math.min(b.x0,p.x); b.x1=Math.max(b.x1,p.x); b.y0=Math.min(b.y0,p.y); b.y1=Math.max(b.y1,p.y); }
@@ -1924,8 +2146,11 @@ function drawPlan(ctx,W,H,vw,o){
     const wp=bg.w*k, hp=wp*bgImg.naturalHeight/bgImg.naturalWidth;
     ctx.drawImage(bgImg,-wp/2,-hp/2,wp,hp); ctx.restore();
   }
+  const showEnv=(o.main||o.sheet)&&LY.env!==false;
+  if(showEnv) drawEnv(ctx,X,Y,k,o);
   if(LY.design===false||!T||!T.ok||T.length<.01){
-    drawRef(ctx,X,Y,LY); if(o.main) HND={corners:[],plus:[]};
+    drawRef(ctx,X,Y,LY); if(o.main) HND={corners:[],plus:[],env:null};
+    if(o.main) drawEnvTop(ctx,X,Y,k,o,showEnv);
     if(o.grid) drawScaleBar(ctx,W,H,k); return;
   }
   // The other lines first, faded, each in its own colour; then the active one.
@@ -2033,7 +2258,7 @@ function drawPlan(ctx,W,H,vw,o){
     labels.push([FEATURES[sp.f.type].name+' · '+f1(sp.pr.len)+' m',X(p.x+nl.x*off),Y(p.y+nl.y*off),{size:13,edge:COL.sel}]);
   }
   // corner handles: at the centre of each corner's circle (on the track for ends, hips and sharp corners), numbered
-  const hnd={corners:[],plus:[]};
+  const hnd={corners:[],plus:[],env:null};
   if(o.main) HND=hnd;
   if(o.handles&&LY.labels!==false){
     // shrink when zoomed out so the handle never hides the berm it sits on
@@ -2072,10 +2297,12 @@ function drawPlan(ctx,W,H,vw,o){
       hnd.corners.push({i:c.i,x,y,end:c.end});
     });
   }
+  if(o.main) drawEnvTop(ctx,X,Y,k,o,showEnv);
   for(const l of labels) pill(ctx,...l);
   // long-press delete button, next to the corner or feature being held
   const dt=o.main?delTarget:null;
-  const dpos=!dt?null:dt.kind==='feature'?(spans[dt.i]?pointAt(T,spans[dt.i].s0+spans[dt.i].pr.len/2):null)
+  const dpos=!dt?null:dt.kind==='env'?null   // drawn by drawEnvTop, which also runs with the design hidden
+    :dt.kind==='feature'?(spans[dt.i]?pointAt(T,spans[dt.i].s0+spans[dt.i].pr.len/2):null)
     :T.corners[dt.i]?T.corners[dt.i].P:null;
   if(dpos){
     const pos=dpos;
@@ -2098,6 +2325,464 @@ function drawPlan(ctx,W,H,vw,o){
     ctx.restore();
   }
   if(o.grid) drawScaleBar(ctx,W,H,k);
+}
+
+/* ---------- environment: drawing ----------
+   Trees, rocks, fences, walls, water, steep ground and terrain sit under the
+   track (drawEnv). The selection outline, its handles and a shape being
+   painted sit on top (drawEnvTop), so they are never hidden by the track. */
+const ENV_SHORT={conifer:'Conifer',deciduous:'Deciduous',bush:'Bush',boulder:'Boulder',outcrop:'Outcrop',
+  woodfence:'Wooden',metalfence:'Metal',wirefence:'Wire',stonewall:'Stone',brickwall:'Brick',river:'River',lake:'Lake',
+  steepup:'Up',steepdown:'Down',grass:'Grass',dirt:'Dirt',loosestone:'Loose stone'};
+const newSeed=()=>(Math.random()*1e9)>>>0||1;
+const isLink=o=>o&&(ENV[o.type].cat==='fence'||ENV[o.type].cat==='wall');
+let envIconMode=false;
+function envOrder(list=D.env){
+  return list.map((_,i)=>i).sort((a,b)=>ENV_LAYER[ENV[list[a].type].cat]-ENV_LAYER[ENV[list[b].type].cat]||a-b);
+}
+/* Catmull-Rom through the points, so an organic outline passes through
+   every handle. Returns dense plan points. */
+function crDense(w,closed,ds){
+  const n=w.length; if(n<3) return w.slice();
+  const out=[], P=i=>closed?w[(i+n)%n]:w[clamp(i,0,n-1)], segs=closed?n:n-1;
+  for(let i=0;i<segs;i++){
+    const p0=P(i-1),p1=P(i),p2=P(i+1),p3=P(i+2), m=clamp(Math.ceil(dist(p1,p2)/ds),1,40);
+    for(let j=0;j<m;j++){
+      const t=j/m, t2=t*t, t3=t2*t, f=(a,b,c,d)=>.5*(2*b+(-a+c)*t+(2*a-5*b+4*c-d)*t2+(-a+3*b-3*c+d)*t3);
+      out.push(V(f(p0.x,p1.x,p2.x,p3.x),f(p0.y,p1.y,p2.y,p3.y)));
+    }
+  }
+  if(!closed) out.push(w[n-1]);
+  return out;
+}
+function linePath(ctx,X,Y,w,closed){
+  ctx.beginPath(); w.forEach((p,i)=>i?ctx.lineTo(X(p.x),Y(p.y)):ctx.moveTo(X(p.x),Y(p.y))); if(closed) ctx.closePath();
+}
+/* Calls fn(point, direction) every `step` metres along a polyline, and at every vertex. */
+function alongLine(w,closed,step,fn){
+  const n=w.length, segs=closed?n:n-1;
+  for(let i=0;i<segs;i++){
+    const a=w[i], b=w[(i+1)%n], L=dist(a,b), d=unit(sub(b,a)), m=Math.max(1,Math.round(L/step));
+    for(let j=0;j<m;j++) fn(addv(a,mulv(d,L*j/m)),d,j===0);
+  }
+  if(!closed&&n) fn(w[n-1],n>1?unit(sub(w[n-1],w[n-2])):V(1,0),true);
+}
+/* Ground cover is a repeating texture fixed to the ground, 4 m a tile, so it
+   pans and zooms with the plan. Zoomed far out it is a plain fill. */
+const patCache={};
+function terrainFill(ctx,type,k,X,Y){
+  const key0=type==='loosestone'?'stone':type, base=COL['env-'+key0], ink=COL['env-'+key0+'-ink'];
+  if(!envIconMode&&k<4) return base;
+  const key=type+'|'+base+'|'+ink;
+  let src=patCache[key];
+  if(!src){
+    src=document.createElement('canvas'); src.width=src.height=128;
+    const c=src.getContext('2d'), r=rng32(type.length*7919+13);
+    c.fillStyle=base; c.fillRect(0,0,128,128); c.strokeStyle=ink; c.fillStyle=ink; c.lineCap='round'; c.lineJoin='round';
+    // each mark is drawn again across the tile edges so the repeat has no seams
+    const at=(x,y,fn)=>{ for(const dx of [-128,0,128]) for(const dy of [-128,0,128]) fn(x+dx,y+dy); };
+    if(type==='grass'){
+      c.lineWidth=1.6;
+      for(let i=0;i<34;i++){ const x=r()*128, y=r()*128;
+        at(x,y,(x,y)=>{ c.beginPath(); c.moveTo(x-3,y-4); c.lineTo(x,y+2); c.lineTo(x+3,y-4); c.moveTo(x,y+2); c.lineTo(x,y-5); c.stroke(); }); }
+    } else if(type==='dirt'){
+      for(let i=0;i<70;i++){ const x=r()*128, y=r()*128, rr=.8+r()*1.8; at(x,y,(x,y)=>{ c.beginPath(); c.arc(x,y,rr,0,7); c.fill(); }); }
+    } else {
+      c.lineWidth=1.2;
+      for(let i=0;i<30;i++){
+        const x=r()*128, y=r()*128, rr=2.5+r()*3.5, n=5+(r()*3|0), ph=r()*6, pts=[];
+        for(let j=0;j<n;j++){ const a=ph+j/n*6.283, q=rr*(.7+.3*r()); pts.push([Math.cos(a)*q,Math.sin(a)*q]); }
+        at(x,y,(x,y)=>{ c.beginPath(); pts.forEach(([u,v],j)=>j?c.lineTo(x+u,y+v):c.moveTo(x+u,y+v)); c.closePath(); c.stroke(); });
+      }
+    }
+    patCache[key]=src;
+  }
+  const pat=ctx.createPattern(src,'repeat'); if(!pat) return base;
+  if(!envIconMode&&pat.setTransform&&typeof DOMMatrix!=='undefined'){
+    const sc=k*4/128; pat.setTransform(new DOMMatrix([sc,0,0,sc,X(0),Y(0)]));
+  }
+  return pat;
+}
+function scallop(ctx,cx,cy,R,n,ph,dep){
+  ctx.beginPath(); const m=n*8;
+  for(let i=0;i<m;i++){ const a=2*Math.PI*i/m, r=R*(1-dep+dep*Math.abs(Math.sin(n*a/2+ph)));
+    const x=cx+r*Math.cos(a), y=cy-r*Math.sin(a); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  ctx.closePath();
+}
+function rockPoly(ctx,cx,cy,R,r){
+  const n=6+(r()*3|0), ph=r()*6, pts=[];
+  for(let j=0;j<n;j++){ const a=ph+2*Math.PI*j/n, q=R*(.72+.28*r()); pts.push([cx+Math.cos(a)*q,cy-Math.sin(a)*q]); }
+  ctx.beginPath(); pts.forEach(([x,y],j)=>j?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.closePath();
+  return pts;
+}
+function drawEnvPoint(ctx,X,Y,k,o){
+  const E=ENV[o.type], R=Math.max(3,envRadius(o)*k), r=rng32(o.seed), cx=X(o.x), cy=Y(o.y);
+  ctx.save(); ctx.lineJoin='round';
+  if(E.cat==='tree'){   // shadow falls south east whatever the tree's rotation
+    ctx.beginPath(); ctx.arc(cx+R*.16,cy+R*.16,R*.96,0,7); ctx.fillStyle=COL['env-shadow']; ctx.fill();
+  }
+  ctx.translate(cx,cy); ctx.rotate(-o.rot*DEG); if(o.flip) ctx.scale(-1,1);
+  const edge='rgba(0,0,0,.32)';
+  if(o.type==='conifer'){
+    const n=11+(r()*5|0), ph=r()*6;
+    const star=(Ro,Ri)=>{ ctx.beginPath(); for(let j=0;j<2*n;j++){ const a=ph+Math.PI*j/n, q=(j%2?Ri:Ro)*(.9+.1*r());
+      j?ctx.lineTo(Math.cos(a)*q,-Math.sin(a)*q):ctx.moveTo(Math.cos(a)*q,-Math.sin(a)*q); } ctx.closePath(); };
+    star(R,R*.66); ctx.fillStyle=COL['env-conifer']; ctx.fill(); ctx.strokeStyle=edge; ctx.lineWidth=1; ctx.stroke();
+    star(R*.58,R*.36); ctx.fillStyle=COL['env-tree']; ctx.fill();
+  } else if(o.type==='deciduous'||o.type==='bush'){
+    const bush=o.type==='bush', n=bush?5+(r()*3|0):7+(r()*4|0), ph=r()*6;
+    scallop(ctx,0,0,R,n,ph,bush?.22:.16); ctx.fillStyle=COL[bush?'env-tree-hi':'env-tree']; ctx.fill();
+    ctx.strokeStyle=edge; ctx.lineWidth=1; ctx.stroke();
+    if(!bush){ scallop(ctx,-R*.14,-R*.12,R*.62,n-2,ph+1,.18); ctx.globalAlpha*=.75; ctx.fillStyle=COL['env-tree-hi']; ctx.fill(); ctx.globalAlpha/=.75; }
+  } else if(o.type==='boulder'){
+    const pts=rockPoly(ctx,0,0,R,r); ctx.fillStyle=COL['env-rock']; ctx.fill();
+    ctx.strokeStyle=COL['env-rock-edge']; ctx.lineWidth=1.5; ctx.stroke();
+    const h=Math.floor(pts.length/2); ctx.beginPath(); ctx.moveTo(-R*.1,-R*.05);
+    for(let j=0;j<=h;j++) ctx.lineTo(...pts[(j+Math.floor(pts.length*.35))%pts.length]);
+    ctx.closePath(); ctx.fillStyle=COL['env-rock-hi']; ctx.globalAlpha*=.6; ctx.fill();
+  } else if(o.type==='outcrop'){
+    const parts=[]; for(let j=0;j<5;j++) parts.push([(r()-.5)*1.2*R,(r()-.5)*.55*R,R*(.26+.2*r())]);
+    parts.sort((a,b)=>a[1]-b[1]);
+    for(const [x,y,q] of parts){
+      rockPoly(ctx,x,y,q,r); ctx.fillStyle=COL['env-rock']; ctx.fill(); ctx.strokeStyle=COL['env-rock-edge']; ctx.lineWidth=1.3; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-q*.4,y-q*.1); ctx.lineTo(x+q*.1,y+q*.25); ctx.strokeStyle=COL['env-rock-edge']; ctx.lineWidth=1; ctx.stroke();
+    }
+  }
+  if(E.cat==='tree'&&R>7){ ctx.beginPath(); ctx.arc(0,0,Math.max(1.5,R*.07),0,7); ctx.fillStyle=COL['env-trunk']; ctx.fill(); }
+  ctx.restore();
+}
+function drawEnvLine(ctx,X,Y,k,o){
+  const E=ENV[o.type], w=envPts(o), cl=!!o.closed;
+  if(w.length<2) return;
+  ctx.save(); ctx.lineJoin='round'; ctx.lineCap='round';
+  if(o.type==='river'){
+    const d=crDense(w,false,Math.max(.25,3/k)), W=Math.max(2,envWidth(o)*k);
+    linePath(ctx,X,Y,d,false); ctx.strokeStyle=COL['env-water-edge']; ctx.lineWidth=W+3; ctx.stroke();
+    linePath(ctx,X,Y,d,false); ctx.strokeStyle=COL['env-water']; ctx.lineWidth=W; ctx.stroke();
+    if(W>12){ ctx.setLineDash([W*.5,W*1.5]); linePath(ctx,X,Y,d,false); ctx.strokeStyle=COL['env-wave']; ctx.lineWidth=1.5; ctx.stroke(); }
+  } else if(E.cat==='wall'){
+    const W=Math.max(3,envWidth(o)*k), brick=o.type==='brickwall', ed=COL[brick?'env-brick-edge':'env-wall-edge'];
+    ctx.lineCap='square'; ctx.lineJoin='miter';
+    linePath(ctx,X,Y,w,cl); ctx.strokeStyle=ed; ctx.lineWidth=W+2.5; ctx.stroke();
+    linePath(ctx,X,Y,w,cl); ctx.strokeStyle=COL[brick?'env-brick':'env-wall']; ctx.lineWidth=W; ctx.stroke();
+    if(k>14){   // joints across the coping
+      const r=rng32(o.seed), n=w.length; ctx.beginPath();
+      for(let i=0;i<(cl?n:n-1);i++){
+        const a=w[i], b=w[(i+1)%n], L=dist(a,b), d=unit(sub(b,a)), nl=leftOf(d), hw=W/2/k;
+        for(let u=brick?.23:.2+r()*.4;u<L-.05;u+=brick?.23:.25+r()*.4){
+          const p=addv(a,mulv(d,u)); ctx.moveTo(X(p.x+nl.x*hw),Y(p.y+nl.y*hw)); ctx.lineTo(X(p.x-nl.x*hw),Y(p.y-nl.y*hw)); }
+      }
+      ctx.strokeStyle=ed; ctx.lineWidth=1; ctx.stroke();
+    }
+  } else {
+    ctx.lineCap='butt';
+    if(o.type==='woodfence'){
+      linePath(ctx,X,Y,w,cl); ctx.strokeStyle=COL['wood-line']; ctx.lineWidth=4; ctx.stroke();
+      linePath(ctx,X,Y,w,cl); ctx.strokeStyle=COL.wood; ctx.lineWidth=2; ctx.stroke();
+    } else if(o.type==='metalfence'){
+      linePath(ctx,X,Y,w,cl); ctx.strokeStyle=COL['env-metal']; ctx.lineWidth=1.8; ctx.stroke();
+      if(k>18){ ctx.beginPath(); alongLine(w,cl,.4,(p,d)=>{ const nl=leftOf(d), a=.12;
+          ctx.moveTo(X(p.x-d.x*a+nl.x*a),Y(p.y-d.y*a+nl.y*a)); ctx.lineTo(X(p.x+d.x*a-nl.x*a),Y(p.y+d.y*a-nl.y*a)); });
+        ctx.lineWidth=1; ctx.stroke(); }
+    } else {
+      ctx.setLineDash([5,3]); linePath(ctx,X,Y,w,cl); ctx.strokeStyle=COL['ink-soft']; ctx.lineWidth=1.3; ctx.stroke(); ctx.setLineDash([]);
+    }
+    const step=o.type==='woodfence'?2:o.type==='metalfence'?2.5:3, ps=Math.max(2.2,Math.min(5,.15*k));
+    const col=o.type==='woodfence'?COL['wood-line']:o.type==='metalfence'?COL['env-metal']:COL['ink-soft'];
+    ctx.fillStyle=col;
+    alongLine(w,cl,step,p=>{ ctx.beginPath();
+      if(o.type==='woodfence') ctx.rect(X(p.x)-ps,Y(p.y)-ps,2*ps,2*ps); else ctx.arc(X(p.x),Y(p.y),ps*.85,0,7);
+      ctx.fill(); });
+  }
+  ctx.restore();
+}
+function drawEnvArea(ctx,X,Y,k,o){
+  const E=ENV[o.type], w=envPts(o); if(w.length<3) return;
+  const d=crDense(w,true,Math.max(.25,3/k));
+  ctx.save(); ctx.lineJoin='round';
+  linePath(ctx,X,Y,d,true);
+  if(E.cat==='terrain'){
+    ctx.fillStyle=terrainFill(ctx,o.type,k,X,Y); ctx.fill();
+    ctx.globalAlpha*=.55; ctx.strokeStyle=COL['env-'+(o.type==='loosestone'?'stone':o.type)+'-ink']; ctx.lineWidth=1.2; ctx.stroke();
+  } else if(o.type==='lake'){
+    ctx.fillStyle=COL['env-water']; ctx.fill(); ctx.strokeStyle=COL['env-water-edge']; ctx.lineWidth=2; ctx.stroke();
+    if(k>4&&!envIconMode){   // a few ripples
+      const r=rng32(o.seed), e=envExtent(o); ctx.beginPath();
+      for(let j=0;j<40;j++){
+        const p=V(e.x0+(e.x1-e.x0)*r(), e.y0+(e.y1-e.y0)*r()); if(!inPoly(p,w)||polyDist(p,w,true)<1.2) continue;
+        const x=X(p.x), y=Y(p.y), a=Math.min(9,k*.5);
+        ctx.moveTo(x-a,y); ctx.quadraticCurveTo(x-a/2,y-a*.45,x,y); ctx.quadraticCurveTo(x+a/2,y+a*.45,x+a,y);
+      }
+      ctx.strokeStyle=COL['env-wave']; ctx.lineWidth=1.3; ctx.stroke();
+    }
+  } else {
+    // steep ground: shaded, a dashed no-go edge and hachures running in from it
+    ctx.fillStyle=COL['env-steep-fill']; ctx.fill();
+    ctx.setLineDash([6,4]); ctx.strokeStyle=COL['env-steep']; ctx.lineWidth=1.6; ctx.stroke(); ctx.setLineDash([]);
+    let sa=0; for(let i=0;i<w.length;i++){ const p=w[i], q=w[(i+1)%w.length]; sa+=p.x*q.y-q.x*p.y; }
+    const inSign=sa>0?1:-1, up=o.type==='steepup', step=Math.max(.4,(envIconMode?5:8)/k), L=clamp(k*1.4,5,16);
+    let acc=0, n=0; ctx.fillStyle=COL['env-steep'];
+    for(let i=0;i<d.length;i++){
+      const a=d[i], b=d[(i+1)%d.length], sl=dist(a,b); if(sl<1e-9) continue;
+      const t=unit(sub(b,a)), nn=mulv(leftOf(t),inSign);
+      for(acc+=sl;acc>=step;acc-=step){
+        const p=addv(b,mulv(t,-(acc-step))), len=(n++%2?.55:1)*L, x=X(p.x), y=Y(p.y);
+        const ex=x+nn.x*len, ey=y-nn.y*len, tx=t.x*1.6, ty=-t.y*1.6;
+        // a wedge: wide where the ground is high
+        ctx.beginPath();
+        if(up){ ctx.moveTo(x,y); ctx.lineTo(ex+tx,ey+ty); ctx.lineTo(ex-tx,ey-ty); }
+        else { ctx.moveTo(x+tx,y+ty); ctx.lineTo(x-tx,y-ty); ctx.lineTo(ex,ey); }
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    if(!envIconMode){
+      const c=envCentre(o);
+      pill(ctx,(up?'▲ up ':'▼ down ')+f1(o.h)+' m',X(c.x),Y(c.y),{size:11,edge:COL['env-steep']});
+    }
+  }
+  ctx.restore();
+}
+function drawEnvObj(ctx,X,Y,k,o){
+  const g=ENV[o.type].geo;
+  if(g==='point') drawEnvPoint(ctx,X,Y,k,o); else if(g==='line') drawEnvLine(ctx,X,Y,k,o); else drawEnvArea(ctx,X,Y,k,o);
+}
+function drawEnv(ctx,X,Y,k,o){
+  const pv=o.main&&o.preview&&o.preview.env?o.preview:null;
+  for(const i of envOrder()) if(!(pv&&pv.ext&&pv.ext.i===i)) drawEnvObj(ctx,X,Y,k,D.env[i]);
+  if(pv){ ctx.save(); ctx.globalAlpha=pv.ext?.85:.6; drawEnvObj(ctx,X,Y,k,pv.env); ctx.restore(); }
+}
+function delButton(ctx,X,Y,pos){
+  const x=clamp(X(pos.x)+30,20,PW-20), y=clamp(Y(pos.y)-30,20,PH-20);
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(X(pos.x),Y(pos.y)); ctx.lineTo(x,y); ctx.strokeStyle=COL.bad; ctx.lineWidth=2; ctx.stroke();
+  ctx.beginPath(); ctx.arc(X(pos.x),Y(pos.y),20,0,7); ctx.lineWidth=3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x,y,16,0,7); ctx.fillStyle=COL.bad; ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle='#fff'; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x-5.5,y-5.5); ctx.lineTo(x+5.5,y+5.5); ctx.moveTo(x+5.5,y-5.5); ctx.lineTo(x-5.5,y+5.5);
+  ctx.lineWidth=3; ctx.lineCap='round'; ctx.stroke(); ctx.restore();
+  return {x,y};
+}
+function drawEnvTop(ctx,X,Y,k,o,show){
+  const H={verts:[],mids:[],ends:[]}; HND.env=H;
+  if(!show) return;
+  const si=o.sel&&o.sel.kind==='env'?o.sel.i:-1, s=D.env[si];
+  ctx.save();
+  if(s){
+    const E=ENV[s.type];
+    ctx.strokeStyle=COL.sel; ctx.lineWidth=2.5; ctx.setLineDash([6,4]);
+    if(E.geo==='point'){ ctx.beginPath(); ctx.arc(X(s.x),Y(s.y),Math.max(3,envRadius(s)*k)+5,0,7); ctx.stroke(); ctx.setLineDash([]); }
+    else {
+      const w=envPts(s), cl=E.geo==='area'||!!s.closed, n=w.length;
+      linePath(ctx,X,Y,E.geo==='area'||s.type==='river'?crDense(w,cl,Math.max(.25,3/k)):w,cl); ctx.stroke(); ctx.setLineDash([]);
+      if(envMode()){
+        const plus=(x,y,r,dash)=>{ ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fillStyle=COL.handle; ctx.fill();
+          if(dash) ctx.setLineDash([3,3]); ctx.lineWidth=1.5; ctx.strokeStyle=COL.sel; ctx.stroke(); ctx.setLineDash([]);
+          ctx.beginPath(); ctx.moveTo(x-r*.5,y); ctx.lineTo(x+r*.5,y); ctx.moveTo(x,y-r*.5); ctx.lineTo(x,y+r*.5);
+          ctx.strokeStyle=COL['handle-ink']; ctx.lineWidth=1.8; ctx.stroke(); };
+        for(let j=0;j<(cl?n:n-1);j++){
+          const a=w[j], b=w[(j+1)%n], x=(X(a.x)+X(b.x))/2, y=(Y(a.y)+Y(b.y))/2;
+          if(Math.hypot(X(a.x)-X(b.x),Y(a.y)-Y(b.y))<40) continue;
+          plus(x,y,7,true); H.mids.push({i:si,j,x,y});
+        }
+        if(E.geo==='line'&&!cl&&n>=2){
+          for(const [end,p,q] of [[0,w[0],w[1]],[1,w[n-1],w[n-2]]]){
+            const dx=X(p.x)-X(q.x), dy=Y(p.y)-Y(q.y), L=Math.hypot(dx,dy)||1, x=X(p.x)+dx/L*32, y=Y(p.y)+dy/L*32;
+            ctx.beginPath(); ctx.moveTo(X(p.x),Y(p.y)); ctx.lineTo(x,y); ctx.setLineDash([3,3]); ctx.strokeStyle=COL.sel; ctx.lineWidth=1.5; ctx.stroke(); ctx.setLineDash([]);
+            plus(x,y,9,false); H.ends.push({i:si,end,x,y});
+          }
+        }
+        w.forEach((p,j)=>{ const x=X(p.x), y=Y(p.y); ctx.beginPath(); ctx.arc(x,y,6,0,7); ctx.fillStyle=COL.handle; ctx.fill();
+          ctx.lineWidth=2.5; ctx.strokeStyle=COL.sel; ctx.stroke(); H.verts.push({i:si,j,x,y}); });
+      }
+    }
+  }
+  if(act&&act.kind==='envv'&&act.snap){
+    const p=act.snap.p; ctx.beginPath(); ctx.arc(X(p.x),Y(p.y),13,0,7); ctx.strokeStyle=COL.sel; ctx.lineWidth=3; ctx.stroke();
+  }
+  if(paintPts&&paintPts.length>1){
+    const pt=act&&act.kind==='paint'?act.type||(D.env[act.target]&&D.env[act.target].type):null, area=!!pt&&ENV[pt].geo==='area';
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    linePath(ctx,X,Y,paintPts,false); ctx.strokeStyle=COL.sel; ctx.lineWidth=3; ctx.stroke();
+    if(area){ const a=paintPts[paintPts.length-1], b=paintPts[0]; ctx.beginPath(); ctx.moveTo(X(a.x),Y(a.y)); ctx.lineTo(X(b.x),Y(b.y));
+      ctx.setLineDash([4,4]); ctx.lineWidth=1.5; ctx.stroke(); ctx.setLineDash([]); }
+  }
+  const dt=delTarget;
+  if(dt&&dt.kind==='env'&&D.env[dt.i]) HND.del=delButton(ctx,X,Y,envCentre(D.env[dt.i]));
+  ctx.restore();
+}
+function envIcon(type,c,W,H){
+  const E=ENV[type], o=makeEnv(type,V(0,0),type.length*101+3);
+  let k;
+  if(E.geo==='point') k=Math.min((H-4)/E.base,(W-10)/(E.base*(type==='outcrop'?1.3:1)));
+  else if(type==='river') k=(W-14)/18;
+  else if(E.geo==='line'){ o.pts=[V(-5,0),V(5,0)]; k=(W-14)/10; }
+  else k=Math.min((W-6)/(2*E.rx*1.15),(H-4)/(2*E.ry*1.15));
+  const X=x=>W/2+x*k, Y=y=>H/2-y*k;
+  envIconMode=true;
+  try{ drawEnvObj(c,X,Y,k,o); } finally { envIconMode=false; }
+}
+
+/* ---------- environment: placing and editing ---------- */
+const tileName=type=>ENV[type]?ENV[type].name:PAL_NAME[type]||FEATURES[type].name;
+function setPalTab(t){
+  palTab=t==='env'?'env':'track';
+  $('palette').hidden=palTab!=='track'; $('env-palette').hidden=palTab!=='env';
+  $('tab-track').setAttribute('aria-pressed',String(palTab==='track')); $('tab-env').setAttribute('aria-pressed',String(palTab==='env'));
+  if(armed) disarm(); if(mode==='paint') endMode(); delTarget=null;
+  if(sel&&(sel.kind==='env')!==(palTab==='env')) setSel(null); else draw();
+  if(palTab==='env'&&D.cfg.layers.env===false) toast('The environment layer is hidden. Show it in Layers to edit it.');
+  try{ localStorage.setItem('creature-pump-track-tab',palTab); }catch(_){}
+}
+$('tab-track').onclick=()=>setPalTab('track');
+$('tab-env').onclick=()=>setPalTab('env');
+/* A fence or wall dropped by the free end of one of the same kind carries it on. */
+function envExtendAt(type,q){
+  const E=ENV[type]; if(!E||E.geo!=='line'||type==='river') return null;
+  const tol=18/view.k; let best=null;
+  D.env.forEach((o,i)=>{
+    if(o.type!==type||o.closed) return;
+    const w=envPts(o), n=w.length; if(n<2) return;
+    for(const [end,p,prev] of [[0,w[0],w[1]],[1,w[n-1],w[n-2]]]){ const d=dist(q,p); if(d<tol&&(!best||d<best.d)) best={i,end,p,prev,d}; }
+  });
+  if(!best) return null;
+  const o=clone(D.env[best.i]), np=addv(best.p,mulv(unit(sub(best.p,best.prev)),E.len||6)), lp=envToLocal(o,np);
+  if(best.end===0) o.pts.unshift(lp); else o.pts.push(lp);
+  return {i:best.i,obj:o};
+}
+function envPreview(type,q){
+  if(D.cfg.layers.env===false) return null;
+  const ext=envExtendAt(type,q);
+  return ext?{env:ext.obj,ext}:{env:makeEnv(type,q,envSeed)};
+}
+function placeEnv(type,q,select=true){
+  if(D.cfg.layers.env===false){ toast('The environment layer is hidden. Show it in Layers to edit it.'); return false; }
+  if(D.env.length>=ENV_MAX){ toast('That is as many objects as one design can hold.'); return false; }
+  const ext=envExtendAt(type,q);
+  if(ext){ D.env[ext.i]=ext.obj; recompute(); commit(); setSel({kind:'env',i:ext.i});
+    toast(ENV[type].name+' carried on. Drag the new end post to place it.',true); return true; }
+  D.env.push(makeEnv(type,q,envSeed)); envSeed=newSeed();
+  recompute(); commit();
+  if(select) setSel({kind:'env',i:D.env.length-1}); else draw();
+  return true;
+}
+function envHit(x,y,q){
+  if(D.cfg.layers.env===false) return {kind:'empty'};
+  const H=HND.env;
+  if(H){
+    for(const h of H.verts) if(Math.hypot(h.x-x,h.y-y)<=12) return {kind:'envv',i:h.i,j:h.j};
+    for(const h of H.ends) if(Math.hypot(h.x-x,h.y-y)<=13) return {kind:'enve',i:h.i,end:h.end};
+    for(const h of H.mids) if(Math.hypot(h.x-x,h.y-y)<=11) return {kind:'envm',i:h.i,j:h.j};
+  }
+  const ord=envOrder(), pad=8/view.k;
+  for(let n=ord.length-1;n>=0;n--){
+    const i=ord[n], o=D.env[i], E=ENV[o.type];
+    if(E.geo==='point'){ if(dist(q,o)<=Math.max(envRadius(o)*.9,11/view.k)) return {kind:'env',i}; }
+    else if(E.geo==='line'){ if(polyDist(q,envPts(o),o.closed)<=envWidth(o)/2+pad) return {kind:'env',i}; }
+    else { const w=envPts(o); if(inPoly(q,w)||polyDist(q,w,true)<=pad) return {kind:'env',i,area:true}; }
+  }
+  return {kind:'empty'};
+}
+/* A post dragged near another fence or wall post snaps onto it. */
+function envSnap(i,j,q){
+  const o=D.env[i]; if(!isLink(o)) return null;
+  const tol=12/view.k, n=o.pts.length, isEnd=!o.closed&&(j===0||j===n-1); let best=null;
+  D.env.forEach((b,bi)=>{
+    if(!isLink(b)) return;
+    const w=envPts(b), m=w.length;
+    w.forEach((p,bj)=>{
+      if(bi===i&&!(isEnd&&n>=4&&bj===(j===0?n-1:0))) return;
+      const d=dist(q,p); if(d<tol&&(!best||d<best.d)) best={i:bi,j:bj,p,d,end:!b.closed&&(bj===0||bj===m-1)};
+    });
+  });
+  return best;
+}
+/* An end dropped on another end joins the two lines (or closes this one). */
+function envFinishDrag(a){
+  const o=D.env[a.i], sn=a.snap; if(!sn||!o) return;
+  const n=o.pts.length, isEnd=!o.closed&&(a.j===0||a.j===n-1); if(!isEnd) return;
+  if(sn.i===a.i){ o.pts.splice(a.j,1); o.closed=true; toast(ENV[o.type].name+' closed round.',true); buildInspector(); return; }
+  const b=D.env[sn.i];
+  if(!sn.end||b.type!==o.type){ toast('Linked to '+envLabel(b,sn.i).toLowerCase()+'.',true); return; }
+  D.env[a.i]=joinEnvLines(o,a.j===0?0:1,b,sn.j===0?0:1); D.env.splice(sn.i,1);
+  sel={kind:'env',i:sn.i<a.i?a.i-1:a.i}; buildInspector();
+  toast('Joined into one '+ENV[o.type].name.toLowerCase()+'.',true);
+}
+function finishPaint(a){
+  const pts=paintPts||[]; paintPts=null;
+  const type=a.type||(D.env[a.target]&&D.env[a.target].type);
+  if(!type||!pts.length){ draw(); return; }
+  if(!a.moved){ if(a.type){ placeEnv(type,pts[0]); disarm(); } draw(); return; }
+  const o=envFromStroke(type,pts,Math.max(.03,3/view.k),envSeed);
+  if(!o){ toast('Too small to make a shape. Drag out a bigger one.'); draw(); return; }
+  if(a.type){
+    if(D.env.length>=ENV_MAX){ toast('That is as many objects as one design can hold.'); draw(); return; }
+    D.env.push(o); envSeed=newSeed(); disarm(); recompute(); commit(); setSel({kind:'env',i:D.env.length-1});
+  } else {
+    const old=D.env[a.target]; if(old.w!=null) o.w=rnd(old.w*old.s,3); if(old.h!=null) o.h=old.h; o.seed=old.seed;
+    D.env[a.target]=o; endMode(); recompute(); commit(); buildInspector(); toast('Shape redrawn.',true);
+  }
+}
+function removeEnvPoint(i,j){
+  const o=D.env[i]; if(!o||!o.pts) return;
+  const min=ENV[o.type].geo==='area'?3:2;
+  if(o.pts.length<=min){ toast(ENV[o.type].geo==='area'?'An area needs at least three points.':'A line needs at least two points.'); draw(); return; }
+  o.pts.splice(j,1); if(o.closed&&o.pts.length<3) o.closed=false;
+  try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
+  recompute(); commit(); buildInspector(); toast('Point removed. Undo brings it back.',true);
+}
+function deleteEnv(i){
+  const o=D.env[i]; if(!o) return;
+  D.env.splice(i,1); sel=null; delTarget=null; recompute(); commit(); buildInspector();
+  toast(ENV[o.type].name+' deleted. Undo brings it back.',true);
+}
+function setEnvType(o,v){
+  const E=ENV[v]; o.type=v;
+  if(E.w){ if(o.w==null) o.w=E.w; } else delete o.w;
+  if(E.h){ if(o.h==null) o.h=E.h; } else delete o.h;
+}
+function startRedraw(){
+  if(!sel||sel.kind!=='env') return;
+  if(armed) disarm(); mode='paint'; plan.classList.add('cross');
+  document.body.classList.remove('has-sel');   // the phone sheet would cover the plan
+  const o=D.env[sel.i], area=ENV[o.type].geo==='area';
+  showHint(area?'Drag round the new outline on the plan':'Drag the new line on the plan');
+}
+function buildEnvPanel(P){
+  const i=sel.i, o=D.env[i], E=ENV[o.type];
+  hdr(P,envLabel(o,i),o.type);
+  const sibs=Object.keys(ENV).filter(t=>ENV[t].cat===E.cat&&ENV[t].geo===E.geo);
+  if(sibs.length>1) segBtns(P,sibs.map(t=>[t,ENV_SHORT[t]]),o.type,v=>{ setEnvType(o,v); recompute(); commit(); buildInspector(); },'Kind');
+  if(E.geo==='point') liveRows.push(prmRow(P,P_('Size across','m',.3,40,.1),()=>E.base*o.s,v=>{ o.s=clamp(v/E.base,.05,20); recompute(); updateInspector(); }));
+  else liveRows.push(prmRow(P,P_('Scale','%',10,500,1),()=>o.s*100,v=>{ o.s=clamp(v/100,.05,20); recompute(); updateInspector(); }));
+  liveRows.push(prmRow(P,P_('Rotation','°',-180,180,1),()=>((o.rot%360)+540)%360-180,v=>{ o.rot=v; recompute(); updateInspector(); }));
+  if(o.w!=null){ const wall=E.cat==='wall';
+    liveRows.push(prmRow(P,P_(wall?'Thickness':'Width','m',wall?.1:.3,wall?2:40,.05),()=>envWidth(o),v=>{ o.w=v/o.s; recompute(); updateInspector(); })); }
+  if(o.h!=null) liveRows.push(prmRow(P,P_(o.type==='steepup'?'Rises':'Drops','m',.2,30,.1),()=>o.h,v=>{ o.h=v; recompute(); updateInspector(); }));
+  if(E.geo==='line'&&o.type!=='river'){
+    const ck=document.createElement('label'); ck.className='check';
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!o.closed; cb.disabled=o.pts.length<3;
+    cb.onchange=()=>{ o.closed=cb.checked&&o.pts.length>=3; recompute(); commit(); buildInspector(); };
+    ck.append(cb,document.createTextNode('Closed round'+(o.pts.length<3?' (needs three posts)':''))); P.appendChild(ck);
+  }
+  const m=document.createElement('div'); m.id='fitmsg'; m.className='fitmsg'; P.appendChild(m);
+  xyRows(P,o,false);
+  const br=document.createElement('div'); br.className='btnrow';
+  const fl=document.createElement('button'); fl.textContent='Flip'; fl.setAttribute('aria-pressed',String(!!o.flip)); fl.title='Mirror it';
+  fl.onclick=()=>{ o.flip=!o.flip; recompute(); commit(); buildInspector(); };
+  br.appendChild(fl);
+  if(E.geo!=='point'){ const rd=document.createElement('button'); rd.textContent='Redraw'; rd.title=E.geo==='area'?'Paint a new outline':'Draw a new line'; rd.onclick=startRedraw; br.appendChild(rd); }
+  const dup=document.createElement('button'); dup.textContent='Duplicate'; dup.onclick=duplicateSel;
+  const del=document.createElement('button'); del.textContent='Delete'; del.className='danger'; del.onclick=deleteSel;
+  br.append(dup,del); P.appendChild(br);
+  updateInspector();
+}
+function envReadout(o){
+  const E=ENV[o.type];
+  if(E.geo==='point') return f1(E.base*o.s)+' m across.';
+  const w=envPts(o);
+  if(E.geo==='line'){ const L=polyLen(o.closed?w.concat([w[0]]):w);
+    return f1(L)+' m long, '+w.length+(E.cat==='water'?' points.':' posts.')+(E.cat==='fence'||E.cat==='wall'?' Drag an end onto another end to join them.':''); }
+  return 'About '+Math.round(polyArea(crDense(w,true,.5)))+' m², '+w.length+' points.';
 }
 
 /* ---------- profile strip ---------- */
@@ -2216,6 +2901,7 @@ function drawProfile(ctx,W,H,o){
 function iconCanvas(type,cv,W=88,H=34){
   const dpr=window.devicePixelRatio||1; cv.width=W*dpr; cv.height=H*dpr;
   const c=cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H);
+  if(ENV[type]){ envIcon(type,c,W,H); return; }
   if(type==='hip'){
     // plan view: a takeoff on one straight, a flared landing on the next, the flight line between
     const y=H-10, cx=W*.5;
@@ -2249,15 +2935,27 @@ function iconCanvas(type,cv,W=88,H=34){
   }
   c.beginPath(); c.moveTo(1,gy+.5); c.lineTo(W-1,gy+.5); c.strokeStyle=COL['ink-soft']; c.lineWidth=1.5; c.stroke();
 }
+function makeTile(type,title){
+  const t=document.createElement('div'); t.className='tile'; t.dataset.type=type; t.setAttribute('role','button');
+  t.tabIndex=0; t.title=title;
+  const cv=document.createElement('canvas'); iconCanvas(type,cv);
+  const s=document.createElement('span'); s.textContent=tileName(type);
+  t.append(cv,s); wireTile(t,type); return t;
+}
 function buildPalette(){
   const P=$('palette'); P.innerHTML='';
-  for(const type of PALETTE){
-    const t=document.createElement('div'); t.className='tile'; t.dataset.type=type; t.setAttribute('role','button');
-    t.tabIndex=0; t.title='Drag onto the track, or tap then tap the track';
-    const cv=document.createElement('canvas'); iconCanvas(type,cv);
-    const s=document.createElement('span'); s.textContent=PAL_NAME[type]||FEATURES[type].name;
-    t.append(cv,s); P.appendChild(t); wireTile(t,type);
+  for(const type of PALETTE) P.appendChild(makeTile(type,'Drag onto the track, or tap then tap the track'));
+  const Q=$('env-palette'); Q.innerHTML='';
+  for(const [cat,label] of ENV_CATS){
+    const h=document.createElement('div'); h.className='pal-h'; h.textContent=label; Q.appendChild(h);
+    for(const type of Object.keys(ENV).filter(t=>ENV[t].cat===cat))
+      Q.appendChild(makeTile(type,ENV[type].geo==='point'?'Drag onto the plan, or tap then tap the plan'
+        :ENV[type].geo==='line'?'Tap, then drag on the plan to draw it':'Tap, then drag round an outline on the plan to paint it'));
   }
+  const n=document.createElement('p'); n.id='env-note'; n.className='note';
+  n.textContent='The track is locked while this tab is open. Tap an object to set its size, rotation and flip.';
+  Q.appendChild(n);
+  if(armed) document.querySelectorAll('.tile').forEach(t=>t.classList.toggle('armed',t.dataset.type===armed));
 }
 
 /* ---------- placing from the palette ---------- */
@@ -2267,6 +2965,7 @@ function nearestCorner(q){
   return best;
 }
 function previewFor(type,q){
+  if(ENV[type]) return envPreview(type,q);
   if(!T||!T.ok||D.cfg.layers.design===false) return null;
   if(type==='berm'||type==='bermroller'){
     const c=nearestCorner(q); return c&&c.d<Math.max(T.width*3,90/view.k)?{corner:c.i}:null;
@@ -2285,6 +2984,7 @@ function previewFor(type,q){
   return {f,c:slot.c,ok:slot.ok,sp:{s0:leg.s0+slot.c-pr.len/2,pr}};
 }
 function placeAt(type,q){
+  if(ENV[type]) return placeEnv(type,q);
   if(D.cfg.layers.design===false){ toast('The design layer is hidden. Show it in Layers to edit.'); return false; }
   const pv=previewFor(type,q);
   if(!pv){
@@ -2321,7 +3021,11 @@ function placeAt(type,q){
 function arm(type){
   armed=type; document.querySelectorAll('.tile').forEach(t=>t.classList.toggle('armed',t.dataset.type===type));
   plan.classList.add('place');
-  showHint('Tap the track to place '+(PAL_NAME[type]||FEATURES[type].name).toLowerCase());
+  const E=ENV[type], nm=tileName(type).toLowerCase();
+  showHint(!E?'Tap the track to place '+nm
+    :E.geo==='point'?'Tap the plan to place a '+nm+'. Keep tapping for more'
+    :E.geo==='line'?'Drag on the plan to draw the '+nm+', or tap for a straight piece'
+    :'Drag round the outline of the '+nm+' on the plan, or tap for a ready-made one');
 }
 function disarm(){
   armed=null; document.querySelectorAll('.tile.armed').forEach(t=>t.classList.remove('armed'));
@@ -2340,7 +3044,7 @@ function wireTile(t,type){
     if(!g.on&&Math.hypot(e.clientX-g.x,e.clientY-g.y)>6){
       g.on=true; if(armed) disarm();
       ghost.innerHTML=''; const cv=document.createElement('canvas'); iconCanvas(type,cv);
-      const s=document.createElement('div'); s.textContent=PAL_NAME[type]||FEATURES[type].name;
+      const s=document.createElement('div'); s.textContent=tileName(type);
       ghost.append(cv,s); ghost.style.display='block';
     }
     if(!g.on) return;
@@ -2393,7 +3097,7 @@ function holdToDelete(kind,i){
   act.timer=setTimeout(()=>{
     if(!act||act.kind!==kind||act.i!==i||act.moved) return;
     act=null; plan.classList.remove('grabbing');
-    delTarget={kind:kind==='feat'?'feature':'node',i};
+    delTarget={kind:kind==='feat'?'feature':kind==='envo'?'env':'node',i};
     if(sel){ sel=null; buildInspector(); }   // keep the phone sheet out of the way
     try{ if(navigator.vibrate) navigator.vibrate(15); }catch(_){}
     draw();
@@ -2405,7 +3109,8 @@ plan.addEventListener('pointerdown',e=>{
   try{ plan.setPointerCapture(e.pointerId); }catch(_){}
   if(ptrs.size===2){
     if(act) clearTimeout(act.timer);
-    if(act&&act.moved&&act.kind!=='pan') commit();
+    if(act&&act.moved&&act.kind!=='pan'&&act.kind!=='paint') commit();
+    paintPts=null;
     const [a,b]=[...ptrs.values()];
     act={kind:'pinch',d0:Math.hypot(a.x-b.x,a.y-b.y)||1,k0:view.k,m0:s2w((a.x+b.x)/2,(a.y+b.y)/2)};
     return;
@@ -2415,13 +3120,38 @@ plan.addEventListener('pointerdown',e=>{
   // While a delete button is showing, the next tap either hits it or clears it.
   if(delTarget!=null){
     const d=HND.del, t=delTarget; delTarget=null;
-    if(d&&Math.hypot(d.x-x,d.y-y)<=22){ if(t.kind==='feature') deleteFeature(t.i); else deleteNode(t.i); }
+    if(d&&Math.hypot(d.x-x,d.y-y)<=22){ if(t.kind==='feature') deleteFeature(t.i); else if(t.kind==='env') deleteEnv(t.i); else deleteNode(t.i); }
     else draw();
     return;
   }
+  if(armed&&ENV[armed]&&ENV[armed].geo!=='point'&&D.cfg.layers.env!==false){
+    // a line or an area: drag to draw it, or tap for the ready-made one
+    preview=null; paintPts=[q]; act={kind:'paint',type:armed,x0:x,y0:y,moved:false,tol:6}; return;
+  }
+  if(armed&&ENV[armed]){ placeEnv(armed,q,false); return; }   // trees and rocks: keep planting
   if(armed){ if(placeAt(armed,q)) disarm(); return; }
+  if(mode==='paint'){ paintPts=[q]; act={kind:'paint',target:sel&&sel.kind==='env'?sel.i:-1,x0:x,y0:y,moved:false,tol:6}; return; }
   if(mode==='cal'){ calPts.push(q); if(calPts.length===2) askCalDistance(); else showHint('Now tap the other end of that distance'); draw(); return; }
   if(mode==='img'&&D.cfg.bg){ act={kind:'img',x0:x,y0:y,bx:D.cfg.bg.x,by:D.cfg.bg.y,moved:false}; plan.classList.add('grabbing'); return; }
+  if(envMode()){
+    // Environment tab: the track is locked, objects are edited
+    const h=envHit(x,y,q), tol=e.pointerType==='touch'?9:4, selI=sel&&sel.kind==='env'?sel.i:-1;
+    if(h.kind==='envv'){
+      act={kind:'envv',i:h.i,j:h.j,x0:x,y0:y,moved:false,tol};
+      act.timer=setTimeout(()=>{ if(!act||act.kind!=='envv'||act.moved) return;
+        const a=act; act=null; plan.classList.remove('grabbing'); removeEnvPoint(a.i,a.j); },550);
+    } else if(h.kind==='enve'||h.kind==='envm'){
+      const o=D.env[h.i], j=h.kind==='enve'?(h.end===0?0:o.pts.length):h.j+1;
+      o.pts.splice(j,0,envToLocal(o,q));
+      act={kind:'envv',i:h.i,j,x0:x,y0:y,moved:true}; recompute();
+    } else if(h.kind==='env'&&(!h.area||selI===h.i)){
+      // areas are big: tap one to select it, then drag it; anything else drags straight away
+      if(selI!==h.i) setSel({kind:'env',i:h.i});
+      const o=D.env[h.i]; act={kind:'envo',i:h.i,x0:x,y0:y,o0:{x:o.x,y:o.y},moved:false,tol};
+      holdToDelete('envo',h.i);
+    } else act={kind:'pan',x0:x,y0:y,c0:{cx:view.cx,cy:view.cy},moved:false,hit:h};
+    plan.classList.add('grabbing'); return;
+  }
   const h=hitTest(x,y,q);
   if(h.kind==='plus'){
     const i=insertNode(D.geom,T,h.leg,T.legs[h.leg].len/2); recompute(); setSel({kind:'node',i});
@@ -2449,7 +3179,9 @@ plan.addEventListener('pointermove',e=>{
   if(ptrs.has(e.pointerId)) ptrs.set(e.pointerId,{x,y});
   if(!act){
     if(e.pointerType==='mouse'&&!armed&&!mode){
-      const h=hitTest(x,y,s2w(x,y)); plan.classList.toggle('grab',h.kind==='node'||h.kind==='feature'||h.kind==='plus');
+      if(envMode()){ const h=envHit(x,y,s2w(x,y));
+        plan.classList.toggle('grab',h.kind!=='empty'&&!(h.area&&!(sel&&sel.kind==='env'&&sel.i===h.i))); }
+      else { const h=hitTest(x,y,s2w(x,y)); plan.classList.toggle('grab',h.kind==='node'||h.kind==='feature'||h.kind==='plus'); }
     }
     if(armed&&e.pointerType==='mouse'){ preview=previewFor(armed,s2w(x,y)); draw(); }
     return;
@@ -2467,6 +3199,13 @@ plan.addEventListener('pointermove',e=>{
   act.moved=true;
   if(act.kind==='pan'){ view.cx=act.c0.cx-dx/view.k; view.cy=act.c0.cy+dy/view.k; draw(); }
   else if(act.kind==='img'){ D.cfg.bg.x=act.bx+dx/view.k; D.cfg.bg.y=act.by-dy/view.k; draw(); }
+  else if(act.kind==='paint'){ const q=s2w(x,y), L=paintPts&&paintPts[paintPts.length-1];
+    if(paintPts&&dist(q,L)*view.k>=3){ paintPts.push(q); draw(); } }
+  else if(act.kind==='envo'){ const o=D.env[act.i]; if(!o) return;
+    o.x=rnd(act.o0.x+dx/view.k,3); o.y=rnd(act.o0.y-dy/view.k,3); recompute(); updateInspector(); }
+  else if(act.kind==='envv'){ const o=D.env[act.i]; if(!o) return;
+    let q=s2w(x,y); act.snap=envSnap(act.i,act.j,q); if(act.snap) q=act.snap.p;
+    o.pts[act.j]=envToLocal(o,q); recompute(); updateInspector(); }
   else if(act.kind==='node'){
     // only this corner moves: the others are circles that stay put
     const n=D.geom.nodes[act.i];
@@ -2490,11 +3229,14 @@ function endPointer(e){
   const a=act; act=null; clearTimeout(a.timer); plan.classList.remove('grabbing');
   if(a.kind==='node'||a.kind==='feat'){ if(a.moved) commit(); draw(); return; }
   if(a.kind==='img'){ autosave(); return; }
+  if(a.kind==='paint'){ finishPaint(a); return; }
+  if(a.kind==='envo'||a.kind==='envv'){ if(a.kind==='envv'&&a.moved) envFinishDrag(a); if(a.moved){ recompute(); commit(); } draw(); return; }
   if(a.kind==='pan'&&!a.moved){
     const [x,y]=localXY(e), now=performance.now();
     const dbl=now-lastTap.t<380&&Math.hypot(x-lastTap.x,y-lastTap.y)<24;
     lastTap={t:now,x,y};
-    if(dbl&&a.hit.kind==='track'&&a.hit.pj.el.kind==='leg'){
+    if(a.hit.kind==='env') setSel({kind:'env',i:a.hit.i});
+    else if(dbl&&a.hit.kind==='track'&&a.hit.pj.el.kind==='leg'){
       const L=a.hit.pj.el, i=insertNode(D.geom,T,L.k,a.hit.pj.s-L.s0); recompute(); commit();
       setSel({kind:'node',i}); lastTap.t=0; toast('Corner added. Drag it to bend the track.',true);
     } else if(sel) setSel(null);
@@ -2587,6 +3329,7 @@ function validSel(){
   if(!sel) return;
   if(sel.kind==='feature'&&!D.geom.features[sel.i]) sel=null;
   else if(sel.kind==='node'&&!D.geom.nodes[sel.i]) sel=null;
+  else if(sel.kind==='env'&&!D.env[sel.i]) sel=null;
 }
 function prmRow(host,q,get,set){
   const d=document.createElement('div'); d.className='prm';
@@ -2622,7 +3365,7 @@ function buildInspector(){
   const P=$('sel-panel'); P.innerHTML=''; liveRows=[];
   refreshTrackPanel();
   if(!sel) return;
-  if(sel.kind==='feature') buildFeaturePanel(P); else buildNodePanel(P);
+  if(sel.kind==='env') buildEnvPanel(P); else if(sel.kind==='feature') buildFeaturePanel(P); else buildNodePanel(P);
 }
 function sizeOf(type,p){
   for(const s of Object.keys(SIZES)){ const q=sizedParams(type,s);
@@ -2720,9 +3463,16 @@ function xyRows(P,n,centre){
 function updateInspector(){
   liveRows.forEach(r=>r.sync());
   document.querySelectorAll('#sel-panel input[data-xy]').forEach(inp=>{
-    const n=sel&&sel.kind==='node'&&D.geom.nodes[sel.i]; if(n&&document.activeElement!==inp) inp.value=f2(n[inp.dataset.xy]); });
+    const n=sel&&(sel.kind==='node'?D.geom.nodes[sel.i]:sel.kind==='env'?D.env[sel.i]:null);
+    if(n&&document.activeElement!==inp) inp.value=f2(n[inp.dataset.xy]); });
   if(!sel) return;
   const m=$('fitmsg');
+  if(sel.kind==='env'){
+    const o=D.env[sel.i]; if(!o||!m) return;
+    const iss=issues.find(q=>q.env===sel.i);
+    m.className='fitmsg'+(iss?' bad':''); m.textContent=(iss?iss.msg+'. ':'')+envReadout(o);
+    return;
+  }
   if(sel.kind==='feature'){
     const sp=spans[sel.i]; if(!sp) return;
     const sz=$('f-size'); if(sz){ const cur=sizeOf(sp.f.type,sp.pr.p); sz.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===cur))); }
@@ -2843,10 +3593,12 @@ function updateLive(){
   if(li&&li.textContent!==lt) li.textContent=lt;
   syncIssues();
   const dsub=f1(T.length)+' m '+(T.closed?'loop':'line'); if($('ly-design-sub').textContent!==dsub) $('ly-design-sub').textContent=dsub;
+  const esub=D.env.length?D.env.length+(D.env.length>1?' objects':' object'):'Trees, rocks, water, ground';
+  if($('ly-env-sub').textContent!==esub) $('ly-env-sub').textContent=esub;
 }
 /* A corner too big for its straights is shrunk to fit, so it is a warning.
    A feature that overflows or overlaps is a real error. */
-const issueIsError=q=>q.kind!=='tight'&&q.kind!=='hipangle';
+const issueIsError=q=>q.kind!=='tight'&&q.kind!=='hipangle'&&q.kind!=='env';
 let lastIssues='';
 function syncIssues(){
   const btn=$('issue-btn'), n=issues.length, err=issues.some(issueIsError);
@@ -2863,6 +3615,8 @@ $('issue-x').onclick=()=>setIssueLog(false);
 $('issue-list').addEventListener('click',e=>{
   const b=e.target.closest('[data-iss]'); if(!b) return; const q=issues[+b.dataset.iss];
   setIssueLog(false);
+  if(q.env!=null){ if(!envMode()) setPalTab('env'); setSel({kind:'env',i:q.env}); return; }
+  if(envMode()) setPalTab('track');
   if(q.feature!=null) setSel({kind:'feature',i:q.feature}); else if(q.node!=null) setSel({kind:'node',i:q.node});
 });
 
@@ -2880,9 +3634,14 @@ function deleteFeature(i){
 }
 function deleteSel(){
   if(!sel) return;
-  if(sel.kind==='node') deleteNode(sel.i); else deleteFeature(sel.i);
+  if(sel.kind==='env') deleteEnv(sel.i); else if(sel.kind==='node') deleteNode(sel.i); else deleteFeature(sel.i);
 }
 function duplicateSel(){
+  if(sel&&sel.kind==='env'){
+    if(D.env.length>=ENV_MAX){ toast('That is as many objects as one design can hold.'); return; }
+    const o=clone(D.env[sel.i]); o.x=rnd(o.x+2,3); o.y=rnd(o.y-2,3); o.seed=newSeed();
+    D.env.push(o); recompute(); commit(); setSel({kind:'env',i:D.env.length-1}); return;
+  }
   if(!sel||sel.kind!=='feature') return;
   const sp=spans[sel.i], f=clone(sp.f), slot=findSlot(T,spans,f.leg,sp.c+sp.pr.len,sp.pr.len,-1);
   if(!slot.ok){ toast('No room for another on this straight.'); return; }
@@ -2907,13 +3666,13 @@ $('b-dims').onclick=()=>{ D.cfg.dims=!D.cfg.dims; $('b-dims').setAttribute('aria
 
 /* ---------- undo ---------- */
 let undoS=[], redoS=[], lastSnap=null;
-const snap=()=>JSON.stringify(D.lines);   // which line is active is not an undo step
+const snap=()=>JSON.stringify({lines:D.lines,env:D.env});   // which line is active is not an undo step
 function commit(){
   const s=snap(); if(s===lastSnap) return;
   if(lastSnap!=null){ undoS.push(lastSnap); if(undoS.length>200) undoS.shift(); }
   redoS=[]; lastSnap=s; syncUndo(); autosave();
 }
-function restore(s){ delTarget=null; D.lines=JSON.parse(s); D.active=clamp(D.active,0,D.lines.length-1); lastSnap=s; validSel(); recompute(); buildInspector(); syncUndo(); autosave(); }
+function restore(s){ delTarget=null; const u=JSON.parse(s); D.lines=u.lines; D.env=u.env||[]; D.active=clamp(D.active,0,D.lines.length-1); lastSnap=s; validSel(); recompute(); buildInspector(); syncUndo(); autosave(); }
 function undo(){ if(!undoS.length) return; redoS.push(lastSnap); restore(undoS.pop()); }
 function redo(){ if(!redoS.length) return; undoS.push(lastSnap); restore(redoS.pop()); }
 function syncUndo(){ $('b-undo').disabled=!undoS.length; $('b-redo').disabled=!redoS.length; }
@@ -2932,7 +3691,9 @@ document.addEventListener('keydown',e=>{
   else if((e.key==='Delete'||e.key==='Backspace')&&sel){ e.preventDefault(); deleteSel(); }
   else if(sel&&/^Arrow/.test(e.key)){
     e.preventDefault(); const st=e.shiftKey?1:.1;
-    if(sel.kind==='feature'){ const sp=spans[sel.i], d=(e.key==='ArrowRight'||e.key==='ArrowUp')?st:-st;
+    if(sel.kind==='env'){ const o=D.env[sel.i]; if(e.key==='ArrowLeft') o.x-=st; if(e.key==='ArrowRight') o.x+=st;
+      if(e.key==='ArrowUp') o.y+=st; if(e.key==='ArrowDown') o.y-=st; o.x=rnd(o.x,3); o.y=rnd(o.y,3); }
+    else if(sel.kind==='feature'){ const sp=spans[sel.i], d=(e.key==='ArrowRight'||e.key==='ArrowUp')?st:-st;
       sp.f.t=clamp((sp.c+d)/sp.leg.len,0,1); }
     else { const n=D.geom.nodes[sel.i]; if(e.key==='ArrowLeft') n.x-=st; if(e.key==='ArrowRight') n.x+=st;
       if(e.key==='ArrowUp') n.y+=st; if(e.key==='ArrowDown') n.y-=st; }
@@ -2957,7 +3718,7 @@ function designOut(withImage=true){
   const cfg=clone(D.cfg); if(!withImage) cfg.bg=null;
   // geom is the active line, so a reader that only knows one line still gets a track
   return {_meta:{name:D._meta.name||'',designer:D._meta.designer||'',date:new Date().toISOString(),version:'1.1',
-    tool:'pump-track-designer'},lines:clone(D.lines),active:D.active,geom:D.geom,cfg};
+    tool:'pump-track-designer'},lines:clone(D.lines),active:D.active,geom:D.geom,env:clone(D.env),cfg};
 }
 function linesOf(data){
   const raw=Array.isArray(data.lines)&&data.lines.length?data.lines:data.geom?[{name:'Track 1',geom:data.geom}]:[];
@@ -2971,7 +3732,7 @@ function loadDesign(data,{fit=true}={}){
   const lines=linesOf(data), c=data.cfg||{};
   D=makeD({name:(data._meta&&data._meta.name)||'',designer:(data._meta&&data._meta.designer)||''},lines,+data.active||0,
     Object.assign(clone(DEF_CFG),c,{geo:Object.assign(clone(DEF_CFG.geo),c.geo||{}),
-      layers:Object.assign(clone(DEF_CFG.layers),c.layers||{})}));
+      layers:Object.assign(clone(DEF_CFG.layers),c.layers||{})}),normEnv(data.env));
   if(D.cfg.gpx&&!(Array.isArray(D.cfg.gpx.pts)&&D.cfg.gpx.pts.length>1)) D.cfg.gpx=null;
   if(D.cfg.bg&&D.cfg.bg.src) bgImg.src=D.cfg.bg.src; else D.cfg.bg=null;
   sel=null; delTarget=null; refCache.key=''; recompute(); if(fit) fitView(); buildInspector(); syncLayers();
@@ -3095,6 +3856,7 @@ function openFile(){
           const g=parseGPX(text), out=gpxToDesign(g,D.geom.width);
           if(out.lines&&out.lines.length){ D.lines=linesOf({lines:out.lines}); D.active=clamp(out.active,0,D.lines.length-1); }
           else D.geom=out.geom;
+          if(out.env) D.env=out.env;
           D.cfg.geo=Object.assign(clone(DEF_CFG.geo),out.geo); sel=null;
           if(!g.design&&g.pts.length) D._meta.name=D._meta.name||file.name.replace(/\.[^.]+$/,'');
           recompute(); fitView(); buildInspector();
@@ -3184,6 +3946,18 @@ function buildSheet(){
     drawPlan(c,pw,ph,fitBox(extentAll(),pw,ph,1.12),{grid:true,bg:true,handles:'tags',dims:true,sheet:true});
     c.restore();
     c.strokeStyle=COL.rule; c.lineWidth=3; c.strokeRect(M,top,W-2*M,planH);
+    // what the environment symbols are, in the plan's bottom-right corner
+    const cats=D.cfg.layers.env!==false?ENV_CATS.filter(([cat])=>D.env.some(o=>ENV[o.type].cat===cat)):[];
+    if(cats.length){
+      const sw={tree:'env-tree',rock:'env-rock',fence:'wood',wall:'env-wall',water:'env-water',steep:'env-steep',terrain:'env-grass'};
+      const rowH=50, bw=420, bh=cats.length*rowH+40, bx=W-M-bw-24, by=top+planH-bh-24;
+      c.fillStyle='rgba(255,255,255,.92)'; c.fillRect(bx,by,bw,bh); c.strokeStyle=COL.rule; c.lineWidth=2; c.strokeRect(bx,by,bw,bh);
+      c.textAlign='left'; c.textBaseline='middle'; c.font=`600 28px ${SANS}`;
+      cats.forEach(([cat,label],j)=>{ const y=by+20+rowH*j+rowH/2;
+        c.fillStyle=COL[sw[cat]]; c.fillRect(bx+24,y-16,44,32); c.strokeStyle=COL.ink; c.lineWidth=2; c.strokeRect(bx+24,y-16,44,32);
+        const kinds=[...new Set(D.env.filter(o=>ENV[o.type].cat===cat).map(o=>ENV_SHORT[o.type].toLowerCase()))].join(', ');
+        c.fillStyle=COL.ink; c.fillText(label+(kinds?' · '+kinds:''),bx+86,y,bw-100); });
+    }
     // north arrow
     { const x=W-M-80, y=top+100, r=(D.cfg.geo.rot||0)*DEG; c.save(); c.translate(x,y); c.rotate(-r);
       c.fillStyle=COL.ink; c.beginPath(); c.moveTo(0,-46); c.lineTo(20,20); c.lineTo(0,8); c.lineTo(-20,20); c.closePath(); c.fill();
@@ -3266,11 +4040,12 @@ function askCalDistance(){
   inp.onkeydown=e=>{ if(e.key==='Enter') ok.click(); };
   wrap.append(inp,ok); showHint('Real distance between the points',wrap); setTimeout(()=>inp.focus(),30);
 }
-function endMode(){ mode=null; calPts=[]; plan.classList.remove('cross','grab'); hideHint(); draw(); }
+function endMode(){ mode=null; calPts=[]; paintPts=null; plan.classList.remove('cross','grab'); hideHint();
+  document.body.classList.toggle('has-sel',!!sel); draw(); }
 
 /* ---------- layers ---------- */
 function syncLayers(){
-  const L=D.cfg.layers, has={labels:true,design:true,gpx:!!refLocal()||!!D.cfg.gpx,photo:!!D.cfg.bg};
+  const L=D.cfg.layers, has={labels:true,design:true,env:true,gpx:!!refLocal()||!!D.cfg.gpx,photo:!!D.cfg.bg};
   document.querySelectorAll('.lyr').forEach(r=>{
     const k=r.dataset.l, on=has[k]&&L[k]!==false, eye=r.querySelector('.eye');
     r.classList.toggle('empty',!has[k]); r.classList.toggle('off',has[k]&&!on);
@@ -3278,6 +4053,7 @@ function syncLayers(){
   });
   const ref=refLocal();
   $('ly-design-sub').textContent=T&&T.ok?f1(T.length)+' m '+(T.closed?'loop':'line'):'';
+  $('ly-env-sub').textContent=D.env.length?D.env.length+(D.env.length>1?' objects':' object'):'Trees, rocks, water, ground';
   $('ly-gpx-sub').textContent=D.cfg.gpx?(ref?f1(polyLen(ref))+' m · ':'')+(D.cfg.gpx.name||'GPX'):'Fixed to the ground, true scale';
   const ga=$('ly-gpx-act'); ga.textContent=D.cfg.gpx?'Remove':'Load';
   ga.setAttribute('aria-label',D.cfg.gpx?'Remove GPX trace':'Load a GPX trace');
@@ -3287,7 +4063,8 @@ function syncLayers(){
 }
 document.querySelectorAll('.lyr .eye').forEach(b=>b.onclick=()=>{
   const k=b.closest('.lyr').dataset.l, L=D.cfg.layers; L[k]=L[k]===false;
-  if(k==='design'&&L.design===false){ if(armed) disarm(); if(sel) setSel(null); }
+  if(k==='design'&&L.design===false){ if(armed&&!ENV[armed]) disarm(); if(sel&&sel.kind!=='env') setSel(null); }
+  if(k==='env'){ if(L.env===false){ if(armed&&ENV[armed]) disarm(); if(mode==='paint') endMode(); if(sel&&sel.kind==='env') setSel(null); } recompute(); }
   if(k!=='photo') delTarget=null;
   syncLayers(); autosave(); draw();
 });
@@ -3364,6 +4141,7 @@ try{
   if(!restored){ D._meta.name=''; D.geom=normGeom(clone(TEMPLATES[0].geom)); recompute(); }
   lastSnap=snap(); syncUndo();
   buildPalette(); buildInspector(); syncLayers();
+  try{ if(localStorage.getItem('creature-pump-track-tab')==='env') setPalTab('env'); }catch(_){}
   $('b-dims').setAttribute('aria-pressed',String(!!D.cfg.dims));
   [PW,PH]=sizeCanvas(plan,pctx); [QW,QH]=sizeCanvas(prof,qctx);
   if(PW>50){ fitView(); fitted=true; }

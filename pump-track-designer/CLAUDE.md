@@ -87,11 +87,48 @@ path works on one track as before; the engine is unchanged and single track.
 - The lines list sits at the top of the track panel (`syncLines`): swatch
   (`<input type=color>`), name, length, delete. `New track` adds an
   empty loop where the view is (`placeGeom`); Loop/Line switches it.
-- Undo snapshots `D.lines`; which line is active is not an undo step.
+- Undo snapshots `D.lines` and `D.env`; which line is active is not an undo step.
 - Files: `lines` and `active` in the JSON, with `geom` (the active line) kept
   for older readers; an old file opens as one line (`linesOf`). GPX writes a
   `<trk>` per line. Dimensions CSV, profile CSV and the build sheet are the
   active line, named in the file name when there are several.
+
+## Environment
+
+What is already on the site: `D.env = [{type, x, y, rot, s, flip, seed, pts?, w?, h?, closed?}]`,
+one list per design (not per line), drawn under the track. Types and their
+category, geometry and defaults are `ENV` in the engine (`ENV_CATS` for the
+palette groups, `ENV_LAYER` for draw order: terrain, water, steep, rocks,
+walls, fences, trees).
+- Geometry is `point` (trees, rocks: a seeded shape `base` m across at s=1),
+  `line` (fences, walls, river: `pts`, optional `closed`, `w` width) or
+  `area` (lake, steep up/down with height `h`, grass/dirt/loose stone).
+  `pts` are in the object's own frame; the pose (`envToWorld`/`envToLocal`)
+  does rotate, scale and flip, so a post drag converts back through it.
+- The left rail has two tabs (`setPalTab`, remembered in localStorage).
+  Environment tab = env editing; the track is locked (handles shown as tags,
+  `hitTest` not used). Track tab = env is not hit-tested at all.
+- Lines and areas: an armed tile turns a drag into a freehand stroke
+  (`paintPts`, `finishPaint`, `envFromStroke` = RDP at 3 px then centred);
+  a tap drops the default shape. **Redraw** (`mode==='paint'`) replaces the
+  selected one's shape. Trees and rocks stay armed so taps keep planting.
+- An area is selected by a tap and only then dragged (a drag on an unselected
+  area pans), so big terrain never blocks panning.
+- Fences/walls link: a post dragged within 12 px of any fence/wall post snaps
+  to it (`envSnap`); an end dropped on an end of the same type joins the two
+  (`joinEnvLines`, pose baked in by `envBake`), on its own other end closes
+  it. A fence or wall tile dropped by a free end of the same type extends it
+  (`envExtendAt`). `+` between posts adds one; `+` past an end extends.
+  Holding a post removes it.
+- `envClashes` adds warnings (`kind:'env'`) to `issues` when the active line
+  runs into a tree trunk, bush, rock, fence, wall, water or steep ground.
+  Terrain never clashes. Skipped while the Environment layer is hidden.
+- Undo snapshots `{lines, env}`. Files carry `env` (JSON, zip, the design
+  inside GPX); `normEnv` clamps on load. Layers has an **Environment** row
+  (`cfg.layers.env`). The build sheet draws it and adds a key in the plan's
+  bottom right.
+- Terrain texture is a 4 m repeating canvas pattern fixed to the ground via
+  `CanvasPattern.setTransform`; below 4 px/m it is a flat fill.
 
 ## Defaults and research
 
@@ -160,7 +197,7 @@ All read by the one **Open** button (by extension, then by first character).
 
 A small Illustrator-style panel, opened by the stacked-squares icon above the
 zoom buttons (`setLayersOpen`); top of the list draws on top:
-**Labels**, **GPX trace**, **Design**, **Photo**. **Labels** is the corner
+**Labels**, **GPX trace**, **Design**, **Environment**, **Photo**. **Labels** is the corner
 numbers, start/end tags and + handles; hidden, they are neither drawn nor
 hit-tested (a corner can still be dragged by its berm). Each has an eye toggle; visibility is
 saved in `cfg.layers` and respected by the build sheet.

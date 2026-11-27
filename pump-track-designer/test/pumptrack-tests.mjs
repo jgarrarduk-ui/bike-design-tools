@@ -5,7 +5,8 @@ const eng=src.split('// ==ENGINE-START==')[1].replace(/^[^\n]*/,'').split('// ==
 const m=new Function(eng+'\nreturn {DEG,FEATURES,SIZES,TEMPLATES,buildTrack,pointAt,polyline,project,projectLeg,'+
   'spansOf,findSlot,issuesOf,zAt,profileOf,profZ,profHeight,defaultParams,sizedParams,normParams,statsOf,'+
   'insertNode,removeNode,toLatLon,fromLatLon,toGPX,parseGPX,gpxToDesign,traceTrack,toCSV,parseCSV,profileCSV,'+
-  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip,setCornerKind,cornerPoint,crc32,zipStore,unzip,packDesign,readBundle,groundAt,zTop,placeAtS,traceOnTrack};')();
+  'normGeom,dist,bermRoller,llCentroid,anchorGeo,refPolyline,polyLen,setHipTurn,normHip,setCornerKind,cornerPoint,crc32,zipStore,unzip,packDesign,readBundle,groundAt,zTop,placeAtS,traceOnTrack,'+
+  'ENV,makeEnv,normEnv,envToWorld,envToLocal,envPts,envClashes,joinEnvLines,envFromStroke,polyArea,inPoly};')();
 
 let fails=0;
 const ok=(name,cond,info='')=>{console.log((cond?'  pass  ':'  FAIL  ')+name+(info?'   '+info:''));if(!cond)fails++};
@@ -333,6 +334,43 @@ ok('with no original GPX the trace is written out from its points', zn.gpx&&m.pa
 ok('with no original photo the embedded copy stays in the JSON', zn.design.cfg.bg.src==='data:image/jpeg;base64,xx'&&!zn.photo);
 const nested=m.unzip(m.zipStore(m.unzip(zb).map(f=>({name:'Site A/'+f.name,data:f.data}))));
 ok('a bundle re-zipped inside a folder still opens', m.readBundle(nested).photo.name==='IMG 001.jpg');
+
+/* ---- environment ---- */
+{
+  const o={type:'woodfence',x:5,y:-2,rot:37,s:1.6,flip:true,seed:3,pts:[{x:-4,y:0},{x:4,y:1}],closed:false};
+  const w=m.envToWorld(o,{x:1.2,y:-.7}), back=m.envToLocal(o,w);
+  ok('environment pose: plan to own frame and back', near(back.x,1.2,1e-3)&&near(back.y,-.7,1e-3));
+  const t=m.makeEnv('conifer',{x:1,y:2},9);
+  ok('a new tree is a point with no outline', t.type==='conifer'&&!t.pts&&t.s===1&&t.x===1);
+  const lake=m.makeEnv('lake',{x:0,y:0},4), river=m.makeEnv('river',{x:0,y:0},4), wall=m.makeEnv('stonewall',{x:0,y:0},4);
+  ok('new areas and lines get outlines, widths and heights', lake.pts.length>=3&&river.pts.length>=2&&river.w===3&&wall.w===.6&&m.makeEnv('steepup',{x:0,y:0},1).h===2);
+  const n=m.normEnv([{type:'nope'},{type:'lake',pts:[{x:0,y:0}]},{type:'boulder',x:'3',s:999,flip:1},null,{type:'woodfence',pts:[{x:0,y:0},{x:1,y:0}],closed:true}]);
+  ok('loading clamps a bad environment list', n.length===3&&n[0].pts.length>=3&&n[1].x===3&&n[1].s===20&&n[1].flip===true&&n[2].closed===false);
+  const sq=[{x:0,y:0},{x:4,y:0},{x:4,y:4},{x:0,y:4}];
+  ok('area and inside test', m.polyArea(sq)===16&&m.inPoly({x:2,y:2},sq)&&!m.inPoly({x:5,y:2},sq));
+  // a track along y=0 from x=-20 to 20
+  const g=m.normGeom({closed:false,width:1.5,features:[],nodes:[{x:-20,y:0,r:0},{x:20,y:0,r:0}]});
+  const T=m.buildTrack(g);
+  const env=[m.makeEnv('conifer',{x:0,y:0.4},1), m.makeEnv('conifer',{x:0,y:8},1), m.makeEnv('grass',{x:0,y:0},1),
+    Object.assign(m.makeEnv('woodfence',{x:5,y:0},1),{rot:90}), m.makeEnv('woodfence',{x:5,y:20},1),
+    m.makeEnv('lake',{x:-10,y:0},1), m.makeEnv('steepdown',{x:12,y:30},1)];
+  const cl=m.envClashes(T,env).map(q=>q.env);
+  ok('the track hitting a tree, a fence across it and a lake is flagged; grass and things off the line are not',
+    JSON.stringify(cl)==='[0,3,5]', JSON.stringify(cl));
+  const a={type:'woodfence',x:0,y:0,rot:0,s:1,flip:false,seed:1,pts:[{x:0,y:0},{x:4,y:0}]};
+  const b={type:'woodfence',x:10,y:0,rot:90,s:2,flip:false,seed:2,pts:[{x:0,y:-1},{x:0,y:1}]};   // plan (10,-2) to (10,2)... rotated
+  const bw=m.envPts(b), aw=m.envPts(a);
+  const jn=m.joinEnvLines(a,1,b,0), jw=m.envPts(jn);
+  ok('joining two fences end to end keeps every post in place',
+    jw.length===4&&m.dist(jw[0],aw[0])<1e-3&&m.dist(jw[1],aw[1])<1e-3&&m.dist(jw[2],bw[0])<1e-3&&m.dist(jw[3],bw[1])<1e-3&&jn.rot===0&&jn.s===1);
+  const shared=m.joinEnvLines(a,1,{...a,pts:[{x:4,y:0},{x:4,y:5}]},0);
+  ok('a post shared by both ends appears once', m.envPts(shared).length===3);
+  const stroke=[]; for(let i=0;i<=72;i++){ const t=i/72*2*Math.PI; stroke.push({x:30+5*Math.cos(t),y:5*Math.sin(t)}); }
+  const painted=m.envFromStroke('lake',stroke,.05,7);
+  ok('a lake painted freehand is simplified and keeps its area', painted&&painted.pts.length<60&&near(m.polyArea(m.envPts(painted)),Math.PI*25,2)&&near(painted.x,30,.6),
+    painted?painted.pts.length+' points':'none');
+  ok('a scribble too small to be an area is refused', m.envFromStroke('lake',[{x:0,y:0},{x:.01,y:0},{x:0,y:.01}],.05,1)===null);
+}
 
 /* ---- quantities ---- */
 const st=m.statsOf(m.buildTrack(m.normGeom(rect)),rect,[]);
